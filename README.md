@@ -1,6 +1,8 @@
 # Cyberpunk-Txt-RPG
 Game designed to be within the universe of cyberpunk 2077, text based RPG, with in depth mechanics.
 
+**▶ Play it: https://wh173-0u7.github.io/Cyberpunk-Txt-RPG/** (updates automatically on every merge to `main`)
+
 It runs in the browser so the text can be surrounded by neon glow, CRT scanlines, glitch effects,
 weather particles and screen effects that react to what's happening in the game.
 
