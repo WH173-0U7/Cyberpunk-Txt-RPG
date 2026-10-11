@@ -24,6 +24,8 @@
   --font-mono: 'Share Tech Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
   --font-display: 'Orbitron', 'Share Tech Mono', sans-serif;
   color-scheme: dark;
+  /* Keep the UI clear of phone notches and home bars. */
+  padding-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px);
   transition:
     --primary 1.4s ease,
     --secondary 1.4s ease;
@@ -95,9 +97,9 @@ body {
   grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
   max-width: 1000px;
-  height: 100dvh;
+  height: 100%;
   margin: 0 auto;
-  padding: clamp(12px, 3vw, 28px) clamp(12px, 3vw, 28px) max(clamp(12px, 3vw, 28px), env(safe-area-inset-bottom));
+  padding: clamp(16px, 3vw, 28px);
   animation: crt-on 1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
