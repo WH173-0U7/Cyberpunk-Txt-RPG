@@ -1,7 +1,17 @@
 import { COMMANDS, type CommandDef } from './commands';
 import { EventBus } from './events';
 import { parseInput } from './parser';
-import type { AmbientLine, Direction, GameEvents, Location, Tone, World } from './types';
+import {
+  DIRECTIONS,
+  type AmbientLine,
+  type Direction,
+  type GameEvents,
+  type Location,
+  type PointOfInterest,
+  type Scene,
+  type Tone,
+  type World,
+} from './types';
 
 /**
  * The game rules and state. It never touches the DOM: everything the player
@@ -31,7 +41,7 @@ export class Game {
     this.enter(this.current, null);
   }
 
-  /** Runs one line of player input. */
+  /** Runs one line of typed player input. */
   handle(input: string): void {
     const parsed = parseInput(input);
     if (!parsed) return;
@@ -56,16 +66,28 @@ export class Game {
     this.enter(this.locationById(targetId), this.current);
   }
 
-  describeLocation(): void {
-    this.say(this.current.name, 'heading');
-    this.say(this.current.description);
-    this.describeExits();
+  /** Re-sends the current scene so the UI can rescan it. */
+  look(): void {
+    this.events.emit('scene', this.scene());
+  }
+
+  /** Takes a closer look at a point of interest, matched by id or (part of) its name. */
+  examine(query: string): void {
+    const poi = findPoi(this.current, query);
+    if (!poi) {
+      this.say(`You don't see "${query}" here.`, 'error');
+      return;
+    }
+    if (poi.fx) this.events.emit('fx', { effect: poi.fx });
+    this.events.emit('examined', { poi });
   }
 
   describeExits(): void {
-    const directions = Object.keys(this.current.exits);
+    const exits = this.scene().exits;
     this.say(
-      directions.length ? `Exits: ${directions.map((d) => `{h|${d}}`).join(' · ')}` : 'There is no obvious way out.',
+      exits.length
+        ? `Exits: ${exits.map((exit) => `{h|${exit.direction}} ${exit.name}`).join(' · ')}`
+        : 'There is no obvious way out.',
       'system',
     );
   }
@@ -88,13 +110,26 @@ export class Game {
     }
   }
 
+  private scene(): Scene {
+    const exits = DIRECTIONS.flatMap((direction) => {
+      const id = this.current.exits[direction];
+      return id ? [{ direction, name: this.locationById(id).name }] : [];
+    });
+    return { location: this.current, district: this.districtOf(this.current), exits };
+  }
+
   private enter(to: Location, from: Location | null): void {
-    const district = this.world.districts[to.district];
-    if (!district) throw new Error(`Location "${to.id}" is in unknown district "${to.district}"`);
+    const district = this.districtOf(to);
     this.current = to;
     this.lastAmbient = null;
     this.events.emit('locationChanged', { from, to, district });
-    this.describeLocation();
+    this.events.emit('scene', this.scene());
+  }
+
+  private districtOf(location: Location) {
+    const district = this.world.districts[location.district];
+    if (!district) throw new Error(`Location "${location.id}" is in unknown district "${location.district}"`);
+    return district;
   }
 
   private locationById(id: string): Location {
@@ -102,4 +137,15 @@ export class Game {
     if (!location) throw new Error(`Unknown location "${id}"`);
     return location;
   }
+}
+
+function findPoi(location: Location, query: string): PointOfInterest | undefined {
+  const q = query.trim().toLowerCase();
+  const pois = location.pois ?? [];
+  if (!q) return undefined;
+  return (
+    pois.find((poi) => poi.id === q) ??
+    pois.find((poi) => poi.name.toLowerCase() === q) ??
+    pois.find((poi) => poi.name.toLowerCase().includes(q))
+  );
 }

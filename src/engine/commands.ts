@@ -11,21 +11,43 @@ export interface CommandDef {
   run(game: Game, args: string[]): void;
 }
 
+/** Words players naturally type that carry no meaning: "look at the billboard". */
+const FILLER = new Set(['at', 'the', 'a', 'an', 'to']);
+
+const meaningful = (args: string[]) => args.filter((word) => !FILLER.has(word));
+
 /** Every command the player can type. Add new ones here; help picks them up automatically. */
 export const COMMANDS: CommandDef[] = [
   {
     name: 'look',
-    aliases: ['l'],
-    summary: 'Describe your surroundings.',
-    run: (game) => game.describeLocation(),
+    aliases: ['l', 'scan'],
+    usage: 'look [thing]',
+    summary: 'Scan your surroundings, or look at something.',
+    run: (game, args) => {
+      const target = meaningful(args).join(' ');
+      if (target) game.examine(target);
+      else game.look();
+    },
+  },
+  {
+    name: 'examine',
+    aliases: ['x', 'inspect', 'check'],
+    usage: 'examine <thing>',
+    summary: 'Take a closer look at something nearby.',
+    run: (game, args) => {
+      const target = meaningful(args).join(' ');
+      if (!target) return game.say('Examine what? Tap something under {h|Points of interest}, or type its name.', 'error');
+      game.examine(target);
+    },
   },
   {
     name: 'go',
     aliases: ['walk', 'move'],
     usage: 'go <direction>',
-    summary: 'Move somewhere. Shortcuts: n, s, e, w, u, d.',
-    run: (game, [word]) => {
-      if (!word) return game.say('Go where? Try {h|north}, {h|south}, {h|east} or {h|west}.', 'error');
+    summary: 'Move somewhere. Shortcuts: n, e, s, w, u, d.',
+    run: (game, args) => {
+      const [word] = meaningful(args);
+      if (!word) return game.say('Go where? Try {h|north}, {h|east}, {h|south} or {h|west}.', 'error');
       const direction = toDirection(word);
       if (!direction) return game.say(`"${word}" isn't a direction.`, 'error');
       game.move(direction);
@@ -50,7 +72,7 @@ export const COMMANDS: CommandDef[] = [
   {
     name: 'clear',
     aliases: ['cls'],
-    summary: 'Wipe the screen.',
+    summary: 'Wipe the feed.',
     run: (game) => game.events.emit('clear', undefined),
   },
   {

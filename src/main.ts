@@ -1,12 +1,15 @@
 import './style.css';
 import { WORLD } from './data/world';
 import { Game } from './engine/game';
+import type { Direction } from './engine/types';
 import { GlitchText } from './fx/glitch';
 import { ScreenFx } from './fx/screen';
 import { applyTheme, resolveTheme } from './fx/theme';
 import { WeatherFx } from './fx/weather';
+import { Compass } from './ui/compass';
+import { Feed } from './ui/feed';
 import { Hud } from './ui/hud';
-import { Terminal } from './ui/terminal';
+import { SceneView } from './ui/scene';
 
 function $<T extends HTMLElement>(selector: string): T {
   const el = document.querySelector<T>(selector);
@@ -25,7 +28,7 @@ const prompt = $<HTMLFormElement>('#prompt');
 
 let lastActivity = performance.now();
 
-const terminal = new Terminal(
+const feed = new Feed(
   { log: $('#log'), form: prompt, input: $<HTMLInputElement>('#command'), announcer: $('#announcer') },
   {
     onCommand: (input) => {
@@ -36,9 +39,55 @@ const terminal = new Terminal(
   },
 );
 
+/** Every tap or key the player makes goes through here. */
+function act(action: () => void): void {
+  lastActivity = performance.now();
+  feed.skipTyping();
+  action();
+}
+
+const sceneView = new SceneView(
+  {
+    card: $('#scene'),
+    beam: $('#scan-beam'),
+    text: $('#scene-text'),
+    inspect: $('#inspect'),
+    inspectTitle: $('#inspect-title'),
+    inspectText: $('#inspect-text'),
+    inspectClose: $<HTMLButtonElement>('#inspect-close'),
+    poiBlock: $('#poi-block'),
+    pois: $('#pois'),
+  },
+  {
+    onExamine: (id) => act(() => game.examine(id)),
+    onGlitchText: (el, text) => glitchText.register(el, text),
+    announce: (text) => feed.announce(text),
+  },
+  reducedMotion,
+);
+
+const compass = new Compass($('#compass'), {
+  onMove: (direction) => act(() => game.move(direction)),
+  onLook: () => act(() => game.look()),
+});
+
+// Arrow keys move when the command line isn't focused.
+const ARROW_KEYS = new Map<string, Direction>([
+  ['ArrowUp', 'north'],
+  ['ArrowRight', 'east'],
+  ['ArrowDown', 'south'],
+  ['ArrowLeft', 'west'],
+]);
+document.addEventListener('keydown', (event) => {
+  const direction = ARROW_KEYS.get(event.key);
+  if (!direction || event.target instanceof HTMLInputElement) return;
+  event.preventDefault();
+  act(() => game.move(direction));
+});
+
 // Game → presentation. The engine only emits events; every visual reaction lives here.
 game.events.on('output', ({ text, tone }) => {
-  terminal.print(text, tone);
+  feed.print(text, tone);
   if (tone === 'error') screen.nudge(prompt);
 });
 
@@ -48,15 +97,23 @@ game.events.on('locationChanged', ({ from, to, district }) => {
   weather.setWeather(to.weather);
   weather.setTint(theme.primary);
   hud.setLocation(to.name, district.name, to.weather);
+  feed.divider(to.name);
   if (from) screen.glitch();
 });
+
+game.events.on('scene', (scene) => {
+  sceneView.show(scene);
+  compass.setExits(scene.exits);
+});
+
+game.events.on('examined', ({ poi }) => sceneView.inspect(poi));
 
 game.events.on('fx', ({ effect }) => {
   screen.play(effect);
   if (effect === 'lightning') hud.flickerSign();
 });
 
-game.events.on('clear', () => terminal.clear());
+game.events.on('clear', () => feed.clear());
 
 game.start();
 
@@ -65,7 +122,7 @@ function scheduleAmbient(): void {
   setTimeout(
     () => {
       const idleFor = performance.now() - lastActivity;
-      if (idleFor > 12_000 && terminal.idle && !document.hidden) game.ambient();
+      if (idleFor > 12_000 && feed.idle && !document.hidden) game.ambient();
       scheduleAmbient();
     },
     18_000 + Math.random() * 22_000,

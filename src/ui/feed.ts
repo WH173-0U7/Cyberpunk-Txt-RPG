@@ -1,7 +1,8 @@
 import type { Tone } from '../engine/types';
-import { parseMarkup, stripMarkup, type SpanStyle } from './markup';
+import { stripMarkup } from './markup';
+import { typewrite, type Typing } from './typewriter';
 
-type LineTone = Tone | 'echo';
+type LineTone = Tone | 'echo' | 'divider';
 
 interface QueuedLine {
   text: string;
@@ -13,36 +14,35 @@ interface QueuedLine {
 /** Milliseconds per character. Lower is faster; 0 prints instantly. */
 const TYPE_SPEED: Record<LineTone, number> = {
   narrative: 11,
-  heading: 30,
   system: 4,
-  ambient: 22,
+  ambient: 18,
   error: 5,
   echo: 0,
+  divider: 0,
 };
 
-const SPAN_CLASS: Record<SpanStyle, string> = { highlight: 'hl', danger: 'danger', glitch: 'gl' };
-
-const MAX_LINES = 400;
+const MAX_LINES = 300;
 const MAX_ANNOUNCEMENTS = 20;
 
-export interface TerminalElements {
+export interface FeedElements {
   log: HTMLElement;
   form: HTMLFormElement;
   input: HTMLInputElement;
-  /** Visually hidden live region so screen readers get each line once, not letter by letter. */
+  /** Visually hidden live region so screen readers get each message once, not letter by letter. */
   announcer: HTMLElement;
 }
 
-export interface TerminalHandlers {
+export interface FeedHandlers {
   onCommand(input: string): void;
   /** Called when a glitch-styled span finishes typing, so effects can animate it. */
   onGlitchText?(el: HTMLElement, text: string): void;
 }
 
-/** The scrolling text log and command prompt, with a skippable typewriter. */
-export class Terminal {
+/** The scrolling event feed and the optional command line under it. */
+export class Feed {
   private queue: QueuedLine[] = [];
   private draining = false;
+  private current: Typing | null = null;
   private seq = 0;
   /** Lines queued at or before this sequence number render instantly. */
   private skipThrough = 0;
@@ -53,14 +53,15 @@ export class Terminal {
   private historyIndex = 0;
 
   constructor(
-    private readonly els: TerminalElements,
-    private readonly handlers: TerminalHandlers,
+    private readonly els: FeedElements,
+    private readonly handlers: FeedHandlers,
   ) {
     els.form.addEventListener('submit', (event) => {
       event.preventDefault();
       this.submit();
     });
     els.input.addEventListener('keydown', (event) => this.onKeyDown(event));
+    els.log.addEventListener('click', () => this.skipTyping());
     els.log.addEventListener('scroll', () => {
       const { scrollTop, scrollHeight, clientHeight } = els.log;
       // Only an upward scroll from where we last put it counts as the player reading back;
@@ -70,10 +71,11 @@ export class Terminal {
     });
     // Keep the newest line in view when the window resizes or a phone keyboard opens.
     new ResizeObserver(() => this.follow()).observe(els.log);
-    // Clicking anywhere finishes the current text and returns focus to the prompt.
-    document.addEventListener('click', () => {
-      this.skipTyping();
-      if (!getSelection()?.toString()) els.input.focus();
+
+    // On a keyboard, start typing anywhere to use the command line.
+    document.addEventListener('keydown', (event) => {
+      if (event.target === els.input || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key.length === 1 && event.key !== ' ') els.input.focus();
     });
   }
 
@@ -87,6 +89,11 @@ export class Terminal {
     this.announce(stripMarkup(text));
   }
 
+  /** A labeled rule across the feed, e.g. marking arrival somewhere new. */
+  divider(label: string): void {
+    this.enqueue(label, 'divider', false);
+  }
+
   clear(): void {
     this.skipTyping();
     this.queue = [];
@@ -96,6 +103,14 @@ export class Terminal {
   /** Instantly finishes everything already queued. New output still types normally. */
   skipTyping(): void {
     this.skipThrough = this.seq;
+    this.current?.finish();
+  }
+
+  announce(text: string): void {
+    const note = document.createElement('p');
+    note.textContent = text;
+    this.els.announcer.append(note);
+    while (this.els.announcer.childElementCount > MAX_ANNOUNCEMENTS) this.els.announcer.firstElementChild?.remove();
   }
 
   private enqueue(text: string, tone: LineTone, markup: boolean): void {
@@ -107,80 +122,21 @@ export class Terminal {
     if (this.draining) return;
     this.draining = true;
     for (let line = this.queue.shift(); line; line = this.queue.shift()) {
-      await this.typeLine(line);
+      const block = document.createElement('div');
+      block.className = `line tone-${line.tone}`;
+      this.els.log.append(block);
+      while (this.els.log.childElementCount > MAX_LINES) this.els.log.firstElementChild?.remove();
+
+      this.current = typewrite(block, line.text, {
+        msPerChar: line.seq <= this.skipThrough ? 0 : TYPE_SPEED[line.tone],
+        markup: line.markup,
+        onGlitch: (el, text) => this.handlers.onGlitchText?.(el, text),
+        onProgress: () => this.follow(),
+      });
+      await this.current.done;
+      this.current = null;
     }
     this.draining = false;
-  }
-
-  private typeLine(line: QueuedLine): Promise<void> {
-    const block = document.createElement('div');
-    block.className = `line tone-${line.tone}`;
-    const segments = line.markup ? parseMarkup(line.text) : [{ text: line.text }];
-    const parts = segments.map((segment) => {
-      const span = document.createElement('span');
-      if (segment.style) span.className = SPAN_CLASS[segment.style];
-      block.append(span);
-      return { span, segment };
-    });
-    this.els.log.append(block);
-    while (this.els.log.childElementCount > MAX_LINES) this.els.log.firstElementChild?.remove();
-
-    const finish = () => {
-      block.classList.remove('typing');
-      for (const { span, segment } of parts) {
-        span.textContent = segment.text;
-        if (segment.style === 'glitch') {
-          span.dataset.text = segment.text;
-          span.style.setProperty('--gl-delay', `${(-Math.random() * 4).toFixed(2)}s`);
-          this.handlers.onGlitchText?.(span, segment.text);
-        }
-      }
-      this.follow();
-    };
-
-    const total = parts.reduce((sum, { segment }) => sum + segment.text.length, 0);
-    const msPerChar = TYPE_SPEED[line.tone];
-    if (total === 0 || msPerChar === 0 || line.seq <= this.skipThrough) {
-      finish();
-      return Promise.resolve();
-    }
-
-    block.classList.add('typing');
-    return new Promise((resolve) => {
-      const startedAt = performance.now();
-      let shown = 0;
-      let partIndex = 0;
-      let partShown = 0;
-
-      const step = (now: number) => {
-        if (line.seq <= this.skipThrough || !block.isConnected) {
-          finish();
-          resolve();
-          return;
-        }
-        const target = Math.min(total, Math.floor((now - startedAt) / msPerChar) + 1);
-        while (shown < target) {
-          const part = parts[partIndex];
-          if (!part) break;
-          const take = Math.min(part.segment.text.length - partShown, target - shown);
-          partShown += take;
-          shown += take;
-          part.span.textContent = part.segment.text.slice(0, partShown);
-          if (partShown >= part.segment.text.length) {
-            partIndex++;
-            partShown = 0;
-          }
-        }
-        this.follow();
-        if (shown >= total) {
-          finish();
-          resolve();
-        } else {
-          requestAnimationFrame(step);
-        }
-      };
-      requestAnimationFrame(step);
-    });
   }
 
   private submit(): void {
@@ -204,6 +160,7 @@ export class Terminal {
       this.els.input.value = this.history[this.historyIndex] ?? '';
     } else if (event.key === 'Escape') {
       this.skipTyping();
+      this.els.input.blur();
     }
   }
 
@@ -211,12 +168,5 @@ export class Terminal {
     if (!this.pinned) return;
     this.els.log.scrollTop = this.els.log.scrollHeight;
     this.autoScrollTop = this.els.log.scrollTop;
-  }
-
-  private announce(text: string): void {
-    const note = document.createElement('p');
-    note.textContent = text;
-    this.els.announcer.append(note);
-    while (this.els.announcer.childElementCount > MAX_ANNOUNCEMENTS) this.els.announcer.firstElementChild?.remove();
   }
 }

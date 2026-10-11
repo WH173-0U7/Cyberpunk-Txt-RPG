@@ -23,10 +23,16 @@ Other scripts:
 
 ## Playing
 
-Type commands at the `>` prompt: `look`, `go north` (or just `n`), `exits`, `help`.
-`fx glitch`, `fx shake`, `fx flash` and `fx lightning` preview the screen effects.
-Click anywhere or press <kbd>Esc</kbd> to skip the typewriter; <kbd>↑</kbd>/<kbd>↓</kbd> recall earlier commands.
-If you go quiet for a while, the city starts talking to you.
+The game is played by tapping:
+
+- **Compass pad**: each direction shows where it leads; tap to move. Dead ends are dimmed.
+  The center **Scan** button rescans the area.
+- **Points of interest**: tap one in the location card to take a closer look; tap it again or ✕ to go back.
+- **Feed**: idle chatter from the city, warnings, and a marker each time you arrive somewhere.
+
+On a keyboard, the arrow keys move, and typing anywhere opens the command line
+(`look`, `examine billboard`, `go north` or `n`, `exits`, `help`). `fx glitch`, `fx shake`,
+`fx flash` and `fx lightning` preview the screen effects.
 
 ## How it's built
 
@@ -37,7 +43,7 @@ effects layer decides how that should look:
 src/
   engine/   Game rules and state: parser, commands, events. No DOM, fully unit-tested.
   data/     World content: districts, locations, descriptions, ambient lines.
-  ui/       Terminal (typewriter, prompt, history), HUD and the text markup parser.
+  ui/       Location card, compass pad, event feed + command line, HUD, typewriter, markup parser.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.
 tests/      Vitest unit tests.
@@ -45,7 +51,8 @@ tests/      Vitest unit tests.
 
 | Game event | What the player sees |
 |---|---|
-| Entering a location | Signal-tear glitch, neon sign flickers on, colors crossfade to the district palette, weather changes |
+| Entering a location | Signal-tear glitch, neon sign flickers on, colors crossfade to the district palette, weather changes, the card rescans, the compass relabels |
+| Examining something | Its details open in the card; some (like the Arasaka billboard) fire an effect |
 | An error (bad command, blocked exit) | The prompt jitters and pulses red |
 | Ambient line with an effect | e.g. lightning flashes the screen and the sign; a bass drop shakes the bar |
 | `{g\|word}` in any text | The word tears and scrambles every few seconds |
@@ -56,7 +63,9 @@ Effects that rely on motion are toned down when the OS "reduce motion" setting i
 
 Everything lives in [`src/data/world.ts`](src/data/world.ts). To add a location, add an entry to
 `locations` with a name, district, weather (`rain`, `drizzle`, `dust`, `haze` or `clear`),
-description, exits and optional ambient lines, then link to it from another location's `exits`.
-`npm test` will tell you if an exit points nowhere or a place can't be reached.
+a one- or two-sentence description, points of interest, exits and optional ambient lines,
+then link to it from another location's `exits`. Keep descriptions short and put detail in
+points of interest. `npm test` will tell you if a description runs long, an exit points
+nowhere or a place can't be reached.
 
 Text supports inline markup: `{h|highlight}`, `{w|danger}` and `{g|glitch}`.

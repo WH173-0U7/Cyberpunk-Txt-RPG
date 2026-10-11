@@ -17,7 +17,11 @@ const world: World = {
       district: 'test',
       weather: 'rain',
       description: 'A wet alley.',
-      exits: { north: 'roof' },
+      pois: [
+        { id: 'dumpster', name: 'Rusty dumpster', description: 'It smells.' },
+        { id: 'sign', name: 'Neon sign', description: 'It flickers.', fx: 'glitch' },
+      ],
+      exits: { west: 'garage', north: 'roof' },
       ambient: ['drip', { text: 'thunder', fx: 'lightning' }],
     },
     roof: {
@@ -27,6 +31,14 @@ const world: World = {
       weather: 'clear',
       description: 'A windy roof.',
       exits: { south: 'alley' },
+    },
+    garage: {
+      id: 'garage',
+      name: 'Garage',
+      district: 'test',
+      weather: 'clear',
+      description: 'Oil stains.',
+      exits: { east: 'alley' },
     },
   },
 };
@@ -38,44 +50,62 @@ function setup() {
   const events: Recorded[] = [];
   game.events.on('output', (payload) => events.push({ type: 'output', payload }));
   game.events.on('locationChanged', (payload) => events.push({ type: 'locationChanged', payload }));
+  game.events.on('scene', (payload) => events.push({ type: 'scene', payload }));
+  game.events.on('examined', (payload) => events.push({ type: 'examined', payload }));
   game.events.on('fx', (payload) => events.push({ type: 'fx', payload }));
   game.events.on('clear', (payload) => events.push({ type: 'clear', payload }));
 
   const take = () => events.splice(0);
-  const outputs = (recorded: Recorded[]) =>
-    recorded.flatMap((e) => (e.type === 'output' ? [e.payload] : []));
-  return { game, take, outputs };
+  const types = (recorded: Recorded[]) => recorded.map((e) => e.type);
+  const outputs = (recorded: Recorded[]) => recorded.flatMap((e) => (e.type === 'output' ? [e.payload] : []));
+  return { game, take, types, outputs };
 }
 
 describe('Game', () => {
   it('boots with the intro, then enters the start location', () => {
-    const { game, take, outputs } = setup();
+    const { game, take, types, outputs } = setup();
     game.start();
     const events = take();
 
-    expect(outputs(events)[0]).toEqual({ text: 'booting', tone: 'system' });
-    const entered = events.find((e) => e.type === 'locationChanged');
-    expect(entered?.payload).toMatchObject({ from: null, to: { id: 'alley' }, district: { id: 'test' } });
-    expect(outputs(events)).toContainEqual({ text: 'Alley', tone: 'heading' });
+    expect(outputs(events)).toEqual([
+      { text: 'booting', tone: 'system' },
+      { text: 'hello', tone: 'narrative' },
+    ]);
+    expect(types(events).slice(-2)).toEqual(['locationChanged', 'scene']);
+    expect(events.at(-2)?.payload).toMatchObject({ from: null, to: { id: 'alley' }, district: { id: 'test' } });
   });
 
-  it('moves through an exit and announces the change before describing the new place', () => {
-    const { game, take, outputs } = setup();
-    game.start();
-    take();
+  it('lists exits in compass order with their destination names', () => {
+    const { game, take } = setup();
+    game.look();
 
+    expect(take()).toEqual([
+      {
+        type: 'scene',
+        payload: expect.objectContaining({
+          location: expect.objectContaining({ id: 'alley' }),
+          exits: [
+            { direction: 'north', name: 'Roof' },
+            { direction: 'west', name: 'Garage' },
+          ],
+        }),
+      },
+    ]);
+  });
+
+  it('moves through an exit, announcing the arrival and then the new scene', () => {
+    const { game, take, types } = setup();
     game.handle('n');
     const events = take();
 
     expect(game.location.id).toBe('roof');
-    expect(events[0]).toMatchObject({ type: 'locationChanged', payload: { from: { id: 'alley' }, to: { id: 'roof' } } });
-    expect(outputs(events)).toContainEqual({ text: 'Roof', tone: 'heading' });
-    expect(outputs(events)).toContainEqual({ text: 'Exits: {h|south}', tone: 'system' });
+    expect(types(events)).toEqual(['locationChanged', 'scene']);
+    expect(events[0]?.payload).toMatchObject({ from: { id: 'alley' }, to: { id: 'roof' } });
   });
 
   it('refuses to move where there is no exit', () => {
     const { game, take, outputs } = setup();
-    game.handle('go east');
+    game.move('east');
     const events = take();
 
     expect(game.location.id).toBe('alley');
@@ -89,8 +119,41 @@ describe('Game', () => {
     game.handle('go sideways');
     game.handle('dance');
 
-    const tones = outputs(take()).map((o) => o.tone);
-    expect(tones).toEqual(['error', 'error', 'error']);
+    expect(outputs(take()).map((o) => o.tone)).toEqual(['error', 'error', 'error']);
+  });
+
+  describe('examine', () => {
+    it('finds things by id, full name or part of the name', () => {
+      const { game, take } = setup();
+      game.examine('dumpster');
+      game.handle('x rusty dumpster');
+      game.handle('look at the dumpster');
+
+      const examined = take().flatMap((e) => (e.type === 'examined' ? [e.payload.poi.id] : []));
+      expect(examined).toEqual(['dumpster', 'dumpster', 'dumpster']);
+    });
+
+    it('fires the thing’s effect before showing it', () => {
+      const { game, take, types } = setup();
+      game.examine('sign');
+
+      expect(types(take())).toEqual(['fx', 'examined']);
+    });
+
+    it('reports things that are not here', () => {
+      const { game, take, outputs } = setup();
+      game.handle('examine unicorn');
+      game.handle('examine');
+
+      expect(outputs(take()).map((o) => o.tone)).toEqual(['error', 'error']);
+    });
+  });
+
+  it('rescans the scene on a bare look', () => {
+    const { game, take, types } = setup();
+    game.handle('look');
+
+    expect(types(take())).toEqual(['scene']);
   });
 
   it('lists every command in help', () => {
@@ -133,7 +196,7 @@ describe('Game', () => {
 
     it('stays quiet in locations without ambient lines', () => {
       const { game, take } = setup();
-      game.handle('n');
+      game.move('north');
       take();
       game.ambient();
 
