@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#04050a" />
+    <title>Night City Terminal</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <div class="city-glow" aria-hidden="true"></div>
+    <canvas id="weather" aria-hidden="true"></canvas>
+
+    <div id="app">
+      <header class="hud">
+        <div class="hud-bar">
+          <span id="hud-path">NCNET://</span>
+          <span class="hud-right">
+            <span id="hud-weather"></span>
+            <span id="hud-clock"></span>
+          </span>
+        </div>
+        <h1 id="hud-sign" class="sign"></h1>
+      </header>
+
+      <section id="scene" class="scene panel" aria-label="Location">
+        <div class="scan-clip" aria-hidden="true"><div id="scan-beam" class="scan-beam"></div></div>
+        <p id="scene-text" class="scene-text"></p>
+      </section>
+
+      <section class="feed" aria-label="Event feed">
+        <div id="log" class="log"></div>
+      </section>
+
+      <nav id="compass" class="compass" aria-label="Movement"></nav>
+
+      <div id="announcer" class="sr-only" aria-live="polite"></div>
+    </div>
+
+    <div id="flash" aria-hidden="true"></div>
+    <div class="crt" aria-hidden="true"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
