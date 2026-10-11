@@ -1,8 +1,7 @@
 import type { World } from '../engine/types';
 
 /*
- * Keep descriptions to one or two sentences; put detail in points of interest,
- * which the player taps to examine.
+ * Keep descriptions to one or two sentences.
  *
  * Inline markup for any text in here:
  *   {h|text}  highlight (district accent color)
@@ -18,7 +17,7 @@ export const WORLD: World = {
     '[ OK ] optical overlay calibrated',
     '[WARN] {w|unregistered cyberware detected} — ignoring',
   ],
-  welcome: 'Welcome to Night City, choom. Tap a direction to move, or tap anything nearby for a closer look.',
+  welcome: 'Welcome to Night City, choom. Tap a direction to move.',
 
   districts: {
     watson: {
@@ -45,37 +44,8 @@ export const WORLD: World = {
       district: 'watson',
       weather: 'rain',
       description:
-        'Rain hammers the tarps of a hundred stalls crammed beneath a dead monorail line. ' +
-        'Everything here is for sale, and most of it is stolen.',
-      pois: [
-        {
-          id: 'billboard',
-          name: 'Holo-billboard',
-          description:
-            'A cracked billboard stutters between ads above the stalls. Every few seconds the {g|ARASAKA} logo ' +
-            'tears through whatever is playing, like the corp is haunting its own airtime.',
-          fx: 'glitch',
-        },
-        {
-          id: 'chrome_stall',
-          name: 'Chrome stall',
-          description:
-            'Bootleg {h|cyberware} laid out on a wet tarp: optics, finger-blades, a secondhand arm still twitching. ' +
-            'The vendor swears it is all lightly used.',
-        },
-        {
-          id: 'noodle_cart',
-          name: 'Noodle cart',
-          description:
-            'Steam, neon and the smell of something that was probably a vegetable once. The cook nods at you without looking up.',
-        },
-        {
-          id: 'street_kid',
-          name: 'Street kid',
-          description:
-            'A kid with mismatched {h|chrome eyes} watches the crowd, counting pockets. By the time you look back, they are gone.',
-        },
-      ],
+        'Rain hammers a hundred stalls beneath a dead monorail line, under a billboard where the {g|ARASAKA} logo ' +
+        'keeps tearing through the ads.',
       exits: { north: 'hanami_row', east: 'red_lantern', south: 'city_limits' },
       ambient: [
         'A Trauma Team AV screams overhead, searchlights sweeping across the stalls.',
@@ -95,27 +65,6 @@ export const WORLD: World = {
       weather: 'haze',
       theme: { primary: '#ff3b3b', secondary: '#ffb347' },
       description: 'Low ceilings, lower lighting. Paper lanterns bathe everything in red, and nobody here wants to be remembered.',
-      pois: [
-        {
-          id: 'bartender',
-          name: 'Bartender',
-          description:
-            'All scar tissue and a {h|chrome forearm}. They polish the same glass over and over and never take their eyes off the door.',
-        },
-        {
-          id: 'jukebox',
-          name: 'Jukebox',
-          description:
-            'A battered machine loaded with thirty-year-old chrome-rock. Half the buttons are melted, so it plays whatever it wants.',
-        },
-        {
-          id: 'corner_booth',
-          name: 'Corner booth',
-          description:
-            "Somebody's bodyguard sits alone in the corner, optics glowing faintly red. They're pretending not to notice you. " +
-            "They're bad at it.",
-        },
-      ],
       exits: { west: 'kabuki_market' },
       ambient: [
         'The jukebox skips, then lurches into a thirty-year-old chrome-rock anthem.',
@@ -131,25 +80,6 @@ export const WORLD: World = {
       district: 'westbrook',
       weather: 'drizzle',
       description: 'Pink and violet neon drips down a canyon of Japantown towers while holographic koi swim through the drizzle overhead.',
-      pois: [
-        {
-          id: 'holo_koi',
-          name: 'Holo-koi',
-          description: 'Three-meter koi made of light drift between the towers. One dips low, circles you once, and dissolves into {g|pixels}.',
-        },
-        {
-          id: 'tyger_claws',
-          name: 'Tyger Claws',
-          description:
-            'A handful of {w|Tyger Claws} lounge on their bikes outside a pachinko parlor, gang tattoos glowing under their sleeves. ' +
-            'One of them clocks you. Best not to stare.',
-        },
-        {
-          id: 'pachinko',
-          name: 'Pachinko parlor',
-          description: 'A wall of noise and light. Rows of machines, rows of players, and nobody winning.',
-        },
-      ],
       exits: { south: 'kabuki_market' },
       ambient: [
         'A holographic koi drifts down to street level, circles you once, and dissolves into pixels.',
@@ -167,27 +97,9 @@ export const WORLD: World = {
       name: 'City Limits',
       district: 'badlands',
       weather: 'dust',
-      description: 'Cracked asphalt, dead wind turbines and a dry wind full of grit. Behind you, Night City is a smear of light on the horizon.',
-      pois: [
-        {
-          id: 'checkpoint',
-          name: 'Militech checkpoint',
-          description:
-            'Burned out and abandoned, but the warning sign still blinks: {g|RESTRICTED ZONE}. ' +
-            'Whatever they were guarding, they left in a hurry.',
-          fx: 'glitch',
-        },
-        {
-          id: 'turbines',
-          name: 'Wind turbines',
-          description: 'A row of dead turbines, blades frozen mid-turn. Someone has spray-painted a nomad clan mark on the nearest tower.',
-        },
-        {
-          id: 'badlands',
-          name: 'The Badlands',
-          description: "Endless dark desert. Far off, a nomad convoy's headlights crawl along the horizon.",
-        },
-      ],
+      description:
+        'Dead wind turbines and a burned-out Militech checkpoint, its sign still blinking {g|RESTRICTED ZONE}. ' +
+        'Behind you, Night City is a smear of light.',
       exits: { north: 'kabuki_market' },
       ambient: [
         'A dust devil spins across the road and collapses into nothing.',

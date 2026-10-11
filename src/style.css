@@ -25,7 +25,7 @@
   --glow-soft: color-mix(in srgb, var(--primary) 18%, transparent);
   --font-mono: 'Share Tech Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
   --font-display: 'Orbitron', 'Share Tech Mono', sans-serif;
-  /* Angled corners shared by buttons and chips */
+  /* Angled corners for buttons */
   --cut: 9px;
   --notch: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
   color-scheme: dark;
@@ -274,130 +274,13 @@ button {
   );
 }
 
-.scene-text,
-.inspect-text {
+.scene-text {
   max-width: 65ch;
   margin: 0;
   font-size: clamp(15px, 0.45vw + 13px, 17px);
   line-height: 1.6;
   text-shadow: 0 0 8px var(--glow-soft);
   text-wrap: pretty;
-}
-
-.inspect {
-  display: grid;
-  gap: 8px;
-}
-
-.inspect-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.inspect-title {
-  margin: 0;
-  color: var(--secondary);
-  font-family: var(--font-display);
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  text-shadow: 0 0 10px color-mix(in srgb, var(--secondary) 60%, transparent);
-}
-
-.icon-btn {
-  position: relative;
-  flex: none;
-  width: 40px;
-  height: 40px;
-  margin: -8px -8px -8px 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-}
-.icon-btn::before,
-.icon-btn::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 16px;
-  height: 2px;
-  background: var(--muted);
-  transition: background 0.15s;
-}
-.icon-btn::before {
-  transform: translate(-50%, -50%) rotate(45deg);
-}
-.icon-btn::after {
-  transform: translate(-50%, -50%) rotate(-45deg);
-}
-.icon-btn:hover::before,
-.icon-btn:hover::after,
-.icon-btn:focus-visible::before,
-.icon-btn:focus-visible::after {
-  background: var(--secondary);
-}
-
-.label {
-  color: color-mix(in srgb, var(--primary) 65%, var(--muted));
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-}
-
-.poi-block {
-  display: grid;
-  gap: 10px;
-}
-
-.pois {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.poi {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 40px;
-  padding: 8px 14px;
-  border: 1px solid color-mix(in srgb, var(--secondary) 55%, transparent);
-  background: color-mix(in srgb, var(--secondary) 9%, transparent);
-  color: color-mix(in srgb, var(--secondary) 75%, #fff);
-  font-size: 14px;
-  cursor: pointer;
-  clip-path: var(--notch);
-  transition:
-    background 0.15s,
-    color 0.15s,
-    transform 0.1s;
-  animation: chip-in 0.45s calc(var(--i, 0) * 80ms + 0.2s) both;
-}
-.poi::before {
-  content: '';
-  flex: none;
-  width: 6px;
-  height: 6px;
-  background: currentColor;
-  transform: rotate(45deg);
-  box-shadow: 0 0 6px currentColor;
-}
-.poi:hover,
-.poi:focus-visible {
-  background: color-mix(in srgb, var(--secondary) 20%, transparent);
-  color: #fff;
-}
-.poi:active {
-  transform: scale(0.97);
-}
-.poi[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--secondary) 32%, transparent);
-  color: #fff;
-  text-shadow: 0 0 8px var(--secondary);
 }
 
 :focus-visible {
@@ -743,14 +626,6 @@ button {
   }
 }
 
-@keyframes chip-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-    filter: blur(3px);
-  }
-}
-
 @keyframes glitch-a {
   0%,
   86%,
@@ -857,11 +732,6 @@ button {
     gap: 12px;
     padding-block: 14px 16px;
   }
-  .poi {
-    min-height: 36px;
-    padding: 6px 12px;
-    font-size: 13px;
-  }
   .dir {
     min-height: 54px;
   }
@@ -886,18 +756,9 @@ button {
     gap: 10px;
     padding-block: 12px 14px;
   }
-  .scene-text,
-  .inspect-text {
+  .scene-text {
     font-size: 14.5px;
     line-height: 1.5;
-  }
-  .poi-block .label {
-    display: none;
-  }
-  .poi {
-    min-height: 34px;
-    padding: 5px 11px;
-    font-size: 13px;
   }
   .compass {
     gap: 6px;
@@ -928,7 +789,6 @@ button {
   .crt,
   .crt::after,
   .city-glow,
-  .poi,
   .gl[data-text]::before,
   .gl[data-text]::after {
     animation: none;

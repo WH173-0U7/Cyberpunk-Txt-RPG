@@ -21,15 +21,6 @@ export interface District {
   theme: Theme;
 }
 
-/** Something in a location the player can take a closer look at. */
-export interface PointOfInterest {
-  id: string;
-  name: string;
-  description: string;
-  /** Effect that fires when the player examines it. */
-  fx?: FxName;
-}
-
 /** Flavor text that plays while the player is idle, optionally firing an effect. */
 export type AmbientLine = string | { text: string; fx: FxName };
 
@@ -40,9 +31,8 @@ export interface Location {
   weather: Weather;
   /** Overrides the district colors, e.g. for an interior with its own lighting. */
   theme?: Partial<Theme>;
-  /** One or two sentences. Detail belongs in points of interest. */
+  /** One or two sentences. */
   description: string;
-  pois?: PointOfInterest[];
   exits: Partial<Record<Direction, string>>;
   ambient?: AmbientLine[];
 }
@@ -80,7 +70,5 @@ export type GameEvents = {
   locationChanged: { from: Location | null; to: Location; district: District };
   /** The current scene, sent on arrival and whenever the player looks around. */
   scene: Scene;
-  /** The player took a closer look at something. */
-  examined: { poi: PointOfInterest };
   fx: { effect: FxName };
 };

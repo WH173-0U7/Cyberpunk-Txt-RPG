@@ -39,14 +39,7 @@ describe('world data', () => {
     expect([...seen].sort()).toEqual(Object.keys(WORLD.locations).sort());
   });
 
-  it('gives every point of interest a unique id within its location', () => {
-    for (const [, location] of locations) {
-      const ids = (location.pois ?? []).map((poi) => poi.id);
-      expect(new Set(ids).size, location.id).toBe(ids.length);
-    }
-  });
-
-  it('keeps location descriptions short (detail goes in points of interest)', () => {
+  it('keeps location descriptions short enough for the card', () => {
     for (const [, location] of locations) {
       expect(stripMarkup(location.description).length, location.id).toBeLessThanOrEqual(160);
     }
@@ -58,7 +51,6 @@ describe('world data', () => {
       WORLD.welcome,
       ...locations.flatMap(([, l]) => [
         l.description,
-        ...(l.pois ?? []).map((poi) => poi.description),
         ...(l.ambient ?? []).map((a) => (typeof a === 'string' ? a : a.text)),
       ]),
     ];

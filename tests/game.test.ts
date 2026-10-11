@@ -16,10 +16,6 @@ const world: World = {
       district: 'test',
       weather: 'rain',
       description: 'A wet alley.',
-      pois: [
-        { id: 'dumpster', name: 'Rusty dumpster', description: 'It smells.' },
-        { id: 'sign', name: 'Neon sign', description: 'It flickers.', fx: 'glitch' },
-      ],
       exits: { west: 'garage', north: 'roof' },
       ambient: ['drip', { text: 'thunder', fx: 'lightning' }],
     },
@@ -50,7 +46,6 @@ function setup() {
   game.events.on('output', (payload) => events.push({ type: 'output', payload }));
   game.events.on('locationChanged', (payload) => events.push({ type: 'locationChanged', payload }));
   game.events.on('scene', (payload) => events.push({ type: 'scene', payload }));
-  game.events.on('examined', (payload) => events.push({ type: 'examined', payload }));
   game.events.on('fx', (payload) => events.push({ type: 'fx', payload }));
 
   const take = () => events.splice(0);
@@ -111,32 +106,6 @@ describe('Game', () => {
     expect(outputs(events)).toEqual([{ text: "You can't go east from here.", tone: 'error' }]);
   });
 
-  describe('examine', () => {
-    it('shows the point of interest that was tapped', () => {
-      const { game, take } = setup();
-      game.examine('dumpster');
-
-      expect(take()).toEqual([
-        { type: 'examined', payload: { poi: expect.objectContaining({ id: 'dumpster', name: 'Rusty dumpster' }) } },
-      ]);
-    });
-
-    it('fires the thing’s effect before showing it', () => {
-      const { game, take, types } = setup();
-      game.examine('sign');
-
-      expect(types(take())).toEqual(['fx', 'examined']);
-    });
-
-    it('only finds things in the current location', () => {
-      const { game, take, outputs } = setup();
-      game.move('north');
-      take();
-      game.examine('dumpster');
-
-      expect(outputs(take())).toEqual([{ text: "You don't see that here.", tone: 'error' }]);
-    });
-  });
 
   it('rescans the current scene without moving', () => {
     const { game, take, types } = setup();

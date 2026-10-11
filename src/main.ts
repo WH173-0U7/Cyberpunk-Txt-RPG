@@ -41,19 +41,8 @@ function act(action: () => void): void {
 }
 
 const sceneView = new SceneView(
+  { beam: $('#scan-beam'), text: $('#scene-text') },
   {
-    card: $('#scene'),
-    beam: $('#scan-beam'),
-    text: $('#scene-text'),
-    inspect: $('#inspect'),
-    inspectTitle: $('#inspect-title'),
-    inspectText: $('#inspect-text'),
-    inspectClose: $<HTMLButtonElement>('#inspect-close'),
-    poiBlock: $('#poi-block'),
-    pois: $('#pois'),
-  },
-  {
-    onExamine: (id) => act(() => game.examine(id)),
     onGlitchText: (el, text) => glitchText.register(el, text),
     announce: (text) => feed.announce(text),
   },
@@ -65,7 +54,7 @@ const compass = new Compass(compassEl, {
   onLook: () => act(() => game.look()),
 });
 
-// Keyboard players: arrow keys move, Escape closes whatever you're examining.
+// Keyboard players: arrow keys move.
 const ARROW_KEYS = new Map<string, Direction>([
   ['ArrowUp', 'north'],
   ['ArrowRight', 'east'],
@@ -73,10 +62,6 @@ const ARROW_KEYS = new Map<string, Direction>([
   ['ArrowLeft', 'west'],
 ]);
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    sceneView.closeInspect();
-    return;
-  }
   const direction = ARROW_KEYS.get(event.key);
   if (!direction || event.ctrlKey || event.metaKey || event.altKey) return;
   event.preventDefault();
@@ -103,8 +88,6 @@ game.events.on('scene', (scene) => {
   sceneView.show(scene);
   compass.setExits(scene.exits);
 });
-
-game.events.on('examined', ({ poi }) => sceneView.inspect(poi));
 
 game.events.on('fx', ({ effect }) => {
   screen.play(effect);

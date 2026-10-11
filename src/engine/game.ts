@@ -52,17 +52,6 @@ export class Game {
     this.events.emit('scene', this.scene());
   }
 
-  /** Takes a closer look at one of the current location's points of interest. */
-  examine(poiId: string): void {
-    const poi = this.current.pois?.find((p) => p.id === poiId);
-    if (!poi) {
-      this.say("You don't see that here.", 'error');
-      return;
-    }
-    if (poi.fx) this.events.emit('fx', { effect: poi.fx });
-    this.events.emit('examined', { poi });
-  }
-
   /** Plays a random ambient line for the current location, never the same one twice in a row. */
   ambient(random: () => number = Math.random): void {
     const lines = this.current.ambient;
