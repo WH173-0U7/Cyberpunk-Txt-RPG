@@ -24,19 +24,13 @@ const weather = new WeatherFx($<HTMLCanvasElement>('#weather'), reducedMotion);
 const screen = new ScreenFx({ app: $('#app'), flash: $('#flash') }, reducedMotion);
 const glitchText = new GlitchText(reducedMotion);
 const hud = new Hud({ sign: $('#hud-sign'), path: $('#hud-path'), weather: $('#hud-weather'), clock: $('#hud-clock') });
-const prompt = $<HTMLFormElement>('#prompt');
+const compassEl = $('#compass');
 
 let lastActivity = performance.now();
 
 const feed = new Feed(
-  { log: $('#log'), form: prompt, input: $<HTMLInputElement>('#command'), announcer: $('#announcer') },
-  {
-    onCommand: (input) => {
-      lastActivity = performance.now();
-      game.handle(input);
-    },
-    onGlitchText: (el, text) => glitchText.register(el, text),
-  },
+  { log: $('#log'), announcer: $('#announcer') },
+  { onGlitchText: (el, text) => glitchText.register(el, text) },
 );
 
 /** Every tap or key the player makes goes through here. */
@@ -66,12 +60,12 @@ const sceneView = new SceneView(
   reducedMotion,
 );
 
-const compass = new Compass($('#compass'), {
+const compass = new Compass(compassEl, {
   onMove: (direction) => act(() => game.move(direction)),
   onLook: () => act(() => game.look()),
 });
 
-// Arrow keys move when the command line isn't focused.
+// Keyboard players: arrow keys move, Escape closes whatever you're examining.
 const ARROW_KEYS = new Map<string, Direction>([
   ['ArrowUp', 'north'],
   ['ArrowRight', 'east'],
@@ -79,8 +73,12 @@ const ARROW_KEYS = new Map<string, Direction>([
   ['ArrowLeft', 'west'],
 ]);
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    sceneView.closeInspect();
+    return;
+  }
   const direction = ARROW_KEYS.get(event.key);
-  if (!direction || event.target instanceof HTMLInputElement) return;
+  if (!direction || event.ctrlKey || event.metaKey || event.altKey) return;
   event.preventDefault();
   act(() => game.move(direction));
 });
@@ -88,7 +86,7 @@ document.addEventListener('keydown', (event) => {
 // Game → presentation. The engine only emits events; every visual reaction lives here.
 game.events.on('output', ({ text, tone }) => {
   feed.print(text, tone);
-  if (tone === 'error') screen.nudge(prompt);
+  if (tone === 'error') screen.nudge(compassEl);
 });
 
 game.events.on('locationChanged', ({ from, to, district }) => {
@@ -112,8 +110,6 @@ game.events.on('fx', ({ effect }) => {
   screen.play(effect);
   if (effect === 'lightning') hud.flickerSign();
 });
-
-game.events.on('clear', () => feed.clear());
 
 game.start();
 

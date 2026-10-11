@@ -30,9 +30,8 @@ The game is played by tapping:
 - **Points of interest**: tap one in the location card to take a closer look; tap it again or ✕ to go back.
 - **Feed**: idle chatter from the city, warnings, and a marker each time you arrive somewhere.
 
-On a keyboard, the arrow keys move, and typing anywhere opens the command line
-(`look`, `examine billboard`, `go north` or `n`, `exits`, `help`). `fx glitch`, `fx shake`,
-`fx flash` and `fx lightning` preview the screen effects.
+There's no typing. On a keyboard, the arrow keys move and <kbd>Esc</kbd> closes whatever
+you're examining.
 
 ## How it's built
 
@@ -41,9 +40,9 @@ effects layer decides how that should look:
 
 ```
 src/
-  engine/   Game rules and state: parser, commands, events. No DOM, fully unit-tested.
+  engine/   Game rules and state: moving, looking, examining, ambient chatter. No DOM, fully unit-tested.
   data/     World content: districts, locations, descriptions, ambient lines.
-  ui/       Location card, compass pad, event feed + command line, HUD, typewriter, markup parser.
+  ui/       Location card, compass pad, event feed, HUD, typewriter, markup parser.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.
 tests/      Vitest unit tests.
@@ -53,7 +52,7 @@ tests/      Vitest unit tests.
 |---|---|
 | Entering a location | Signal-tear glitch, neon sign flickers on, colors crossfade to the district palette, weather changes, the card rescans, the compass relabels |
 | Examining something | Its details open in the card; some (like the Arasaka billboard) fire an effect |
-| An error (bad command, blocked exit) | The prompt jitters and pulses red |
+| Walking into a dead end (arrow keys) | The compass jitters and pulses red |
 | Ambient line with an effect | e.g. lightning flashes the screen and the sign; a bass drop shakes the bar |
 | `{g\|word}` in any text | The word tears and scrambles every few seconds |
 

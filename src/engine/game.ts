@@ -1,13 +1,10 @@
-import { COMMANDS, type CommandDef } from './commands';
 import { EventBus } from './events';
-import { parseInput } from './parser';
 import {
   DIRECTIONS,
   type AmbientLine,
   type Direction,
   type GameEvents,
   type Location,
-  type PointOfInterest,
   type Scene,
   type Tone,
   type World,
@@ -19,38 +16,22 @@ import {
  */
 export class Game {
   readonly events = new EventBus<GameEvents>();
-  private readonly commands = new Map<string, CommandDef>();
   private current: Location;
   private lastAmbient: AmbientLine | null = null;
 
   constructor(private readonly world: World) {
     this.current = this.locationById(world.start);
-    for (const cmd of COMMANDS) {
-      for (const word of [cmd.name, ...(cmd.aliases ?? [])]) this.commands.set(word, cmd);
-    }
   }
 
   get location(): Location {
     return this.current;
   }
 
-  /** Boots the terminal and drops the player into the starting location. */
+  /** Plays the boot sequence and drops the player into the starting location. */
   start(): void {
     for (const line of this.world.intro) this.say(line, 'system');
     this.say(this.world.welcome);
     this.enter(this.current, null);
-  }
-
-  /** Runs one line of typed player input. */
-  handle(input: string): void {
-    const parsed = parseInput(input);
-    if (!parsed) return;
-    const cmd = this.commands.get(parsed.verb);
-    if (!cmd) {
-      this.say(`Unknown command "${parsed.verb}". Type {h|help} for a list.`, 'error');
-      return;
-    }
-    cmd.run(this, parsed.args);
   }
 
   say(text: string, tone: Tone = 'narrative'): void {
@@ -71,25 +52,15 @@ export class Game {
     this.events.emit('scene', this.scene());
   }
 
-  /** Takes a closer look at a point of interest, matched by id or (part of) its name. */
-  examine(query: string): void {
-    const poi = findPoi(this.current, query);
+  /** Takes a closer look at one of the current location's points of interest. */
+  examine(poiId: string): void {
+    const poi = this.current.pois?.find((p) => p.id === poiId);
     if (!poi) {
-      this.say(`You don't see "${query}" here.`, 'error');
+      this.say("You don't see that here.", 'error');
       return;
     }
     if (poi.fx) this.events.emit('fx', { effect: poi.fx });
     this.events.emit('examined', { poi });
-  }
-
-  describeExits(): void {
-    const exits = this.scene().exits;
-    this.say(
-      exits.length
-        ? `Exits: ${exits.map((exit) => `{h|${exit.direction}} ${exit.name}`).join(' · ')}`
-        : 'There is no obvious way out.',
-      'system',
-    );
   }
 
   /** Plays a random ambient line for the current location, never the same one twice in a row. */
@@ -137,15 +108,4 @@ export class Game {
     if (!location) throw new Error(`Unknown location "${id}"`);
     return location;
   }
-}
-
-function findPoi(location: Location, query: string): PointOfInterest | undefined {
-  const q = query.trim().toLowerCase();
-  const pois = location.pois ?? [];
-  if (!q) return undefined;
-  return (
-    pois.find((poi) => poi.id === q) ??
-    pois.find((poi) => poi.name.toLowerCase() === q) ??
-    pois.find((poi) => poi.name.toLowerCase().includes(q))
-  );
 }

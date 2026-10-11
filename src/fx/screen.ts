@@ -88,7 +88,7 @@ export class ScreenFx {
     );
   }
 
-  /** A small jitter and red pulse on one element, e.g. the prompt after a bad command. */
+  /** A small jitter and red pulse on one element, e.g. the compass after walking into a wall. */
   nudge(el: HTMLElement): void {
     const red = 'rgba(255, 51, 85, 0.18)';
     if (this.reducedMotion) {

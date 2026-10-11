@@ -9,8 +9,6 @@ export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 /** Screen-level effects that game content can trigger. */
 export type FxName = 'glitch' | 'shake' | 'flash' | 'lightning';
 
-export const FX_NAMES: readonly FxName[] = ['glitch', 'shake', 'flash', 'lightning'];
-
 /** Neon colors (6-digit hex) used for glow, highlights and particles. */
 export interface Theme {
   primary: string;
@@ -85,5 +83,4 @@ export type GameEvents = {
   /** The player took a closer look at something. */
   examined: { poi: PointOfInterest };
   fx: { effect: FxName };
-  clear: undefined;
 };

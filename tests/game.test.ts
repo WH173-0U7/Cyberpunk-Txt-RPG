@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { COMMANDS } from '../src/engine/commands';
 import { Game } from '../src/engine/game';
 import type { GameEvents, World } from '../src/engine/types';
 
@@ -53,7 +52,6 @@ function setup() {
   game.events.on('scene', (payload) => events.push({ type: 'scene', payload }));
   game.events.on('examined', (payload) => events.push({ type: 'examined', payload }));
   game.events.on('fx', (payload) => events.push({ type: 'fx', payload }));
-  game.events.on('clear', (payload) => events.push({ type: 'clear', payload }));
 
   const take = () => events.splice(0);
   const types = (recorded: Recorded[]) => recorded.map((e) => e.type);
@@ -95,7 +93,7 @@ describe('Game', () => {
 
   it('moves through an exit, announcing the arrival and then the new scene', () => {
     const { game, take, types } = setup();
-    game.handle('n');
+    game.move('north');
     const events = take();
 
     expect(game.location.id).toBe('roof');
@@ -113,24 +111,14 @@ describe('Game', () => {
     expect(outputs(events)).toEqual([{ text: "You can't go east from here.", tone: 'error' }]);
   });
 
-  it('reports bad directions and unknown commands as errors', () => {
-    const { game, take, outputs } = setup();
-    game.handle('go');
-    game.handle('go sideways');
-    game.handle('dance');
-
-    expect(outputs(take()).map((o) => o.tone)).toEqual(['error', 'error', 'error']);
-  });
-
   describe('examine', () => {
-    it('finds things by id, full name or part of the name', () => {
+    it('shows the point of interest that was tapped', () => {
       const { game, take } = setup();
       game.examine('dumpster');
-      game.handle('x rusty dumpster');
-      game.handle('look at the dumpster');
 
-      const examined = take().flatMap((e) => (e.type === 'examined' ? [e.payload.poi.id] : []));
-      expect(examined).toEqual(['dumpster', 'dumpster', 'dumpster']);
+      expect(take()).toEqual([
+        { type: 'examined', payload: { poi: expect.objectContaining({ id: 'dumpster', name: 'Rusty dumpster' }) } },
+      ]);
     });
 
     it('fires the thing’s effect before showing it', () => {
@@ -140,39 +128,22 @@ describe('Game', () => {
       expect(types(take())).toEqual(['fx', 'examined']);
     });
 
-    it('reports things that are not here', () => {
+    it('only finds things in the current location', () => {
       const { game, take, outputs } = setup();
-      game.handle('examine unicorn');
-      game.handle('examine');
+      game.move('north');
+      take();
+      game.examine('dumpster');
 
-      expect(outputs(take()).map((o) => o.tone)).toEqual(['error', 'error']);
+      expect(outputs(take())).toEqual([{ text: "You don't see that here.", tone: 'error' }]);
     });
   });
 
-  it('rescans the scene on a bare look', () => {
+  it('rescans the current scene without moving', () => {
     const { game, take, types } = setup();
-    game.handle('look');
+    game.look();
 
     expect(types(take())).toEqual(['scene']);
-  });
-
-  it('lists every command in help', () => {
-    const { game, take, outputs } = setup();
-    game.handle('help');
-    const [help] = outputs(take());
-
-    for (const cmd of COMMANDS) expect(help?.text).toContain(cmd.usage ?? cmd.name);
-  });
-
-  it('emits preview effects and clear requests', () => {
-    const { game, take } = setup();
-    game.handle('fx shake');
-    game.handle('cls');
-
-    expect(take()).toEqual([
-      { type: 'fx', payload: { effect: 'shake' } },
-      { type: 'clear', payload: undefined },
-    ]);
+    expect(game.location.id).toBe('alley');
   });
 
   describe('ambient', () => {

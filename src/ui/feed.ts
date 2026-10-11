@@ -2,7 +2,7 @@ import type { Tone } from '../engine/types';
 import { stripMarkup } from './markup';
 import { typewrite, type Typing } from './typewriter';
 
-type LineTone = Tone | 'echo' | 'divider';
+type LineTone = Tone | 'divider';
 
 interface QueuedLine {
   text: string;
@@ -17,7 +17,6 @@ const TYPE_SPEED: Record<LineTone, number> = {
   system: 4,
   ambient: 18,
   error: 5,
-  echo: 0,
   divider: 0,
 };
 
@@ -26,19 +25,16 @@ const MAX_ANNOUNCEMENTS = 20;
 
 export interface FeedElements {
   log: HTMLElement;
-  form: HTMLFormElement;
-  input: HTMLInputElement;
   /** Visually hidden live region so screen readers get each message once, not letter by letter. */
   announcer: HTMLElement;
 }
 
 export interface FeedHandlers {
-  onCommand(input: string): void;
   /** Called when a glitch-styled span finishes typing, so effects can animate it. */
   onGlitchText?(el: HTMLElement, text: string): void;
 }
 
-/** The scrolling event feed and the optional command line under it. */
+/** The scrolling event feed: boot lines, city chatter, warnings and arrival markers. */
 export class Feed {
   private queue: QueuedLine[] = [];
   private draining = false;
@@ -49,18 +45,11 @@ export class Feed {
   /** Whether the log should follow new output (false while the player scrolls back). */
   private pinned = true;
   private autoScrollTop = 0;
-  private history: string[] = [];
-  private historyIndex = 0;
 
   constructor(
     private readonly els: FeedElements,
     private readonly handlers: FeedHandlers,
   ) {
-    els.form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      this.submit();
-    });
-    els.input.addEventListener('keydown', (event) => this.onKeyDown(event));
     els.log.addEventListener('click', () => this.skipTyping());
     els.log.addEventListener('scroll', () => {
       const { scrollTop, scrollHeight, clientHeight } = els.log;
@@ -69,14 +58,8 @@ export class Feed {
       if (scrollHeight - scrollTop - clientHeight < 40) this.pinned = true;
       else if (scrollTop < this.autoScrollTop - 4) this.pinned = false;
     });
-    // Keep the newest line in view when the window resizes or a phone keyboard opens.
+    // Keep the newest line in view when the window resizes.
     new ResizeObserver(() => this.follow()).observe(els.log);
-
-    // On a keyboard, start typing anywhere to use the command line.
-    document.addEventListener('keydown', (event) => {
-      if (event.target === els.input || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (event.key.length === 1 && event.key !== ' ') els.input.focus();
-    });
   }
 
   /** True when nothing is typing or waiting to type. */
@@ -92,12 +75,6 @@ export class Feed {
   /** A labeled rule across the feed, e.g. marking arrival somewhere new. */
   divider(label: string): void {
     this.enqueue(label, 'divider', false);
-  }
-
-  clear(): void {
-    this.skipTyping();
-    this.queue = [];
-    this.els.log.replaceChildren();
   }
 
   /** Instantly finishes everything already queued. New output still types normally. */
@@ -137,31 +114,6 @@ export class Feed {
       this.current = null;
     }
     this.draining = false;
-  }
-
-  private submit(): void {
-    const value = this.els.input.value;
-    this.els.input.value = '';
-    this.skipTyping();
-    if (!value.trim()) return;
-
-    if (this.history.at(-1) !== value) this.history.push(value);
-    this.historyIndex = this.history.length;
-    this.pinned = true;
-    this.enqueue(value, 'echo', false);
-    this.handlers.onCommand(value);
-  }
-
-  private onKeyDown(event: KeyboardEvent): void {
-    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-      event.preventDefault();
-      const delta = event.key === 'ArrowUp' ? -1 : 1;
-      this.historyIndex = Math.max(0, Math.min(this.history.length, this.historyIndex + delta));
-      this.els.input.value = this.history[this.historyIndex] ?? '';
-    } else if (event.key === 'Escape') {
-      this.skipTyping();
-      this.els.input.blur();
-    }
   }
 
   private follow(): void {
