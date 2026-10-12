@@ -53,7 +53,7 @@ The inventory overlay is in place, with nothing in it yet:
   `Game.inventory` is what the player carries; it's saved as `items`. Giving and taking items
   goes in `Game`.
 - `src/data/items.ts` names each kind and says what goes in it; the overlay lists them in
-  that order. Real items take their names and details from the wiki and the TCG (above).
+  that order, but only the kinds the player carries (no empty placeholders). Real items take their names and details from the wiki and the TCG (above).
 
 ## Checks before a PR
 

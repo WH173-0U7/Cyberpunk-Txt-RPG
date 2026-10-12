@@ -72,10 +72,11 @@ own.
   door, and the weather stays outside. There's nothing to do in there yet; **Leave** steps
   back out, and walking off somewhere goes out the door first. Being inside is saved.
 - **Inventory**: the **Inventory** button in the map's header (or **I**) covers the map with
-  what you carry: your eddies and NCART pass, then a section for each kind of item in Night
-  City (weapons, attachments & mods, cyberware, quickhacks, clothing, consumables, shards,
-  junk, components). They're all empty for now; items come with shops and loot. **×** or
-  **Esc** closes it. The panel under the map keeps working while it's open.
+  what you carry: your eddies and NCART pass, then your items, sorted by the kinds of item
+  in Night City (weapons, attachments & mods, cyberware, quickhacks, clothing, consumables,
+  shards, junk, components). A kind only shows once you carry something of it, so for now
+  it's empty; items come with shops and loot. **×** or **Esc** closes it. The panel under
+  the map keeps working while it's open.
 - **Getting around**: tap a place, an NCART station, a building, or (zoomed in) any spot on
   a street. The panel shows two ways there:
   - **Walk**: free, along the streets, to anywhere on the map. Tapping the same thing again
