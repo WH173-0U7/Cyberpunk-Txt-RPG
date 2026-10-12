@@ -66,7 +66,11 @@ own.
 - **Zoom**: drag to pan; pinch, scroll or use the **+ / −** buttons to zoom; the target button
   flies back to where you are. Zoomed out, tapping a block flies in to it. Close in, tapping a
   building picks it out and the panel shows its name, category, what it is, its block
-  address and size. Buildings don't do anything yet; they're there for what comes next.
+  address and size.
+- **Going inside**: walk to a building and **Go inside** (anything with floors; parks, plazas
+  and parking lots are open ground). The map outlines the building, your marker waits at its
+  door, and the weather stays outside. There's nothing to do in there yet; **Leave** steps
+  back out, and walking off somewhere goes out the door first. Being inside is saved.
 - **Getting around**: tap a place, an NCART station, a building, or (zoomed in) any spot on
   a street. The panel shows two ways there:
   - **Walk**: free, along the streets, to anywhere on the map. Tapping the same thing again

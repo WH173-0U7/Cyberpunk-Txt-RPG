@@ -9,6 +9,9 @@ import type { GameEvents, Location, Whereabouts, World } from '../src/engine/typ
 //   alley ── market ── bar        (y = 20)
 //   [S1]       |       [S2]       (y = 50, NCART stations on Line 1)
 //             roof        dock    (y = 80; the dock has no routes, you find it on foot)
+//
+// Off the top street between the alley and the market, a gun shop you can go into; off the
+// middle street, a park you can't.
 function place(id: string, x: number, y: number, links: string[], extra: Partial<Location> = {}): Location {
   return {
     id,
@@ -32,7 +35,10 @@ const world: World = {
   welcome: 'hello',
   welcomeBack: 'hello again',
   layout: { avenues: [20, 50, 80], streets: [20, 50, 80], coast: null },
-  buildings: [],
+  buildings: [
+    { id: 'b-shop', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Gun shop', category: 'firearms', business: 'gun-shop', name: 'Test Guns', floors: 3, x: 30, y: 21, w: 4, h: 4 },
+    { id: 'b-park', block: 'B2', district: 'test', kind: 'park', kindLabel: 'Park', category: 'public', business: null, name: 'Test Park', floors: 0, x: 30, y: 51, w: 6, h: 6 },
+  ],
   districts: {
     test: {
       id: 'test',
@@ -81,6 +87,8 @@ const at = (id: string): Whereabouts => {
   const l = world.locations[id];
   return { ...streetSpot(l ?? { x: 0, y: 0 }), place: id };
 };
+/** Standing at a building's door, on the street in front of it. */
+const outside = (id: string, x: number, y: number): Whereabouts => ({ ...streetSpot({ x, y }), building: id });
 const station = (id: string): Whereabouts => {
   const s = world.transit.stations[id];
   return { ...streetSpot(s ?? { x: 0, y: 0 }), station: id };
@@ -91,7 +99,7 @@ type Recorded = { [K in keyof GameEvents]: { type: K; payload: GameEvents[K] } }
 function setup(rules: Partial<TravelRules> = {}, progress?: Progress) {
   const game = new Game(world, { ...RULES, ...rules }, progress);
   const events: Recorded[] = [];
-  for (const type of ['output', 'arrived', 'tripChanged', 'mapChanged', 'walletChanged', 'fx'] as const) {
+  for (const type of ['output', 'arrived', 'tripChanged', 'interiorChanged', 'mapChanged', 'walletChanged', 'fx'] as const) {
     game.events.on(type, (payload) => events.push({ type, payload } as Recorded));
   }
   const take = () => events.splice(0);
@@ -326,6 +334,82 @@ describe('Game', () => {
     });
   });
 
+  describe('buildings', () => {
+    /** Walks to the gun shop's door and waits there. */
+    function atTheShop() {
+      const { game, take } = setup();
+      game.start(T0);
+      go(game, outside('b-shop', 32, 20), 'foot', T0);
+      game.tick(T0 + 60 * MINUTE);
+      take();
+      return { game, take };
+    }
+
+    it('goes in from the door, and back out', () => {
+      const { game, take } = atTheShop();
+      expect(game.door?.id).toBe('b-shop');
+
+      expect(game.enter()).toBe(true);
+      expect(game.interior?.id).toBe('b-shop');
+      expect(game.door).toBeNull();
+      expect(game.enter()).toBe(false);
+      expect(take()).toEqual([{ type: 'interiorChanged', payload: expect.objectContaining({ id: 'b-shop' }) }]);
+
+      expect(game.leave()).toBe(true);
+      expect(game.interior).toBeNull();
+      expect(game.whereabouts.building).toBe('b-shop');
+      expect(game.leave()).toBe(false);
+      expect(take()).toEqual([{ type: 'interiorChanged', payload: null }]);
+    });
+
+    it('only goes in from right outside, and never into open ground', () => {
+      const { game } = setup();
+      game.start(T0);
+      expect(game.door).toBeNull();
+      expect(game.enter()).toBe(false);
+
+      go(game, outside('b-park', 32, 50), 'foot', T0);
+      expect(game.enter()).toBe(false);
+      game.tick(T0 + 60 * MINUTE);
+      expect(game.whereabouts.building).toBe('b-park');
+      expect(game.door).toBeNull();
+      expect(game.enter()).toBe(false);
+    });
+
+    it('walks out the door on heading off somewhere', () => {
+      const { game, take } = atTheShop();
+      game.enter();
+      take();
+      const now = T0 + 60 * MINUTE;
+      go(game, at('market'), 'foot', now);
+
+      expect(game.interior).toBeNull();
+      expect(take().map((e) => e.type)).toEqual(['interiorChanged', 'tripChanged']);
+      expect(game.currentTrip?.from).toMatchObject({ x: 32, y: 20 });
+    });
+
+    it('picks up inside the building it was saved in', () => {
+      const progress = (inside: string | null, where: Whereabouts): Progress => ({
+        where,
+        visited: ['alley'],
+        discovered: ['alley', 'market'],
+        explored: [],
+        eddies: 5,
+        passUntil: 0,
+        trip: null,
+        inside,
+      });
+      const { game, take } = setup({}, progress('b-shop', outside('b-shop', 32, 20)));
+      expect(game.interior?.id).toBe('b-shop');
+      game.start(T0);
+      expect(take().filter((e) => e.type === 'interiorChanged')).toHaveLength(1);
+
+      // Never inside a building somewhere else, or inside open ground.
+      expect(setup({}, progress('b-shop', at('alley'))).game.interior).toBeNull();
+      expect(setup({}, progress('b-park', outside('b-park', 32, 50))).game.interior).toBeNull();
+    });
+  });
+
   it('lands a trip that finished while the game was closed', () => {
     const first = setup();
     first.game.start(T0);
@@ -339,6 +423,7 @@ describe('Game', () => {
       eddies: wallet.eddies,
       passUntil: wallet.passUntil,
       trip: currentTrip,
+      inside: null,
     };
 
     const { game, take, outputs } = setup({}, progress);

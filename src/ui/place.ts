@@ -2,7 +2,7 @@ import { typewrite, type Typing } from './typewriter';
 
 const TYPE_MS = 9;
 
-export type ActionId = 'walk' | 'ride' | 'pass' | 'stop';
+export type ActionId = 'walk' | 'ride' | 'pass' | 'stop' | 'enter' | 'leave';
 
 export interface PanelAction {
   id: ActionId;
@@ -12,9 +12,9 @@ export interface PanelAction {
   disabled?: boolean;
 }
 
-/** One state of the panel: where you are, something you've picked, or a trip underway. */
+/** One state of the panel: where you are, inside a building, something you've picked, or a trip underway. */
 export interface PanelView {
-  mode: 'here' | 'target' | 'trip';
+  mode: 'here' | 'inside' | 'target' | 'trip';
   kicker: string;
   title?: string;
   meta?: string;
@@ -66,7 +66,7 @@ export class PlacePanel {
 
   show(view: PanelView): void {
     const { els } = this;
-    els.root.classList.remove('is-here', 'is-target', 'is-trip');
+    els.root.classList.remove('is-here', 'is-inside', 'is-target', 'is-trip');
     els.root.classList.add(`is-${view.mode}`);
     els.kicker.textContent = view.kicker;
     setText(els.title, view.title);

@@ -31,7 +31,7 @@ function played(steps: number): { game: Game; now: number } {
 }
 
 function saveOf(game: Game, now: number): SaveData {
-  return createSave(world.seed, game.mapState, game.wallet, game.currentTrip, GENERATOR_VERSION, now);
+  return createSave(world.seed, game.mapState, game.wallet, game.currentTrip, game.interior?.id ?? null, GENERATOR_VERSION, now);
 }
 
 const sorted = (set: ReadonlySet<string>) => [...set].sort();
@@ -42,6 +42,23 @@ describe('saving', () => {
     const save = saveOf(game, now);
     expect(readSave(JSON.parse(JSON.stringify(save)))).toEqual(save);
     expect(save).toMatchObject({ version: 2, generator: GENERATOR_VERSION, seed: world.seed, eddies: TRAVEL.startingEddies, trip: null });
+  });
+
+  it('reads a save from before buildings could be entered as standing outside', () => {
+    const { game, now } = played(2);
+    const { inside: _, ...old } = saveOf(game, now);
+    expect(readSave(JSON.parse(JSON.stringify(old)))?.inside).toBeNull();
+  });
+
+  it('keeps the player inside only the building they stand at, and never mid-trip', () => {
+    const { game, now } = played(2);
+    const building = world.buildings.find((b) => b.floors > 0);
+    if (!building) throw new Error('no building');
+    const at = { ...game.whereabouts, place: null, station: null, building: building.id };
+    const save = { ...saveOf(game, now), where: at, inside: building.id };
+    expect(resume(world, save)?.inside).toBe(building.id);
+    expect(resume(world, { ...save, inside: 'b-nowhere' })?.inside).toBeNull();
+    expect(resume(world, { ...save, where: { ...at, building: null } })?.inside).toBeNull();
   });
 
   it('ignores anything that is not a save it understands', () => {

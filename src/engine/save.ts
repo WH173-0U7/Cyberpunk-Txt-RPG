@@ -11,6 +11,8 @@ export interface Progress {
   passUntil: number;
   /** A trip still underway. It keeps going on the clock while the game is closed. */
   trip: Trip | null;
+  /** The building the player is inside (always the one at `where`), if any. */
+  inside: string | null;
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -24,7 +26,15 @@ export interface SaveData extends Progress {
   savedAt: number;
 }
 
-export function createSave(seed: string, state: MapState, wallet: Wallet, trip: Trip | null, generator: number, now = Date.now()): SaveData {
+export function createSave(
+  seed: string,
+  state: MapState,
+  wallet: Wallet,
+  trip: Trip | null,
+  inside: string | null,
+  generator: number,
+  now = Date.now(),
+): SaveData {
   return {
     version: 2,
     generator,
@@ -36,6 +46,7 @@ export function createSave(seed: string, state: MapState, wallet: Wallet, trip: 
     eddies: wallet.eddies,
     passUntil: wallet.passUntil,
     trip,
+    inside,
     savedAt: now,
   };
 }
@@ -66,6 +77,8 @@ export function readSave(raw: unknown): SaveData | null {
     eddies: save.eddies,
     passUntil: save.passUntil,
     trip: save.trip,
+    // Saves from before buildings could be entered don't have it: the player was outside.
+    inside: typeof save.inside === 'string' ? save.inside : null,
     savedAt: save.savedAt,
   };
 }
@@ -80,7 +93,9 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
   const { where, visited, discovered, explored, eddies, passUntil, trip } = save;
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip };
+  // Only ever inside the building the player stands at, and never mid-trip.
+  const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside };
 }
 
 function isNumber(value: unknown): value is number {

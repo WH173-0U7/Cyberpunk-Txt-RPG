@@ -34,6 +34,16 @@ CD PROJEKT RED). Use it alongside the wiki:
   Card text and card numbers are theirs: keep the facts, write our own words, and set our
   own numbers.
 
+## Inside buildings
+
+Going inside a building is in place, with nothing to do in there yet. What's added later
+(counters, rooms, people, jobs) hangs off the same pieces:
+
+- `Game.interior` is the building the player is in (`enter()`, `leave()`, the
+  `interiorChanged` event); it's saved as `inside`. New rules for being inside go in `Game`.
+- `insideView` in `src/main.ts` is the panel inside. It has the building's `category` and
+  `business` to decide what to show.
+
 ## Checks before a PR
 
 ```bash
