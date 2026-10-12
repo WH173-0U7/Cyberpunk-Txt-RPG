@@ -144,17 +144,19 @@
             <ul id="people-list" class="people-list"></ul>
             <div id="people-known" class="person-gifts people-known" hidden></div>
             <div id="person" class="person-card" hidden>
-              <button id="person-back" class="person-back" type="button">‹ Everyone here</button>
-              <p id="person-kicker" class="person-kicker"></p>
-              <h3 id="person-name" class="person-name"></h3>
-              <p id="person-facts" class="person-facts"></p>
-              <button id="person-web-toggle" class="person-web-toggle" type="button" aria-controls="person-web" aria-expanded="false"></button>
+              <div class="person-head">
+                <button id="person-back" class="person-back" type="button" aria-label="Everyone here" title="Everyone here">‹</button>
+                <div class="person-head-row">
+                  <h3 id="person-name" class="person-name"></h3>
+                  <span id="person-stance" class="stance"></span>
+                </div>
+                <p id="person-kicker" class="person-kicker"></p>
+                <button id="person-facts" class="person-facts" type="button" aria-expanded="false" title="What you know"></button>
+              </div>
               <div id="person-web" class="person-web-box" hidden></div>
-              <div id="person-actions" class="person-actions"></div>
-              <div id="person-questions" class="person-gifts"></div>
-              <div id="person-ask" class="person-gifts"></div>
-              <div id="person-gifts" class="person-gifts"></div>
-              <ol id="person-log" class="person-log" aria-label="What was said"></ol>
+              <ol id="person-log" class="person-log" aria-label="What was said" aria-live="polite"></ol>
+              <div id="person-picker" class="person-picker" hidden></div>
+              <div id="person-commands" class="person-commands" role="toolbar" aria-label="What to do"></div>
             </div>
           </div>
         </div>

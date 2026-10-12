@@ -31,7 +31,7 @@ import { Inventory } from './ui/inventory';
 import { MapOverlay } from './ui/overlay';
 import { stripMarkup } from './ui/markup';
 import { CityMap, type Target } from './ui/map';
-import { People, STANCE_LABEL, type PersonAction } from './ui/people';
+import { People, STANCE_LABEL, type PersonAction, type Picker } from './ui/people';
 import { PlacePanel, type ActionId, type PanelAction, type PanelView } from './ui/place';
 import { saveSlot } from './ui/save-slot';
 import { Settings } from './ui/settings';
@@ -187,15 +187,13 @@ const people = new People(
     empty: $('#people-empty'),
     card: $('#person'),
     cardName: $('#person-name'),
+    cardStance: $('#person-stance'),
     cardKicker: $('#person-kicker'),
-    cardFacts: $('#person-facts'),
-    cardWebToggle: $<HTMLButtonElement>('#person-web-toggle'),
+    cardFacts: $<HTMLButtonElement>('#person-facts'),
     cardWeb: $('#person-web'),
-    cardActions: $('#person-actions'),
-    cardQuestions: $('#person-questions'),
-    cardGifts: $('#person-gifts'),
-    cardAsk: $('#person-ask'),
     cardLog: $('#person-log'),
+    cardPicker: $('#person-picker'),
+    cardCommands: $('#person-commands'),
     known: $('#people-known'),
     back: $<HTMLButtonElement>('#person-back'),
   },
@@ -208,6 +206,8 @@ const people = new People(
     onSelect: (id) => {
       personShown = id;
       webOpen = false;
+      factsOpen = false;
+      picker = null;
       showPeople();
     },
     onQuestion: (id, fact) => {
@@ -218,9 +218,22 @@ const people = new People(
       webOpen = !webOpen;
       showPeople();
     },
-    onAction: (action, id) => actOn(action, id),
+    onToggleFacts: () => {
+      factsOpen = !factsOpen;
+      showPeople();
+    },
+    onPicker: (which) => {
+      picker = picker === which ? null : which;
+      showPeople();
+    },
+    onAction: (action, id) => {
+      // Insulting or robbing folds the row away again.
+      if (action !== 'talk') picker = null;
+      actOn(action, id);
+    },
     onGift: (id, itemId) => {
       lastActivity = performance.now();
+      picker = null;
       game.gift(id, itemId, Date.now());
     },
     onAsk: (id, aboutId) => {
@@ -232,8 +245,10 @@ const people = new People(
 );
 /** The person whose card is open, if any: someone here, or anyone the player knows of. */
 let personShown: string | null = null;
-/** Whether their web is unfolded. */
+/** Whether their web, and what's known of them, are unfolded; and which command's choices are. */
 let webOpen = false;
+let factsOpen = false;
+let picker: Picker = null;
 
 const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill'), value: $('#energy-value'), detail: $('#energy-detail') });
 
@@ -487,7 +502,7 @@ function insideView(building: Building): PanelView {
     title: building.name,
     meta: [menu ? qualityLabel(menu) : categoryOf(building).label, building.kindLabel, heightOf(building)].filter(Boolean).join(' · '),
     description,
-    actions: [peopleAction(here), ...(menu ? [barred ? { id: 'menu' as const, label: 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []), { id: 'leave', label: 'Leave', sub: 'Back to the street' }],
+    actions: [peopleAction(here), ...(menu ? [barred ? { id: 'menu' as const, label: 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []), { id: 'leave', label: 'Leave', quiet: true }],
     closable: false,
     announce: `Inside ${building.name}. ${description} ${here ? `${here} people here.` : ''}`,
   };
@@ -642,7 +657,8 @@ function showPeople(): void {
     title: at?.name ?? 'Here',
     kicker: `${district} · ${at && 'floors' in at ? at.kindLabel : (at?.kindLabel ?? 'The street')}`,
     count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
-    reputation: [`Charisma Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP`, ...reputation],
+    // The standing lines belong to the list; a card is about one person.
+    reputation: shown ? [] : [`Charisma Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP`, ...reputation],
     rows: here.map(({ person, doing, stance }) => {
       const about = game.describe(person.id);
       return {
@@ -662,23 +678,21 @@ function showPeople(): void {
         ? {
             id: shown.id,
             name: described.name,
-            kicker: [STANCE_LABEL[standing.stance], gangOf(shown.gang) ? `${gangOf(shown.gang)} colors` : undefined, present ? present.doing : 'Not here'].filter(Boolean).join(' · '),
-            facts: described.lines.length ? described.lines.join(' · ') : described.named ? 'That\'s all you know.' : 'You don\'t know anything about them yet. Talk, watch, ask.',
             stance: standing.stance,
+            stanceLabel: STANCE_LABEL[standing.stance],
+            kicker: [gangOf(shown.gang) ? `${gangOf(shown.gang)} colors` : undefined, present ? present.doing : 'Not here'].filter(Boolean).join(' · '),
+            facts: described.lines.length ? described.lines.join(' · ') : described.named ? 'That\'s all you know.' : 'Nothing known yet. Talk, watch, ask.',
+            factsOpen,
             here: Boolean(present),
             web: standing.web.map((link) => ({ id: link.person.id, name: nameOf(link.person.id, link.person.name), label: link.kind ? kinWord(shown, link.kind, link.person) : '?', how: how[link.how] })),
             webOpen,
             webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Ask about people you've met, watch who they keep company with, or get them talking.`,
-            actions: [
-              { id: 'talk', label: 'Talk', sub: standing.stance === 'hostile' ? "Won't talk" : `Rapport ${standing.standing.rapport}` },
-              { id: 'insult', label: 'Insult', sub: 'Makes enemies', danger: true },
-              { id: 'rob', label: 'Rob', sub: 'Take what they carry', danger: true },
-            ],
+            picker,
             questions: (Object.entries(LINES.questions) as Array<[Exclude<Fact, 'nature' | 'drinks'>, string]>)
               .filter(([fact]) => !standing.knowledge.facts.includes(fact))
               .map(([fact, label]) => ({ fact, label })),
-            gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
             askAbout: known.filter((p) => p.id !== shown.id && named(p)).map((p) => ({ id: p.id, name: p.name })),
+            gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
             log: game.conversation(shown.id).map((line) => ({ who: line.who, text: line.text })),
           }
         : null,
@@ -748,6 +762,8 @@ function queueSave(): void {
 // The engine only emits events; every visual reaction lives here.
 function wire(g: Game): void {
   g.events.on('output', ({ text, tone }) => {
+    // What someone says is on their card; the feed only repeats it once that's closed.
+    if (tone === 'talk' && people.overlay.isOpen) return;
     transmissions.push(text, tone);
     if (tone === 'error') screen.nudge(mapStage);
   });

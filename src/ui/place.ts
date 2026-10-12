@@ -10,6 +10,8 @@ export interface PanelAction {
   /** A second, smaller line: how long, how much. */
   sub?: string;
   disabled?: boolean;
+  /** A lesser choice, drawn small and plain. */
+  quiet?: boolean;
 }
 
 /** One state of the panel: where you are, inside a building, something you've picked, or a trip underway. */
@@ -102,6 +104,7 @@ export class PlacePanel {
       if (label) label.textContent = action.label;
       if (sub) sub.textContent = action.sub ?? '';
       button.disabled = Boolean(action.disabled);
+      button.classList.toggle('is-quiet', Boolean(action.quiet));
       button.setAttribute('aria-label', [action.label, action.sub].filter(Boolean).join(', '));
     }
     els.actions.hidden = view.actions.length === 0;

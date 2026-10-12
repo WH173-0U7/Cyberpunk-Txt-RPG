@@ -28,29 +28,33 @@ export interface LogLineView {
   text: string;
 }
 
+/** Which set of choices is unfolded under the conversation, if any. */
+export type Picker = 'ask' | 'give' | 'more' | null;
+
 export interface PersonCardView {
   id: string;
   /** Their name, or how they look until introduced. */
   name: string;
-  /** Stance, gang, what they're doing (or that they're not here). */
-  kicker: string;
-  /** What the player knows of them, or a line saying nothing yet. */
-  facts: string;
   stance: Stance;
+  stanceLabel: string;
+  /** Gang colors, what they're doing (or that they're not here). */
+  kicker: string;
+  /** What the player knows of them, or a line saying nothing yet; one line unless unfolded. */
+  facts: string;
+  factsOpen: boolean;
   /** Whether they're here to be dealt with. */
   here: boolean;
   /** Who the player knows them to be connected to. */
   web: WebNodeView[];
   webHint: string;
-  /** Whether the web is unfolded. */
   webOpen: boolean;
-  actions: Array<{ id: PersonAction; label: string; sub?: string; danger?: boolean }>;
+  picker: Picker;
   /** Things to ask them about themselves. */
   questions: Array<{ fact: string; label: string }>;
-  /** What the player could give them. */
-  gifts: Array<{ id: string; name: string; count: number }>;
   /** People the player knows of, to ask this person about. */
   askAbout: Array<{ id: string; name: string }>;
+  /** What the player could give them. */
+  gifts: Array<{ id: string; name: string; count: number }>;
   /** What has passed between them, oldest first. */
   log: LogLineView[];
 }
@@ -59,7 +63,7 @@ export interface PeopleView {
   title: string;
   kicker: string;
   count: string;
-  /** "Valentinos −28"… */
+  /** "Charisma Lv 2 · 7/91 XP", "Valentinos −28"… */
   reputation: string[];
   rows: PersonRowView[];
   /** Shown instead of the list when nobody is here. */
@@ -79,15 +83,13 @@ export interface PeopleElements extends OverlayElements {
   known: HTMLElement;
   card: HTMLElement;
   cardName: HTMLElement;
+  cardStance: HTMLElement;
   cardKicker: HTMLElement;
-  cardFacts: HTMLElement;
-  cardWebToggle: HTMLButtonElement;
+  cardFacts: HTMLButtonElement;
   cardWeb: HTMLElement;
-  cardActions: HTMLElement;
-  cardQuestions: HTMLElement;
-  cardGifts: HTMLElement;
-  cardAsk: HTMLElement;
   cardLog: HTMLElement;
+  cardPicker: HTMLElement;
+  cardCommands: HTMLElement;
   back: HTMLButtonElement;
 }
 
@@ -99,6 +101,8 @@ export interface PeopleHandlers {
   onAsk(id: string, aboutId: string): void;
   onQuestion(id: string, fact: string): void;
   onToggleWeb(): void;
+  onToggleFacts(): void;
+  onPicker(picker: Picker): void;
 }
 
 export const STANCE_LABEL: Record<Stance, string> = {
@@ -112,7 +116,9 @@ export const STANCE_LABEL: Record<Stance, string> = {
 
 /**
  * Who's here, over the map: a list of everyone at the place the player is, and one person's
- * card with what can be done with them. The game decides who is here and what comes of it.
+ * card: who they are as far as the player knows, the conversation so far, and one row of
+ * things to do, each unfolding its choices only when tapped. The game decides who is here
+ * and what comes of it.
  */
 export class People {
   readonly overlay: MapOverlay;
@@ -129,30 +135,26 @@ export class People {
       if (row?.dataset.id) handlers.onSelect(row.dataset.id);
     });
     els.back.addEventListener('click', () => handlers.onSelect(null));
-    els.cardActions.addEventListener('click', (e) => {
-      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('.person-action') : null;
-      if (button?.dataset.id && button.dataset.action && !button.disabled) handlers.onAction(button.dataset.action as PersonAction, button.dataset.id);
+    els.cardFacts.addEventListener('click', () => handlers.onToggleFacts());
+    // Everything on the card goes through one listener: commands, the choices they unfold, names in the web.
+    els.card.addEventListener('click', (e) => {
+      const target = e.target instanceof Element ? e.target : null;
+      const button = target?.closest<HTMLElement>('[data-cmd], [data-fact], [data-about], [data-item], [data-action], [data-open]');
+      if (!button) return;
+      const { cmd, fact, about, item, action, open, id } = button.dataset;
+      if (cmd === 'talk' && id) handlers.onAction('talk', id);
+      else if (cmd === 'web') handlers.onToggleWeb();
+      else if (cmd === 'ask' || cmd === 'give' || cmd === 'more') handlers.onPicker(cmd);
+      else if (fact && id) handlers.onQuestion(id, fact);
+      else if (about && id) handlers.onAsk(id, about);
+      else if (item && id) handlers.onGift(id, item);
+      else if (action && id && !(button as HTMLButtonElement).disabled) handlers.onAction(action as PersonAction, id);
+      else if (open) handlers.onSelect(open);
     });
-    els.cardGifts.addEventListener('click', (e) => {
-      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('.person-gift') : null;
-      if (button?.dataset.id && button.dataset.item) handlers.onGift(button.dataset.id, button.dataset.item);
-    });
-    els.cardAsk.addEventListener('click', (e) => {
-      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('.person-ask') : null;
-      if (button?.dataset.id && button.dataset.about) handlers.onAsk(button.dataset.id, button.dataset.about);
-    });
-    els.cardQuestions.addEventListener('click', (e) => {
-      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('.person-question') : null;
-      if (button?.dataset.id && button.dataset.fact) handlers.onQuestion(button.dataset.id, button.dataset.fact);
-    });
-    els.cardWebToggle.addEventListener('click', () => handlers.onToggleWeb());
-    // Anyone in the web, or among the people known of, opens on a tap.
-    const open = (e: Event) => {
+    els.known.addEventListener('click', (e) => {
       const button = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-open]') : null;
       if (button?.dataset.open) handlers.onSelect(button.dataset.open);
-    };
-    els.cardWeb.addEventListener('click', open);
-    els.known.addEventListener('click', open);
+    });
   }
 
   render(view: PeopleView): void {
@@ -162,10 +164,13 @@ export class People {
     els.count.textContent = view.count;
     els.reputation.replaceChildren(...view.reputation.map((line) => el('span', 'people-rep-item', line)));
     els.reputation.hidden = view.reputation.length === 0;
-    const focused = document.activeElement instanceof HTMLElement ? `${document.activeElement.dataset.action ?? ''}:${document.activeElement.dataset.id ?? ''}` : '';
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'fact', 'about', 'item', 'action', 'open', 'id'].includes(key)) : undefined;
+    const focusedId = active?.dataset.id;
     if (view.card) {
       els.list.hidden = true;
       els.empty.hidden = true;
+      els.known.hidden = true;
       els.card.hidden = false;
       this.renderCard(view.card);
     } else {
@@ -177,65 +182,72 @@ export class People {
       els.known.hidden = view.known.length === 0;
       els.known.replaceChildren(el('span', 'person-gifts-label', `You know of ${view.known.length}`), ...view.known.map((k) => chip(k.name, { open: k.id })));
     }
-    // Acting on someone redraws the card; whatever was tapped keeps focus.
-    if (focused && focused !== ':') {
-      const [action, id] = focused.split(':');
-      const again = els.root.querySelector<HTMLElement>(action ? `[data-action="${action}"][data-id="${id}"]` : `.person-row[data-id="${id}"]`);
-      again?.focus({ preventScroll: true });
+    // Whatever was tapped keeps focus through the redraw.
+    if (focused) {
+      const [key, value] = focused;
+      const selector = key === 'id' ? `[data-id="${value}"]` : `[data-${key}="${value}"]${focusedId ? `[data-id="${focusedId}"]` : ''}`;
+      els.root.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
     }
   }
 
   private renderCard(card: PersonCardView): void {
     const { els } = this;
     els.cardName.textContent = card.name;
+    els.cardStance.textContent = card.stanceLabel;
+    els.cardStance.className = `stance is-${card.stance}`;
     els.cardKicker.textContent = card.kicker;
-    els.cardKicker.dataset.stance = card.stance;
     els.cardFacts.textContent = card.facts;
-    els.cardWebToggle.textContent = `${card.webOpen ? '▾' : '▸'} Web (${card.web.length})`;
-    els.cardWebToggle.setAttribute('aria-expanded', String(card.webOpen));
+    els.cardFacts.classList.toggle('is-open', card.factsOpen);
+    els.cardFacts.setAttribute('aria-expanded', String(card.factsOpen));
     els.cardWeb.hidden = !card.webOpen;
     els.cardWeb.replaceChildren(card.web.length ? web(card) : el('p', 'person-web-hint', card.webHint));
-    // Only rows with something in them; an empty one would only push the conversation down.
-    els.cardActions.hidden = !card.here;
-    els.cardQuestions.hidden = !card.here || card.questions.length === 0;
-    els.cardGifts.hidden = !card.here || card.gifts.length === 0;
-    els.cardAsk.hidden = !card.here || card.askAbout.length === 0;
-    els.cardQuestions.replaceChildren(el('span', 'person-gifts-label', 'Ask'), ...card.questions.map((q) => chip(q.label, { id: card.id, fact: q.fact }, 'person-question')));
+
     const { cardLog } = els;
-    const atBottom = cardLog.scrollTop + cardLog.clientHeight >= cardLog.scrollHeight - 4;
     cardLog.replaceChildren(
       ...(card.log.length
         ? card.log.map((line) => {
             const li = el('li', `person-log-line is-${line.who}`);
-            li.append(el('span', 'person-log-who', line.who === 'you' ? 'You' : card.name.split(' ')[0] ?? card.name), el('span', 'person-log-text', line.text));
+            li.append(el('span', 'person-log-who', line.who === 'you' ? '›' : (card.name.split(' ')[0] ?? card.name)), el('span', 'person-log-text', line.text));
             return li;
           })
         : [el('li', 'person-log-line is-empty', card.here ? 'Nothing said yet.' : 'Nothing said.')]),
     );
-    // The newest line is the one to read.
-    if (atBottom || card.log.length) cardLog.scrollTop = cardLog.scrollHeight;
-    els.cardActions.replaceChildren(
-      ...card.actions.map((action) => {
-        const button = el('button', `action person-action${action.danger ? ' is-danger' : ''}`);
+    cardLog.scrollTop = cardLog.scrollHeight;
+
+    // The choices the open command unfolds, if any.
+    const picker: HTMLElement[] = [];
+    if (card.here && card.picker === 'ask') {
+      if (card.questions.length) picker.push(...card.questions.map((q) => chip(q.label, { id: card.id, fact: q.fact }, 'person-chip')));
+      if (card.askAbout.length) picker.push(el('span', 'person-gifts-label', 'About'), ...card.askAbout.map((a) => chip(a.name, { id: card.id, about: a.id }, 'person-chip')));
+    } else if (card.here && card.picker === 'give') {
+      picker.push(...card.gifts.map((g) => chip(g.count > 1 ? `${g.name} ×${g.count}` : g.name, { id: card.id, item: g.id }, 'person-gift')));
+    } else if (card.here && card.picker === 'more') {
+      picker.push(chip('Insult', { id: card.id, action: 'insult' }, 'person-chip is-danger'), chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'));
+    }
+    els.cardPicker.hidden = picker.length === 0;
+    els.cardPicker.replaceChildren(...picker);
+
+    // One row of commands; what isn't possible isn't shown.
+    const commands: Array<{ cmd: string; label: string; active?: boolean; quiet?: boolean }> = card.here
+      ? [
+          { cmd: 'talk', label: 'Talk' },
+          ...(card.questions.length || card.askAbout.length ? [{ cmd: 'ask', label: 'Ask', active: card.picker === 'ask' }] : []),
+          ...(card.gifts.length ? [{ cmd: 'give', label: 'Give', active: card.picker === 'give' }] : []),
+          { cmd: 'web', label: `Web ${card.web.length}`, active: card.webOpen },
+          { cmd: 'more', label: '⋯', active: card.picker === 'more', quiet: true },
+        ]
+      : [{ cmd: 'web', label: `Web ${card.web.length}`, active: card.webOpen }];
+    els.cardCommands.replaceChildren(
+      ...commands.map((c) => {
+        const button = el('button', `person-cmd${c.active ? ' is-active' : ''}${c.quiet ? ' is-quiet' : ''}`, c.label);
         button.type = 'button';
-        button.dataset.action = action.id;
+        button.dataset.cmd = c.cmd;
         button.dataset.id = card.id;
-        button.append(el('span', 'action-label', action.label), el('span', 'action-sub', action.sub ?? ''));
+        if (c.cmd === 'more') button.setAttribute('aria-label', 'More: insult, rob');
+        if (c.active !== undefined) button.setAttribute('aria-pressed', String(c.active));
         return button;
       }),
     );
-    const gifts = card.gifts.map((gift) => {
-      const button = el('button', 'person-gift');
-      button.type = 'button';
-      button.dataset.id = card.id;
-      button.dataset.item = gift.id;
-      button.textContent = gift.count > 1 ? `${gift.name} ×${gift.count}` : gift.name;
-      button.setAttribute('aria-label', `Give ${gift.name}`);
-      return button;
-    });
-    els.cardGifts.replaceChildren(el('span', 'person-gifts-label', 'Give'), ...gifts);
-    const asks = card.askAbout.map((about) => chip(about.name, { id: card.id, about: about.id }, 'person-ask'));
-    els.cardAsk.replaceChildren(el('span', 'person-gifts-label', 'Ask about'), ...asks);
   }
 }
 
@@ -323,10 +335,12 @@ function row(person: PersonRowView): HTMLElement {
   const button = el('button', 'person-row');
   button.type = 'button';
   button.dataset.id = person.id;
-  const head = el('div', 'person-row-head');
-  head.append(el('span', 'person-row-name', person.name), el('span', `stance is-${person.stance}`, person.stanceLabel));
-  button.append(head, el('span', 'person-row-sub', person.sub), el('span', 'person-row-doing', person.doing));
-  button.setAttribute('aria-label', `${person.name}, ${person.sub}, ${person.doing}. ${person.stanceLabel}.`);
+  button.append(
+    el('span', 'person-row-name', person.name),
+    el('span', `stance is-${person.stance}`, person.stanceLabel),
+    el('span', 'person-row-sub', [person.sub, person.doing].filter(Boolean).join(' · ')),
+  );
+  button.setAttribute('aria-label', `${person.name}${person.sub ? `, ${person.sub}` : ''}, ${person.doing}. ${person.stanceLabel}.`);
   li.append(button);
   return li;
 }
