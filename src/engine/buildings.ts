@@ -15,10 +15,18 @@ export interface BuildingStyle {
   names: string[];
 }
 
+/** A real Night City building. It takes over the building of its kind nearest its district's middle. */
+export interface BuildingLandmark {
+  district: string;
+  kind: BuildingKind;
+  name: string;
+}
+
 export interface BuildingContent {
   styles: Record<BuildingKind, BuildingStyle>;
   corps: string[];
   shops: string[];
+  landmarks?: BuildingLandmark[];
 }
 
 /** What a district's blocks are zoned for, as relative weights, plus its neighborhood names. */
@@ -94,6 +102,7 @@ export function generateBuildings(
   const xs = [0, ...layout.avenues, 100];
   const ys = [0, ...layout.streets, 100];
   const buildings: Building[] = [];
+  const reserved = new Set((content.landmarks ?? []).map((l) => l.name));
 
   for (let i = 0; i < xs.length - 1; i++) {
     for (let j = 0; j < ys.length - 1; j++) {
@@ -123,7 +132,7 @@ export function generateBuildings(
           district: district.id,
           kind,
           kindLabel: style.label,
-          name: makeName(rng, style, plan, content),
+          name: makeName(rng, style, plan, content, reserved),
           floors: rng.int(style.floors[0], style.floors[1]),
           x: round(rect.x),
           y: round(rect.y),
@@ -132,6 +141,18 @@ export function generateBuildings(
         });
       });
     }
+  }
+
+  // Real landmarks stand at full height, near the middle of their district.
+  for (const landmark of content.landmarks ?? []) {
+    const district = districts.find((d) => d.id === landmark.district);
+    if (!district) continue;
+    const away = (b: Building) => Math.hypot(b.x + b.w / 2 - district.x, b.y + b.h / 2 - district.y);
+    const candidates = buildings.filter((b) => b.district === landmark.district && b.kind === landmark.kind);
+    const nearest = candidates.reduce<Building | null>((best, b) => (!best || away(b) < away(best) ? b : best), null);
+    if (!nearest) continue;
+    nearest.name = landmark.name;
+    nearest.floors = content.styles[landmark.kind].floors[1];
   }
   return buildings;
 }
@@ -220,13 +241,18 @@ function weightedPick(rng: Rng, weights: Partial<Record<BuildingKind, number>>):
   return entries.at(-1)?.[0] ?? 'apartments';
 }
 
-function makeName(rng: Rng, style: BuildingStyle, plan: ZoningPlan, content: BuildingContent): string {
-  return rng
-    .pick(style.names)
-    .replace(/\{area\}/g, () => rng.pick(plan.areas))
-    .replace(/\{corp\}/g, () => rng.pick(content.corps))
-    .replace(/\{shop\}/g, () => rng.pick(content.shops))
-    .replace(/\{n\}/g, () => String(rng.int(2, 99)));
+/** A made-up name from the style's templates, never one that belongs to a real landmark. */
+function makeName(rng: Rng, style: BuildingStyle, plan: ZoningPlan, content: BuildingContent, reserved: Set<string>): string {
+  const fill = () =>
+    rng
+      .pick(style.names)
+      .replace(/\{area\}/g, () => rng.pick(plan.areas))
+      .replace(/\{corp\}/g, () => rng.pick(content.corps))
+      .replace(/\{shop\}/g, () => rng.pick(content.shops))
+      .replace(/\{n\}/g, () => String(rng.int(2, 99)));
+  let name = fill();
+  for (let attempt = 0; attempt < 8 && reserved.has(name); attempt++) name = fill();
+  return reserved.has(name) ? `${name} ${rng.int(2, 99)}` : name;
 }
 
 function round(n: number): number {
