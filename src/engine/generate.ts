@@ -55,10 +55,20 @@ export interface CityContent {
   /** Which edge of the map is ocean. */
   coast: Side;
   welcome: string;
+  welcomeBack: string;
   districts: DistrictTemplate[];
   kinds: Record<string, LocationKind>;
   buildings: BuildingContent;
 }
+
+/**
+ * Saves only remember a seed and location ids, so they rely on a seed always building the same
+ * places. Bump this whenever a change means seeds build different places (new content counts,
+ * since it shifts the random choices); older saves then start their city over instead of
+ * landing somewhere that no longer matches. The fingerprint test in tests/save.test.ts fails
+ * as a reminder.
+ */
+export const GENERATOR_VERSION = 1;
 
 /** Longest description the location panel is designed for (raw text, markup included). */
 export const MAX_DESCRIPTION = 160;
@@ -147,6 +157,7 @@ export function generateWorld(seed: string, content: CityContent): World {
     seed,
     start,
     welcome: content.welcome,
+    welcomeBack: content.welcomeBack,
     layout,
     districts,
     locations,

@@ -26,6 +26,7 @@ const world: World = {
   seed: 'test',
   start: 'alley',
   welcome: 'hello',
+  welcomeBack: 'hello again',
   layout: { avenues: [50], streets: [50], coast: null },
   buildings: [],
   districts: {

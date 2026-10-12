@@ -533,6 +533,7 @@ export const CITY: CityContent = {
   // The real Night City has the Pacific to the west and the Badlands to the east.
   coast: 'west',
   welcome: 'Welcome to Night City, choom. Tap a place, then hit {h|Travel}. Tap a block to zoom in on its buildings.',
+  welcomeBack: 'Welcome back, choom. Your map is right where you left it.',
   districts: DISTRICTS,
   kinds: KINDS,
   buildings: BUILDINGS,

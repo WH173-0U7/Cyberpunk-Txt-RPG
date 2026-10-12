@@ -55,10 +55,19 @@ corporations and street terms all come from the game. Arasaka Tower always stand
 - **Panel**: where you are and what it's like, the destination you've picked, or the building
   you tapped.
 - **Transmissions**: the city's chatter types across the top of the map, then fades.
-- **New city**: generates a fresh city (tap twice to confirm).
+- **Saving**: progress saves automatically on your device after every move (the header says
+  **Saved**, or **Not saved** if the browser won't allow it, e.g. in a private window). Come
+  back later and you pick up in the same city, at the same place, with the same map.
 
-Each city has a **seed**, shown under the map and in the page address (e.g. `#7f3a29c1`).
-Opening the game with the same seed rebuilds exactly the same city, so you can share one.
+Each city has a **seed**, shown under the map and in the page address (e.g. `#7f3a29c1`). The
+same seed always rebuilds the same city, which is how a save stays small: it keeps only the
+seed and where you've been. A new player who opens a link with a seed starts in that city;
+anyone with a save carries on with their own.
+
+If an update changes how cities are built, older saves can't line up with their city any
+more. The game then starts that city over and says so. (Developers: bump `GENERATOR_VERSION`
+in `src/engine/generate.ts` when that happens; a test in `tests/save.test.ts` fails as a
+reminder.)
 
 There's no typing. On a keyboard, Tab moves between places on the map, Enter selects and
 travels, + and − zoom, and Esc clears the selection.
@@ -71,10 +80,11 @@ effects layer decides how that should look:
 ```
 src/
   engine/   Game rules and state: the city generator, seeded random numbers, travel and
-            discovery, ambient chatter. No DOM, fully unit-tested.
+            discovery, ambient chatter, the save format. No DOM, fully unit-tested.
   data/     The content the generator builds cities from (city.ts).
   ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
-            ground, sea, buildings), place panel, transmissions, HUD, typewriter, markup parser.
+            ground, sea, buildings), place panel, transmissions, HUD, typewriter, markup parser,
+            the save slot in local storage.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.
 tests/      Vitest unit tests.
