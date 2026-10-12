@@ -4,6 +4,7 @@ import { ENERGY } from './data/energy';
 import { FOOD } from './data/food';
 import { INEBRIATION } from './data/inebriation';
 import { LINES, PEOPLE } from './data/people';
+import { CHARISMA } from './data/skills';
 import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
@@ -187,12 +188,18 @@ const people = new People(
     cardName: $('#person-name'),
     cardKicker: $('#person-kicker'),
     cardBio: $('#person-bio'),
-    cardTies: $('#person-ties'),
+    cardWeb: $('#person-web'),
     cardActions: $('#person-actions'),
     cardGifts: $('#person-gifts'),
+    cardAsk: $('#person-ask'),
+    known: $('#people-known'),
     back: $<HTMLButtonElement>('#person-back'),
   },
-  () => showPeople(),
+  () => {
+    // Opening it is taking a look around: everyone here is noticed, and who's with whom.
+    game.look(Date.now());
+    showPeople();
+  },
   {
     onSelect: (id) => {
       personShown = id;
@@ -203,10 +210,14 @@ const people = new People(
       lastActivity = performance.now();
       game.gift(id, itemId, Date.now());
     },
+    onAsk: (id, aboutId) => {
+      lastActivity = performance.now();
+      game.ask(id, aboutId, Date.now());
+    },
   },
   reducedMotion,
 );
-/** The person whose card is open, if any. */
+/** The person whose card is open, if any: someone here, or anyone the player knows of. */
 let personShown: string | null = null;
 
 const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill'), value: $('#energy-value'), detail: $('#energy-detail') });
@@ -593,23 +604,27 @@ function showShop(): void {
   });
 }
 
-/** Fills the people overlay: everyone here, or the one person whose card is open. */
+/** Fills the people overlay: everyone here, or the card of one person (here, or only known of). */
 function showPeople(): void {
   const now = Date.now();
   const here = game.peopleHere(now);
   const at = game.interior ?? game.location;
   const district = at ? (game.world.districts[at.district]?.name ?? 'Night City') : 'Night City';
   const reputation = game.reputation(now).map((r) => `${r.label} ${r.value > 0 ? '+' : '−'}${Math.abs(r.value)}`);
-  const shown = personShown ? here.find((p) => p.person.id === personShown) : undefined;
+  const known = game.knownPeople();
+  const present = personShown ? here.find((p) => p.person.id === personShown) : undefined;
+  const shown = present?.person ?? (personShown ? known.find((p) => p.id === personShown) : undefined);
   if (personShown && !shown) personShown = null;
-  const standing = shown ? game.standingWith(shown.person.id, now) : null;
+  const standing = shown ? game.standingWith(shown.id, now) : null;
   const gifts = game.inventory.filter((item) => item.kind === 'consumable' && FOOD.dishes.some((d) => d.id === item.id));
   const gangOf = (id: string | null) => (id ? PEOPLE.gangs[id]?.name : undefined);
+  const charisma = game.charisma();
+  const how = { seen: 'seen together', told: 'told', asked: 'asked' };
   people.render({
     title: at?.name ?? 'Here',
     kicker: `${district} · ${at && 'floors' in at ? at.kindLabel : (at?.kindLabel ?? 'The street')}`,
     count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
-    reputation,
+    reputation: [`Charisma Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP`, ...reputation],
     rows: here.map(({ person, doing, stance }) => ({
       id: person.id,
       name: person.name,
@@ -619,24 +634,25 @@ function showPeople(): void {
       stanceLabel: STANCE_LABEL[stance],
     })),
     empty: 'Nobody here right now. People keep hours: workers by day, regulars in the evening, residents at night.',
+    known: known.filter((p) => !here.some((h) => h.person.id === p.id)).map((p) => ({ id: p.id, name: p.name })),
     card:
       shown && standing
         ? {
-            id: shown.person.id,
-            name: shown.person.name,
-            kicker: [STANCE_LABEL[standing.stance], gangOf(shown.person.gang), shown.doing].filter(Boolean).join(' · '),
-            bio: shown.person.bio,
+            id: shown.id,
+            name: shown.name,
+            kicker: [STANCE_LABEL[standing.stance], gangOf(shown.gang), present ? present.doing : 'Not here'].filter(Boolean).join(' · '),
+            bio: shown.bio,
             stance: standing.stance,
-            ties: standing.ties
-              ? standing.ties.map((t) => `${kinWord(shown.person, t.kind, t.person)}: ${t.person.name}${t.person.gang ? ` (${gangOf(t.person.gang)})` : ''}`)
-              : null,
-            tiesHint: `Get to know ${shown.person.given} to hear about ${shown.person.pronouns === 'they' ? 'their' : shown.person.pronouns === 'she' ? 'her' : 'his'} people.`,
+            here: Boolean(present),
+            web: standing.web.map((link) => ({ id: link.person.id, name: link.person.name, label: link.kind ? kinWord(shown, link.kind, link.person) : '?', how: how[link.how] })),
+            webHint: `You don't know who ${shown.given} knows. Ask about people you've met, watch who ${shown.pronouns === 'they' ? 'they keep' : shown.pronouns === 'she' ? 'she keeps' : 'he keeps'} company with, or get ${shown.pronouns === 'they' ? 'them' : shown.pronouns === 'she' ? 'her' : 'him'} talking.`,
             actions: [
               { id: 'talk', label: 'Talk', sub: standing.stance === 'hostile' ? "Won't talk" : `Rapport ${standing.standing.rapport}` },
               { id: 'insult', label: 'Insult', sub: 'Makes enemies', danger: true },
-              { id: 'rob', label: 'Rob', sub: `${shown.person.eddies} €$ on them`, danger: true },
+              { id: 'rob', label: 'Rob', sub: `${shown.eddies} €$ on them`, danger: true },
             ],
             gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
+            askAbout: known.filter((p) => p.id !== shown.id).map((p) => ({ id: p.id, name: p.name })),
           }
         : null,
   });
@@ -774,6 +790,11 @@ function wire(g: Game): void {
     queueSave();
   });
 
+  g.events.on('charismaChanged', () => {
+    if (people.overlay.isOpen) showPeople();
+    queueSave();
+  });
+
   g.events.on('inebriationChanged', (status) => {
     showCondition(status, Date.now());
     queueSave();
@@ -787,7 +808,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA }, progress);
   wire(game);
   map.setWorld(world);
   seedLabel.textContent = `Seed ${world.seed.toUpperCase()}`;
@@ -835,7 +856,10 @@ function tick(): void {
     const first = lastHour === -1;
     lastHour = hour;
     if (!first) {
-      if (people.overlay.isOpen) showPeople();
+      if (people.overlay.isOpen) {
+        game.look(now);
+        showPeople();
+      }
       if (!target && !game.currentTrip) refresh();
     }
   }

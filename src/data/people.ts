@@ -278,4 +278,9 @@ export const LINES: DialogueLines = {
     gang: ['{gang} colors step out of the dark at {where}. They take {take} €$ and make sure you remember.', 'The {gang} find you at {where}. It goes badly: {take} €$, and the rest of your night.'],
   },
   barred: ['{work} won\'t serve you. Not after what you did to their people.', 'The counter at {work} closes the moment they see your face.'],
+  ask: {
+    knows: ['{other}? {OtherHe}\'s my {word}.', 'Sure, I know {other}. My {word}.', '{other} is my {word}. Why?'],
+    unknown: ['{other}? Never heard of {otherHim}.', 'Doesn\'t ring a bell.', 'No idea who that is.'],
+    refuse: ['Why do you want to know?', '{given} looks at you a long moment and says nothing.', 'I don\'t talk about people I know to people I don\'t.'],
+  },
 };

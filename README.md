@@ -101,9 +101,22 @@ own.
 - **Getting on with people**: **Talk** gets a greeting that depends on how they feel about
   you and a line about their life (their work, their district, their food, the gang they
   can't stand), and builds rapport a little each time (not twice in an hour). Give them food
-  or drink from your inventory (their favorite counts double). Once you're on good terms they
-  tell you about their people, and their card lists them: who's family, who's a friend, who's
-  in their crew. The card shows where you stand: Stranger, Wary, Warm, Friend, Cold, Hostile.
+  or drink from your inventory (their favorite counts double). The card shows where you
+  stand: Stranger, Wary, Warm, Friend, Cold, Hostile.
+- **Charisma**: how far your words go. Every chat, gift and answered question is experience;
+  each level (the first takes about fifteen chats, each after about twice the one before)
+  makes chats and gifts worth a fifth more rapport and makes wary and cold people likelier
+  to answer you. It shows in the People overlay's strip.
+- **Who knows whom**: you only know what you've found out. Opening **People** takes in
+  everyone there (you now know of them), and any two who are actually connected you've
+  *seen together* (connected somehow, you don't know how). Once someone likes you they drop
+  names ("My sister Ana works at…"), which tells you the relation. And you can **Ask about**
+  anyone you know of: they'll tell you what the person is to them, that they've never heard
+  of them, or, if they're wary or cold of you, nothing (charisma helps). A person's card
+  shows their **web**: them in the middle, everyone you know them to know around them,
+  each spoke labeled with the relation or "?" (dashed) when all you know is that they're
+  connected. Tap a name in the web to open that person's card, even if they're not here
+  (then you can only look), and the list of people you know of sits under everyone here.
 - **Crossing people**: **Insult** someone and they hold it against you (a temper shoves you
   into the wall, which costs energy); **Rob** them and you take a share of their eddies. Every
   such thing spreads: the victim holds a grudge, so do their spouse, parents, children,
@@ -192,17 +205,20 @@ src/
             trip planning on the real clock, the wallet and pass, energy (energy.ts),
             menus (food.ts), drink (inebriation.ts), the people (people.ts: who lives
             here and where they are), what they think of the player and what comes of it
-            (society.ts), what they say (dialogue.ts), discovery, ambient chatter, the
-            save format. No DOM, fully unit-tested.
+            (society.ts, which also keeps what the player knows of people and of who knows
+            whom), what they say (dialogue.ts), skills that grow with use (skills.ts),
+            discovery, ambient chatter, the save format. No DOM, fully unit-tested.
   data/     The content the generator builds cities from (city.ts), travel times and
             prices (travel.ts), energy's numbers (energy.ts), the kinds of item the
             inventory sorts by (items.ts), what there is to eat (food.ts), the stages
             of being drunk (inebriation.ts), the people's names, gangs, jobs and lines
-            (people.ts) and how grudges and reputations work (society.ts).
+            (people.ts), how grudges and reputations work (society.ts) and charisma's
+            numbers (skills.ts).
   ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
             ground, sea, buildings), the fog (fog.ts), the overlays over the map (overlay.ts:
             the inventory in inventory.ts, settings in settings.ts, a menu in shop.ts, who's
-            here in people.ts), the energy bar (energy.ts), place panel, transmissions, HUD,
+            here in people.ts, with the relationship web), the energy bar (energy.ts), place
+            panel, transmissions, HUD,
             typewriter, markup parser, the save slot in local storage.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.

@@ -1,4 +1,4 @@
-import { tiesOf, type Person, type Population, type TieKind } from './people';
+import { INVERSE, tiesOf, type Person, type Population, type TieKind } from './people';
 import type { Rng } from './rng';
 
 /**
@@ -53,12 +53,35 @@ export interface Threat {
   amount: number;
 }
 
+/** How the player came to know of someone, or of a tie between two people. */
+export type KnownHow = 'seen' | 'told' | 'asked';
+
+/** What the player knows of a person: met them, seen them about, or heard of them. */
+export interface Knowledge {
+  met: boolean;
+  seen: boolean;
+  told: boolean;
+}
+
+/**
+ * What the player knows of a tie between two people, keyed by both ids in order (`a|b`):
+ * that they're connected somehow (`kind` null), how (`kind` is what b is to a), or that
+ * they aren't (`'none'`: they were asked, and had never heard of them).
+ */
+export interface KnownLink {
+  kind: TieKind | 'none' | null;
+  how: KnownHow;
+  at: number;
+}
+
 export interface SocietyState {
   standings: Record<string, Standing>;
   rep: Record<string, Rep>;
   incidents: Incident[];
   threats: Threat[];
   nextId: number;
+  known: Record<string, Knowledge>;
+  links: Record<string, KnownLink>;
 }
 
 export interface SocietyRules {
@@ -109,7 +132,80 @@ export interface SocietyRules {
 }
 
 export function freshSociety(): SocietyState {
-  return { standings: {}, rep: {}, incidents: [], threats: [], nextId: 1 };
+  return { standings: {}, rep: {}, incidents: [], threats: [], nextId: 1, known: {}, links: {} };
+}
+
+// ───────────── What the player knows ─────────────
+
+export function knowledgeOf(state: SocietyState, id: string): Knowledge {
+  return state.known[id] ?? { met: false, seen: false, told: false };
+}
+
+/** Whether the player knows of someone at all. */
+export function knowsOf(state: SocietyState, id: string): boolean {
+  const k = knowledgeOf(state, id);
+  return k.met || k.seen || k.told;
+}
+
+/** Writes down that the player met, saw or heard of someone. True if that's news. */
+export function learnOf(state: SocietyState, id: string, how: keyof Knowledge): boolean {
+  const k = knowledgeOf(state, id);
+  if (k[how]) return false;
+  state.known[id] = { ...k, [how]: true };
+  return true;
+}
+
+export function linkKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/** What the player knows of the tie between two people, from `a`'s side (`kind` is what `b` is to `a`). */
+export function linkOf(state: SocietyState, a: string, b: string): KnownLink | null {
+  const link = state.links[linkKey(a, b)];
+  if (!link) return null;
+  const kind = link.kind && link.kind !== 'none' && a > b ? INVERSE[link.kind] : link.kind;
+  return { ...link, kind };
+}
+
+/**
+ * Writes down what the player learned of the tie between `a` and `b`: `kind` is what `b` is
+ * to `a`, null for "connected somehow", 'none' for "not at all". Knowing how beats knowing
+ * that; nothing is unlearned. True if that's news.
+ */
+export function learnLink(state: SocietyState, a: string, b: string, kind: TieKind | 'none' | null, how: KnownHow, now: number): boolean {
+  if (a === b) return false;
+  const key = linkKey(a, b);
+  const had = state.links[key];
+  if (had && (had.kind !== null || kind === null)) return false;
+  const stored = kind && kind !== 'none' && a > b ? INVERSE[kind] : kind;
+  state.links[key] = { kind: stored, how, at: now };
+  return true;
+}
+
+export interface WebLink {
+  id: string;
+  /** What they are to the person, if known. */
+  kind: TieKind | null;
+  how: KnownHow;
+}
+
+/** Everyone the player knows a person to be connected to, and how if they know that. */
+export function webOf(state: SocietyState, id: string): WebLink[] {
+  const web: WebLink[] = [];
+  for (const key of Object.keys(state.links)) {
+    const [a, b] = key.split('|') as [string, string];
+    if (a !== id && b !== id) continue;
+    const other = a === id ? b : a;
+    const link = linkOf(state, id, other);
+    if (!link || link.kind === 'none') continue;
+    web.push({ id: other, kind: link.kind, how: link.how });
+  }
+  return web;
+}
+
+/** Everyone the player knows of. */
+export function knownPeople(state: SocietyState): string[] {
+  return Object.keys(state.known).filter((id) => knowsOf(state, id));
 }
 
 const HOUR = 3_600_000;

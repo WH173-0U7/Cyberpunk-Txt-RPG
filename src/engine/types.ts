@@ -1,5 +1,6 @@
 import type { EnergyStatus } from './energy';
 import type { InebriationStatus } from './inebriation';
+import type { SkillStatus } from './skills';
 import type { Quality } from './food';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
@@ -269,5 +270,7 @@ export type GameEvents = {
   inebriationChanged: InebriationStatus;
   /** What people think of the player changed: a chat, a gift, an insult, a robbery, or someone collecting on one. */
   societyChanged: { people: string[] };
+  /** Charisma earned experience or a level. */
+  charismaChanged: SkillStatus;
   fx: { effect: FxName };
 };

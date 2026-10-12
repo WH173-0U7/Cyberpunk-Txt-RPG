@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
 import { FOOD } from '../src/data/food';
 import { LINES, PEOPLE } from '../src/data/people';
+import { CHARISMA } from '../src/data/skills';
 import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
 import type { TravelRules } from '../src/engine/travel';
@@ -100,6 +101,7 @@ const RULES: GameRules = {
   people: PEOPLE,
   society: SOCIETY,
   lines: LINES,
+  charisma: CHARISMA,
   // People's days run on UTC here, whatever machine the tests run on.
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
 };
@@ -436,6 +438,7 @@ describe('Game', () => {
         energy: null,
         inebriation: null,
         society: null,
+        charisma: null,
       });
       const { game, take } = setup({}, progress('b-shop', outside('b-shop', 32, 20)));
       expect(game.interior?.id).toBe('b-shop');
@@ -553,6 +556,7 @@ describe('Game', () => {
       energy: null,
       inebriation,
       society: null,
+      charisma: null,
     });
     const lager = { id: 'broseph-lager', kind: 'consumable', name: 'Broseph Lager', count: 1 } as const;
     const moonshine = { id: 'moonshine', kind: 'consumable', name: 'Moonshine', count: 2 } as const;
@@ -661,6 +665,7 @@ describe('Game', () => {
       energy: null,
       inebriation: null,
       society: null,
+      charisma: null,
     });
 
     it('makes a population for the city, with the noodle bar staffed by day and nobody about on the street', () => {
@@ -686,7 +691,7 @@ describe('Game', () => {
       expect(said.length).toBeGreaterThanOrEqual(2);
       expect(said[0]?.text.startsWith(`${worker.given}: "`)).toBe(true);
       const standing = game.standingWith(worker.id, now);
-      expect(standing).toMatchObject({ stance: expect.any(String), ties: null });
+      expect(standing).toMatchObject({ stance: expect.any(String), knowledge: { met: true }, web: [] });
       expect(standing?.standing).toMatchObject({ met: true, talks: 1, lastTalkAt: now });
       expect(standing?.standing.rapport).toBeGreaterThan(0);
       expect(game.reputation(now).find((r) => r.key === 'district:test')?.value ?? 0).toBeGreaterThanOrEqual(0);
@@ -703,8 +708,62 @@ describe('Game', () => {
       }
       const known = game.standingWith(worker.id, later);
       expect(known?.standing.rapport).toBeGreaterThanOrEqual(SOCIETY.talk.revealAt);
-      expect(known?.ties?.length).toBeGreaterThan(0);
+      expect(known?.knowledge).toMatchObject({ met: true });
       expect(['warm', 'friend', 'neutral']).toContain(known?.stance);
+      // Chatting is practice: charisma has come along, and chats are worth more for it.
+      expect(game.charisma().level).toBeGreaterThanOrEqual(1);
+      expect(game.charisma().xp + (game.charisma().level - 1) * CHARISMA.xpFirstLevel).toBeGreaterThanOrEqual(chats * 2 - 1);
+    });
+
+    it('only knows who someone knows by seeing them together, being told, or asking', () => {
+      const { game, now, worker, here } = shiftAt();
+      const { take, outputs } = record(game);
+      // Nothing is known of anyone until the player looks.
+      expect(game.knownPeople()).toEqual([]);
+      expect(game.standingWith(worker.id, now)?.web).toEqual([]);
+      game.look(now);
+      expect(game.knownPeople().map((p) => p.id).sort()).toEqual(here.map((p) => p.person.id).sort());
+      // Two coworkers at the counter: seen together, connected somehow.
+      const coworker = here.find((p) => p.person.id !== worker.id && p.person.job.building === 'b-noodle');
+      if (coworker) {
+        const seen = game.standingWith(worker.id, now)?.web.find((l) => l.person.id === coworker.person.id);
+        expect(seen).toMatchObject({ kind: null, how: 'seen' });
+      }
+      // Strangers to each other are not.
+      for (const link of game.standingWith(worker.id, now)?.web ?? []) {
+        expect(game.population.ties.some((t) => t.from === worker.id && t.to === link.person.id)).toBe(true);
+      }
+
+      // Asking about someone the player doesn't know of isn't possible; about someone they do, it is.
+      const relative = game.population.ties.find((t) => t.from === worker.id && ['spouse', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew', 'kin', 'friend'].includes(t.kind));
+      if (!relative) throw new Error('the worker knows nobody');
+      expect(game.ask(worker.id, relative.to, now)).toBe(false);
+      // Seen about, then: and with charisma high enough, a neutral person always answers.
+      const stranger = game.population.people.find((p) => p.id !== worker.id && !game.population.ties.some((t) => t.from === worker.id && t.to === p.id));
+      if (!stranger) throw new Error('everyone knows everyone');
+      const told = new Game(world, { ...RULES, startingEddies: 100 }, {
+        ...carryingProgress([]),
+        where: outside('b-noodle', 38, 20),
+        inside: 'b-noodle',
+        society: { ...game.societySaved, known: { [relative.to]: { met: false, seen: true, told: false }, [stranger.id]: { met: true, seen: false, told: false } } },
+      });
+      told.start(now);
+      const recorded = record(told);
+      expect(told.ask(worker.id, relative.to, now)).toBe(true);
+      const answer = recorded.outputs(recorded.take())[0]?.text ?? '';
+      const link = told.standingWith(worker.id, now)?.web.find((l) => l.person.id === relative.to);
+      if (link) {
+        expect(link).toMatchObject({ kind: relative.kind, how: 'asked' });
+        expect(answer).toContain(`${worker.given}: "`);
+        expect(told.standingWith(relative.to, now)?.knowledge.told).toBe(true);
+      } else {
+        // They wouldn't say.
+        expect(answer).not.toContain('"');
+      }
+      expect(told.ask(worker.id, stranger.id, now)).toBe(true);
+      expect(told.standingWith(worker.id, now)?.web.some((l) => l.person.id === stranger.id)).toBe(false);
+      expect(told.societySaved.links[[worker.id, stranger.id].sort().join('|')]?.kind).toBe('none');
+      expect(outputs(take())).toEqual([]);
     });
 
     it('takes a gift from the inventory, their favorite most of all', () => {
@@ -844,6 +903,7 @@ describe('Game', () => {
       energy: null,
       inebriation: null,
       society: null,
+      charisma: null,
     };
 
     const { game, take, outputs } = setup({}, progress);

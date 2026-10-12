@@ -1,6 +1,7 @@
 import { CELLS } from './game';
 import type { EnergyState } from './energy';
 import type { InebriationState } from './inebriation';
+import type { SkillState } from './skills';
 import type { SocietyState } from './society';
 import type { Item, ItemKind, Leg, MapState, Point, Trip, Wallet, Whereabouts, World } from './types';
 
@@ -26,6 +27,8 @@ export interface Progress {
   inebriation: InebriationState | null;
   /** The player's dealings with the people (null: none yet). */
   society: SocietyState | null;
+  /** Charisma, as last written down (null: a new player's). */
+  charisma: SkillState | null;
 }
 
 /** What a save takes from a game in progress (a `Game` has all of it). */
@@ -38,6 +41,7 @@ export interface SaveSource {
   readonly energySaved: EnergyState;
   readonly inebriationSaved: InebriationState;
   readonly societySaved: SocietyState;
+  readonly charismaSaved: SkillState;
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -69,6 +73,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     energy: { ...game.energySaved },
     inebriation: { ...game.inebriationSaved },
     society: game.societySaved,
+    charisma: { ...game.charismaSaved },
     savedAt: now,
   };
 }
@@ -106,8 +111,9 @@ export function readSave(raw: unknown): SaveData | null {
     // And saves from before energy start the player off fresh, and before drink, sober.
     energy: isEnergy(save.energy) ? save.energy : null,
     inebriation: isInebriation(save.inebriation) ? save.inebriation : null,
-    // And before there were people to deal with, nobody knew the player.
-    society: isSociety(save.society) ? save.society : null,
+    // And before there were people to deal with, nobody knew the player (and before they could be known of, no one was).
+    society: isSociety(save.society) ? { ...save.society, known: save.society.known ?? {}, links: save.society.links ?? {} } : null,
+    charisma: isSkill(save.charisma) ? save.charisma : null,
     savedAt: save.savedAt,
   };
 }
@@ -120,11 +126,11 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, energy, inebriation, society } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, energy, inebriation, society, charisma } = save;
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, energy, inebriation, society };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, energy, inebriation, society, charisma };
 }
 
 function isItem(value: unknown): value is Item {
@@ -154,6 +160,11 @@ function isEnergy(value: unknown): value is EnergyState {
     e.xp >= 0 &&
     isNumber(e.updatedAt)
   );
+}
+
+function isSkill(value: unknown): value is SkillState {
+  const s = value as Record<string, unknown> | null;
+  return typeof s === 'object' && s !== null && Number.isInteger(s.level) && (s.level as number) >= 1 && isNumber(s.xp) && s.xp >= 0;
 }
 
 function isSociety(value: unknown): value is SocietyState {

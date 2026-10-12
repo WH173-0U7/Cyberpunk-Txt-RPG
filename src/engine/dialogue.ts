@@ -1,4 +1,4 @@
-import { gangOf, pronounsOf, tiesOf, type PeopleContent, type Person, type Population, type TieKind } from './people';
+import { gangOf, pronounsOf, type PeopleContent, type Person, type Population, type Tie, type TieKind } from './people';
 import type { Rng } from './rng';
 import type { Stance } from './society';
 import type { World } from './types';
@@ -26,6 +26,8 @@ export interface DialogueLines {
   revenge: { person: string[]; gang: string[] };
   /** A storefront that won't serve the player. */
   barred: string[];
+  /** Asked whether they know someone: they do (`{other}`, `{word}`), they don't, or they won't say. */
+  ask: { knows: string[]; unknown: string[]; refuse: string[] };
 }
 
 export const KIN_LABEL: Record<TieKind, string> = {
@@ -71,13 +73,14 @@ export interface TalkContext {
   grudge: number;
 }
 
-/** Everything a template can mention about a person. */
-export function varsFor(person: Person, world: World, population: Population, content: PeopleContent, dishes: Array<{ id: string; name: string }>): Record<string, string> {
+export const FAMILY: TieKind[] = ['spouse', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew', 'kin'];
+
+/** Everything a template can mention about a person, and the one relative (`kin`) a line about family would name. */
+export function varsFor(person: Person, world: World, population: Population, content: PeopleContent, dishes: Array<{ id: string; name: string }>, kin?: Tie): Record<string, string> {
   const gang = gangOf(person, content);
   const district = world.districts[person.district];
   const work = person.job.building ? world.buildings.find((b) => b.id === person.job.building) : undefined;
   const hate = person.hates ? content.gangs[person.hates] : undefined;
-  const kin = tiesOf(population, person.id).find((t) => ['spouse', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew'].includes(t.kind));
   const kinPerson = kin ? population.people.find((p) => p.id === kin.to) : undefined;
   const kinWork = kinPerson?.job.building ? world.buildings.find((b) => b.id === kinPerson.job.building) : undefined;
   const kinPronouns = kinPerson ? pronounsOf(kinPerson) : null;
@@ -102,13 +105,13 @@ export function varsFor(person: Person, world: World, population: Population, co
   };
 }
 
-/** What a person says when talked to: a greeting for how they feel, then something about their life. */
-export function talkLines(ctx: TalkContext, vars: Record<string, string>, lines: DialogueLines, rng: Rng): string[] {
-  if (ctx.stance === 'hostile') return [fill(rng.pick(lines.refuse), vars)];
+/** What a person says when talked to: a greeting for how they feel, then something about their life. `kin`: whether that was about their relative. */
+export function talkLines(ctx: TalkContext, vars: Record<string, string>, lines: DialogueLines, rng: Rng): { said: string[]; kin: boolean } {
+  if (ctx.stance === 'hostile') return { said: [fill(rng.pick(lines.refuse), vars)], kin: false };
   const said = [fill(rng.pick(lines.greeting[ctx.stance]), vars)];
   if (ctx.grudge >= 10 && rng.chance(0.6)) {
     said.push(fill(rng.pick(lines.grudge), vars));
-    return said;
+    return { said, kin: false };
   }
   const topics: string[][] = [];
   if (vars.gang) topics.push(lines.topics.gang);
@@ -119,7 +122,7 @@ export function talkLines(ctx: TalkContext, vars: Record<string, string>, lines:
   if (ctx.reveal && vars.kinName) topics.push(lines.topics.kin, lines.topics.kin);
   const topic = rng.pick(topics);
   said.push(fill(rng.pick(topic), vars));
-  return said;
+  return { said, kin: topic === lines.topics.kin };
 }
 
 function capitalize(text: string): string {
