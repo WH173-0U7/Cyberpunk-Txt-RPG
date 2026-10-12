@@ -1,5 +1,6 @@
 import './style.css';
 import { CITY } from './data/city';
+import { ENERGY } from './data/energy';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
 import { Game, streetSpot } from './engine/game';
@@ -16,6 +17,7 @@ import { WeatherFx } from './fx/weather';
 import { ITEM_KINDS } from './data/items';
 import { formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
 import { Hud } from './ui/hud';
+import { EnergyMeter } from './ui/energy';
 import { Inventory } from './ui/inventory';
 import { MapOverlay } from './ui/overlay';
 import { stripMarkup } from './ui/markup';
@@ -139,6 +141,8 @@ const settings = new Settings(
   },
   reducedMotion,
 );
+
+const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill'), value: $('#energy-value'), detail: $('#energy-detail') });
 
 let game: Game;
 /** What the player has picked to go to, if anything. */
@@ -527,6 +531,11 @@ function wire(g: Game): void {
     queueSave();
   });
 
+  g.events.on('energyChanged', (status) => {
+    energyMeter.update(status, Date.now());
+    queueSave();
+  });
+
   g.events.on('walletChanged', (wallet) => {
     showWallet(wallet, Date.now());
     if (inventory.overlay.isOpen) showInventory();
@@ -542,7 +551,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, TRAVEL, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY }, progress);
   wire(game);
   map.setWorld(world);
   seedLabel.textContent = `Seed ${world.seed.toUpperCase()}`;
@@ -554,6 +563,7 @@ function begin(world: World, progress?: Progress, notice?: string): void {
   }
   if (notice) game.say(notice, 'system');
   game.start(Date.now());
+  energyMeter.update(game.energy(Date.now()), Date.now());
 }
 
 /**
@@ -586,6 +596,7 @@ function tick(): void {
   const trip = game.currentTrip;
   if (trip && !target) place.update(tripProgress(trip, now).done, tripMeta(trip, now));
   showWallet(game.wallet, now);
+  energyMeter.update(game.energy(now), now);
 }
 
 // Escape drops the current pick; + and - zoom.

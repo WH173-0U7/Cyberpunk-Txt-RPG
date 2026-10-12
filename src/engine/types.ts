@@ -1,3 +1,4 @@
+import type { EnergyStatus } from './energy';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -256,5 +257,7 @@ export type GameEvents = {
   mapChanged: MapState;
   /** Eddies spent or the NCART pass changed. */
   walletChanged: Wallet;
+  /** Energy was spent (and maybe a level gained). Refilling on the clock doesn't fire this; ask `Game.energy(now)`. */
+  energyChanged: EnergyStatus;
   fx: { effect: FxName };
 };

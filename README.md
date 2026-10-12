@@ -71,6 +71,12 @@ own.
   and parking lots are open ground). The map outlines the building, your marker waits at its
   door, and the weather stays outside. There's nothing to do in there yet; **Leave** steps
   back out, and walking off somewhere goes out the door first. Being inside is saved.
+- **Energy**: the bar under the sign. Energy is what doing things will cost, and it refills
+  on the clock, a point every 6 minutes (faster at the testing speed), even while the game is
+  closed. Max energy starts very low (10). Spending energy trains it: every point spent is
+  experience, running right down to empty earns a bonus, and the energy level (and the max)
+  goes up very slowly; level 2 alone takes 600 points spent. A home with a bed will raise
+  the max too. Nothing spends energy yet; it's ready for jobs, training and the rest.
 - **Inventory**: the **Inventory** button in the map's header (or **I**) covers the map with
   what you carry: your eddies and NCART pass, then your items, sorted by the kinds of item
   in Night City (weapons, attachments & mods, cyberware, quickhacks, clothing, consumables,
@@ -129,13 +135,15 @@ effects layer decides how that should look:
 ```
 src/
   engine/   Game rules and state: the city generator, the NCART network, street routes,
-            trip planning on the real clock, the wallet and pass, discovery, ambient chatter,
-            the save format. No DOM, fully unit-tested.
+            trip planning on the real clock, the wallet and pass, energy (energy.ts),
+            discovery, ambient chatter, the save format. No DOM, fully unit-tested.
   data/     The content the generator builds cities from (city.ts), travel times and
-            prices (travel.ts), and the kinds of item the inventory sorts by (items.ts).
+            prices (travel.ts), energy's numbers (energy.ts), and the kinds of item the
+            inventory sorts by (items.ts).
   ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
             ground, sea, buildings), the fog (fog.ts), the overlays over the map (overlay.ts:
-            the inventory in inventory.ts, settings in settings.ts), place panel, transmissions, HUD, typewriter, markup parser,
+            the inventory in inventory.ts, settings in settings.ts), the energy bar
+            (energy.ts), place panel, transmissions, HUD, typewriter, markup parser,
             the save slot in local storage.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.

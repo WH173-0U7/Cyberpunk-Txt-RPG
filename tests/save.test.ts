@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CITY } from '../src/data/city';
+import { ENERGY } from '../src/data/energy';
 import { TRAVEL } from '../src/data/travel';
 import { Game } from '../src/engine/game';
 import { GENERATOR_VERSION, generateWorld } from '../src/engine/generate';
@@ -9,7 +10,7 @@ import type { World } from '../src/engine/types';
 
 const world = generateWorld('7f3a29c1', CITY);
 const T0 = Date.UTC(2077, 9, 12, 20, 0);
-const rules = { ...TRAVEL, timeScale: 1 };
+const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY };
 
 /** Plays a few moves on foot to places next door, letting each trip finish. Returns the game and the time. */
 function played(steps: number): { game: Game; now: number } {
@@ -79,6 +80,24 @@ describe('saving', () => {
     const handed = resumed.inventory;
     handed[0]!.count = 99;
     expect(resumed.inventory[0]?.count).toBe(1);
+  });
+
+  it('carries energy, and starts it fresh for saves from before it or that make no sense', () => {
+    const { game, now } = played(1);
+    const energy = { current: 3.5, level: 2, xp: 120, updatedAt: now };
+    const saved = { ...saveOf(game, now), energy };
+    const read = readSave(JSON.parse(JSON.stringify(saved)));
+    expect(read?.energy).toEqual(energy);
+    const progress = read && resume(world, read);
+    if (!progress) throw new Error('no progress');
+    expect(new Game(world, rules, progress).energy(now)).toMatchObject({ current: 3, level: 2, xp: 120 });
+
+    const { energy: _, ...old } = saveOf(game, now);
+    expect(readSave(JSON.parse(JSON.stringify(old)))?.energy).toBeNull();
+    expect(readSave({ ...saved, energy: { ...energy, level: 0 } })?.energy).toBeNull();
+    expect(readSave({ ...saved, energy: { ...energy, current: -1 } })?.energy).toBeNull();
+    const fresh = new Game(world, rules, resume(world, readSave(JSON.parse(JSON.stringify(old))) ?? saved) ?? undefined);
+    expect(fresh.energy(now)).toMatchObject({ current: ENERGY.start, max: ENERGY.start, level: 1 });
   });
 
   it('ignores anything that is not a save it understands', () => {
