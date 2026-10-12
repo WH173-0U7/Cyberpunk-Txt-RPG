@@ -1,0 +1,234 @@
+import { districtAt, seaTest } from './geography';
+import { createRng, type Rng } from './rng';
+import type { Building, BuildingKind, CityLayout, District, Point } from './types';
+
+/** What a kind of building is called and how tall it gets. */
+export interface BuildingStyle {
+  /** How players read it, e.g. "Apartment block". */
+  label: string;
+  /** Inclusive range; [0, 0] for open ground. */
+  floors: [number, number];
+  /**
+   * Name templates: `{area}` becomes a district neighborhood, `{corp}` a corporation,
+   * `{shop}` a kind of storefront and `{n}` a number.
+   */
+  names: string[];
+}
+
+export interface BuildingContent {
+  styles: Record<BuildingKind, BuildingStyle>;
+  corps: string[];
+  shops: string[];
+}
+
+/** What a district's blocks are zoned for, as relative weights, plus its neighborhood names. */
+export interface ZoningPlan {
+  zoning: Partial<Record<BuildingKind, number>>;
+  areas: string[];
+}
+
+/** Buildings stop this far (map units) from a street's centerline. */
+export const STREET_HALF_WIDTH = 0.9;
+/** Gap between buildings sharing a block. */
+const ALLEY = 0.35;
+/** Smallest building side worth placing, in map units. */
+const MIN_SIDE = 1.1;
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The grid cell a point falls in, between street centerlines, with its address (e.g. "D7"). */
+export interface BlockCell {
+  address: string;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** Column letter and row number, counted from the top-left of the map. */
+export function blockAddress(column: number, row: number): string {
+  return `${String.fromCharCode(65 + column)}${row + 1}`;
+}
+
+/** The block a map point is in, or null off the map. */
+export function blockAt(layout: CityLayout, p: Point): BlockCell | null {
+  if (p.x < 0 || p.x > 100 || p.y < 0 || p.y > 100) return null;
+  const xs = [0, ...layout.avenues, 100];
+  const ys = [0, ...layout.streets, 100];
+  const cell = (lines: number[], v: number) => {
+    let k = 0;
+    while (k < lines.length - 2 && (lines[k + 1] ?? 100) <= v) k++;
+    return k;
+  };
+  const column = cell(xs, p.x);
+  const row = cell(ys, p.y);
+  return { address: blockAddress(column, row), x0: xs[column] ?? 0, y0: ys[row] ?? 0, x1: xs[column + 1] ?? 100, y1: ys[row + 1] ?? 100 };
+}
+
+/**
+ * Fills every city block with buildings. Uses its own random stream, so adding buildings
+ * never changes the rest of a seed's city.
+ */
+export function generateBuildings(
+  seed: string,
+  layout: CityLayout,
+  districts: District[],
+  plans: Record<string, ZoningPlan>,
+  content: BuildingContent,
+): Building[] {
+  const rng = createRng(`${seed}:buildings`);
+  const inSea = seaTest(layout, seed);
+  const onLand = (r: Rect) =>
+    [
+      { x: r.x, y: r.y },
+      { x: r.x + r.w, y: r.y },
+      { x: r.x, y: r.y + r.h },
+      { x: r.x + r.w, y: r.y + r.h },
+    ].every((p) => !inSea(p));
+
+  const xs = [0, ...layout.avenues, 100];
+  const ys = [0, ...layout.streets, 100];
+  const buildings: Building[] = [];
+
+  for (let i = 0; i < xs.length - 1; i++) {
+    for (let j = 0; j < ys.length - 1; j++) {
+      const left = i === 0 ? 0.6 : (xs[i] ?? 0) + STREET_HALF_WIDTH;
+      const right = i === xs.length - 2 ? 99.4 : (xs[i + 1] ?? 100) - STREET_HALF_WIDTH;
+      const top = j === 0 ? 0.6 : (ys[j] ?? 0) + STREET_HALF_WIDTH;
+      const bottom = j === ys.length - 2 ? 99.4 : (ys[j + 1] ?? 100) - STREET_HALF_WIDTH;
+      const block: Rect = { x: left, y: top, w: right - left, h: bottom - top };
+      if (block.w < MIN_SIDE || block.h < MIN_SIDE) continue;
+
+      const district = districtAt(districts, { x: block.x + block.w / 2, y: block.y + block.h / 2 });
+      const plan = district ? plans[district.id] : undefined;
+      if (!district || !plan) continue;
+
+      const address = blockAddress(i, j);
+      const pieces =
+        district.terrain === 'desert' ? scatterStructures(rng, block) : subdivide(rng, block, weightedPick(rng, plan.zoning));
+
+      pieces.forEach(({ rect, kind: blockKind }, k) => {
+        if (!onLand(rect)) return;
+        // Apartment blocks have shops at street level now and then.
+        const kind: BuildingKind = blockKind === 'apartments' && rng.chance(0.2) ? 'shops' : blockKind;
+        const style = content.styles[kind];
+        buildings.push({
+          id: `b-${address}-${k + 1}`,
+          block: address,
+          district: district.id,
+          kind,
+          kindLabel: style.label,
+          name: makeName(rng, style, plan, content),
+          floors: rng.int(style.floors[0], style.floors[1]),
+          x: round(rect.x),
+          y: round(rect.y),
+          w: round(rect.w),
+          h: round(rect.h),
+        });
+      });
+    }
+  }
+  return buildings;
+}
+
+/** Splits a block the way its zoning builds: one big footprint, a few towers, or a row of shops. */
+function subdivide(rng: Rng, block: Rect, kind: BuildingKind): Array<{ rect: Rect; kind: BuildingKind }> {
+  const as = (rects: Rect[]) => rects.map((rect) => ({ rect, kind }));
+  switch (kind) {
+    case 'megabuilding':
+    case 'park':
+    case 'plaza':
+    case 'lot':
+      return as([block]);
+    case 'tower': {
+      // Towers stand back from the street on a podium, when there's room for one.
+      const towers = rng.chance(0.6) ? [block] : split(rng, block, 2);
+      return as(towers.map((r) => (Math.min(r.w, r.h) >= 2.4 ? inset(r, Math.min(r.w, r.h) * 0.16) : r)));
+    }
+    case 'apartments':
+      return as(split(rng, block, rng.int(2, 4)));
+    case 'shops':
+      return as(split(rng, block, rng.int(3, 6)));
+    case 'warehouse':
+    case 'factory':
+      return as(split(rng, block, rng.int(1, 2)));
+    case 'derelict':
+      return as(split(rng, block, rng.int(1, 3)));
+    case 'shack':
+    case 'container':
+      return as([block]);
+  }
+}
+
+/** Desert blocks are mostly empty sand, with the odd shack or shipping container. */
+function scatterStructures(rng: Rng, block: Rect): Array<{ rect: Rect; kind: BuildingKind }> {
+  if (!rng.chance(0.35)) return [];
+  const structures: Array<{ rect: Rect; kind: BuildingKind }> = [];
+  for (let n = rng.int(1, 2); n > 0; n--) {
+    const kind: BuildingKind = rng.chance(0.55) ? 'shack' : 'container';
+    const w = kind === 'container' ? rng.range(1.4, 2.2) : rng.range(1.1, 1.8);
+    const h = kind === 'container' ? rng.range(0.7, 1) : rng.range(1, 1.6);
+    if (w > block.w - 0.4 || h > block.h - 0.4) continue;
+    const rect = { x: block.x + rng.range(0.2, block.w - w - 0.2), y: block.y + rng.range(0.2, block.h - h - 0.2), w, h };
+    if (structures.every((s) => !intersects(s.rect, rect, 0.3))) structures.push({ rect, kind });
+  }
+  return structures;
+}
+
+/** Cuts a rectangle into up to `count` pieces, always splitting the biggest along its long side. */
+function split(rng: Rng, rect: Rect, count: number): Rect[] {
+  const pieces = [rect];
+  while (pieces.length < count) {
+    pieces.sort((a, b) => b.w * b.h - a.w * a.h);
+    const piece = pieces[0];
+    if (!piece) break;
+    const vertical = piece.w >= piece.h;
+    const span = vertical ? piece.w : piece.h;
+    if (span < MIN_SIDE * 2 + ALLEY) break;
+    const at = span * rng.range(0.35, 0.65);
+    pieces.shift();
+    if (vertical) {
+      pieces.push({ ...piece, w: at - ALLEY / 2 }, { ...piece, x: piece.x + at + ALLEY / 2, w: piece.w - at - ALLEY / 2 });
+    } else {
+      pieces.push({ ...piece, h: at - ALLEY / 2 }, { ...piece, y: piece.y + at + ALLEY / 2, h: piece.h - at - ALLEY / 2 });
+    }
+  }
+  return pieces.filter((p) => p.w >= MIN_SIDE * 0.8 && p.h >= MIN_SIDE * 0.8).sort((a, b) => a.y - b.y || a.x - b.x);
+}
+
+function inset(rect: Rect, by: number): Rect {
+  return { x: rect.x + by, y: rect.y + by, w: rect.w - by * 2, h: rect.h - by * 2 };
+}
+
+function intersects(a: Rect, b: Rect, gap = 0): boolean {
+  return a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+}
+
+function weightedPick(rng: Rng, weights: Partial<Record<BuildingKind, number>>): BuildingKind {
+  const entries = Object.entries(weights).filter((e): e is [BuildingKind, number] => (e[1] ?? 0) > 0);
+  const total = entries.reduce((sum, [, w]) => sum + w, 0);
+  let roll = rng.next() * total;
+  for (const [kind, weight] of entries) {
+    roll -= weight;
+    if (roll < 0) return kind;
+  }
+  return entries.at(-1)?.[0] ?? 'apartments';
+}
+
+function makeName(rng: Rng, style: BuildingStyle, plan: ZoningPlan, content: BuildingContent): string {
+  return rng
+    .pick(style.names)
+    .replace(/\{area\}/g, () => rng.pick(plan.areas))
+    .replace(/\{corp\}/g, () => rng.pick(content.corps))
+    .replace(/\{shop\}/g, () => rng.pick(content.shops))
+    .replace(/\{n\}/g, () => String(rng.int(2, 99)));
+}
+
+function round(n: number): number {
+  return Math.round(n * 100) / 100;
+}

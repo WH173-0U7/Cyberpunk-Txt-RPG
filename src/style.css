@@ -420,6 +420,66 @@ button {
   min-height: 0;
   overflow: hidden;
   background: #06070d;
+  cursor: grab;
+  /* The map pans and zooms itself; the page stays put. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.map-stage.is-dragging {
+  cursor: grabbing;
+}
+.map-stage.is-traveling {
+  cursor: default;
+}
+
+/* Zoom buttons in the corner of the map */
+.map-zoom {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 3;
+  display: grid;
+  gap: 6px;
+}
+
+.zoom-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  background: rgba(4, 6, 12, 0.84);
+  color: var(--primary);
+  cursor: pointer;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  transition:
+    background 0.15s,
+    color 0.15s,
+    transform 0.1s;
+}
+.zoom-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+.zoom-button:hover,
+.zoom-button:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--primary) 24%, rgba(4, 6, 12, 0.9));
+  color: #fff;
+}
+.zoom-button:active {
+  transform: scale(0.94);
+}
+.zoom-button:disabled {
+  cursor: default;
+  opacity: 0.35;
 }
 
 .map-city,
@@ -636,7 +696,8 @@ button {
   border-top: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
   background: linear-gradient(180deg, rgba(6, 8, 16, 0.92), rgba(6, 8, 16, 0.78));
 }
-.place.is-destination {
+.place.is-destination,
+.place.is-building {
   border-top-color: color-mix(in srgb, var(--secondary) 45%, transparent);
 }
 
@@ -660,7 +721,8 @@ button {
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
-.place.is-destination .place-kicker {
+.place.is-destination .place-kicker,
+.place.is-building .place-kicker {
   color: var(--secondary);
 }
 
@@ -1035,6 +1097,15 @@ button {
   }
   .map-foot {
     padding-block: 4px;
+  }
+  .map-zoom {
+    right: 8px;
+    bottom: 8px;
+    gap: 4px;
+  }
+  .zoom-button {
+    width: 34px;
+    height: 34px;
   }
 }
 
