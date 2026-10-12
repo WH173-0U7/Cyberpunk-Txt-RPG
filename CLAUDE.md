@@ -46,14 +46,30 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 
 ## The inventory
 
-The inventory overlay is in place, with nothing in it yet:
+The inventory overlay is in place; food and drink are the only items so far:
 
 - An `Item` has a `kind` (`ItemKind`: weapon, attachment, cyberware, quickhack, clothing,
   consumable, shard, junk, component, after the wiki's 2077 item types), a name and a count.
   `Game.inventory` is what the player carries; it's saved as `items`. Giving and taking items
-  goes in `Game`.
+  goes in `Game`: `Game.buy(id)` (off a menu) and `Game.consume(id, now)` (eat or drink one).
 - `src/data/items.ts` names each kind and says what goes in it; the overlay lists them in
   that order, but only the kinds the player carries (no empty placeholders). Real items take their names and details from the wiki and the TCG (above).
+- `src/ui/inventory.ts` shows an Eat/Drink button on anything that can be used (`use` on the
+  item view); what using something does is `Game`'s business.
+
+## Inebriation
+
+Drinking alcohol makes the player drunk; nothing else happens yet:
+
+- `src/engine/inebriation.ts` keeps the units of drink in the player, clearing on the clock
+  (same test speed as everything), with stages by units; `src/data/inebriation.ts` has the
+  rate, the stages and their lines, and each alcoholic dish's `alcohol` units are on the
+  dish in `src/data/food.ts` (a beer about 1, spirits 2–3). `Game.inebriation(now)` is where
+  it stands; `Game.tick(now)` says a line as each stage eases off. It's saved as
+  `inebriation`.
+- The only effect is the screen: `ScreenFx.setInebriation(severity)` sets `--drunk` on
+  `#app` and the stylesheet blurs and sways it. Effects that need the stage (walking
+  crooked, slurred text, passing out) go in `Game` off the status.
 
 ## Energy
 
@@ -84,6 +100,12 @@ Eateries sell food, into the inventory (eating it comes later):
   per chain business id or landmark name. Chains and named eateries are landmarks with a
   `business` in `src/data/city.ts`.
 - `src/ui/shop.ts` is the menu overlay (a `MapOverlay` opened from the panel's **Menu**).
+
+## The panel under the map
+
+`.place` has one fixed height per layout (`src/style.css`), so the map stage never resizes
+as its text changes or types out: anything longer scrolls inside `.place-text`. Keep it that
+way when adding to the panel; the map re-renders (and re-clamps its camera) on every resize.
 
 ## Settings
 

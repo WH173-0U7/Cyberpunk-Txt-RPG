@@ -61,6 +61,8 @@ body {
   font-family: var(--font-mono);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+  /* Two quick taps on a button are two taps, not a zoom in on the page. */
+  touch-action: manipulation;
 }
 
 button {
@@ -118,7 +120,8 @@ button {
   margin: 0 auto;
   overflow-y: auto;
   padding: clamp(16px, 3vw, 28px);
-  animation: crt-on 1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  /* Backwards only: filled forwards, its final `filter` would sit over the drunk blur below. */
+  animation: crt-on 1s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 }
 
 .hud {
@@ -148,17 +151,26 @@ button {
 
 .hud-bar {
   display: flex;
-  flex-wrap: wrap;
   justify-content: space-between;
   gap: 4px 18px;
+  /* One line, never wider than the screen: the address gives way (an ellipsis) to the clock. */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
   color: color-mix(in srgb, var(--primary) 70%, var(--muted));
   font-size: 12px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
 }
 
+#hud-path {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
 .hud-right {
   display: flex;
+  flex: none;
   gap: 18px;
   font-variant-numeric: tabular-nums;
 }
@@ -225,11 +237,30 @@ button {
   letter-spacing: 0.08em;
   text-align: right;
 }
-.energy-detail {
+.energy-foot {
+  display: flex;
   grid-column: 1 / -1;
-  color: var(--muted);
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+  height: 13px;
   font-size: 10px;
+  line-height: 13px;
   letter-spacing: 0.14em;
+  white-space: nowrap;
+}
+.energy-detail {
+  color: var(--muted);
+}
+/* What's wrong with the player: drunk, for now */
+.condition {
+  overflow: hidden;
+  color: #ff6ad5;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 8px rgba(255, 106, 213, 0.6);
+}
+.condition:empty {
+  display: none;
 }
 .energy.is-empty .energy-value {
   color: var(--danger);
@@ -969,8 +1000,9 @@ button {
   display: flex;
   align-items: center;
   gap: 14px;
-  /* Same height either way, so the map doesn't jump when you pick a destination. */
-  min-height: 100px;
+  /* One height in every state, so the map never resizes under a longer description or while
+     one is still typing: the text scrolls inside instead (rarely: three lines fit). */
+  height: 156px;
   padding: 12px 16px;
   border-top: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
   background: linear-gradient(180deg, rgba(6, 8, 16, 0.92), rgba(6, 8, 16, 0.78));
@@ -983,8 +1015,13 @@ button {
 .place-text {
   display: grid;
   flex: 1;
+  align-content: start;
   gap: 4px;
   min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .place-kicker {
@@ -1354,12 +1391,36 @@ button {
 }
 .inv-item {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   font-size: 12px;
 }
+.inv-item-name {
+  flex: 1;
+  min-width: 0;
+}
 .inv-item-count {
   color: #ffd84d;
+}
+/* Eat, Drink…: using something right from the list */
+.inv-use {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid #ffd84d;
+  background: color-mix(in srgb, #ffd84d 12%, transparent);
+  color: #ffd84d;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+.inv-use:hover,
+.inv-use:focus-visible {
+  background: color-mix(in srgb, #ffd84d 28%, transparent);
+  outline: none;
 }
 
 /* A menu over the map: what an eatery sells, with a Buy on each line */
@@ -1566,7 +1627,7 @@ button {
     padding: 12px 12px 10px;
   }
   .inventory-sections {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1799,7 +1860,7 @@ button {
   }
   .place {
     gap: 8px;
-    min-height: 124px;
+    height: 184px;
     padding: 10px 12px;
   }
   .place-kicker {
@@ -1851,6 +1912,9 @@ button {
     font-size: 14px;
     line-height: 1.45;
   }
+  .place {
+    height: 172px;
+  }
   .map-head {
     padding-block: 5px;
   }
@@ -1868,10 +1932,36 @@ button {
   }
 }
 
+/* ───────────── Drunk ─────────────
+   --drunk is how drunk the player is, 0 (sober) to 1 (as bad as it gets): the whole terminal
+   blurs with it and sways slowly, like trying to focus. */
+#app {
+  transition: filter 2s ease;
+}
+#app.is-drunk {
+  filter: blur(calc(var(--drunk) * 3.5px)) saturate(calc(1 + var(--drunk) * 0.5));
+  transform-origin: 50% 100%;
+  animation:
+    crt-on 1s cubic-bezier(0.2, 0.8, 0.2, 1) backwards,
+    drunk-sway 6s ease-in-out infinite alternate;
+}
+@keyframes drunk-sway {
+  from {
+    transform: translateX(calc(var(--drunk) * -8px)) rotate(calc(var(--drunk) * -0.6deg));
+  }
+  45% {
+    transform: translateX(calc(var(--drunk) * 6px)) rotate(calc(var(--drunk) * 0.2deg)) scale(calc(1 + var(--drunk) * 0.012));
+  }
+  to {
+    transform: translateX(calc(var(--drunk) * 8px)) rotate(calc(var(--drunk) * 0.6deg));
+  }
+}
+
 /* ───────────── Reduced motion ───────────── */
 
 @media (prefers-reduced-motion: reduce) {
   #app,
+  #app.is-drunk,
   .sign,
   .sign.sign-boot,
   .crt,

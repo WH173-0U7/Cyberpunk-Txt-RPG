@@ -1,5 +1,6 @@
 import { CELLS } from './game';
 import type { EnergyState } from './energy';
+import type { InebriationState } from './inebriation';
 import type { Item, ItemKind, Leg, MapState, Point, Trip, Wallet, Whereabouts, World } from './types';
 
 const ITEM_KINDS: ReadonlySet<string> = new Set<ItemKind>(['weapon', 'attachment', 'cyberware', 'quickhack', 'clothing', 'consumable', 'shard', 'junk', 'component']);
@@ -20,6 +21,8 @@ export interface Progress {
   items: Item[];
   /** The player's energy, as last written down (null: a new player's). */
   energy: EnergyState | null;
+  /** The drink in the player, as last written down (null: sober). */
+  inebriation: InebriationState | null;
 }
 
 /** What a save takes from a game in progress (a `Game` has all of it). */
@@ -30,6 +33,7 @@ export interface SaveSource {
   readonly interior: { id: string } | null;
   readonly inventory: readonly Item[];
   readonly energySaved: EnergyState;
+  readonly inebriationSaved: InebriationState;
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -59,6 +63,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     inside: game.interior?.id ?? null,
     items: game.inventory.map((item) => ({ ...item })),
     energy: { ...game.energySaved },
+    inebriation: { ...game.inebriationSaved },
     savedAt: now,
   };
 }
@@ -93,8 +98,9 @@ export function readSave(raw: unknown): SaveData | null {
     inside: typeof save.inside === 'string' ? save.inside : null,
     // Nor do saves from before the inventory: the player carried nothing. Anything unreadable is dropped.
     items: Array.isArray(save.items) ? save.items.filter(isItem) : [],
-    // And saves from before energy start the player off fresh.
+    // And saves from before energy start the player off fresh, and before drink, sober.
     energy: isEnergy(save.energy) ? save.energy : null,
+    inebriation: isInebriation(save.inebriation) ? save.inebriation : null,
     savedAt: save.savedAt,
   };
 }
@@ -107,11 +113,11 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, energy } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, energy, inebriation } = save;
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, energy };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, energy, inebriation };
 }
 
 function isItem(value: unknown): value is Item {
@@ -141,6 +147,11 @@ function isEnergy(value: unknown): value is EnergyState {
     e.xp >= 0 &&
     isNumber(e.updatedAt)
   );
+}
+
+function isInebriation(value: unknown): value is InebriationState {
+  const d = value as Record<string, unknown> | null;
+  return typeof d === 'object' && d !== null && isNumber(d.units) && d.units >= 0 && isNumber(d.updatedAt);
 }
 
 function isNumber(value: unknown): value is number {

@@ -2,6 +2,7 @@ import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
 import { menuFor, type FoodContent, type Menu } from './food';
+import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
 import { districtAt } from './geography';
 import type { Progress } from './save';
 import { pointAlong, snapToStreet } from './streets';
@@ -48,10 +49,11 @@ export function streetSpot(p: Point): Whereabouts {
   return { x: p.x, y: p.y, place: null, station: null, building: null };
 }
 
-/** How the game plays: getting around, energy, and what there is to eat. The numbers are in `src/data/`. */
+/** How the game plays: getting around, energy, what there is to eat, and drink. The numbers are in `src/data/`. */
 export interface GameRules extends TravelRules {
   energy: EnergyRules;
   food: FoodContent;
+  inebriation: InebriationRules;
 }
 
 /**
@@ -68,11 +70,14 @@ export class Game {
   private readonly visited = new Set<string>();
   private readonly discovered = new Set<string>();
   private readonly explored = new Set<number>();
-  /** What the player carries. Nothing yet: items come with shops and loot. */
+  /** What the player carries: food and drink from eateries, so far. */
   private readonly items: Item[];
   private eddies: number;
   private passUntil: number;
   private energyState: EnergyState;
+  private drunkState: InebriationState;
+  /** The stage the player was last told about, so sobering up gets a line as it eases. */
+  private drunkStage: InebriationStage | null = null;
   /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
   private readonly home: { building: string; bed: boolean } | null = null;
   private lastAmbient: AmbientLine | null = null;
@@ -91,6 +96,7 @@ export class Game {
     this.eddies = progress?.eddies ?? rules.startingEddies;
     this.passUntil = progress?.passUntil ?? 0;
     this.energyState = progress?.energy ? { ...progress.energy } : freshEnergy(rules.energy);
+    this.drunkState = progress?.inebriation ? { ...progress.inebriation } : freshInebriation();
     this.items = (progress?.items ?? []).map((item) => ({ ...item }));
     this.resumed = Boolean(progress);
     const indoors = progress?.inside ? world.buildings.find((b) => b.id === progress.inside) : undefined;
@@ -164,6 +170,16 @@ export class Game {
     return this.home?.bed ?? false;
   }
 
+  /** How drunk the player is at `now`: what's left of their drinks, clearing on the clock. */
+  inebriation(now: number): InebriationStatus {
+    return inebriationStatus(this.drunkState, this.rules.inebriation, this.rules.timeScale, now);
+  }
+
+  /** The drink in the player as it was last written down, for saving. */
+  get inebriationSaved(): InebriationState {
+    return { ...this.drunkState };
+  }
+
   /** Everything the player carries, as copies the UI can't change the game through. */
   get inventory(): Item[] {
     return this.items.map((item) => ({ ...item }));
@@ -193,6 +209,41 @@ export class Game {
     return true;
   }
 
+  /**
+   * Eats or drinks one of something carried. False if there's none, or it isn't for eating.
+   * Food and soft drinks do nothing yet; alcohol goes to the head.
+   */
+  consume(id: string, now: number): boolean {
+    const item = this.items.find((i) => i.id === id && i.kind === 'consumable');
+    const dish = item ? this.rules.food.dishes.find((d) => d.id === id) : undefined;
+    if (!item || !dish) return false;
+    item.count--;
+    if (item.count <= 0) this.items.splice(this.items.indexOf(item), 1);
+    if (dish.kind === 'alcohol') this.drink(dish.name, dish.alcohol ?? 0, now);
+    else this.say(`You ${dish.kind === 'food' ? 'eat' : 'drink'} the ${dish.name}.`);
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  private drink(name: string, units: number, now: number): void {
+    this.drunkState = drink(this.drunkState, units, this.rules.inebriation, this.rules.timeScale, now);
+    const status = this.inebriation(now);
+    const worse = status.stage && status.stage !== this.drunkStage ? ` ${status.stage.up}` : '';
+    this.drunkStage = status.stage;
+    this.say(`You drink the ${name}.${worse}`);
+    this.events.emit('inebriationChanged', status);
+  }
+
+  /** Sobering up on the clock: a line each time the stage eases, and one when it's over. */
+  private soberUp(now: number): void {
+    if (!this.drunkStage) return;
+    const status = this.inebriation(now);
+    if (status.stage === this.drunkStage) return;
+    this.drunkStage = status.stage;
+    this.say(status.stage?.down ?? this.rules.inebriation.sober);
+    this.events.emit('inebriationChanged', status);
+  }
+
   get mapState(): MapState {
     return { where: { ...this.where }, visited: new Set(this.visited), discovered: new Set(this.discovered), explored: new Set(this.explored) };
   }
@@ -208,6 +259,10 @@ export class Game {
     this.emitArrived(null);
     if (this.inside) this.events.emit('interiorChanged', this.inside);
     this.events.emit('walletChanged', this.wallet);
+    // Whatever was drunk before has been clearing since; pick up from where it stands now, without a word.
+    const drunk = this.inebriation(now);
+    this.drunkStage = drunk.stage;
+    this.events.emit('inebriationChanged', drunk);
     if (this.trip) {
       this.events.emit('tripChanged', this.trip);
       this.tick(now, true);
@@ -268,8 +323,9 @@ export class Game {
     return true;
   }
 
-  /** Moves the clock on: reveals what's been walked past, and lands the player once the trip is over. */
+  /** Moves the clock on: sobers up, reveals what's been walked past, and lands the player once the trip is over. */
   tick(now: number, away = false): void {
+    this.soberUp(now);
     const trip = this.trip;
     if (!trip) return;
     const changed = this.exploreTrip(now);

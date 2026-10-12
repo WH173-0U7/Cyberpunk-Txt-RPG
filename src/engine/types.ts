@@ -1,4 +1,5 @@
 import type { EnergyStatus } from './energy';
+import type { InebriationStatus } from './inebriation';
 import type { Quality } from './food';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
@@ -264,5 +265,7 @@ export type GameEvents = {
   energyChanged: EnergyStatus;
   /** Something was bought, used or picked up. */
   inventoryChanged: Item[];
+  /** The player had a drink, or sobered up a stage. Clearing on the clock doesn't fire this; ask `Game.inebriation(now)`. */
+  inebriationChanged: InebriationStatus;
   fx: { effect: FxName };
 };

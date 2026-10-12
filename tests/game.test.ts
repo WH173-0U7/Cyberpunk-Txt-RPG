@@ -85,6 +85,16 @@ const RULES: GameRules = {
   // Small numbers so a test can run energy down and level it up.
   energy: { start: 5, perLevel: 1, bed: 5, regenMinutes: 6, xpPerPoint: 1, exhaustedBonus: 2, xpFirstLevel: 10, xpGrowth: 1.5 },
   food: FOOD,
+  // A unit of drink clears a minute, with two stages to climb.
+  inebriation: {
+    soberPerHour: 60,
+    worst: 6,
+    sober: 'Sober.',
+    stages: [
+      { id: 'tipsy', label: 'Tipsy', at: 1, up: 'Tipsy.', down: 'Just tipsy.' },
+      { id: 'drunk', label: 'Drunk', at: 3, up: 'Drunk.', down: 'Down to drunk.' },
+    ],
+  },
 };
 
 const MINUTE = 60_000;
@@ -105,7 +115,7 @@ type Recorded = { [K in keyof GameEvents]: { type: K; payload: GameEvents[K] } }
 function setup(rules: Partial<TravelRules> = {}, progress?: Progress) {
   const game = new Game(world, { ...RULES, ...rules }, progress);
   const events: Recorded[] = [];
-  for (const type of ['output', 'arrived', 'tripChanged', 'interiorChanged', 'mapChanged', 'walletChanged', 'inventoryChanged', 'energyChanged', 'fx'] as const) {
+  for (const type of ['output', 'arrived', 'tripChanged', 'interiorChanged', 'mapChanged', 'walletChanged', 'inventoryChanged', 'energyChanged', 'inebriationChanged', 'fx'] as const) {
     game.events.on(type, (payload) => events.push({ type, payload } as Recorded));
   }
   const take = () => events.splice(0);
@@ -406,6 +416,7 @@ describe('Game', () => {
         inside,
         items: [],
         energy: null,
+        inebriation: null,
       });
       const { game, take } = setup({}, progress('b-shop', outside('b-shop', 32, 20)));
       expect(game.interior?.id).toBe('b-shop');
@@ -508,6 +519,99 @@ describe('Game', () => {
     });
   });
 
+  describe('eating and drinking', () => {
+    /** At the start, carrying a few things. */
+    const carrying = (items: Progress['items'], inebriation: Progress['inebriation'] = null): Progress => ({
+      where: at('alley'),
+      visited: ['alley'],
+      discovered: ['alley', 'market'],
+      explored: [],
+      eddies: 5,
+      passUntil: 0,
+      trip: null,
+      inside: null,
+      items,
+      energy: null,
+      inebriation,
+    });
+    const lager = { id: 'broseph-lager', kind: 'consumable', name: 'Broseph Lager', count: 1 } as const;
+    const moonshine = { id: 'moonshine', kind: 'consumable', name: 'Moonshine', count: 2 } as const;
+    const dawg = { id: 'hawt-dawg', kind: 'consumable', name: 'Hawt Dawg', count: 2 } as const;
+
+    it('eats what it carries one at a time, and only that', () => {
+      const { game, take, outputs } = setup({}, carrying([dawg, { id: 'shard', kind: 'shard', name: 'A shard', count: 1 }]));
+      game.start(T0);
+      take();
+
+      expect(game.consume('hawt-dawg', T0)).toBe(true);
+      expect(game.inventory).toEqual([{ ...dawg, count: 1 }, expect.objectContaining({ id: 'shard' })]);
+      const events = take();
+      expect(events.map((e) => e.type)).toEqual(['output', 'inventoryChanged']);
+      expect(outputs(events)[0]).toEqual({ text: 'You eat the Hawt Dawg.', tone: 'narrative' });
+      expect(game.inebriation(T0).stage).toBeNull();
+
+      expect(game.consume('hawt-dawg', T0)).toBe(true);
+      expect(game.inventory).toEqual([expect.objectContaining({ id: 'shard' })]);
+      expect(game.consume('hawt-dawg', T0)).toBe(false);
+      // Not a shard, not something that was never there.
+      expect(game.consume('shard', T0)).toBe(false);
+      expect(game.consume('nothing', T0)).toBe(false);
+    });
+
+    it('drinks go to the head stage by stage, and wear off on the clock', () => {
+      const { game, take, outputs } = setup({}, carrying([lager, moonshine]));
+      game.start(T0);
+      take();
+
+      expect(game.consume('broseph-lager', T0)).toBe(true);
+      let events = take();
+      expect(events.map((e) => e.type)).toEqual(['output', 'inebriationChanged', 'inventoryChanged']);
+      expect(outputs(events)[0]?.text).toBe('You drink the Broseph Lager. Tipsy.');
+      expect(game.inebriation(T0)).toMatchObject({ units: 1, stage: expect.objectContaining({ id: 'tipsy' }) });
+
+      // Moonshine is three units: straight past tipsy. A second one changes nothing but the count.
+      expect(game.consume('moonshine', T0)).toBe(true);
+      expect(outputs(take())[0]?.text).toBe('You drink the Moonshine. Drunk.');
+      expect(game.consume('moonshine', T0)).toBe(true);
+      expect(outputs(take())[0]?.text).toBe('You drink the Moonshine.');
+      const status = game.inebriation(T0);
+      expect(status).toMatchObject({ units: 7, severity: 1, soberAt: T0 + 6 * MINUTE + 1 });
+      expect(game.inventory).toEqual([]);
+
+      // Clearing a unit a minute: still drunk at four minutes, tipsy at five, sober at seven.
+      game.tick(T0 + 4 * MINUTE);
+      expect(take()).toEqual([]);
+      game.tick(T0 + 5 * MINUTE);
+      events = take();
+      expect(outputs(events)).toEqual([{ text: 'Just tipsy.', tone: 'narrative' }]);
+      expect(events.at(-1)).toMatchObject({ type: 'inebriationChanged', payload: { stage: expect.objectContaining({ id: 'tipsy' }) } });
+      game.tick(T0 + 7 * MINUTE);
+      events = take();
+      expect(outputs(events)).toEqual([{ text: 'Sober.', tone: 'narrative' }]);
+      expect(events.at(-1)).toMatchObject({ type: 'inebriationChanged', payload: { stage: null, severity: 0, soberAt: null } });
+      game.tick(T0 + 8 * MINUTE);
+      expect(take()).toEqual([]);
+    });
+
+    it('picks the drink up from a save, cleared for the time away, without a word', () => {
+      const { game, take, outputs } = setup({}, carrying([], { units: 2, updatedAt: T0 }));
+      game.start(T0 + 30_000);
+      const events = take();
+      expect(outputs(events).map((o) => o.text)).toEqual(['hello again']);
+      expect(events.find((e) => e.type === 'inebriationChanged')?.payload).toMatchObject({ units: 1.5, stage: expect.objectContaining({ id: 'tipsy' }) });
+      // Sobering up from there says so.
+      game.tick(T0 + 2 * MINUTE);
+      expect(outputs(take())).toEqual([{ text: 'Sober.', tone: 'narrative' }]);
+
+      const later = setup({}, carrying([], { units: 2, updatedAt: T0 }));
+      later.game.start(T0 + 10 * MINUTE);
+      expect(later.game.inebriation(T0 + 10 * MINUTE)).toMatchObject({ units: 0, stage: null });
+      later.take();
+      later.game.tick(T0 + 11 * MINUTE);
+      expect(later.take()).toEqual([]);
+    });
+  });
+
   describe('energy', () => {
     it('starts full, and nothing the player does yet spends it', () => {
       const { game } = setup();
@@ -552,6 +656,7 @@ describe('Game', () => {
       inside: null,
       items: [],
       energy: null,
+      inebriation: null,
     };
 
     const { game, take, outputs } = setup({}, progress);
