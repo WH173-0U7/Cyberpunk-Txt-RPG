@@ -77,11 +77,14 @@ it needs no generator bump. The pieces:
   `src/data/society.ts` and calling `Game`'s private `incident()`. Anything that should
   change how someone feels goes through `changeStanding`/`changeRep` so it fades right.
 - What the player knows is separate from what is true: `SocietyState.known` (met, seen,
-  told of) and `links` (what the player knows of a tie, keyed `a|b`; `kind` null for
-  "connected somehow", `'none'` for "asked, and they'd never heard of them"). Everything
-  the UI shows about who knows whom comes from `webOf`/`knownPeople`, never from the
-  population's ties directly; new ways of finding things out go through `learnOf` and
-  `learnLink` (`Game.look` for seeing people together, the kin line in `talk`, `Game.ask`).
+  told of; which `facts` the player has: name, job, age, home, likes, hates, nature; and
+  the `log` of what was said, the last `LOG_CAP` lines) and `links` (what the player knows
+  of a tie, keyed `a|b`; `kind` null for "connected somehow", `'none'` for "asked, and
+  they'd never heard of them"). The UI shows a person only through `Game.describe` (name
+  or their look, and the facts known), `standingWith` (web) and `conversation`, never the
+  `Person` or the population's ties directly; new ways of finding things out go through
+  `learnOf`, `learnFact` and `learnLink` (`Game.look` for what's plain to see, the topics
+  in `talk`, `Game.ask` and `Game.askFact`), and everything said goes through `logLine`.
 - `src/engine/skills.ts` is a skill that grows with use (experience, levels, a bonus per
   level); charisma is the one so far (`src/data/skills.ts`), applied in `Game.talk`,
   `gift` and `ask`. A new skill is another `SkillRules` in `src/data/skills.ts`, a state on

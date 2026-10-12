@@ -56,11 +56,26 @@ export interface Threat {
 /** How the player came to know of someone, or of a tie between two people. */
 export type KnownHow = 'seen' | 'told' | 'asked';
 
-/** What the player knows of a person: met them, seen them about, or heard of them. */
+/** Something about a person that takes asking (or watching, or being told) to know. */
+export type Fact = 'name' | 'job' | 'age' | 'home' | 'likes' | 'drinks' | 'hates' | 'nature';
+
+/** One line of what passed between the player and a person. */
+export interface LogEntry {
+  at: number;
+  who: 'you' | 'them';
+  text: string;
+}
+
+/** Lines kept per person. */
+export const LOG_CAP = 24;
+
+/** What the player knows of a person: met them, seen them about, or heard of them; which of their facts; and what's been said. */
 export interface Knowledge {
   met: boolean;
   seen: boolean;
   told: boolean;
+  facts: Fact[];
+  log: LogEntry[];
 }
 
 /**
@@ -138,7 +153,8 @@ export function freshSociety(): SocietyState {
 // ───────────── What the player knows ─────────────
 
 export function knowledgeOf(state: SocietyState, id: string): Knowledge {
-  return state.known[id] ?? { met: false, seen: false, told: false };
+  const k = state.known[id];
+  return k ? { ...k, facts: k.facts ?? [], log: k.log ?? [] } : { met: false, seen: false, told: false, facts: [], log: [] };
 }
 
 /** Whether the player knows of someone at all. */
@@ -147,12 +163,30 @@ export function knowsOf(state: SocietyState, id: string): boolean {
   return k.met || k.seen || k.told;
 }
 
-/** Writes down that the player met, saw or heard of someone. True if that's news. */
-export function learnOf(state: SocietyState, id: string, how: keyof Knowledge): boolean {
+/** Writes down that the player met, saw or heard of someone (being told of someone comes with their name). True if that's news. */
+export function learnOf(state: SocietyState, id: string, how: 'met' | 'seen' | 'told'): boolean {
   const k = knowledgeOf(state, id);
-  if (k[how]) return false;
+  if (how === 'told' && !k.facts.includes('name')) k.facts = [...k.facts, 'name'];
+  if (k[how]) {
+    state.known[id] = k;
+    return false;
+  }
   state.known[id] = { ...k, [how]: true };
   return true;
+}
+
+/** Writes down a fact the player found out about someone. True if that's news. */
+export function learnFact(state: SocietyState, id: string, fact: Fact): boolean {
+  const k = knowledgeOf(state, id);
+  if (k.facts.includes(fact)) return false;
+  state.known[id] = { ...k, facts: [...k.facts, fact] };
+  return true;
+}
+
+/** Keeps a line of what was said, the last `LOG_CAP` per person. */
+export function logLine(state: SocietyState, id: string, who: LogEntry['who'], text: string, now: number): void {
+  const k = knowledgeOf(state, id);
+  state.known[id] = { ...k, log: [...k.log, { at: now, who, text }].slice(-LOG_CAP) };
 }
 
 export function linkKey(a: string, b: string): string {

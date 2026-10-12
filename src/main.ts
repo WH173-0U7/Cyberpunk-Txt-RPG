@@ -12,6 +12,7 @@ import { Game, streetSpot } from './engine/game';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu } from './engine/food';
 import { kinWord } from './engine/dialogue';
+import type { Fact } from './engine/society';
 import type { InebriationStatus } from './engine/inebriation';
 import { randomSeed } from './engine/rng';
 import { createSave, readSave, resume, savedSeed, type Progress } from './engine/save';
@@ -187,11 +188,14 @@ const people = new People(
     card: $('#person'),
     cardName: $('#person-name'),
     cardKicker: $('#person-kicker'),
-    cardBio: $('#person-bio'),
+    cardFacts: $('#person-facts'),
+    cardWebToggle: $<HTMLButtonElement>('#person-web-toggle'),
     cardWeb: $('#person-web'),
     cardActions: $('#person-actions'),
+    cardQuestions: $('#person-questions'),
     cardGifts: $('#person-gifts'),
     cardAsk: $('#person-ask'),
+    cardLog: $('#person-log'),
     known: $('#people-known'),
     back: $<HTMLButtonElement>('#person-back'),
   },
@@ -203,6 +207,15 @@ const people = new People(
   {
     onSelect: (id) => {
       personShown = id;
+      webOpen = false;
+      showPeople();
+    },
+    onQuestion: (id, fact) => {
+      lastActivity = performance.now();
+      game.askFact(id, fact as Exclude<Fact, 'nature' | 'drinks'>, Date.now());
+    },
+    onToggleWeb: () => {
+      webOpen = !webOpen;
       showPeople();
     },
     onAction: (action, id) => actOn(action, id),
@@ -219,6 +232,8 @@ const people = new People(
 );
 /** The person whose card is open, if any: someone here, or anyone the player knows of. */
 let personShown: string | null = null;
+/** Whether their web is unfolded. */
+let webOpen = false;
 
 const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill'), value: $('#energy-value'), detail: $('#energy-detail') });
 
@@ -620,39 +635,51 @@ function showPeople(): void {
   const gangOf = (id: string | null) => (id ? PEOPLE.gangs[id]?.name : undefined);
   const charisma = game.charisma();
   const how = { seen: 'seen together', told: 'told', asked: 'asked' };
+  const nameOf = (id: string, fallback: string) => game.describe(id)?.name ?? fallback;
+  const described = shown ? game.describe(shown.id) : null;
+  const named = (p: { id: string }) => game.describe(p.id)?.named ?? false;
   people.render({
     title: at?.name ?? 'Here',
     kicker: `${district} · ${at && 'floors' in at ? at.kindLabel : (at?.kindLabel ?? 'The street')}`,
     count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
     reputation: [`Charisma Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP`, ...reputation],
-    rows: here.map(({ person, doing, stance }) => ({
-      id: person.id,
-      name: person.name,
-      sub: [gangOf(person.gang), person.job.role].filter(Boolean).join(' · '),
-      doing,
-      stance,
-      stanceLabel: STANCE_LABEL[stance],
-    })),
+    rows: here.map(({ person, doing, stance }) => {
+      const about = game.describe(person.id);
+      return {
+        id: person.id,
+        name: about?.name ?? person.name,
+        // The gang shows on sight; the job only once known (a gang member's job is the gang).
+        sub: [gangOf(person.gang) ? `${gangOf(person.gang)} colors` : undefined, person.gang ? undefined : about?.facts.job].filter(Boolean).join(' · '),
+        doing,
+        stance,
+        stanceLabel: STANCE_LABEL[stance],
+      };
+    }),
     empty: 'Nobody here right now. People keep hours: workers by day, regulars in the evening, residents at night.',
-    known: known.filter((p) => !here.some((h) => h.person.id === p.id)).map((p) => ({ id: p.id, name: p.name })),
+    known: known.filter((p) => !here.some((h) => h.person.id === p.id)).map((p) => ({ id: p.id, name: nameOf(p.id, p.name) })),
     card:
-      shown && standing
+      shown && standing && described
         ? {
             id: shown.id,
-            name: shown.name,
-            kicker: [STANCE_LABEL[standing.stance], gangOf(shown.gang), present ? present.doing : 'Not here'].filter(Boolean).join(' · '),
-            bio: shown.bio,
+            name: described.name,
+            kicker: [STANCE_LABEL[standing.stance], gangOf(shown.gang) ? `${gangOf(shown.gang)} colors` : undefined, present ? present.doing : 'Not here'].filter(Boolean).join(' · '),
+            facts: described.lines.length ? described.lines.join(' · ') : described.named ? 'That\'s all you know.' : 'You don\'t know anything about them yet. Talk, watch, ask.',
             stance: standing.stance,
             here: Boolean(present),
-            web: standing.web.map((link) => ({ id: link.person.id, name: link.person.name, label: link.kind ? kinWord(shown, link.kind, link.person) : '?', how: how[link.how] })),
-            webHint: `You don't know who ${shown.given} knows. Ask about people you've met, watch who ${shown.pronouns === 'they' ? 'they keep' : shown.pronouns === 'she' ? 'she keeps' : 'he keeps'} company with, or get ${shown.pronouns === 'they' ? 'them' : shown.pronouns === 'she' ? 'her' : 'him'} talking.`,
+            web: standing.web.map((link) => ({ id: link.person.id, name: nameOf(link.person.id, link.person.name), label: link.kind ? kinWord(shown, link.kind, link.person) : '?', how: how[link.how] })),
+            webOpen,
+            webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Ask about people you've met, watch who they keep company with, or get them talking.`,
             actions: [
               { id: 'talk', label: 'Talk', sub: standing.stance === 'hostile' ? "Won't talk" : `Rapport ${standing.standing.rapport}` },
               { id: 'insult', label: 'Insult', sub: 'Makes enemies', danger: true },
-              { id: 'rob', label: 'Rob', sub: `${shown.eddies} €$ on them`, danger: true },
+              { id: 'rob', label: 'Rob', sub: 'Take what they carry', danger: true },
             ],
+            questions: (Object.entries(LINES.questions) as Array<[Exclude<Fact, 'nature' | 'drinks'>, string]>)
+              .filter(([fact]) => !standing.knowledge.facts.includes(fact))
+              .map(([fact, label]) => ({ fact, label })),
             gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
-            askAbout: known.filter((p) => p.id !== shown.id).map((p) => ({ id: p.id, name: p.name })),
+            askAbout: known.filter((p) => p.id !== shown.id && named(p)).map((p) => ({ id: p.id, name: p.name })),
+            log: game.conversation(shown.id).map((line) => ({ who: line.who, text: line.text })),
           }
         : null,
   });

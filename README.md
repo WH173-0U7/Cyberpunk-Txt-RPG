@@ -107,16 +107,29 @@ own.
   each level (the first takes about fifteen chats, each after about twice the one before)
   makes chats and gifts worth a fifth more rapport and makes wary and cold people likelier
   to answer you. It shows in the People overlay's strip.
-- **Who knows whom**: you only know what you've found out. Opening **People** takes in
-  everyone there (you now know of them), and any two who are actually connected you've
-  *seen together* (connected somehow, you don't know how). Once someone likes you they drop
-  names ("My sister Ana works at…"), which tells you the relation. And you can **Ask about**
-  anyone you know of: they'll tell you what the person is to them, that they've never heard
-  of them, or, if they're wary or cold of you, nothing (charisma helps). A person's card
-  shows their **web**: them in the middle, everyone you know them to know around them,
-  each spoke labeled with the relation or "?" (dashed) when all you know is that they're
-  connected. Tap a name in the web to open that person's card, even if they're not here
-  (then you can only look), and the list of people you know of sits under everyone here.
+- **What you know of people**: only what you've found out. Until you've been introduced,
+  someone is "A young woman in Valentinos colors" or "An older man": what's plain to see
+  (their gang's colors, what they're doing) and nothing more. Talking to them gets you
+  their name, and whatever they talk about (their work, what they eat, who they hate); a
+  few chats and you have their measure. **Ask** them the rest: what they do, how old they
+  are, where they live, what they like, who they hate; they answer, or not, by how they
+  feel about you (charisma helps). Watching tells you things too: open **People** inside a
+  shop and its workers are plainly its workers, at night in an apartment block its
+  residents plainly live there, and someone eating is eating what they like. Their card
+  lists what you know and nothing else.
+- **Who knows whom**: the same rule. Opening **People** takes in everyone there, and any
+  two who are actually connected you've *seen together* (connected somehow, you don't know
+  how). Once someone likes you they drop names ("My sister Ana works at…"), which tells you
+  the relation and the name. And you can **Ask about** anyone whose name you have: they'll
+  tell you what the person is to them, that they've never heard of them, or nothing. The
+  card's **Web** unfolds to show them in the middle and everyone you know them to know
+  around them, each spoke labeled with the relation or "?" (dashed) when all you know is
+  that they're connected; tap a name to open that person's card (even if they're not here,
+  then you can only look). The people you know of are listed under everyone here.
+- **The conversation**: everything said between you and a person sits under their card,
+  your lines and theirs, newest at the bottom and scrolling inside, so the choices above
+  stay where they are: what you asked, what they answered, what you gave, what you said
+  when you insulted them, and what it cost you when they came to collect.
 - **Crossing people**: **Insult** someone and they hold it against you (a temper shoves you
   into the wall, which costs energy); **Rob** them and you take a share of their eddies. Every
   such thing spreads: the victim holds a grudge, so do their spouse, parents, children,

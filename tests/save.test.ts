@@ -129,7 +129,7 @@ describe('saving', () => {
     const someone = game.population.people[0];
     const other = game.population.people[1];
     if (!someone || !other) throw new Error('no people');
-    const society = { ...game.societySaved, known: { [someone.id]: { met: true, seen: false, told: false } }, links: { [[someone.id, other.id].sort().join('|')]: { kind: null, how: 'seen' as const, at: now } } };
+    const society = { ...game.societySaved, known: { [someone.id]: { met: true, seen: false, told: false, facts: ['name' as const], log: [{ at: now, who: 'you' as const, text: 'Hey.' }] } }, links: { [[someone.id, other.id].sort().join('|')]: { kind: null, how: 'seen' as const, at: now } } };
     const saved = { ...saveOf(game, now), charisma, society };
     const read = readSave(JSON.parse(JSON.stringify(saved)));
     expect(read?.charisma).toEqual(charisma);
@@ -139,6 +139,11 @@ describe('saving', () => {
     const again = new Game(world, rules, progress);
     expect(again.charisma()).toMatchObject({ level: 3, xp: 12 });
     expect(again.knownPeople().map((p) => p.id)).toEqual([someone.id]);
+    expect(again.describe(someone.id)).toMatchObject({ name: someone.name, named: true });
+    expect(again.conversation(someone.id)).toEqual([{ at: now, who: 'you', text: 'Hey.' }]);
+    // A save from before facts and the log were kept: the person is known, with neither.
+    const bare = readSave(JSON.parse(JSON.stringify({ ...saved, society: { ...society, known: { [someone.id]: { met: true, seen: false, told: false } } } })));
+    expect(bare?.society?.known[someone.id]).toEqual({ met: true, seen: false, told: false, facts: [], log: [] });
     expect(again.standingWith(someone.id, now)?.web.map((l) => l.person.id)).toEqual([other.id]);
 
     // A save from before anyone could be known of: nobody is, and charisma starts at 1.
