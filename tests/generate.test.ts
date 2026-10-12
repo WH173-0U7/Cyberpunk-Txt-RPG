@@ -315,6 +315,8 @@ describe('buildings', () => {
   it('puts every building in exactly one category, and every storefront in business', () => {
     const problems: string[] = [];
     const businesses = new Map(CITY.buildings.businesses.map((b) => [b.id, b]));
+    // Real storefronts keep their real names rather than their business's sign.
+    const real = new Set((CITY.buildings.landmarks ?? []).map((l) => l.name));
     for (const world of worlds.slice(0, 100)) {
       for (const b of world.buildings) {
         const style = CITY.buildings.styles[b.kind];
@@ -322,7 +324,7 @@ describe('buildings', () => {
         if (b.kind === 'shops') {
           const business = b.business ? businesses.get(b.business) : undefined;
           if (!business) problems.push(`${world.seed} ${b.id}: storefront without a business`);
-          else if (business.category !== b.category || business.label !== b.kindLabel || !b.name.includes(business.sign)) {
+          else if (business.category !== b.category || business.label !== b.kindLabel || (!real.has(b.name) && !b.name.includes(business.sign))) {
             problems.push(`${world.seed} ${b.id}: ${b.name} doesn't match ${business.id}`);
           }
           if (!CITY.buildings.categories[b.category]?.business) problems.push(`${world.seed} ${b.id}: storefront in ${b.category}`);

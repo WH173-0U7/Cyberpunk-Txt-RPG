@@ -25,6 +25,10 @@ export interface Business {
   /** As players read it, e.g. "Gun shop". */
   label: string;
   category: BuildingCategory;
+  /** A chain: the sign is the whole name, and every outlet is the same. */
+  chain?: boolean;
+  /** Only in these districts (ids). Anywhere, if not said. */
+  where?: string[];
 }
 
 /** What players call each category, and what it covers. */
@@ -37,11 +41,15 @@ export interface CategoryInfo {
   description: string;
 }
 
-/** A real Night City building. It takes over the building of its kind nearest its district's middle. */
+/**
+ * A real Night City building. It takes over the building of its kind nearest its district's
+ * middle. A real storefront (a restaurant, say) names the business it runs, too.
+ */
 export interface BuildingLandmark {
   district: string;
   kind: BuildingKind;
   name: string;
+  business?: string;
 }
 
 export interface BuildingContent {
@@ -57,6 +65,7 @@ export interface BuildingContent {
  * `trade` leans its storefronts toward some categories of business (weight 1 if not listed).
  */
 export interface ZoningPlan {
+  district: string;
   zoning: Partial<Record<BuildingKind, number>>;
   trade?: Partial<Record<BuildingCategory, number>>;
   areas: string[];
@@ -177,16 +186,26 @@ export function generateBuildings(
     }
   }
 
-  // Real landmarks stand at full height, near the middle of their district.
+  // Real landmarks take the building of their kind nearest the middle of their district. A
+  // real tower stands at full height; a real storefront keeps its size and runs its business.
+  const taken = new Set<Building>();
   for (const landmark of content.landmarks ?? []) {
     const district = districts.find((d) => d.id === landmark.district);
     if (!district) continue;
     const away = (b: Building) => Math.hypot(b.x + b.w / 2 - district.x, b.y + b.h / 2 - district.y);
-    const candidates = buildings.filter((b) => b.district === landmark.district && b.kind === landmark.kind);
+    const candidates = buildings.filter((b) => b.district === landmark.district && b.kind === landmark.kind && !taken.has(b));
     const nearest = candidates.reduce<Building | null>((best, b) => (!best || away(b) < away(best) ? b : best), null);
     if (!nearest) continue;
+    taken.add(nearest);
     nearest.name = landmark.name;
-    nearest.floors = content.styles[landmark.kind].floors[1];
+    const business = landmark.business ? content.businesses.find((b) => b.id === landmark.business) : undefined;
+    if (business) {
+      nearest.business = business.id;
+      nearest.kindLabel = business.label;
+      nearest.category = business.category;
+    } else {
+      nearest.floors = content.styles[landmark.kind].floors[1];
+    }
   }
   return buildings;
 }
@@ -277,7 +296,8 @@ function weightedPick(rng: Rng, weights: Partial<Record<BuildingKind, number>>):
 
 /**
  * A made-up name from the style's templates, never one that belongs to a real landmark. A
- * storefront's `{shop}` also decides its business, leaning the way its district trades.
+ * storefront's `{shop}` also decides its business, leaning the way its district trades; a
+ * chain's sign is its whole name, with the neighborhood when the template had one.
  * Each part of a name takes one draw, so what a storefront sells never moves a building.
  */
 function makeName(
@@ -288,30 +308,39 @@ function makeName(
   reserved: Set<string>,
 ): { name: string; business: Business | null } {
   let business: Business | null = null;
-  const fill = () =>
-    rng
+  const fill = () => {
+    let area = '';
+    let picked: Business | null = null;
+    const name = rng
       .pick(style.names)
-      .replace(/\{area\}/g, () => rng.pick(plan.areas))
+      .replace(/\{area\}/g, () => (area = rng.pick(plan.areas)))
       .replace(/\{corp\}/g, () => rng.pick(content.corps))
       .replace(/\{shop\}/g, () => {
-        business = pickBusiness(rng, content, plan.trade ?? {});
-        return business.sign;
+        picked = pickBusiness(rng, content, plan.trade ?? {}, plan.district);
+        return picked.sign;
       })
       .replace(/\{n\}/g, () => String(rng.int(2, 99)));
+    // Set inside the replace callback, which the type checker can't see.
+    business = picked as Business | null;
+    return business?.chain ? (area ? `${business.sign} ${area}` : business.sign) : name;
+  };
   let name = fill();
-  for (let attempt = 0; attempt < 8 && reserved.has(name); attempt++) name = fill();
-  return { name: reserved.has(name) ? `${name} ${rng.int(2, 99)}` : name, business };
+  // A chain outlet is meant to share its chain's name; anything else keeps off the landmarks' names.
+  const clashes = () => reserved.has(name) && !(business as Business | null)?.chain;
+  for (let attempt = 0; attempt < 8 && clashes(); attempt++) name = fill();
+  return { name: clashes() ? `${name} ${rng.int(2, 99)}` : name, business };
 }
 
 /**
  * A business for a storefront. Each category turns up as often as its share, leaned on by
  * what the district trades in, however many kinds of business it has. One draw.
  */
-function pickBusiness(rng: Rng, content: BuildingContent, trade: Partial<Record<BuildingCategory, number>>): Business {
+function pickBusiness(rng: Rng, content: BuildingContent, trade: Partial<Record<BuildingCategory, number>>, district: string): Business {
   const { businesses, categories } = content;
   const kinds = new Map<BuildingCategory, number>();
   for (const b of businesses) kinds.set(b.category, (kinds.get(b.category) ?? 0) + 1);
-  const weight = (b: Business) => (categories[b.category].share * (trade[b.category] ?? 1)) / (kinds.get(b.category) ?? 1);
+  const weight = (b: Business) =>
+    b.where && !b.where.includes(district) ? 0 : (categories[b.category].share * (trade[b.category] ?? 1)) / (kinds.get(b.category) ?? 1);
   const total = businesses.reduce((sum, b) => sum + weight(b), 0);
   let roll = rng.next() * total;
   for (const b of businesses) {

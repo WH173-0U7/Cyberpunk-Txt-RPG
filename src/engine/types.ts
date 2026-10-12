@@ -1,4 +1,5 @@
 import type { EnergyStatus } from './energy';
+import type { Quality } from './food';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -31,6 +32,8 @@ export interface District extends Point {
   mood: string;
   /** What plays while the player is out on its streets. */
   ambient: AmbientLine[];
+  /** How its eateries lean: luxury, everyday or poverty, as relative weights. */
+  dining: Partial<Record<Quality, number>>;
 }
 
 /** An NCART stop. Stations sit on street corners. */
@@ -259,5 +262,7 @@ export type GameEvents = {
   walletChanged: Wallet;
   /** Energy was spent (and maybe a level gained). Refilling on the clock doesn't fire this; ask `Game.energy(now)`. */
   energyChanged: EnergyStatus;
+  /** Something was bought, used or picked up. */
+  inventoryChanged: Item[];
   fx: { effect: FxName };
 };

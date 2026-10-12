@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CITY } from '../src/data/city';
 import { ENERGY } from '../src/data/energy';
+import { FOOD } from '../src/data/food';
 import { TRAVEL } from '../src/data/travel';
 import { Game } from '../src/engine/game';
 import { GENERATOR_VERSION, generateWorld } from '../src/engine/generate';
@@ -10,7 +11,7 @@ import type { World } from '../src/engine/types';
 
 const world = generateWorld('7f3a29c1', CITY);
 const T0 = Date.UTC(2077, 9, 12, 20, 0);
-const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY };
+const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD };
 
 /** Plays a few moves on foot to places next door, letting each trip finish. Returns the game and the time. */
 function played(steps: number): { game: Game; now: number } {

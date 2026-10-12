@@ -2,7 +2,7 @@ import { typewrite, type Typing } from './typewriter';
 
 const TYPE_MS = 9;
 
-export type ActionId = 'walk' | 'ride' | 'pass' | 'stop' | 'enter' | 'leave';
+export type ActionId = 'walk' | 'ride' | 'pass' | 'stop' | 'enter' | 'leave' | 'menu';
 
 export interface PanelAction {
   id: ActionId;
@@ -52,6 +52,7 @@ export interface PlaceHandlers {
 export class PlacePanel {
   private typing: Typing | null = null;
   private typed = '';
+  private announced = '';
 
   constructor(
     private readonly els: PlaceElements,
@@ -105,7 +106,11 @@ export class PlacePanel {
     }
     els.actions.hidden = view.actions.length === 0;
     els.close.hidden = !view.closable;
-    this.handlers.announce(view.announce);
+    // Redrawing the same view (the wallet changed, say) doesn't read it out again.
+    if (view.announce !== this.announced) {
+      this.announced = view.announce;
+      this.handlers.announce(view.announce);
+    }
   }
 
   /** Moves a trip's progress on without redrawing the rest. */

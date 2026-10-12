@@ -68,6 +68,23 @@ Energy is in place, with nothing spending it yet:
 - A home with a bed adds `ENERGY.bed` to the max. There are no homes yet: when there are,
   set `Game`'s `home` (and save it).
 
+## Food
+
+Eateries sell food, into the inventory (eating it comes later):
+
+- `src/engine/food.ts` builds a `Menu` for a building or place (`menuFor`); `Game.menu()` is
+  the one where the player is (inside a food storefront, or at a place whose kind has a
+  kitchen) and `Game.buy(id)` buys off it. A venue's `quality` (luxury, everyday, poverty) is
+  drawn from its district's `dining` weights, fixed for chains and named eateries, and sets
+  the prices and what's on; the draws use their own RNG streams, so menus never change the
+  city. New things to do with food (eating, energy) go in `Game`.
+- `src/data/food.ts` is the content: every dish is a real 2077 product or dish from the wiki
+  (its "Cyberpunk 2077 Food", "Drinks" and "Alcohol" lists and the vendor store pages), with
+  our own notes and prices; `kitchens` are per business id and place kind; `fixed` menus are
+  per chain business id or landmark name. Chains and named eateries are landmarks with a
+  `business` in `src/data/city.ts`.
+- `src/ui/shop.ts` is the menu overlay (a `MapOverlay` opened from the panel's **Menu**).
+
 ## Settings
 
 `src/ui/settings.ts` is the settings overlay (over the map, like the inventory; both are a

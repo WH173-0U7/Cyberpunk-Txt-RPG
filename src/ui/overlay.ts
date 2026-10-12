@@ -1,7 +1,7 @@
 export interface OverlayElements {
   root: HTMLElement;
-  /** The button in the map's header that opens and closes it. */
-  toggle: HTMLButtonElement;
+  /** A button in the map's header that opens and closes it, if it has one. */
+  toggle?: HTMLButtonElement;
   close: HTMLButtonElement;
 }
 
@@ -12,6 +12,8 @@ export interface OverlayElements {
  */
 export class MapOverlay {
   private static current: MapOverlay | null = null;
+  /** Whatever opened it, which gets focus back when it closes. */
+  private opener: HTMLElement | null = null;
 
   constructor(
     private readonly els: OverlayElements,
@@ -21,7 +23,7 @@ export class MapOverlay {
     private readonly onClose: () => void,
     private readonly reducedMotion: boolean,
   ) {
-    els.toggle.addEventListener('click', () => this.toggle());
+    els.toggle?.addEventListener('click', () => this.toggle());
     els.close.addEventListener('click', () => this.close());
   }
 
@@ -39,15 +41,17 @@ export class MapOverlay {
     else this.show();
   }
 
-  show(): void {
+  /** Opens it. `opener` is the button that did, for focus to go back to; the header button if not said. */
+  show(opener?: HTMLElement): void {
     if (this.isOpen) return;
     MapOverlay.current?.close();
     MapOverlay.current = this;
+    this.opener = opener ?? this.els.toggle ?? null;
     this.onOpen();
     const { root, toggle, close } = this.els;
     root.hidden = false;
-    toggle.setAttribute('aria-expanded', 'true');
-    toggle.classList.add('is-open');
+    toggle?.setAttribute('aria-expanded', 'true');
+    toggle?.classList.add('is-open');
     close.focus({ preventScroll: true });
     if (!this.reducedMotion) {
       // Powers on like a screen: a bright flash that settles. Nothing moves or clips, so it
@@ -68,10 +72,10 @@ export class MapOverlay {
     const { root, toggle } = this.els;
     const hadFocus = root.contains(document.activeElement);
     root.hidden = true;
-    toggle.setAttribute('aria-expanded', 'false');
-    toggle.classList.remove('is-open');
+    toggle?.setAttribute('aria-expanded', 'false');
+    toggle?.classList.remove('is-open');
     // Only take focus back if it was inside, so closing never steals it from the panel.
-    if (hadFocus || document.activeElement === document.body) toggle.focus({ preventScroll: true });
+    if ((hadFocus || document.activeElement === document.body) && this.opener?.isConnected) this.opener.focus({ preventScroll: true });
     this.onClose();
   }
 }
