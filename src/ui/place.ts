@@ -1,8 +1,32 @@
-import type { Building, District, Location } from '../engine/types';
-import { stripMarkup } from './markup';
 import { typewrite, type Typing } from './typewriter';
 
 const TYPE_MS = 9;
+
+export type ActionId = 'walk' | 'ride' | 'pass' | 'stop';
+
+export interface PanelAction {
+  id: ActionId;
+  label: string;
+  /** A second, smaller line: how long, how much. */
+  sub?: string;
+  disabled?: boolean;
+}
+
+/** One state of the panel: where you are, something you've picked, or a trip underway. */
+export interface PanelView {
+  mode: 'here' | 'target' | 'trip';
+  kicker: string;
+  title?: string;
+  meta?: string;
+  /** Typed out, and only when it changes. */
+  description?: string;
+  actions: PanelAction[];
+  closable: boolean;
+  /** How far through a trip, 0–1. */
+  progress?: number;
+  /** What a screen reader hears when the view appears. */
+  announce: string;
+}
 
 export interface PlaceElements {
   root: HTMLElement;
@@ -11,97 +35,87 @@ export interface PlaceElements {
   title: HTMLElement;
   meta: HTMLElement;
   description: HTMLElement;
+  progress: HTMLElement;
   actions: HTMLElement;
-  travel: HTMLButtonElement;
+  buttons: Record<ActionId, HTMLButtonElement>;
   close: HTMLButtonElement;
 }
 
 export interface PlaceHandlers {
-  onTravel(): void;
+  onAction(id: ActionId): void;
   onClose(): void;
   onGlitchText(el: HTMLElement, text: string): void;
   announce(text: string): void;
 }
 
-/** The strip under the map: where you are, the destination you've picked, or a building you tapped. */
+/** The strip under the map. It shows whatever view it's given; the game decides what that is. */
 export class PlacePanel {
   private typing: Typing | null = null;
+  private typed = '';
 
   constructor(
     private readonly els: PlaceElements,
     private readonly handlers: PlaceHandlers,
     private readonly reducedMotion: boolean,
   ) {
-    els.travel.addEventListener('click', () => handlers.onTravel());
+    for (const [id, button] of Object.entries(els.buttons) as Array<[ActionId, HTMLButtonElement]>) {
+      button.addEventListener('click', () => handlers.onAction(id));
+    }
     els.close.addEventListener('click', () => handlers.onClose());
   }
 
-  showCurrent(location: Location, district: District): void {
+  show(view: PanelView): void {
     const { els } = this;
-    els.root.classList.remove('is-destination', 'is-building');
-    els.kicker.textContent = `You are here · ${district.name} · ${location.kindLabel}`;
-    els.title.hidden = true;
-    els.meta.hidden = true;
-    els.description.hidden = false;
-    els.actions.hidden = true;
-    this.type(location.description);
-    this.scan();
-    this.handlers.announce(`${location.name}. ${stripMarkup(location.description)}`);
+    els.root.classList.remove('is-here', 'is-target', 'is-trip');
+    els.root.classList.add(`is-${view.mode}`);
+    els.kicker.textContent = view.kicker;
+    setText(els.title, view.title);
+    setText(els.meta, view.meta);
+
+    if (view.description) {
+      els.description.hidden = false;
+      if (view.description !== this.typed) {
+        this.typed = view.description;
+        this.typing?.finish();
+        this.typing = typewrite(els.description, view.description, {
+          msPerChar: TYPE_MS,
+          onGlitch: (el, glitchText) => this.handlers.onGlitchText(el, glitchText),
+        });
+      }
+    } else {
+      this.typing?.finish();
+      this.typed = '';
+      els.description.hidden = true;
+    }
+
+    els.progress.hidden = view.progress === undefined;
+    if (view.progress !== undefined) this.setProgress(view.progress);
+
+    const shown = new Set(view.actions.map((a) => a.id));
+    for (const [id, button] of Object.entries(els.buttons) as Array<[ActionId, HTMLButtonElement]>) {
+      button.hidden = !shown.has(id);
+    }
+    for (const action of view.actions) {
+      const button = els.buttons[action.id];
+      const [label, sub] = button.children;
+      if (label) label.textContent = action.label;
+      if (sub) sub.textContent = action.sub ?? '';
+      button.disabled = Boolean(action.disabled);
+      button.setAttribute('aria-label', [action.label, action.sub].filter(Boolean).join(', '));
+    }
+    els.actions.hidden = view.actions.length === 0;
+    els.close.hidden = !view.closable;
+    this.handlers.announce(view.announce);
   }
 
-  /** `stops` is how many legs the trip takes. The full description waits until you arrive. */
-  showDestination(location: Location, district: District, stops: number, explored: boolean): void {
-    const { els } = this;
-    const distance = stops === 1 ? 'Next door' : `${stops} stops away`;
-    this.typing?.finish();
-    els.root.classList.remove('is-building');
-    els.root.classList.add('is-destination');
-    els.kicker.textContent = `${distance} · ${district.name}`;
-    els.title.textContent = location.name;
-    els.title.hidden = false;
-    els.meta.textContent = `${location.kindLabel} · ${explored ? 'Been here' : 'Unexplored'}`;
-    els.meta.hidden = false;
-    els.description.hidden = true;
-    els.actions.hidden = false;
-    els.travel.hidden = false;
-    els.travel.disabled = false;
-    this.handlers.announce(`${location.name}, ${district.name}. ${distance}. Press Travel to go there.`);
-  }
-
-  /** A building picked out on the map: what it is and where. Nothing to do inside, yet. */
-  showBuilding(building: Building, district: District | undefined): void {
-    const { els } = this;
-    const where = district ? `Block ${building.block} · ${district.name}` : `Block ${building.block}`;
-    const height = building.floors > 1 ? `${building.floors} floors` : '';
-    this.typing?.finish();
-    els.root.classList.remove('is-destination');
-    els.root.classList.add('is-building');
-    els.kicker.textContent = where;
-    els.title.textContent = building.name;
-    els.title.hidden = false;
-    els.meta.textContent = [building.kindLabel, height].filter(Boolean).join(' · ');
-    els.meta.hidden = false;
-    els.description.hidden = true;
-    els.actions.hidden = false;
-    els.travel.hidden = true;
-    this.handlers.announce(`${building.name}. ${[building.kindLabel, height].filter(Boolean).join(', ')}. ${where}.`);
-  }
-
-  /** Locks the Travel button while a trip is underway. */
-  setTraveling(traveling: boolean): void {
-    this.els.travel.disabled = traveling;
-  }
-
-  private type(text: string): void {
-    this.typing?.finish();
-    this.typing = typewrite(this.els.description, text, {
-      msPerChar: TYPE_MS,
-      onGlitch: (el, glitchText) => this.handlers.onGlitchText(el, glitchText),
-    });
+  /** Moves a trip's progress on without redrawing the rest. */
+  update(progress: number, meta: string): void {
+    this.setProgress(progress);
+    this.els.meta.textContent = meta;
   }
 
   /** Sweeps a band of light across the panel, like an optic scan. */
-  private scan(): void {
+  scan(): void {
     if (this.reducedMotion) return;
     this.els.beam.animate(
       [
@@ -111,4 +125,13 @@ export class PlacePanel {
       { duration: 900, easing: 'cubic-bezier(0.3, 0.6, 0.4, 1)' },
     );
   }
+
+  private setProgress(progress: number): void {
+    this.els.progress.style.setProperty('--progress', `${Math.round(Math.min(1, Math.max(0, progress)) * 1000) / 10}%`);
+  }
+}
+
+function setText(el: HTMLElement, text: string | undefined): void {
+  el.hidden = !text;
+  el.textContent = text ?? '';
 }

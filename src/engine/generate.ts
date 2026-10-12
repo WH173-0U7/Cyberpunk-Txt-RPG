@@ -1,5 +1,6 @@
 import { generateBuildings, type BuildingContent, type ZoningPlan } from './buildings';
 import { createRng, hashSeed, type Rng } from './rng';
+import { generateTransit } from './transit';
 import type { AmbientLine, BuildingKind, CityLayout, District, Location, Point, Side, Theme, Weather, World } from './types';
 
 /** A real place from Night City. A district uses its own before it makes any up. */
@@ -68,7 +69,7 @@ export interface CityContent {
  * landing somewhere that no longer matches. The fingerprint test in tests/save.test.ts fails
  * as a reminder.
  */
-export const GENERATOR_VERSION = 1;
+export const GENERATOR_VERSION = 2;
 
 /** Longest description the location panel is designed for (raw text, markup included). */
 export const MAX_DESCRIPTION = 160;
@@ -144,6 +145,10 @@ export function generateWorld(seed: string, content: CityContent): World {
       name: template.name,
       theme: template.theme,
       terrain: isEdge ? 'desert' : 'city',
+      weather,
+      // Its own random stream, so the street mood never shifts the rest of the city.
+      mood: createRng(`${seed}:${template.id}:streets`).pick(template.atmosphere.outdoor),
+      ambient: template.ambient.outdoor,
       ...centroid(spots),
     };
   }
@@ -153,6 +158,7 @@ export function generateWorld(seed: string, content: CityContent): World {
   const start = chooseStart(rng, populated, locations, content);
   const layout: CityLayout = { avenues, streets, coast };
   const plans: Record<string, ZoningPlan> = Object.fromEntries(populated.map((t) => [t.id, { zoning: t.zoning, areas: t.areas }]));
+  const areas = Object.fromEntries(populated.map((t) => [t.id, t.areas]));
   return {
     seed,
     start,
@@ -162,6 +168,7 @@ export function generateWorld(seed: string, content: CityContent): World {
     districts,
     locations,
     buildings: generateBuildings(seed, layout, Object.values(districts), plans, content.buildings),
+    transit: generateTransit(seed, layout, Object.values(districts), Object.values(locations), areas),
   };
 }
 

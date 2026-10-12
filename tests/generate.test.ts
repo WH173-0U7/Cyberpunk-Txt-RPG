@@ -236,19 +236,20 @@ describe('buildings', () => {
   });
 
   it('gives every building a unique id, a name and a valid size', () => {
+    // Problems are collected and checked once: an assertion per building is slow across 500 cities.
+    const problems: string[] = [];
     for (const world of worlds) {
       const ids = new Set(world.buildings.map((b) => b.id));
-      expect(ids.size, world.seed).toBe(world.buildings.length);
+      if (ids.size !== world.buildings.length) problems.push(`${world.seed}: duplicate building ids`);
       for (const b of world.buildings) {
-        expect(b.name, b.id).not.toMatch(/[{}]|^\s*$/);
-        expect(b.w).toBeGreaterThan(0.8);
-        expect(b.h).toBeGreaterThan(0.6);
         const style = CITY.buildings.styles[b.kind];
-        expect(b.floors, b.id).toBeGreaterThanOrEqual(style.floors[0]);
-        expect(b.floors, b.id).toBeLessThanOrEqual(style.floors[1]);
-        expect(world.districts[b.district], b.id).toBeDefined();
+        if (/[{}]|^\s*$/.test(b.name)) problems.push(`${world.seed} ${b.id}: name "${b.name}"`);
+        if (b.w <= 0.8 || b.h <= 0.6) problems.push(`${world.seed} ${b.id}: ${b.w}×${b.h}`);
+        if (b.floors < style.floors[0] || b.floors > style.floors[1]) problems.push(`${world.seed} ${b.id}: ${b.floors} floors`);
+        if (!world.districts[b.district]) problems.push(`${world.seed} ${b.id}: no district ${b.district}`);
       }
     }
+    expect(problems).toEqual([]);
   });
 
   it('never stacks buildings on top of each other', () => {

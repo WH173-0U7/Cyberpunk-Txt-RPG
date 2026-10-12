@@ -26,6 +26,7 @@
       <section id="map" class="map panel" aria-label="City map">
         <div class="map-head">
           <span class="map-title">City grid</span>
+          <span id="wallet" class="wallet"></span>
           <span id="map-progress" class="map-stat"></span>
           <span id="save-status" class="save-status">Saved</span>
         </div>
@@ -34,7 +35,7 @@
           <div id="map-sweep" class="map-sweep" aria-hidden="true"></div>
           <svg id="map-routes" class="map-routes" aria-hidden="true"></svg>
           <nav id="map-nodes" class="map-nodes" aria-label="Places you know about"></nav>
-          <div id="map-tracer" class="map-tracer" aria-hidden="true" hidden></div>
+          <div id="map-player" class="player" aria-hidden="true"><span class="player-mark"></span></div>
           <div id="transmissions" class="transmissions" aria-hidden="true"></div>
           <div id="map-zoom" class="map-zoom" role="group" aria-label="Map zoom">
             <button id="zoom-in" class="zoom-button" type="button" aria-label="Zoom in" title="Zoom in">
@@ -55,11 +56,15 @@
             <h2 id="place-title" class="place-title" hidden></h2>
             <p id="place-meta" class="place-meta" hidden></p>
             <p id="place-desc" class="place-desc"></p>
+            <div id="place-progress" class="place-progress" hidden><div class="place-progress-bar"></div></div>
           </div>
           <div id="place-actions" class="place-actions" hidden>
-            <button id="place-travel" class="travel-button" type="button">Travel</button>
-            <button id="place-close" class="icon-btn" type="button" aria-label="Back to where you are"></button>
+            <button id="act-walk" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-ride" class="action is-ncart" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-pass" class="action is-ncart" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-stop" class="action is-stop" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
           </div>
+          <button id="place-close" class="icon-btn place-close" type="button" aria-label="Back to where you are" hidden></button>
         </div>
         <div class="map-foot">
           <span id="map-seed"></span>
