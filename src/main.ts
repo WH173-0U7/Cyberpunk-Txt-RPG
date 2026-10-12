@@ -74,6 +74,8 @@ const map = new CityMap(
   {
     stage: mapStage,
     city: $<HTMLCanvasElement>('#map-city'),
+    fog: $<HTMLCanvasElement>('#map-fog'),
+    names: $('#map-names'),
     routes: $<SVGSVGElement>('#map-routes'),
     nodes: $('#map-nodes'),
     sweep: $('#map-sweep'),
