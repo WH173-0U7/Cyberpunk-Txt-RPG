@@ -144,6 +144,20 @@ describe('generator version', () => {
     3: 'f56e245e',
   };
 
+  // Saves also name the building the player stands at, so its id must still be there. Every
+  // building's id, kind, footprint and height (not its name or business) go into this one.
+  // When it fails, bump GENERATOR_VERSION too, and record the new value here.
+  const BUILDING_LAYOUT = '49f20347';
+
+  it('keeps every building where saves expect it', () => {
+    const layout = ['7f3a29c1', '0badc0de', '1c0ffee5'].map((seed) =>
+      generateWorld(seed, CITY)
+        .buildings.map((b) => [b.id, b.kind, b.x, b.y, b.w, b.h, b.floors].join(':'))
+        .join('|'),
+    );
+    expect(hashSeed(layout.join('||')).toString(16)).toBe(BUILDING_LAYOUT);
+  });
+
   it('matches the places this version of the generator builds', () => {
     expect(fingerprint((seed) => generateWorld(seed, CITY))).toBe(FINGERPRINTS[GENERATOR_VERSION]);
   });

@@ -1,18 +1,40 @@
 import { districtAt, seaTest } from './geography';
 import { createRng, type Rng } from './rng';
-import type { Building, BuildingKind, CityLayout, District, Point } from './types';
+import type { Building, BuildingCategory, BuildingKind, CityLayout, District, Point } from './types';
 
 /** What a kind of building is called and how tall it gets. */
 export interface BuildingStyle {
   /** How players read it, e.g. "Apartment block". */
   label: string;
+  /** What it's for. A storefront takes its business's category instead. */
+  category: BuildingCategory;
   /** Inclusive range; [0, 0] for open ground. */
   floors: [number, number];
   /**
    * Name templates: `{area}` becomes a district neighborhood, `{corp}` a corporation,
-   * `{shop}` a kind of storefront and `{n}` a number.
+   * `{shop}` the storefront's business and `{n}` a number.
    */
   names: string[];
+}
+
+/** A kind of business a storefront can run. */
+export interface Business {
+  id: string;
+  /** As it reads on the sign, e.g. "Gun Shop". */
+  sign: string;
+  /** As players read it, e.g. "Gun shop". */
+  label: string;
+  category: BuildingCategory;
+}
+
+/** What players call each category, and what it covers. */
+export interface CategoryInfo {
+  label: string;
+  /** Businesses players can buy from or sell to (and, later, run); the rest is the city around them. */
+  business: boolean;
+  /** For a business category, how common its storefronts are in a typical district (relative). */
+  share: number;
+  description: string;
 }
 
 /** A real Night City building. It takes over the building of its kind nearest its district's middle. */
@@ -24,14 +46,19 @@ export interface BuildingLandmark {
 
 export interface BuildingContent {
   styles: Record<BuildingKind, BuildingStyle>;
+  categories: Record<BuildingCategory, CategoryInfo>;
   corps: string[];
-  shops: string[];
+  businesses: Business[];
   landmarks?: BuildingLandmark[];
 }
 
-/** What a district's blocks are zoned for, as relative weights, plus its neighborhood names. */
+/**
+ * What a district's blocks are zoned for, as relative weights, plus its neighborhood names.
+ * `trade` leans its storefronts toward some categories of business (weight 1 if not listed).
+ */
 export interface ZoningPlan {
   zoning: Partial<Record<BuildingKind, number>>;
+  trade?: Partial<Record<BuildingCategory, number>>;
   areas: string[];
 }
 
@@ -128,13 +155,16 @@ export function generateBuildings(
         // Apartment blocks have shops at street level now and then.
         const kind: BuildingKind = blockKind === 'apartments' && rng.chance(0.2) ? 'shops' : blockKind;
         const style = content.styles[kind];
+        const { name, business } = makeName(rng, style, plan, content, reserved);
         buildings.push({
           id: `b-${address}-${k + 1}`,
           block: address,
           district: district.id,
           kind,
-          kindLabel: style.label,
-          name: makeName(rng, style, plan, content, reserved),
+          kindLabel: business?.label ?? style.label,
+          category: business?.category ?? style.category,
+          business: business?.id ?? null,
+          name,
           floors: rng.int(style.floors[0], style.floors[1]),
           ...rect,
         });
@@ -240,18 +270,52 @@ function weightedPick(rng: Rng, weights: Partial<Record<BuildingKind, number>>):
   return entries.at(-1)?.[0] ?? 'apartments';
 }
 
-/** A made-up name from the style's templates, never one that belongs to a real landmark. */
-function makeName(rng: Rng, style: BuildingStyle, plan: ZoningPlan, content: BuildingContent, reserved: Set<string>): string {
+/**
+ * A made-up name from the style's templates, never one that belongs to a real landmark. A
+ * storefront's `{shop}` also decides its business, leaning the way its district trades.
+ * Each part of a name takes one draw, so what a storefront sells never moves a building.
+ */
+function makeName(
+  rng: Rng,
+  style: BuildingStyle,
+  plan: ZoningPlan,
+  content: BuildingContent,
+  reserved: Set<string>,
+): { name: string; business: Business | null } {
+  let business: Business | null = null;
   const fill = () =>
     rng
       .pick(style.names)
       .replace(/\{area\}/g, () => rng.pick(plan.areas))
       .replace(/\{corp\}/g, () => rng.pick(content.corps))
-      .replace(/\{shop\}/g, () => rng.pick(content.shops))
+      .replace(/\{shop\}/g, () => {
+        business = pickBusiness(rng, content, plan.trade ?? {});
+        return business.sign;
+      })
       .replace(/\{n\}/g, () => String(rng.int(2, 99)));
   let name = fill();
   for (let attempt = 0; attempt < 8 && reserved.has(name); attempt++) name = fill();
-  return reserved.has(name) ? `${name} ${rng.int(2, 99)}` : name;
+  return { name: reserved.has(name) ? `${name} ${rng.int(2, 99)}` : name, business };
+}
+
+/**
+ * A business for a storefront. Each category turns up as often as its share, leaned on by
+ * what the district trades in, however many kinds of business it has. One draw.
+ */
+function pickBusiness(rng: Rng, content: BuildingContent, trade: Partial<Record<BuildingCategory, number>>): Business {
+  const { businesses, categories } = content;
+  const kinds = new Map<BuildingCategory, number>();
+  for (const b of businesses) kinds.set(b.category, (kinds.get(b.category) ?? 0) + 1);
+  const weight = (b: Business) => (categories[b.category].share * (trade[b.category] ?? 1)) / (kinds.get(b.category) ?? 1);
+  const total = businesses.reduce((sum, b) => sum + weight(b), 0);
+  let roll = rng.next() * total;
+  for (const b of businesses) {
+    roll -= weight(b);
+    if (roll < 0) return b;
+  }
+  const last = businesses.at(-1);
+  if (!last) throw new Error('No businesses to open a storefront with');
+  return last;
 }
 
 function round(n: number): number {

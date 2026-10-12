@@ -45,5 +45,8 @@ npm run build
 - When a change makes seeds build different places (new content counts), bump
   `GENERATOR_VERSION` in `src/engine/generate.ts` and add the new fingerprint in
   `tests/save.test.ts`. The fingerprint test fails as a reminder.
+- Saves also point at buildings, so `tests/save.test.ts` pins every building's id, kind,
+  footprint and height. A building's name, category and business can change freely (each
+  part of a name takes one random draw); moving or resizing buildings needs the same bump.
 - `TRAVEL.timeScale` in `src/data/travel.ts` is 60 while testing; 1 is real time.
 - Merging to `main` deploys to GitHub Pages (https://wh173-0u7.github.io/Cyberpunk-Txt-RPG/).

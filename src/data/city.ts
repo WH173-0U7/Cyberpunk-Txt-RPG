@@ -41,6 +41,8 @@ const DISTRICTS: DistrictTemplate[] = [
       { name: 'Megabuilding H11', kind: 'megabuilding', description: 'A Northside megabuilding of cramped apartments, deep in {w|Maelstrom} country.' },
     ],
     zoning: { apartments: 4, shops: 3, megabuilding: 1, warehouse: 1, derelict: 0.6, lot: 0.6, park: 0.3 },
+    // Kabuki's market and Little China: ripperdocs, gun dealers, netrunners and junk.
+    trade: { cyberware: 2, firearms: 1.6, netrunning: 1.6, commodity: 1.4, melee: 1.3 },
     atmosphere: {
       outdoor: [
         'Rain hammers everything, and the gutters run with neon.',
@@ -84,6 +86,8 @@ const DISTRICTS: DistrictTemplate[] = [
       { name: 'Megabuilding H8', kind: 'megabuilding', description: 'A Japantown megabuilding stacked with apartments, shops and Tyger Claws business.' },
     ],
     zoning: { shops: 4, apartments: 2, tower: 1.5, park: 0.8, plaza: 0.6 },
+    // Japantown's pachinko halls, karaoke and clubs; boutiques up in Charter Hill.
+    trade: { entertainment: 2.2, nightlife: 1.8, clothing: 1.6, netrunning: 1.3, lodging: 1.3 },
     atmosphere: {
       outdoor: [
         'Holographic koi swim through the air above the street.',
@@ -117,6 +121,8 @@ const DISTRICTS: DistrictTemplate[] = [
       { name: 'Memorial Park', kind: 'park', description: 'A park in the middle of Corpo Plaza, green and quiet under the towers.' },
     ],
     zoning: { tower: 5, plaza: 1.2, shops: 1, park: 0.5, lot: 0.4 },
+    // Downtown dresses well and eats out; not much call for guns or chop shops.
+    trade: { clothing: 2, medical: 1.5, food: 1.4, nightlife: 1.2, firearms: 0.6, melee: 0.4, vehicles: 0.5 },
     atmosphere: {
       outdoor: [
         'Corpo security drones hum overhead, scanning faces.',
@@ -154,6 +160,8 @@ const DISTRICTS: DistrictTemplate[] = [
       { name: 'Dicky Twister', kind: 'club', description: 'A club in Vista del Rey with loud music, cheap drinks and a reputation.' },
     ],
     zoning: { apartments: 4, shops: 2, park: 0.8, lot: 0.8, megabuilding: 0.4 },
+    // Valentinos country: garages for the lowriders, family kitchens and bars.
+    trade: { vehicles: 1.8, food: 1.6, nightlife: 1.4, firearms: 1.2 },
     atmosphere: {
       outdoor: [
         '{w|Valentinos} murals cover the walls, saints in gold and chrome.',
@@ -185,6 +193,8 @@ const DISTRICTS: DistrictTemplate[] = [
       { name: 'Container Freight Station', kind: 'freight', description: "Rancho Coronado's freight station: cranes, rail sidings and containers stacked to the sky." },
     ],
     zoning: { factory: 3, warehouse: 3, apartments: 1.5, lot: 1, megabuilding: 0.8 },
+    // Industrial Arroyo: garages, scrap and guns.
+    trade: { vehicles: 2, commodity: 1.6, firearms: 1.4, entertainment: 0.6, clothing: 0.6 },
     atmosphere: {
       outdoor: [
         'Smokestacks paint the sky a sick orange.',
@@ -225,6 +235,8 @@ const DISTRICTS: DistrictTemplate[] = [
       { name: 'The Moth', kind: 'bar', description: 'A Dogtown bar where the neon is dim and nobody asks questions.' },
     ],
     zoning: { derelict: 3, apartments: 2, shops: 1, lot: 1, park: 0.4 },
+    // Voodoo Boys territory: netrunners, salvage and blades.
+    trade: { commodity: 1.8, netrunning: 1.6, melee: 1.4, firearms: 1.3, lodging: 0.5, clothing: 0.6 },
     atmosphere: {
       outdoor: [
         'Half-finished resorts rot along the shore.',
@@ -580,18 +592,46 @@ const KINDS: Record<string, LocationKind> = {
 
 const BUILDINGS: BuildingContent = {
   styles: {
-    tower: { label: 'Corporate tower', floors: [40, 96], names: ['{corp} Tower', '{corp} Plaza One', '{corp} Spire', '{corp} Regional HQ'] },
-    apartments: { label: 'Apartment block', floors: [8, 26], names: ['{area} Block {n}', '{area} Residences', '{area} Heights', 'Unit Block {n}'] },
-    megabuilding: { label: 'Megabuilding', floors: [60, 110], names: ['Megabuilding H{n}', '{area} Arcology', 'Megabuilding {n}'] },
-    shops: { label: 'Storefront', floors: [2, 5], names: ['{shop}', '{area} {shop}', 'Neon {shop}', '24/7 {shop}'] },
-    warehouse: { label: 'Warehouse', floors: [2, 4], names: ['Warehouse {n}', '{corp} Depot', 'Cold Storage {n}', 'Freight Hall {n}'] },
-    factory: { label: 'Factory', floors: [3, 7], names: ['{corp} Assembly {n}', '{area} Works', 'Fab Plant {n}', 'Refinery {n}'] },
-    derelict: { label: 'Abandoned building', floors: [3, 16], names: ['Derelict Block {n}', 'Unfinished Hotel', 'Gutted Tower {n}', 'Condemned Flats {n}'] },
-    park: { label: 'Park', floors: [0, 0], names: ['{area} Park', 'Memorial Garden', 'Pocket Park {n}'] },
-    plaza: { label: 'Plaza', floors: [0, 0], names: ['{area} Square', '{corp} Plaza', 'Founders Plaza'] },
-    lot: { label: 'Parking lot', floors: [0, 0], names: ['Parking Lot {n}', 'Car Park {n}', 'Impound Lot {n}'] },
-    shack: { label: 'Shack', floors: [1, 1], names: ['Scrap Shack', 'Squatter Hut', 'Water Still', 'Signal Shack'] },
-    container: { label: 'Shipping container', floors: [1, 1], names: ['Container {n}', 'Smuggler Cache', 'Rusted Container'] },
+    tower: { label: 'Corporate tower', category: 'corporate', floors: [40, 96], names: ['{corp} Tower', '{corp} Plaza One', '{corp} Spire', '{corp} Regional HQ'] },
+    apartments: { label: 'Apartment block', category: 'residential', floors: [8, 26], names: ['{area} Block {n}', '{area} Residences', '{area} Heights', 'Unit Block {n}'] },
+    megabuilding: { label: 'Megabuilding', category: 'residential', floors: [60, 110], names: ['Megabuilding H{n}', '{area} Arcology', 'Megabuilding {n}'] },
+    // A storefront's category and label come from its business.
+    shops: { label: 'Storefront', category: 'commodity', floors: [2, 5], names: ['{shop}', '{area} {shop}', 'Neon {shop}', '24/7 {shop}'] },
+    warehouse: { label: 'Warehouse', category: 'storage', floors: [2, 4], names: ['Warehouse {n}', '{corp} Depot', 'Cold Storage {n}', 'Freight Hall {n}'] },
+    factory: { label: 'Factory', category: 'industrial', floors: [3, 7], names: ['{corp} Assembly {n}', '{area} Works', 'Fab Plant {n}', 'Refinery {n}'] },
+    derelict: { label: 'Abandoned building', category: 'abandoned', floors: [3, 16], names: ['Derelict Block {n}', 'Unfinished Hotel', 'Gutted Tower {n}', 'Condemned Flats {n}'] },
+    park: { label: 'Park', category: 'public', floors: [0, 0], names: ['{area} Park', 'Memorial Garden', 'Pocket Park {n}'] },
+    plaza: { label: 'Plaza', category: 'public', floors: [0, 0], names: ['{area} Square', '{corp} Plaza', 'Founders Plaza'] },
+    lot: { label: 'Parking lot', category: 'parking', floors: [0, 0], names: ['Parking Lot {n}', 'Car Park {n}', 'Impound Lot {n}'] },
+    shack: { label: 'Shack', category: 'residential', floors: [1, 1], names: ['Scrap Shack', 'Squatter Hut', 'Water Still', 'Signal Shack'] },
+    container: { label: 'Shipping container', category: 'storage', floors: [1, 1], names: ['Container {n}', 'Smuggler Cache', 'Rusted Container'] },
+  },
+  /**
+   * The business categories follow the kinds of vendor in Night City (ripperdocs, weapon,
+   * melee weapon, netrunner, clothing, meds, junk and food vendors on the Cyberpunk Wiki),
+   * plus what else keeps a street running. `share` is how common each is in a typical district.
+   */
+  categories: {
+    commodity: { label: 'Commodity', business: true, share: 3, description: 'Everyday goods bought and sold: bodegas, pawn shops and junk dealers.' },
+    food: { label: 'Food', business: true, share: 3, description: 'Somewhere to eat: noodle bars, grills and street stalls.' },
+    nightlife: { label: 'Nightlife', business: true, share: 2, description: 'Bars, clubs and karaoke, open till the sun comes up.' },
+    firearms: { label: 'Firearms', business: true, share: 1.2, description: 'Guns, ammo, attachments and mods.' },
+    melee: { label: 'Melee weapons', business: true, share: 0.5, description: 'Blades, bats and anything else that works up close.' },
+    cyberware: { label: 'Cyberware', business: true, share: 1.2, description: 'Ripperdocs and cyberware dealers who sell, fit and upgrade implants.' },
+    netrunning: { label: 'Netrunning', business: true, share: 0.8, description: 'Quickhacks and cyberdecks for netrunners.' },
+    clothing: { label: 'Clothing', business: true, share: 1.5, description: 'Street threads, armored jackets and corpo suits.' },
+    medical: { label: 'Medical', business: true, share: 1.2, description: 'Pharmacies and street clinics: meds, injectors and patching up.' },
+    vehicles: { label: 'Vehicles', business: true, share: 0.8, description: 'Garages and chop shops that fix, mod and strip cars and bikes.' },
+    entertainment: { label: 'Entertainment', business: true, share: 1.5, description: 'Braindance parlors, arcades and pachinko halls.' },
+    services: { label: 'Services', business: true, share: 2, description: 'Laundromats, tattoo studios and repair shops.' },
+    lodging: { label: 'Lodging', business: true, share: 0.8, description: 'Capsule hotels and motels that rent beds by the night.' },
+    residential: { label: 'Residential', business: false, share: 0, description: 'Where people live: apartment blocks, megabuildings and squats.' },
+    corporate: { label: 'Corporate', business: false, share: 0, description: 'Corporate towers and offices.' },
+    industrial: { label: 'Industrial', business: false, share: 0, description: 'Factories, fab plants and refineries.' },
+    storage: { label: 'Storage', business: false, share: 0, description: 'Warehouses, depots and shipping containers.' },
+    public: { label: 'Public space', business: false, share: 0, description: 'Parks and plazas, open to anyone.' },
+    parking: { label: 'Parking', business: false, share: 0, description: 'Parking lots and impound yards.' },
+    abandoned: { label: 'Abandoned', business: false, share: 0, description: 'Derelict, gutted and condemned buildings.' },
   },
   corps: [
     'Arasaka',
@@ -612,22 +652,42 @@ const BUILDINGS: BuildingContent = {
     'SovOil',
   ],
   landmarks: [{ district: 'city_center', kind: 'tower', name: 'Arasaka Tower' }],
-  shops: [
-    'Noodle Bar',
-    'Pawn Shop',
-    'Braindance Parlor',
-    'Gun Shop',
-    'Pachinko Hall',
-    'Laundromat',
-    'Capsule Hotel',
-    'Arcade',
-    'Bodega',
-    'Cyberware Outlet',
-    'Synth-Meat Grill',
-    'Tattoo Studio',
-    'Repair Shop',
-    'Karaoke Box',
-    'Pharmacy',
+  // What a storefront can be. Its sign goes into its name ("Kabuki Gun Shop", "24/7 Bodega").
+  businesses: [
+    { id: 'bodega', sign: 'Bodega', label: 'Bodega', category: 'commodity' },
+    { id: 'general-store', sign: 'General Store', label: 'General store', category: 'commodity' },
+    { id: 'pawn-shop', sign: 'Pawn Shop', label: 'Pawn shop', category: 'commodity' },
+    { id: 'junk-shop', sign: 'Junk Shop', label: 'Junk shop', category: 'commodity' },
+    { id: 'noodle-bar', sign: 'Noodle Bar', label: 'Noodle bar', category: 'food' },
+    { id: 'grill', sign: 'Synth-Meat Grill', label: 'Grill', category: 'food' },
+    { id: 'food-stall', sign: 'Food Stall', label: 'Food stall', category: 'food' },
+    { id: 'dumpling-house', sign: 'Dumpling House', label: 'Dumpling house', category: 'food' },
+    { id: 'bar', sign: 'Bar', label: 'Bar', category: 'nightlife' },
+    { id: 'karaoke', sign: 'Karaoke Box', label: 'Karaoke bar', category: 'nightlife' },
+    { id: 'club', sign: 'Club', label: 'Club', category: 'nightlife' },
+    { id: 'gun-shop', sign: 'Gun Shop', label: 'Gun shop', category: 'firearms' },
+    { id: 'gunsmith', sign: 'Gunsmith', label: 'Gunsmith', category: 'firearms' },
+    { id: 'ammo-shop', sign: 'Ammo Shop', label: 'Ammo shop', category: 'firearms' },
+    { id: 'blade-shop', sign: 'Blade Shop', label: 'Blade shop', category: 'melee' },
+    { id: 'ripperdoc', sign: 'Ripperdoc', label: 'Ripperdoc clinic', category: 'cyberware' },
+    { id: 'cyberware-outlet', sign: 'Cyberware Outlet', label: 'Cyberware outlet', category: 'cyberware' },
+    { id: 'quickhack-dealer', sign: 'Quickhacks', label: 'Quickhack dealer', category: 'netrunning' },
+    { id: 'cyberdeck-shop', sign: 'Cyberdeck Shop', label: 'Cyberdeck shop', category: 'netrunning' },
+    { id: 'clothing-store', sign: 'Clothing Store', label: 'Clothing store', category: 'clothing' },
+    { id: 'boutique', sign: 'Boutique', label: 'Boutique', category: 'clothing' },
+    { id: 'thrift-shop', sign: 'Thrift Shop', label: 'Thrift shop', category: 'clothing' },
+    { id: 'pharmacy', sign: 'Pharmacy', label: 'Pharmacy', category: 'medical' },
+    { id: 'street-clinic', sign: 'Clinic', label: 'Street clinic', category: 'medical' },
+    { id: 'garage', sign: 'Garage', label: 'Garage', category: 'vehicles' },
+    { id: 'chop-shop', sign: 'Chop Shop', label: 'Chop shop', category: 'vehicles' },
+    { id: 'braindance-parlor', sign: 'Braindance Parlor', label: 'Braindance parlor', category: 'entertainment' },
+    { id: 'arcade', sign: 'Arcade', label: 'Arcade', category: 'entertainment' },
+    { id: 'pachinko-hall', sign: 'Pachinko Hall', label: 'Pachinko hall', category: 'entertainment' },
+    { id: 'laundromat', sign: 'Laundromat', label: 'Laundromat', category: 'services' },
+    { id: 'tattoo-studio', sign: 'Tattoo Studio', label: 'Tattoo studio', category: 'services' },
+    { id: 'repair-shop', sign: 'Repair Shop', label: 'Repair shop', category: 'services' },
+    { id: 'capsule-hotel', sign: 'Capsule Hotel', label: 'Capsule hotel', category: 'lodging' },
+    { id: 'motel', sign: 'Motel', label: 'Motel', category: 'lodging' },
   ],
 };
 

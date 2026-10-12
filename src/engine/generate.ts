@@ -1,7 +1,7 @@
 import { generateBuildings, type BuildingContent, type ZoningPlan } from './buildings';
 import { createRng, hashSeed, type Rng } from './rng';
 import { generateTransit, type TransitContent } from './transit';
-import type { AmbientLine, BuildingKind, CityLayout, District, Location, Point, Side, Theme, Weather, World } from './types';
+import type { AmbientLine, BuildingCategory, BuildingKind, CityLayout, District, Location, Point, Side, Theme, Weather, World } from './types';
 
 /** A real place from Night City. A district uses its own before it makes any up. */
 export interface Landmark {
@@ -29,6 +29,8 @@ export interface DistrictTemplate {
   landmarks?: Landmark[];
   /** What its blocks are built up with, as relative weights. */
   zoning: Partial<Record<BuildingKind, number>>;
+  /** Which categories of business its storefronts lean toward (1 if not listed). */
+  trade?: Partial<Record<BuildingCategory, number>>;
   /** "edge" districts sit at the border of the map as open desert, like the Badlands. */
   placement?: 'edge';
   /** Second sentences for descriptions, setting the district's mood. */
@@ -163,7 +165,7 @@ export function generateWorld(seed: string, content: CityContent): World {
 
   const start = chooseStart(rng, populated, locations, content);
   const layout: CityLayout = { avenues, streets, coast };
-  const plans: Record<string, ZoningPlan> = Object.fromEntries(populated.map((t) => [t.id, { zoning: t.zoning, areas: t.areas }]));
+  const plans: Record<string, ZoningPlan> = Object.fromEntries(populated.map((t) => [t.id, { zoning: t.zoning, trade: t.trade, areas: t.areas }]));
   const areas = Object.fromEntries(populated.map((t) => [t.id, t.areas]));
   return {
     seed,
