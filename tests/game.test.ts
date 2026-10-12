@@ -10,6 +10,7 @@ function place(id: string, links: string[], extra: Partial<Location> = {}): Loca
     id,
     name: id[0]?.toUpperCase() + id.slice(1),
     kind: 'test',
+    kindLabel: 'Test',
     district: 'test',
     weather: 'clear',
     description: `The ${id}.`,
@@ -24,9 +25,11 @@ function place(id: string, links: string[], extra: Partial<Location> = {}): Loca
 const world: World = {
   seed: 'test',
   start: 'alley',
-  intro: ['booting'],
   welcome: 'hello',
-  districts: { test: { id: 'test', name: 'Testville', theme: { primary: '#111111', secondary: '#222222' }, x: 50, y: 50 } },
+  layout: { avenues: [50], streets: [50], coast: null },
+  districts: {
+    test: { id: 'test', name: 'Testville', theme: { primary: '#111111', secondary: '#222222' }, terrain: 'city', x: 50, y: 50 },
+  },
   locations: {
     alley: place('alley', ['market'], { ambient: ['drip', { text: 'thunder', fx: 'lightning' }] }),
     market: place('market', ['alley', 'bar', 'roof']),
@@ -54,15 +57,12 @@ function setup() {
 const sorted = (set: ReadonlySet<string>) => [...set].sort();
 
 describe('Game', () => {
-  it('boots, then arrives at the start knowing only its neighbors', () => {
+  it('greets the player, then arrives at the start knowing only its neighbors', () => {
     const { game, take, types, outputs } = setup();
     game.start();
     const events = take();
 
-    expect(outputs(events)).toEqual([
-      { text: 'booting', tone: 'system' },
-      { text: 'hello', tone: 'narrative' },
-    ]);
+    expect(outputs(events)).toEqual([{ text: 'hello', tone: 'narrative' }]);
     expect(types(events).slice(-2)).toEqual(['locationChanged', 'mapChanged']);
     expect(events.at(-2)?.payload).toMatchObject({ from: null, to: { id: 'alley' }, route: ['alley'] });
     expect(sorted(game.mapState.visited)).toEqual(['alley']);

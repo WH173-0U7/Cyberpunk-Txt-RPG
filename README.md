@@ -29,17 +29,21 @@ Every game is a new, procedurally generated Night City: a different mix of distr
 (Watson, Westbrook, City Center, Heywood, Santo Domingo, Pacifica, sometimes the Badlands),
 different places in them, different names, weather and streets.
 
-- **City map**: tap any place you know about to travel there. A tracer runs along the
-  route, then you arrive. You start knowing only your surroundings; every arrival reveals
-  the places its routes lead to. The header counts how much of the city you've mapped.
-- **Location card**: a one- or two-sentence description of where you are.
-- **Feed**: idle chatter from the city, warnings, and a marker each time you arrive somewhere.
+- **City map**: a street grid of blocks, parks, desert and coastline, tinted by district.
+  Unexplored areas sit under fog that lifts around everywhere you've been, and every arrival
+  reveals the places its streets lead to. The header counts how much you've mapped.
+- **Travel**: tap a place to select it. The panel under the map shows how far it is and
+  the route lights up; tap **Travel** (or the place again) and a tracer runs along the
+  streets before you arrive.
+- **Panel**: where you are and what it's like, or the destination you've picked.
+- **Transmissions**: the city's chatter types across the top of the map, then fades.
 - **New city**: generates a fresh city (tap twice to confirm).
 
 Each city has a **seed**, shown under the map and in the page address (e.g. `#7f3a29c1`).
 Opening the game with the same seed rebuilds exactly the same city, so you can share one.
 
-There's no typing. On a keyboard, Tab moves between places on the map and Enter travels.
+There's no typing. On a keyboard, Tab moves between places on the map, Enter selects and
+travels, and Esc clears the selection.
 
 ## How it's built
 
@@ -51,7 +55,8 @@ src/
   engine/   Game rules and state: the city generator, seeded random numbers, travel and
             discovery, ambient chatter. No DOM, fully unit-tested.
   data/     The content the generator builds cities from (city.ts).
-  ui/       City map, location card, event feed, HUD, typewriter, markup parser.
+  ui/       City map (canvas city, routes, markers), place panel, transmissions, HUD,
+            typewriter, markup parser.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.
 tests/      Vitest unit tests.
@@ -59,9 +64,10 @@ tests/      Vitest unit tests.
 
 | Game event | What the player sees |
 |---|---|
-| Travelling | A tracer races along the route on the map, lighting the path behind it |
-| Arriving somewhere | Signal-tear glitch, neon sign flickers on, colors crossfade to the district palette, weather changes, the card rescans |
-| Discovering places | New markers and routes appear; districts light up and get their names |
+| Picking a destination | Its marker lights up and the route there is drawn along the streets |
+| Travelling | A tracer races along the streets, lighting the path behind it |
+| Arriving somewhere | Signal-tear glitch, neon sign flickers on, colors crossfade to the district palette, weather changes, the panel rescans |
+| Discovering places | Fog lifts, new markers and routes appear, districts light up and get their names |
 | Ambient line with an effect | e.g. lightning flashes the screen and the sign; a bass drop shakes the bar |
 | `{g\|word}` in any text | The word tears and scrambles every few seconds |
 
@@ -80,6 +86,7 @@ Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
 A description is one sentence from the kind plus one mood sentence from the district, and has
 to fit in 160 characters, so keep sentences short. Add a new kind to `KINDS`, then list it in
 the `kinds` of every district it can appear in. `npm test` generates 500 cities and checks that
-every one is connected, has no crossing streets, unique names and descriptions that fit.
+every one is connected, has every place on its own street corner, routes that follow the
+streets, a coastline that never floods a place, unique names and descriptions that fit.
 
 Text supports inline markup: `{h|highlight}`, `{w|danger}` and `{g|glitch}`.

@@ -25,9 +25,8 @@ export class Game {
     return { current: this.current.id, visited: new Set(this.visited), discovered: new Set(this.discovered) };
   }
 
-  /** Plays the boot sequence and drops the player into the starting location. */
+  /** Greets the player and drops them into the starting location. */
   start(): void {
-    for (const line of this.world.intro) this.say(line, 'system');
     this.say(this.world.welcome);
     this.arrive([this.current.id], null);
   }

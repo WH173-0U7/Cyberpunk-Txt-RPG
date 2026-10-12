@@ -3,14 +3,15 @@ import { CITY } from './data/city';
 import { Game } from './engine/game';
 import { generateWorld } from './engine/generate';
 import { randomSeed } from './engine/rng';
+import type { District, Location } from './engine/types';
 import { GlitchText } from './fx/glitch';
 import { ScreenFx } from './fx/screen';
 import { applyTheme, resolveTheme } from './fx/theme';
 import { WeatherFx } from './fx/weather';
-import { Feed } from './ui/feed';
 import { Hud } from './ui/hud';
 import { CityMap } from './ui/map';
-import { SceneView } from './ui/scene';
+import { PlacePanel } from './ui/place';
+import { Transmissions } from './ui/transmissions';
 
 function $<T extends Element = HTMLElement>(selector: string): T {
   const el = document.querySelector<T>(selector);
@@ -23,18 +24,34 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const weather = new WeatherFx($<HTMLCanvasElement>('#weather'), reducedMotion);
 const screen = new ScreenFx({ app: $('#app'), flash: $('#flash') }, reducedMotion);
 const glitchText = new GlitchText(reducedMotion);
+const registerGlitch = (el: HTMLElement, text: string) => glitchText.register(el, text);
 const hud = new Hud({ sign: $('#hud-sign'), path: $('#hud-path'), weather: $('#hud-weather'), clock: $('#hud-clock') });
 const mapStage = $('#map-stage');
 const seedLabel = $('#map-seed');
 const newCityButton = $<HTMLButtonElement>('#new-city');
 
-const feed = new Feed({ log: $('#log'), announcer: $('#announcer') }, { onGlitchText: (el, text) => glitchText.register(el, text) });
+const transmissions = new Transmissions({ root: $('#transmissions'), announcer: $('#announcer') }, registerGlitch, reducedMotion);
 
-const sceneView = new SceneView(
-  { beam: $('#scan-beam'), text: $('#scene-text') },
+const place = new PlacePanel(
   {
-    onGlitchText: (el, text) => glitchText.register(el, text),
-    announce: (text) => feed.announce(text),
+    root: $('#place'),
+    beam: $('#scan-beam'),
+    kicker: $('#place-kicker'),
+    title: $('#place-title'),
+    meta: $('#place-meta'),
+    description: $('#place-desc'),
+    actions: $('#place-actions'),
+    travel: $<HTMLButtonElement>('#place-travel'),
+    close: $<HTMLButtonElement>('#place-close'),
+  },
+  {
+    onTravel: () => {
+      const id = map.selection;
+      if (id) void travelTo(id);
+    },
+    onClose: () => select(null),
+    onGlitchText: registerGlitch,
+    announce: (text) => transmissions.announce(text),
   },
   reducedMotion,
 );
@@ -42,7 +59,7 @@ const sceneView = new SceneView(
 const map = new CityMap(
   {
     stage: mapStage,
-    zones: $('#map-zones'),
+    city: $<HTMLCanvasElement>('#map-city'),
     routes: $<SVGSVGElement>('#map-routes'),
     nodes: $('#map-nodes'),
     sweep: $('#map-sweep'),
@@ -50,7 +67,10 @@ const map = new CityMap(
     progress: $('#map-progress'),
     coords: $('#map-coords'),
   },
-  { onTravel: (id) => void travelTo(id) },
+  {
+    onSelect: (id) => select(id),
+    onTravel: (id) => void travelTo(id),
+  },
   reducedMotion,
 );
 
@@ -58,24 +78,45 @@ let game: Game;
 let traveling = false;
 let lastActivity = performance.now();
 
+function districtOf(location: Location): District {
+  const district = game.world.districts[location.district];
+  if (!district) throw new Error(`Unknown district "${location.district}"`);
+  return district;
+}
+
+/** Picks a destination on the map (null: back to where you are). */
+function select(id: string | null): void {
+  lastActivity = performance.now();
+  const route = id ? game.routeTo(id) : null;
+  const destination = id ? game.world.locations[id] : undefined;
+  if (!id || id === game.location.id || !route || !destination) {
+    map.select(null);
+    place.showCurrent(game.location, districtOf(game.location));
+    return;
+  }
+  map.select(id, route);
+  place.showDestination(destination, districtOf(destination), route.length - 1, game.mapState.visited.has(id));
+}
+
 /** Animates the trip on the map, then arrives. */
 async function travelTo(id: string): Promise<void> {
   const route = game.routeTo(id);
   if (traveling || !route) return;
   traveling = true;
   lastActivity = performance.now();
-  feed.skipTyping();
+  place.setTraveling(true);
   const trip = game;
   await map.animateRoute(route);
   // A new city may have been generated while the tracer was moving.
   if (trip === game) game.travel(id);
+  place.setTraveling(false);
   traveling = false;
 }
 
 // Game → presentation. The engine only emits events; every visual reaction lives here.
 function wire(g: Game): void {
   g.events.on('output', ({ text, tone }) => {
-    feed.print(text, tone);
+    transmissions.push(text, tone);
     if (tone === 'error') screen.nudge(mapStage);
   });
 
@@ -85,8 +126,7 @@ function wire(g: Game): void {
     weather.setWeather(to.weather);
     weather.setTint(theme.primary);
     hud.setLocation(to.name, district.name, to.weather);
-    sceneView.show(to);
-    feed.divider(to.name);
+    place.showCurrent(to, district);
     if (from) screen.glitch();
   });
 
@@ -102,7 +142,7 @@ function wire(g: Game): void {
 function startCity(seed: string): void {
   game = new Game(generateWorld(seed, CITY));
   wire(game);
-  feed.clear();
+  transmissions.clear();
   map.setWorld(game.world);
   seedLabel.textContent = `Seed ${seed.toUpperCase()}`;
   try {
@@ -135,6 +175,11 @@ newCityButton.addEventListener('click', () => {
   startCity(randomSeed());
 });
 
+// Escape drops the current selection.
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && map.selection) select(null);
+});
+
 const seedInAddress = location.hash.slice(1).toLowerCase();
 startCity(/^[0-9a-f]{8}$/.test(seedInAddress) ? seedInAddress : randomSeed());
 
@@ -143,7 +188,7 @@ function scheduleAmbient(): void {
   setTimeout(
     () => {
       const idleFor = performance.now() - lastActivity;
-      if (idleFor > 12_000 && feed.idle && !traveling && !document.hidden) game.ambient();
+      if (idleFor > 12_000 && transmissions.idle && !traveling && !document.hidden) game.ambient();
       scheduleAmbient();
     },
     18_000 + Math.random() * 22_000,

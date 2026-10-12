@@ -1,5 +1,5 @@
-import { createRng, type Rng } from './rng';
-import type { AmbientLine, District, Location, Point, Theme, Weather, World } from './types';
+import { createRng, hashSeed, type Rng } from './rng';
+import type { AmbientLine, CityLayout, District, Location, Point, Side, Theme, Weather, World } from './types';
 
 /** A district that may appear in a generated city. */
 export interface DistrictTemplate {
@@ -12,7 +12,7 @@ export interface DistrictTemplate {
   areas: string[];
   /** Kinds of location this district can contain (keys of `CityContent.kinds`). */
   kinds: string[];
-  /** "edge" districts sit at the border of the map, like the Badlands. */
+  /** "edge" districts sit at the border of the map as open desert, like the Badlands. */
   placement?: 'edge';
   /** Second sentences for descriptions, setting the district's mood. */
   atmosphere: { outdoor: string[]; indoor: string[] };
@@ -21,6 +21,8 @@ export interface DistrictTemplate {
 
 /** A kind of place, e.g. a bar or a night market. */
 export interface LocationKind {
+  /** How players read it, e.g. "Night market". */
+  label: string;
   indoor: boolean;
   /** Weather inside (indoor kinds only); outdoor kinds use the district's. */
   weather?: Weather;
@@ -34,15 +36,15 @@ export interface LocationKind {
 }
 
 export interface CityContent {
-  intro: string[];
   welcome: string;
   districts: DistrictTemplate[];
   kinds: Record<string, LocationKind>;
 }
 
-/** Longest description the location card is designed for (raw text, markup included). */
+/** Longest description the location panel is designed for (raw text, markup included). */
 export const MAX_DESCRIPTION = 160;
 
+/** Locations stay this far inside the map edge. */
 const MAP_MIN = 7;
 const MAP_MAX = 93;
 
@@ -50,7 +52,11 @@ const MAP_MAX = 93;
 export function generateWorld(seed: string, content: CityContent): World {
   const rng = createRng(seed);
   const templates = chooseDistricts(rng, content.districts);
-  const centers = placeDistricts(rng, templates);
+  const edgeSide: Side = rng.pick(['north', 'east', 'south', 'west'] as const);
+  const centers = placeDistricts(rng, templates, edgeSide);
+  const avenues = streetLines(rng);
+  const streets = streetLines(rng);
+  const corners = avenues.flatMap((x) => streets.map((y) => ({ x, y }))).filter(isOnMap);
 
   const districts: Record<string, District> = {};
   const locations: Record<string, Location> = {};
@@ -59,15 +65,14 @@ export function generateWorld(seed: string, content: CityContent): World {
 
   for (const template of templates) {
     const center = centers.get(template.id) ?? { x: 50, y: 50 };
-    const weather = rng.pick(template.weather);
     const isEdge = template.placement === 'edge';
+    const weather = rng.pick(template.weather);
     const count = isEdge ? rng.int(2, 3) : rng.int(3, 4);
     const kinds = rng.shuffle(template.kinds).slice(0, Math.min(count, template.kinds.length));
-    const spots = placeLocations(rng, center, kinds.length, isEdge ? 11 : 13, Object.values(locations));
-    // A district with no room for any location is left off the map entirely.
+    const spots = pickCorners(rng, corners, center, kinds.length, isEdge ? 14 : 15, Object.values(locations));
+    // A district with no free corners for any location is left off the map entirely.
     if (spots.length === 0) continue;
     populated.push(template);
-    districts[template.id] = { id: template.id, name: template.name, theme: template.theme, ...center };
 
     spots.forEach((spot, index) => {
       const kindId = kinds[index] ?? '';
@@ -78,6 +83,7 @@ export function generateWorld(seed: string, content: CityContent): World {
         id,
         name: makeName(rng, kind, template, usedNames),
         kind: kindId,
+        kindLabel: kind.label,
         district: template.id,
         weather: kind.indoor ? (kind.weather ?? 'clear') : weather,
         ...(kind.theme ? { theme: kind.theme } : {}),
@@ -90,18 +96,39 @@ export function generateWorld(seed: string, content: CityContent): World {
         ...spot,
       };
     });
+
+    // The district's center is where its places actually ended up.
+    districts[template.id] = {
+      id: template.id,
+      name: template.name,
+      theme: template.theme,
+      terrain: isEdge ? 'desert' : 'city',
+      ...centroid(spots),
+    };
   }
 
   linkLocations(rng, populated, districts, locations);
 
+  const hasEdge = populated.some((t) => t.placement === 'edge');
   return {
     seed,
     start: chooseStart(rng, populated, locations, content),
-    intro: content.intro,
     welcome: content.welcome,
+    layout: { avenues, streets, coast: chooseCoast(rng, Object.values(locations), hasEdge ? edgeSide : null) },
     districts,
     locations,
   };
+}
+
+/**
+ * The route between two places along the street grid: straight when they share a street,
+ * otherwise one turn at a corner. The same pair always takes the same corner.
+ */
+export function streetPath(a: Location, b: Location): Point[] {
+  if (a.x === b.x || a.y === b.y) return [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
+  const [p, q] = a.id < b.id ? [a, b] : [b, a];
+  const corner = hashSeed(p.id + q.id) & 1 ? { x: p.x, y: q.y } : { x: q.x, y: p.y };
+  return [{ x: a.x, y: a.y }, corner, { x: b.x, y: b.y }];
 }
 
 /** Three or four city districts, plus usually one edge district. */
@@ -113,18 +140,12 @@ function chooseDistricts(rng: Rng, pool: DistrictTemplate[]): DistrictTemplate[]
   return chosen;
 }
 
-function placeDistricts(rng: Rng, templates: DistrictTemplate[]): Map<string, Point> {
+function placeDistricts(rng: Rng, templates: DistrictTemplate[], edgeSide: Side): Map<string, Point> {
   const centers = new Map<string, Point>();
 
   for (const template of templates.filter((t) => t.placement === 'edge')) {
     const along = rng.range(25, 75);
-    const side = rng.int(0, 3);
-    const point = [
-      { x: along, y: 13 },
-      { x: 87, y: along },
-      { x: along, y: 87 },
-      { x: 13, y: along },
-    ][side] ?? { x: 13, y: along };
+    const point = { north: { x: along, y: 14 }, east: { x: 86, y: along }, south: { x: along, y: 86 }, west: { x: 14, y: along } }[edgeSide];
     centers.set(template.id, point);
   }
 
@@ -145,20 +166,52 @@ function placeDistricts(rng: Rng, templates: DistrictTemplate[]): Map<string, Po
   return centers;
 }
 
-/** Scatters up to `count` spots around a district center, keeping clear of every other location. */
-function placeLocations(rng: Rng, center: Point, count: number, radius: number, existing: Point[]): Point[] {
-  const placed: Point[] = [];
-  let minGap = 10;
-  for (let attempt = 0; placed.length < count && attempt < 400; attempt++) {
-    // If the district is crowded, loosen the spacing rather than leave it nearly empty.
-    if (attempt === 200 && placed.length < 2) minGap = 8;
-    const angle = rng.range(0, Math.PI * 2);
-    const r = rng.range(4, radius);
-    const point = { x: center.x + Math.cos(angle) * r, y: center.y + Math.sin(angle) * r };
-    if (point.x < MAP_MIN || point.x > MAP_MAX || point.y < MAP_MIN || point.y > MAP_MAX) continue;
-    if ([...existing, ...placed].every((other) => distance(other, point) >= minGap)) placed.push(point);
+/** Street positions across the map, a short city block apart. */
+function streetLines(rng: Rng): number[] {
+  const lines: number[] = [];
+  for (let at = rng.range(3, 6); at < 97; at += rng.range(6.5, 9.5)) lines.push(Math.round(at * 10) / 10);
+  return lines;
+}
+
+function isOnMap(p: Point): boolean {
+  return p.x >= MAP_MIN && p.x <= MAP_MAX && p.y >= MAP_MIN && p.y <= MAP_MAX;
+}
+
+/** Up to `count` street corners near a district center, keeping clear of every other location. */
+function pickCorners(rng: Rng, corners: Point[], center: Point, count: number, radius: number, existing: Point[]): Point[] {
+  const nearby = rng.shuffle(corners.filter((c) => distance(c, center) <= radius));
+  const picked: Point[] = [];
+  // Prefer roomy spacing; loosen it if the district would otherwise be nearly empty.
+  for (const minGap of [11, 8.5]) {
+    for (const corner of nearby) {
+      if (picked.length >= count) break;
+      if ([...existing, ...picked].every((other) => distance(other, corner) >= minGap)) picked.push(corner);
+    }
+    if (picked.length >= 2) break;
   }
-  return placed;
+  return picked;
+}
+
+function centroid(points: Point[]): Point {
+  return {
+    x: points.reduce((sum, p) => sum + p.x, 0) / points.length,
+    y: points.reduce((sum, p) => sum + p.y, 0) / points.length,
+  };
+}
+
+/** Night City is on the coast: the sea fills one edge, never the desert's, without reaching any location. */
+function chooseCoast(rng: Rng, locations: Location[], desertSide: Side | null): CityLayout['coast'] {
+  const reach: Record<Side, (p: Point) => number> = {
+    north: (p) => p.y,
+    east: (p) => 100 - p.x,
+    south: (p) => 100 - p.y,
+    west: (p) => p.x,
+  };
+  const sides = (['north', 'east', 'south', 'west'] as const).filter((s) => s !== desertSide);
+  const side = rng.pick(sides);
+  const closest = Math.min(...locations.map(reach[side]));
+  const depth = closest - rng.range(5, 8);
+  return depth >= 4 ? { side, depth: Math.round(depth * 10) / 10 } : null;
 }
 
 function fill(rng: Rng, template: string, district: DistrictTemplate): string {
@@ -180,7 +233,7 @@ function makeName(rng: Rng, kind: LocationKind, district: DistrictTemplate, used
   return `${base} ${n}`;
 }
 
-/** A sentence about the place, then one about the district's mood when it fits on the card. */
+/** A sentence about the place, then one about the district's mood when it fits in the panel. */
 function makeDescription(rng: Rng, kind: LocationKind, district: DistrictTemplate): string {
   const first = rng.pick(kind.descriptions);
   const moods = rng.shuffle(kind.indoor ? district.atmosphere.indoor : district.atmosphere.outdoor);
@@ -189,8 +242,8 @@ function makeDescription(rng: Rng, kind: LocationKind, district: DistrictTemplat
 }
 
 /**
- * Streets: a minimum spanning tree inside each district, the shortest crossing-free link
- * between neighboring districts, and a few extra links so the map has loops.
+ * Routes: a minimum spanning tree inside each district, the shortest link between neighboring
+ * districts, and a few extra links so the city has loops.
  */
 function linkLocations(
   rng: Rng,
@@ -199,57 +252,44 @@ function linkLocations(
   locations: Record<string, Location>,
 ): void {
   const all = Object.values(locations);
-  const edges: Array<[Location, Location]> = [];
   const connect = (a: Location, b: Location) => {
-    edges.push([a, b]);
+    if (a.links.includes(b.id)) return;
     a.links.push(b.id);
     b.links.push(a.id);
   };
-  const isClear = (a: Location, b: Location) =>
-    edges.every(([c, d]) => sharesEnd(a, b, c, d) || !segmentsCross(a, b, c, d)) &&
-    all.every((n) => n === a || n === b || distanceToSegment(n, a, b) >= 4);
-
   const members = (districtId: string) => all.filter((l) => l.district === districtId);
 
   for (const template of templates) {
     const group = members(template.id);
     for (const [a, b] of spanningTree(group)) connect(a, b);
     if (group.length >= 3 && rng.chance(0.5)) {
-      const extra = pairs(group, group).find(([a, b]) => !a.links.includes(b.id) && isClear(a, b));
+      const extra = pairs(group, group).find(([a, b]) => !a.links.includes(b.id));
       if (extra) connect(...extra);
     }
   }
 
   const districtList = templates.map((t) => districts[t.id]).filter((d): d is District => Boolean(d));
   const tree = spanningTree(districtList);
-  const bridge = ([from, to]: [District, District]) => {
-    const candidates = pairs(members(from.id), members(to.id));
-    const best = candidates.find(([a, b]) => isClear(a, b)) ?? candidates[0];
-    if (best) connect(...best);
-  };
-  for (const pair of tree) bridge(pair);
+  for (const [from, to] of tree) {
+    const closest = pairs(members(from.id), members(to.id))[0];
+    if (closest) connect(...closest);
+  }
 
   // One more district-to-district link, so the city isn't a pure tree.
   const inTree = (a: District, b: District) => tree.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
-  const spare = pairs(districtList, districtList).filter(([a, b]) => a.id < b.id && !inTree(a, b));
-  if (spare.length && rng.chance(0.75)) {
-    for (const [a, b] of spare.slice(0, 2)) {
-      const candidate = pairs(members(a.id), members(b.id)).find(([x, y]) => isClear(x, y));
-      if (candidate) {
-        connect(...candidate);
-        break;
-      }
-    }
+  const spare = pairs(districtList, districtList).find(([a, b]) => a.id < b.id && !inTree(a, b));
+  if (spare && rng.chance(0.75)) {
+    const closest = pairs(members(spare[0].id), members(spare[1].id))[0];
+    if (closest) connect(...closest);
   }
 }
 
-/** Starts somewhere outdoors in a city district (never out in the Badlands). */
+/** Starts somewhere outdoors in a city district (never out in the desert). */
 function chooseStart(rng: Rng, templates: DistrictTemplate[], locations: Record<string, Location>, content: CityContent): string {
   const city = templates.find((t) => t.placement !== 'edge') ?? templates[0];
   const options = Object.values(locations).filter((l) => l.district === city?.id);
   const outdoor = options.filter((l) => !content.kinds[l.kind]?.indoor);
-  const start = rng.pick(outdoor.length ? outdoor : options);
-  return start.id;
+  return rng.pick(outdoor.length ? outdoor : options).id;
 }
 
 /** Prim's algorithm: the shortest set of links that joins every point. */
@@ -284,22 +324,4 @@ function pairs<T extends Point>(a: T[], b: T[]): Array<[T, T]> {
 
 export function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function sharesEnd(a: Point, b: Point, c: Point, d: Point): boolean {
-  return a === c || a === d || b === c || b === d;
-}
-
-/** Whether segments ab and cd properly cross each other. */
-export function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
-  const orient = (p: Point, q: Point, r: Point) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
-  return orient(a, b, c) * orient(a, b, d) < 0 && orient(c, d, a) * orient(c, d, b) < 0;
-}
-
-function distanceToSegment(p: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const lengthSq = dx * dx + dy * dy;
-  const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSq));
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }

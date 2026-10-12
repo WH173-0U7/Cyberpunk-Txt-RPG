@@ -23,11 +23,6 @@
         <h1 id="hud-sign" class="sign"></h1>
       </header>
 
-      <section id="scene" class="scene panel" aria-label="Location">
-        <div class="scan-clip" aria-hidden="true"><div id="scan-beam" class="scan-beam"></div></div>
-        <p id="scene-text" class="scene-text"></p>
-      </section>
-
       <section id="map" class="map panel" aria-label="City map">
         <div class="map-head">
           <span class="map-title">City grid</span>
@@ -35,20 +30,30 @@
           <button id="new-city" class="map-button" type="button">New city</button>
         </div>
         <div id="map-stage" class="map-stage">
+          <canvas id="map-city" class="map-city" aria-hidden="true"></canvas>
           <div id="map-sweep" class="map-sweep" aria-hidden="true"></div>
-          <div id="map-zones" class="map-zones" aria-hidden="true"></div>
           <svg id="map-routes" class="map-routes" aria-hidden="true"></svg>
-          <nav id="map-nodes" class="map-nodes" aria-label="Places you can travel to"></nav>
+          <nav id="map-nodes" class="map-nodes" aria-label="Places you know about"></nav>
           <div id="map-tracer" class="map-tracer" aria-hidden="true" hidden></div>
+          <div id="transmissions" class="transmissions" aria-hidden="true"></div>
+        </div>
+        <div id="place" class="place">
+          <div class="scan-clip" aria-hidden="true"><div id="scan-beam" class="scan-beam"></div></div>
+          <div class="place-text">
+            <p id="place-kicker" class="place-kicker"></p>
+            <h2 id="place-title" class="place-title" hidden></h2>
+            <p id="place-meta" class="place-meta" hidden></p>
+            <p id="place-desc" class="place-desc"></p>
+          </div>
+          <div id="place-actions" class="place-actions" hidden>
+            <button id="place-travel" class="travel-button" type="button">Travel</button>
+            <button id="place-close" class="icon-btn" type="button" aria-label="Back to where you are"></button>
+          </div>
         </div>
         <div class="map-foot">
           <span id="map-seed"></span>
           <span id="map-coords"></span>
         </div>
-      </section>
-
-      <section class="feed" aria-label="Event feed">
-        <div id="log" class="log"></div>
       </section>
 
       <div id="announcer" class="sr-only" aria-live="polite"></div>
