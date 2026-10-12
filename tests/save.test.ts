@@ -31,7 +31,7 @@ function played(steps: number): { game: Game; now: number } {
 }
 
 function saveOf(game: Game, now: number): SaveData {
-  return createSave(world.seed, game.mapState, game.wallet, game.currentTrip, game.interior?.id ?? null, GENERATOR_VERSION, now);
+  return createSave(world.seed, game, GENERATOR_VERSION, now);
 }
 
 const sorted = (set: ReadonlySet<string>) => [...set].sort();
@@ -59,6 +59,26 @@ describe('saving', () => {
     expect(resume(world, save)?.inside).toBe(building.id);
     expect(resume(world, { ...save, inside: 'b-nowhere' })?.inside).toBeNull();
     expect(resume(world, { ...save, where: { ...at, building: null } })?.inside).toBeNull();
+  });
+
+  it('carries the inventory, dropping anything in it that is not an item', () => {
+    const { game, now } = played(1);
+    expect(game.inventory).toEqual([]);
+    const shard = { id: 'shard-1', kind: 'shard', name: 'Old Shard', count: 1 };
+    const saved = { ...saveOf(game, now), items: [shard, { id: 'x', kind: 'spaceship', name: 'Nope', count: 1 }, { ...shard, count: 0 }, 'junk'] };
+    const read = readSave(JSON.parse(JSON.stringify(saved)));
+    expect(read?.items).toEqual([shard]);
+    const { items: _, ...old } = saveOf(game, now);
+    expect(readSave(JSON.parse(JSON.stringify(old)))?.items).toEqual([]);
+
+    const progress = read && resume(world, read);
+    if (!progress) throw new Error('no progress');
+    const resumed = new Game(world, rules, progress);
+    expect(resumed.inventory).toEqual([shard]);
+    // Copies: changing what the UI was handed doesn't change what the player carries.
+    const handed = resumed.inventory;
+    handed[0]!.count = 99;
+    expect(resumed.inventory[0]?.count).toBe(1);
   });
 
   it('ignores anything that is not a save it understands', () => {

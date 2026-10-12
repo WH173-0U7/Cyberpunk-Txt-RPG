@@ -388,6 +388,43 @@ button {
 
 .map-stat {
   color: var(--secondary);
+  white-space: nowrap;
+}
+
+/* Opens the inventory over the map */
+.head-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid color-mix(in srgb, #ffd84d 70%, transparent);
+  background: color-mix(in srgb, #ffd84d 8%, transparent);
+  color: #ffd84d;
+  font: inherit;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  transition:
+    background 0.15s,
+    text-shadow 0.15s;
+}
+.head-button svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+.head-button:hover,
+.head-button:focus-visible,
+.head-button.is-open {
+  background: color-mix(in srgb, #ffd84d 22%, transparent);
+  text-shadow: 0 0 8px #ffd84d;
 }
 
 /* Eddies, and whether the NCART pass is running */
@@ -427,6 +464,9 @@ button {
 
 .map-stage {
   position: relative;
+  /* The inventory opens in this same cell, over the map. */
+  grid-row: 2;
+  grid-column: 1;
   min-height: 0;
   overflow: hidden;
   background: #06070d;
@@ -1028,6 +1068,232 @@ button {
 .icon-btn:focus-visible::before,
 .icon-btn:focus-visible::after {
   background: var(--secondary);
+}
+
+/* ───────────── Inventory ───────────── */
+
+/* Covers the map, in the same grid cell. Dark panel, yellow accents, crosshair corners and a
+   barcode strip, after the Cyberpunk TCG's cards. */
+.inventory {
+  position: relative;
+  z-index: 10;
+  grid-row: 2;
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 14px 16px 12px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 216, 77, 0.025) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #08090f, #05060b);
+  color: var(--text);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.inventory[hidden] {
+  display: none;
+}
+/* Crosshair brackets in each corner */
+.inventory::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  pointer-events: none;
+  opacity: 0.85;
+  --c: #ffd84d;
+  background:
+    linear-gradient(var(--c), var(--c)) top left / 14px 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) top left / 2px 14px no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / 14px 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / 2px 14px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / 14px 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / 2px 14px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / 14px 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / 2px 14px no-repeat;
+}
+
+.inventory-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.inventory-kicker {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.inventory-title {
+  margin: 2px 0 0;
+  color: #ffd84d;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px color-mix(in srgb, #ffd84d 55%, transparent);
+}
+.inventory-close {
+  width: 36px;
+  height: 36px;
+  margin: -6px -6px 0 0;
+}
+
+.inventory-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  border-block: 1px solid color-mix(in srgb, #ffd84d 25%, transparent);
+  color: color-mix(in srgb, #ffd84d 70%, var(--muted));
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.inventory-strip > :last-child {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.inventory-barcode {
+  width: 64px;
+  height: 12px;
+  opacity: 0.7;
+  background: repeating-linear-gradient(
+    90deg,
+    #ffd84d 0 1px,
+    transparent 1px 3px,
+    #ffd84d 3px 5px,
+    transparent 5px 6px,
+    #ffd84d 6px 7px,
+    transparent 7px 10px
+  );
+}
+
+.inventory-body {
+  flex: 1;
+  min-height: 0;
+  margin-right: -6px;
+  padding-right: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, #ffd84d 40%, transparent) transparent;
+}
+
+.inventory-wallet {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+.inventory-wallet > div {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, #ffd84d 30%, transparent);
+  background: color-mix(in srgb, #ffd84d 5%, transparent);
+}
+.inventory-wallet dt {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.inventory-wallet dd {
+  margin: 3px 0 0;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+
+.inventory-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.inv-section {
+  display: flex;
+  flex-direction: column;
+  padding: 9px 10px 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  background: rgba(255, 255, 255, 0.02);
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%);
+}
+.inv-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.inv-section-label {
+  margin: 0;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.inv-section-count {
+  color: #ffd84d;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.inv-section-hint {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.inv-empty {
+  margin: auto 0 0;
+  padding: 5px 0;
+  border: 1px dashed color-mix(in srgb, var(--muted) 45%, transparent);
+  color: color-mix(in srgb, var(--muted) 80%, transparent);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.inv-items {
+  display: grid;
+  gap: 4px;
+  margin: auto 0 0;
+  padding: 0;
+  list-style: none;
+}
+.inv-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.inv-item-count {
+  color: #ffd84d;
+}
+
+@media (max-width: 380px) {
+  /* Narrow phones: the button shrinks to its icon so the header stays on one line. */
+  .head-button span {
+    display: none;
+  }
+  .head-button {
+    padding-inline: 8px;
+  }
+}
+@media (max-width: 420px) {
+  .inventory {
+    padding: 12px 12px 10px;
+  }
+  .inventory-sections {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 /* ───────────── Overlays ───────────── */

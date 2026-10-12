@@ -135,6 +135,21 @@ export interface Building {
   h: number;
 }
 
+/**
+ * The kinds of item in Night City, sorted the way the Cyberpunk Wiki sorts 2077's: weapons,
+ * attachments and mods, cyberware, quickhacks, clothing, consumables, shards, junk and
+ * crafting components.
+ */
+export type ItemKind = 'weapon' | 'attachment' | 'cyberware' | 'quickhack' | 'clothing' | 'consumable' | 'shard' | 'junk' | 'component';
+
+/** Something the player carries: what it is, and how many of it. */
+export interface Item {
+  id: string;
+  kind: ItemKind;
+  name: string;
+  count: number;
+}
+
 /** Flavor text that plays while the player is idle, optionally firing an effect. */
 export type AmbientLine = string | { text: string; fx: FxName };
 

@@ -44,6 +44,17 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 - `insideView` in `src/main.ts` is the panel inside. It has the building's `category` and
   `business` to decide what to show.
 
+## The inventory
+
+The inventory overlay is in place, with nothing in it yet:
+
+- An `Item` has a `kind` (`ItemKind`: weapon, attachment, cyberware, quickhack, clothing,
+  consumable, shard, junk, component, after the wiki's 2077 item types), a name and a count.
+  `Game.inventory` is what the player carries; it's saved as `items`. Giving and taking items
+  goes in `Game`.
+- `src/data/items.ts` names each kind and says what goes in it; the overlay lists them in
+  that order. Real items take their names and details from the wiki and the TCG (above).
+
 ## Checks before a PR
 
 ```bash

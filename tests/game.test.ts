@@ -398,6 +398,7 @@ describe('Game', () => {
         passUntil: 0,
         trip: null,
         inside,
+        items: [],
       });
       const { game, take } = setup({}, progress('b-shop', outside('b-shop', 32, 20)));
       expect(game.interior?.id).toBe('b-shop');
@@ -424,6 +425,7 @@ describe('Game', () => {
       passUntil: wallet.passUntil,
       trip: currentTrip,
       inside: null,
+      items: [],
     };
 
     const { game, take, outputs } = setup({}, progress);

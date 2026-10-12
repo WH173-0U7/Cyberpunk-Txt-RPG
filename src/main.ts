@@ -13,8 +13,10 @@ import { GlitchText } from './fx/glitch';
 import { ScreenFx } from './fx/screen';
 import { applyTheme, resolveTheme } from './fx/theme';
 import { WeatherFx } from './fx/weather';
+import { ITEM_KINDS } from './data/items';
 import { formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
 import { Hud } from './ui/hud';
+import { Inventory } from './ui/inventory';
 import { stripMarkup } from './ui/markup';
 import { CityMap, type Target } from './ui/map';
 import { PlacePanel, type ActionId, type PanelAction, type PanelView } from './ui/place';
@@ -94,6 +96,20 @@ const map = new CityMap(
     // Tapping what's picked a second time walks there.
     onGo: () => go('foot'),
   },
+  reducedMotion,
+);
+
+const inventory = new Inventory(
+  {
+    root: $('#inventory'),
+    toggle: $<HTMLButtonElement>('#inventory-toggle'),
+    close: $<HTMLButtonElement>('#inventory-close'),
+    eddies: $('#inventory-eddies'),
+    pass: $('#inventory-pass'),
+    total: $('#inventory-total'),
+    sections: $('#inventory-sections'),
+  },
+  () => showInventory(),
   reducedMotion,
 );
 
@@ -374,6 +390,22 @@ function showWallet(wallet: Wallet, now: number): void {
   walletLabel.title = pass ? `NCART monthly pass valid until ${formatDay(wallet.passUntil)}` : 'Eurodollars. Buy an NCART monthly pass at any station.';
 }
 
+/** Fills the inventory with what the player carries, sorted by kind of item. */
+function showInventory(): void {
+  const { eddies, passUntil } = game.wallet;
+  const items = game.inventory;
+  inventory.render({
+    eddies: `€$ ${eddies}`,
+    pass: passUntil > Date.now() ? `Valid until ${formatDay(passUntil)}` : 'None',
+    sections: Object.entries(ITEM_KINDS).map(([kind, { label, hint }]) => ({
+      kind: kind as keyof typeof ITEM_KINDS,
+      label,
+      hint,
+      items: items.filter((item) => item.kind === kind),
+    })),
+  });
+}
+
 // ───────────── Saving ─────────────
 
 let savePending = false;
@@ -384,7 +416,7 @@ function queueSave(): void {
   savePending = true;
   queueMicrotask(() => {
     savePending = false;
-    const saved = saveSlot.write(createSave(game.world.seed, game.mapState, game.wallet, game.currentTrip, game.interior?.id ?? null, GENERATOR_VERSION));
+    const saved = saveSlot.write(createSave(game.world.seed, game, GENERATOR_VERSION));
     saveStatus.textContent = saved ? 'Saved' : 'Not saved';
     saveStatus.classList.toggle('is-failed', !saved);
     saveStatus.title = saved
@@ -451,6 +483,7 @@ function wire(g: Game): void {
 
   g.events.on('walletChanged', (wallet) => {
     showWallet(wallet, Date.now());
+    if (inventory.isOpen) showInventory();
     if (!target && !g.currentTrip) refresh();
     queueSave();
   });
@@ -512,7 +545,12 @@ function tick(): void {
 // Escape drops the current pick; + and - zoom.
 document.addEventListener('keydown', (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
-  if (event.key === 'Escape' && target) select(null);
+  if (event.key === 'i' || event.key === 'I') inventory.toggle();
+  // Escape closes the inventory first, then lets go of whatever's picked.
+  else if (event.key === 'Escape' && inventory.isOpen) inventory.close();
+  else if (event.key === 'Escape' && target) select(null);
+  // The map's keys rest while the inventory covers it.
+  else if (inventory.isOpen) return;
   else if (event.key === '+' || event.key === '=') map.zoomBy(2);
   else if (event.key === '-' || event.key === '_') map.zoomBy(0.5);
 });

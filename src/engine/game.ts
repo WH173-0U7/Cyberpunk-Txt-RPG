@@ -9,6 +9,7 @@ import type {
   Building,
   District,
   GameEvents,
+  Item,
   Location,
   MapState,
   Point,
@@ -59,6 +60,8 @@ export class Game {
   private readonly visited = new Set<string>();
   private readonly discovered = new Set<string>();
   private readonly explored = new Set<number>();
+  /** What the player carries. Nothing yet: items come with shops and loot. */
+  private readonly items: Item[];
   private eddies: number;
   private passUntil: number;
   private lastAmbient: AmbientLine | null = null;
@@ -76,6 +79,7 @@ export class Game {
     this.trip = progress?.trip ?? null;
     this.eddies = progress?.eddies ?? rules.startingEddies;
     this.passUntil = progress?.passUntil ?? 0;
+    this.items = (progress?.items ?? []).map((item) => ({ ...item }));
     this.resumed = Boolean(progress);
     const indoors = progress?.inside ? world.buildings.find((b) => b.id === progress.inside) : undefined;
     if (indoors && !this.trip && this.where.building === indoors.id && canEnter(indoors)) this.inside = indoors;
@@ -115,6 +119,11 @@ export class Game {
 
   get wallet(): Wallet {
     return { eddies: this.eddies, passUntil: this.passUntil };
+  }
+
+  /** Everything the player carries, as copies the UI can't change the game through. */
+  get inventory(): Item[] {
+    return this.items.map((item) => ({ ...item }));
   }
 
   get mapState(): MapState {
