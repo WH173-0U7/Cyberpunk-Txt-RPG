@@ -31,15 +31,34 @@ const SMOKE_LAYERS = [
   { units: 70, angle: 0, x: 0, y: 0 },
   { units: 43, angle: 0.6, x: 17, y: 31 },
 ];
-/** This many new cells at once (a walk that went on while the game was in the background) glitches in first, like an arrival. */
+/** This many new cells at once (a walk that went on while the game was in the background) glitches in like an arrival. */
 const BIG_REVEAL = 12;
-/** How far around what it uncovers a glitch reaches, in mask pixels. */
-const GLITCH_REACH = 16;
-/** How long a glitch lasts (ms), how long each of its frames holds, and which frames tear the fog open (1). */
-const GLITCH_MS = 520;
-const GLITCH_STEP = 40;
-const GLITCH_FRAMES = [1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1];
+/**
+ * Glitches. A big one tears open the ground an arrival uncovers; a small one flickers at the
+ * edge of the fog as walking pushes it back. `reach` is how far around the new ground it goes
+ * (mask pixels), each of its `frames` holds `step` ms and tears the map (1) or not (0), and
+ * the rest is how hard: strips shifted up to `shift` mask pixels, scanlines, and blocks of noise.
+ */
+const GLITCHES = {
+  big: { reach: 40, step: 40, frames: [1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1], shift: 36, band: [4, 14], lines: [4, 7], thick: [2, 4.5], blocks: [2, 5] },
+  small: { reach: 24, step: 45, frames: [1, 0, 1, 1, 0], shift: 16, band: [3, 8], lines: [1, 3], thick: [1.5, 3], blocks: [0, 2] },
+} as const;
+/** Arriving already tears the whole screen for this long (ms): the map's own glitch and smoke wait for it to finish. */
+const ARRIVAL_DELAY = 520;
+type GlitchKind = keyof typeof GLITCHES;
+/** Walking flickers the edge of the fog at most this often (ms). */
+const FLICKER_GAP = 900;
 const GLITCH_COLORS = ['#00f0ff', '#ff2a6d', '#f3e600'];
+/**
+ * Smoke pushed out of newly uncovered ground: each puff drifts away from it, growing and
+ * thinning out. Lifetimes in ms, sizes (start and end radius) and drift in map units.
+ */
+const PUFF = { life: [1800, 3200], start: [2, 3.5], end: [6, 11], drift: [4, 9], alpha: 0.42, perCell: 2, perUpdate: 8, perPlace: 14, most: 70 } as const;
+/** Fog that's on its way out lights up as pale smoke, brightest halfway gone: this bright, in this color. */
+const HAZE = 0.55;
+const HAZE_COLOR = [150, 166, 208] as const;
+const PUFF_SPRITES = 4;
+const PUFF_SIZE = 64;
 
 /** What the fog needs to know about the camera. */
 export interface FogView {
@@ -59,14 +78,33 @@ interface Area {
 
 interface Glitch extends Area {
   start: number;
+  kind: GlitchKind;
+}
+
+/** A puff of smoke rolling away from newly uncovered ground, in map units. */
+interface Puff {
+  x: number;
+  y: number;
+  /** How far it drifts over its life. */
+  dx: number;
+  dy: number;
+  r0: number;
+  r1: number;
+  born: number;
+  life: number;
+  angle: number;
+  spin: number;
+  sprite: number;
+  alpha: number;
 }
 
 /**
  * The fog over everything the player hasn't seen. It lifts along every street walked and
  * around every place visited, and never comes back. Newly uncovered ground doesn't pop out
  * of the dark: the fog over it thins like smoke, the thin parts first and the thick wisps
- * last, and arriving somewhere new glitches the map open first. It draws to its own canvas,
- * so it can clear while the city underneath stays as it is.
+ * last, while puffs of smoke roll away from it. Arriving somewhere new glitches the map open,
+ * and walking flickers the edge of the fog as it goes. It draws to its own canvas, so it can
+ * clear while the city underneath stays as it is.
  */
 export class Fog {
   /** How far the fog has lifted for good, 0 to 1, per mask pixel. */
@@ -75,6 +113,9 @@ export class Fog {
   private readonly shown = new Float32Array(SIZE * SIZE);
   /** `shown` as pixels, put into `mask`. */
   private readonly pixels = new ImageData(SIZE, SIZE);
+  /** The pale smoke over fog that's clearing, as pixels, put into `hazeMask`. */
+  private readonly hazePixels = new ImageData(SIZE, SIZE);
+  private readonly hazeMask = document.createElement('canvas');
   /** Stretched over the map to cut the fog away. */
   private readonly mask = document.createElement('canvas');
   /** Clearings are painted here as soft circles, then read back into `target`. */
@@ -86,6 +127,9 @@ export class Fog {
   /** Pushed toward 0 and 1, so the fog clears in distinct thin and thick patches. */
   private readonly thickness = smokeNoise('fog-thickness', NOISE, [32, 16, 8, 4]).map((n) => smoothstep(0.25, 0.75, n));
   private readonly smoke = smokeTexture();
+  private readonly puffSprites = Array.from({ length: PUFF_SPRITES }, (_, i) => puffSprite(i));
+  private puffs: Puff[] = [];
+  private lastFlicker = -Infinity;
   private pattern: CanvasPattern | null = null;
   /** The fog and its smoke, before anything is cut away. Only redrawn when the camera moves. */
   private readonly dark = document.createElement('canvas');
@@ -105,7 +149,8 @@ export class Fog {
     private readonly canvas: HTMLCanvasElement,
     private readonly reducedMotion: boolean,
   ) {
-    for (const c of [this.mask, this.paint]) {
+    for (let i = 0; i < SIZE * SIZE; i++) this.hazePixels.data.set(HAZE_COLOR, i * 4);
+    for (const c of [this.mask, this.paint, this.hazeMask]) {
       c.width = SIZE;
       c.height = SIZE;
     }
@@ -118,10 +163,13 @@ export class Fog {
     this.target.fill(0);
     this.shown.fill(0);
     this.pixels.data.fill(0);
+    for (let i = 0; i < SIZE * SIZE; i++) this.hazePixels.data[i * 4 + 3] = 0;
+    this.hazeMask.getContext('2d')?.clearRect(0, 0, SIZE, SIZE);
     this.cells = new Set();
     this.places = new Set();
     this.clearing = null;
     this.glitches = [];
+    this.puffs = [];
     this.instant = true;
     this.paint.getContext('2d', { willReadFrequently: true })?.clearRect(0, 0, SIZE, SIZE);
     this.mask.getContext('2d')?.clearRect(0, 0, SIZE, SIZE);
@@ -150,17 +198,20 @@ export class Fog {
         y1: Math.ceil((c.y + radius) * MASK_SCALE),
       });
     };
-    let cells = 0;
+    const cells: Point[] = [];
+    const places: Point[] = [];
     for (const cell of state.explored) {
       if (this.cells.has(cell)) continue;
       this.cells.add(cell);
-      clear(cellCenter(cell), CELL * 1.2);
-      cells++;
+      const center = cellCenter(cell);
+      clear(center, CELL * 1.2);
+      cells.push(center);
     }
     for (const location of Object.values(world.locations)) {
       if (!state.visited.has(location.id) || this.places.has(location.id)) continue;
       this.places.add(location.id);
       clear(location, CLEAR_VISITED);
+      places.push(location);
     }
     // Each pixel takes its fog from a little way off, so the edges swirl; anything that far from the new clearings can change.
     const fresh = within(grow(area, SWIRL));
@@ -205,8 +256,16 @@ export class Fog {
       return;
     }
     this.clearing = join(this.clearing, fresh);
-    const reach = within(grow(fresh, GLITCH_REACH));
-    if (reach && (arrived || cells >= BIG_REVEAL)) this.glitches.push({ ...reach, start: performance.now() });
+    const now = performance.now();
+    const at = arrived ? now + ARRIVAL_DELAY : now;
+    this.spawnPuffs(cells, places, at);
+    const kind: GlitchKind | null =
+      arrived || cells.length >= BIG_REVEAL ? 'big' : cells.length && now - this.lastFlicker >= FLICKER_GAP ? 'small' : null;
+    const reach = kind && within(grow(fresh, GLITCHES[kind].reach));
+    if (kind && reach) {
+      this.glitches.push({ ...reach, start: at, kind });
+      this.lastFlicker = now;
+    }
     this.animate();
   }
 
@@ -242,7 +301,10 @@ export class Fog {
     f.imageSmoothingEnabled = true;
     f.drawImage(this.mask, o.x, o.y, e.x - o.x, e.y - o.y);
     f.globalCompositeOperation = 'source-over';
-    for (const g of this.glitches) this.drawScanlines(f, g, o, e);
+    if (this.clearing) f.drawImage(this.hazeMask, o.x, o.y, e.x - o.x, e.y - o.y);
+    const now = performance.now();
+    this.drawPuffs(f, o, e, now);
+    for (const g of this.glitches) this.drawScanlines(f, g, o, e, now);
   }
 
   /** The fog with smoke hanging in it, fixed to the map so it pans and zooms with the streets. */
@@ -321,15 +383,19 @@ export class Fog {
       if (changed) dirty = join(dirty, changed);
     }
 
-    this.glitches = this.glitches.filter((g) => now - g.start < GLITCH_MS);
+    this.glitches = this.glitches.filter((g) => now - g.start < glitchLength(g.kind));
     for (const g of this.glitches) this.tear(g, now);
     if (dirty) this.putMask(dirty);
-    return Boolean(this.clearing) || this.glitches.length > 0;
+    this.puffs = this.puffs.filter((p) => now - p.born < p.life);
+    return Boolean(this.clearing) || this.glitches.length > 0 || this.puffs.length > 0;
   }
 
   private show(i: number, value: number): void {
     this.shown[i] = value;
     this.pixels.data[i * 4 + 3] = Math.round(value * 255);
+    // Nothing at the start or the end of clearing, brightest in the middle.
+    const left = (this.target[i] ?? 0) - value;
+    this.hazePixels.data[i * 4 + 3] = Math.round(Math.min(1, 4 * left * value) * HAZE * 255);
   }
 
   private restore(area: Area): void {
@@ -339,27 +405,97 @@ export class Fog {
   }
 
   private putMask(area: Area): void {
-    this.mask.getContext('2d')?.putImageData(this.pixels, 0, 0, area.x0, area.y0, area.x1 - area.x0, area.y1 - area.y0);
+    const { x0, y0 } = area;
+    const w = area.x1 - x0;
+    const h = area.y1 - y0;
+    this.mask.getContext('2d')?.putImageData(this.pixels, 0, 0, x0, y0, w, h);
+    this.hazeMask.getContext('2d')?.putImageData(this.hazePixels, 0, 0, x0, y0, w, h);
+  }
+
+  // ───────────── Smoke puffs ─────────────
+
+  /**
+   * Smoke rolling out of what was just uncovered: a ring of it around a place visited for the
+   * first time, and puffs pushed away from the middle of newly walked ground.
+   */
+  private spawnPuffs(cells: Point[], places: Point[], now: number): void {
+    const spawn = (at: Point, dir: number, push: number) => {
+      const drift = between(PUFF.drift) * push;
+      this.puffs.push({
+        x: at.x,
+        y: at.y,
+        dx: Math.cos(dir) * drift,
+        dy: Math.sin(dir) * drift,
+        r0: between(PUFF.start),
+        r1: between(PUFF.end),
+        born: now - Math.random() * 120,
+        life: between(PUFF.life),
+        angle: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 1.6,
+        sprite: Math.floor(Math.random() * PUFF_SPRITES),
+        alpha: PUFF.alpha * (0.7 + Math.random() * 0.3),
+      });
+    };
+    for (const place of places) {
+      for (let k = 0; k < PUFF.perPlace; k++) {
+        const dir = (k / PUFF.perPlace) * Math.PI * 2 + Math.random() * 0.4;
+        const out = 1.5 + Math.random() * 3;
+        spawn({ x: place.x + Math.cos(dir) * out, y: place.y + Math.sin(dir) * out }, dir, 1.3);
+      }
+    }
+    if (cells.length) {
+      const mid = { x: cells.reduce((sum, c) => sum + c.x, 0) / cells.length, y: cells.reduce((sum, c) => sum + c.y, 0) / cells.length };
+      const picks = cells.length <= PUFF.perUpdate ? cells : [...cells].sort(() => Math.random() - 0.5).slice(0, PUFF.perUpdate);
+      for (const cell of picks) {
+        const away = Math.hypot(cell.x - mid.x, cell.y - mid.y) > 0.1 ? Math.atan2(cell.y - mid.y, cell.x - mid.x) : Math.random() * Math.PI * 2;
+        for (let k = 0; k < PUFF.perCell; k++) {
+          spawn({ x: cell.x + (Math.random() - 0.5) * CELL, y: cell.y + (Math.random() - 0.5) * CELL }, away + (Math.random() - 0.5) * 1.4, 1);
+        }
+      }
+    }
+    if (this.puffs.length > PUFF.most) this.puffs.splice(0, this.puffs.length - PUFF.most);
+  }
+
+  private drawPuffs(f: CanvasRenderingContext2D, o: Px, e: Px, now: number): void {
+    if (!this.puffs.length) return;
+    const kx = (e.x - o.x) / 100;
+    const ky = (e.y - o.y) / 100;
+    for (const puff of this.puffs) {
+      const t = (now - puff.born) / puff.life;
+      const sprite = this.puffSprites[puff.sprite];
+      if (t <= 0 || t >= 1 || !sprite) continue;
+      // Quick to billow out, slow to drift off and thin away.
+      const move = 1 - (1 - t) * (1 - t);
+      const r = puff.r0 + (puff.r1 - puff.r0) * move;
+      f.save();
+      f.globalAlpha = puff.alpha * Math.min(1, t / 0.12) * Math.pow(1 - t, 1.4);
+      f.translate(o.x + (puff.x + puff.dx * move) * kx, o.y + (puff.y + puff.dy * move) * ky);
+      f.rotate(puff.angle + puff.spin * t);
+      f.drawImage(sprite, -r * kx, -r * ky, 2 * r * kx, 2 * r * ky);
+      f.restore();
+    }
   }
 
   // ───────────── Glitch ─────────────
 
   private glitchFrame(g: Glitch, now: number): number | null {
-    const frame = Math.floor((now - g.start) / GLITCH_STEP);
-    return GLITCH_FRAMES[frame] ? frame : null;
+    const { step, frames } = GLITCHES[g.kind];
+    const frame = Math.floor((now - g.start) / step);
+    return frames[frame] ? frame : null;
   }
 
-  /** On a glitch frame the map tears open in strips, shifted sideways, before the smoke takes over. */
+  /** On a glitch frame the map tears in strips, shifted sideways or dropped back into the dark. */
   private tear(g: Glitch, now: number): void {
     const frame = this.glitchFrame(g, now);
     if (frame === null) return;
+    const how = GLITCHES[g.kind];
     const rng = createRng(`${g.start}:${frame}`);
     const data = this.pixels.data;
     for (let y = g.y0; y < g.y1; ) {
-      const band = rng.int(3, 10);
+      const band = rng.int(how.band[0], how.band[1]);
       // Most strips slide sideways, some go dark, the rest stay as they are.
       const roll = rng.next();
-      const shift = roll < 0.6 ? rng.int(-20, 20) : 0;
+      const shift = roll < 0.6 ? rng.int(-how.shift, how.shift) : 0;
       const strength = roll < 0.6 ? rng.range(0.4, 1) : roll < 0.8 ? rng.range(0, 0.3) : 1;
       if (strength !== 1) {
         for (let yy = y; yy < Math.min(g.y1, y + band); yy++) {
@@ -373,10 +509,11 @@ export class Fog {
     }
   }
 
-  /** Thin scanlines across a glitch on its torn frames, split into two colors like a bad signal. */
-  private drawScanlines(f: CanvasRenderingContext2D, g: Glitch, o: Px, e: Px): void {
-    const frame = this.glitchFrame(g, performance.now());
+  /** Scanlines split into two colors like a bad signal, and blocks of noise, on a glitch's torn frames. */
+  private drawScanlines(f: CanvasRenderingContext2D, g: Glitch, o: Px, e: Px, now: number): void {
+    const frame = this.glitchFrame(g, now);
     if (frame === null) return;
+    const how = GLITCHES[g.kind];
     const rng = createRng(`${g.start}:${frame}:lines`);
     const kx = (e.x - o.x) / SIZE;
     const ky = (e.y - o.y) / SIZE;
@@ -385,19 +522,23 @@ export class Fog {
     const w = (g.x1 - g.x0) * kx;
     const h = (g.y1 - g.y0) * ky;
     f.globalCompositeOperation = 'lighter';
-    for (let n = rng.int(2, 4); n > 0; n--) {
-      const x = left + rng.range(-0.1, 0.5) * w;
+    for (let n = rng.int(how.lines[0], how.lines[1]); n > 0; n--) {
+      const x = left + rng.range(-0.2, 0.6) * w;
       const y = top + rng.next() * h;
-      const length = w * rng.range(0.3, 0.8);
-      const thick = rng.range(1.5, 3);
-      const split = rng.range(2, 5);
-      const alpha = rng.range(0.3, 0.6);
+      const length = w * rng.range(0.4, 1.1);
+      const thick = rng.range(how.thick[0], how.thick[1]);
+      const split = rng.range(3, 7);
       const [a, b] = rng.shuffle(GLITCH_COLORS);
-      f.globalAlpha = alpha;
+      f.globalAlpha = rng.range(0.4, 0.75);
       f.fillStyle = a ?? '#00f0ff';
       f.fillRect(x, y, length, thick);
       f.fillStyle = b ?? '#ff2a6d';
       f.fillRect(x + split, y + thick * 0.5, length, thick);
+    }
+    for (let n = rng.int(how.blocks[0], how.blocks[1]); n > 0; n--) {
+      f.globalAlpha = rng.range(0.15, 0.35);
+      f.fillStyle = rng.pick(GLITCH_COLORS);
+      f.fillRect(left + rng.next() * w, top + rng.next() * h, rng.range(6, 22), rng.range(3, 9));
     }
     f.globalAlpha = 1;
     f.globalCompositeOperation = 'source-over';
@@ -497,6 +638,43 @@ function smokeTexture(): HTMLCanvasElement {
   }
   ctx.putImageData(image, 0, 0);
   return canvas;
+}
+
+/** A soft, wispy puff of smoke, pale and see-through at the edges. */
+function puffSprite(variant: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = PUFF_SIZE;
+  canvas.height = PUFF_SIZE;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  const noise = smokeNoise(`fog-puff-${variant}`, PUFF_SIZE, [32, 16, 8, 4]);
+  const image = ctx.createImageData(PUFF_SIZE, PUFF_SIZE);
+  const { data } = image;
+  const half = PUFF_SIZE / 2;
+  for (let y = 0; y < PUFF_SIZE; y++) {
+    for (let x = 0; x < PUFF_SIZE; x++) {
+      const i = y * PUFF_SIZE + x;
+      const d = Math.hypot(x + 0.5 - half, y + 0.5 - half) / half;
+      // Round on the whole, but the noise eats into it, so no two puffs have the same outline.
+      const body = 1 - smoothstep(0.25, 1, d + ((noise[i] ?? 0.5) - 0.5) * 0.5);
+      data[i * 4] = 168;
+      data[i * 4 + 1] = 180;
+      data[i * 4 + 2] = 214;
+      data[i * 4 + 3] = Math.round(body * (0.45 + 0.55 * (noise[i] ?? 0.5)) * 255);
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+function glitchLength(kind: GlitchKind): number {
+  const { step, frames } = GLITCHES[kind];
+  return step * frames.length;
+}
+
+/** Somewhere in a [low, high] range, at random. */
+function between([low, high]: readonly [number, number]): number {
+  return low + Math.random() * (high - low);
 }
 
 function ease(t: number): number {
