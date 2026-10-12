@@ -1,6 +1,7 @@
 import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
+import { menuFor, type FoodContent, type Menu } from './food';
 import { districtAt } from './geography';
 import type { Progress } from './save';
 import { pointAlong, snapToStreet } from './streets';
@@ -47,9 +48,10 @@ export function streetSpot(p: Point): Whereabouts {
   return { x: p.x, y: p.y, place: null, station: null, building: null };
 }
 
-/** How the game plays: getting around, and energy. The numbers are in `src/data/`. */
+/** How the game plays: getting around, energy, and what there is to eat. The numbers are in `src/data/`. */
 export interface GameRules extends TravelRules {
   energy: EnergyRules;
+  food: FoodContent;
 }
 
 /**
@@ -165,6 +167,30 @@ export class Game {
   /** Everything the player carries, as copies the UI can't change the game through. */
   get inventory(): Item[] {
     return this.items.map((item) => ({ ...item }));
+  }
+
+  /** What's for sale where the player is: inside an eatery, or at a place that serves food. Null elsewhere. */
+  menu(): Menu | null {
+    const at = this.inside ?? this.location;
+    return at ? menuFor(this.world, at, this.rules.food) : null;
+  }
+
+  /** Buys something off the menu here, into the inventory. False if it isn't on the menu or the eddies aren't there. */
+  buy(id: string): boolean {
+    const item = this.menu()?.items.find((i) => i.id === id);
+    if (!item) return false;
+    if (item.price > this.eddies) {
+      this.say(`${item.name} is ${item.price} €$. You've got ${this.eddies} €$.`, 'error');
+      return false;
+    }
+    this.eddies -= item.price;
+    const owned = this.items.find((i) => i.id === item.id);
+    if (owned) owned.count++;
+    else this.items.push({ id: item.id, kind: 'consumable', name: item.name, count: 1 });
+    this.say(`Bought ${item.name} for ${item.price} €$.`, 'system');
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
   }
 
   get mapState(): MapState {

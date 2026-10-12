@@ -43,6 +43,7 @@ const DISTRICTS: DistrictTemplate[] = [
     zoning: { apartments: 4, shops: 3, megabuilding: 1, warehouse: 1, derelict: 0.6, lot: 0.6, park: 0.3 },
     // Kabuki's market and Little China: ripperdocs, gun dealers, netrunners and junk.
     trade: { cyberware: 2, firearms: 1.6, netrunning: 1.6, commodity: 1.4, melee: 1.3 },
+    dining: { everyday: 0.55, poverty: 0.4, luxury: 0.05 },
     atmosphere: {
       outdoor: [
         'Rain hammers everything, and the gutters run with neon.',
@@ -88,6 +89,7 @@ const DISTRICTS: DistrictTemplate[] = [
     zoning: { shops: 4, apartments: 2, tower: 1.5, park: 0.8, plaza: 0.6 },
     // Japantown's pachinko halls, karaoke and clubs; boutiques up in Charter Hill.
     trade: { entertainment: 2.2, nightlife: 1.8, clothing: 1.6, netrunning: 1.3, lodging: 1.3 },
+    dining: { luxury: 0.4, everyday: 0.55, poverty: 0.05 },
     atmosphere: {
       outdoor: [
         'Holographic koi swim through the air above the street.',
@@ -123,6 +125,7 @@ const DISTRICTS: DistrictTemplate[] = [
     zoning: { tower: 5, plaza: 1.2, shops: 1, park: 0.5, lot: 0.4 },
     // Downtown dresses well and eats out; not much call for guns or chop shops.
     trade: { clothing: 2, medical: 1.5, food: 1.4, nightlife: 1.2, firearms: 0.6, melee: 0.4, vehicles: 0.5 },
+    dining: { luxury: 0.7, everyday: 0.3 },
     atmosphere: {
       outdoor: [
         'Corpo security drones hum overhead, scanning faces.',
@@ -162,6 +165,7 @@ const DISTRICTS: DistrictTemplate[] = [
     zoning: { apartments: 4, shops: 2, park: 0.8, lot: 0.8, megabuilding: 0.4 },
     // Valentinos country: garages for the lowriders, family kitchens and bars.
     trade: { vehicles: 1.8, food: 1.6, nightlife: 1.4, firearms: 1.2 },
+    dining: { everyday: 0.65, poverty: 0.3, luxury: 0.05 },
     atmosphere: {
       outdoor: [
         '{w|Valentinos} murals cover the walls, saints in gold and chrome.',
@@ -195,6 +199,7 @@ const DISTRICTS: DistrictTemplate[] = [
     zoning: { factory: 3, warehouse: 3, apartments: 1.5, lot: 1, megabuilding: 0.8 },
     // Industrial Arroyo: garages, scrap and guns.
     trade: { vehicles: 2, commodity: 1.6, firearms: 1.4, entertainment: 0.6, clothing: 0.6 },
+    dining: { everyday: 0.5, poverty: 0.5 },
     atmosphere: {
       outdoor: [
         'Smokestacks paint the sky a sick orange.',
@@ -237,6 +242,7 @@ const DISTRICTS: DistrictTemplate[] = [
     zoning: { derelict: 3, apartments: 2, shops: 1, lot: 1, park: 0.4 },
     // Voodoo Boys territory: netrunners, salvage and blades.
     trade: { commodity: 1.8, netrunning: 1.6, melee: 1.4, firearms: 1.3, lodging: 0.5, clothing: 0.6 },
+    dining: { poverty: 0.85, everyday: 0.15 },
     atmosphere: {
       outdoor: [
         'Half-finished resorts rot along the shore.',
@@ -651,7 +657,19 @@ const BUILDINGS: BuildingContent = {
     'Techtronika',
     'SovOil',
   ],
-  landmarks: [{ district: 'city_center', kind: 'tower', name: 'Arasaka Tower' }],
+  // Real buildings, where the wiki puts them. The eateries run their real businesses.
+  landmarks: [
+    { district: 'city_center', kind: 'tower', name: 'Arasaka Tower' },
+    { district: 'city_center', kind: 'shops', name: 'Pickles!', business: 'fast-food' },
+    { district: 'watson', kind: 'shops', name: 'Corpo Snack', business: 'food-stall' },
+    { district: 'westbrook', kind: 'shops', name: 'Au Cabanon', business: 'restaurant' },
+    { district: 'heywood', kind: 'shops', name: 'El Pinche Pollo', business: 'restaurant' },
+    { district: 'heywood', kind: 'shops', name: "Chubby Buffalo's", business: 'grill' },
+    { district: 'heywood', kind: 'shops', name: "Tom's Diner", business: 'diner' },
+    { district: 'santo_domingo', kind: 'shops', name: 'BuryGer', business: 'diner' },
+    { district: 'santo_domingo', kind: 'shops', name: 'Capitán Caliente', business: 'capitan-caliente' },
+    { district: 'santo_domingo', kind: 'shops', name: 'Buck-A-Slice', business: 'buck-a-slice' },
+  ],
   // What a storefront can be. Its sign goes into its name ("Kabuki Gun Shop", "24/7 Bodega").
   businesses: [
     { id: 'bodega', sign: 'Bodega', label: 'Bodega', category: 'commodity' },
@@ -662,6 +680,14 @@ const BUILDINGS: BuildingContent = {
     { id: 'grill', sign: 'Synth-Meat Grill', label: 'Grill', category: 'food' },
     { id: 'food-stall', sign: 'Food Stall', label: 'Food stall', category: 'food' },
     { id: 'dumpling-house', sign: 'Dumpling House', label: 'Dumpling house', category: 'food' },
+    { id: 'diner', sign: 'Diner', label: 'Diner', category: 'food' },
+    { id: 'restaurant', sign: 'Restaurant', label: 'Restaurant', category: 'food' },
+    { id: 'fast-food', sign: 'Fast Food', label: 'Fast food', category: 'food' },
+    // Real chains. Buck-A-Slice and Capitán Caliente are all over the city; Yagami Market's
+    // restaurants keep to the money.
+    { id: 'buck-a-slice', sign: 'Buck-A-Slice', label: 'Pizza chain', category: 'food', chain: true },
+    { id: 'capitan-caliente', sign: 'Capitán Caliente', label: 'Fast food chain', category: 'food', chain: true },
+    { id: 'yagami-market', sign: 'Yagami Market', label: 'Japanese chain', category: 'food', chain: true, where: ['city_center', 'westbrook'] },
     { id: 'bar', sign: 'Bar', label: 'Bar', category: 'nightlife' },
     { id: 'karaoke', sign: 'Karaoke Box', label: 'Karaoke bar', category: 'nightlife' },
     { id: 'club', sign: 'Club', label: 'Club', category: 'nightlife' },

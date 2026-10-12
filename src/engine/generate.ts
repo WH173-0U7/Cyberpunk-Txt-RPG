@@ -1,4 +1,5 @@
 import { generateBuildings, type BuildingContent, type ZoningPlan } from './buildings';
+import type { Quality } from './food';
 import { createRng, hashSeed, type Rng } from './rng';
 import { generateTransit, type TransitContent } from './transit';
 import type { AmbientLine, BuildingCategory, BuildingKind, CityLayout, District, Location, Point, Side, Theme, Weather, World } from './types';
@@ -31,6 +32,8 @@ export interface DistrictTemplate {
   zoning: Partial<Record<BuildingKind, number>>;
   /** Which categories of business its storefronts lean toward (1 if not listed). */
   trade?: Partial<Record<BuildingCategory, number>>;
+  /** How its eateries lean: luxury, everyday or poverty, as relative weights. Everyday if not said. */
+  dining?: Partial<Record<Quality, number>>;
   /** "edge" districts sit at the border of the map as open desert, like the Badlands. */
   placement?: 'edge';
   /** Second sentences for descriptions, setting the district's mood. */
@@ -157,6 +160,7 @@ export function generateWorld(seed: string, content: CityContent): World {
       // Its own random stream, so the street mood never shifts the rest of the city.
       mood: createRng(`${seed}:${template.id}:streets`).pick(template.atmosphere.outdoor),
       ambient: template.ambient.outdoor,
+      dining: template.dining ?? { everyday: 1 },
       ...centroid(spots),
     };
   }
@@ -165,7 +169,7 @@ export function generateWorld(seed: string, content: CityContent): World {
 
   const start = chooseStart(rng, populated, locations, content);
   const layout: CityLayout = { avenues, streets, coast };
-  const plans: Record<string, ZoningPlan> = Object.fromEntries(populated.map((t) => [t.id, { zoning: t.zoning, trade: t.trade, areas: t.areas }]));
+  const plans: Record<string, ZoningPlan> = Object.fromEntries(populated.map((t) => [t.id, { district: t.id, zoning: t.zoning, trade: t.trade, areas: t.areas }]));
   const areas = Object.fromEntries(populated.map((t) => [t.id, t.areas]));
   return {
     seed,

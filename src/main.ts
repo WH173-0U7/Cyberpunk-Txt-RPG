@@ -1,10 +1,12 @@
 import './style.css';
 import { CITY } from './data/city';
 import { ENERGY } from './data/energy';
+import { FOOD } from './data/food';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
 import { Game, streetSpot } from './engine/game';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
+import type { Menu } from './engine/food';
 import { randomSeed } from './engine/rng';
 import { createSave, readSave, resume, savedSeed, type Progress } from './engine/save';
 import { snapToStreet } from './engine/streets';
@@ -25,6 +27,7 @@ import { CityMap, type Target } from './ui/map';
 import { PlacePanel, type ActionId, type PanelAction, type PanelView } from './ui/place';
 import { saveSlot } from './ui/save-slot';
 import { Settings } from './ui/settings';
+import { Shop } from './ui/shop';
 import { Transmissions } from './ui/transmissions';
 
 function $<T extends Element = HTMLElement>(selector: string): T {
@@ -66,6 +69,7 @@ const place = new PlacePanel(
       stop: $<HTMLButtonElement>('#act-stop'),
       enter: $<HTMLButtonElement>('#act-enter'),
       leave: $<HTMLButtonElement>('#act-leave'),
+      menu: $<HTMLButtonElement>('#act-menu'),
     },
     close: $<HTMLButtonElement>('#place-close'),
   },
@@ -142,6 +146,24 @@ const settings = new Settings(
   reducedMotion,
 );
 
+const shop = new Shop(
+  {
+    root: $('#shop'),
+    close: $<HTMLButtonElement>('#shop-close'),
+    title: $('#shop-title'),
+    kicker: $('#shop-kicker'),
+    blurb: $('#shop-blurb'),
+    eddies: $('#shop-eddies'),
+    status: $('#shop-status'),
+    list: $('#shop-list'),
+  },
+  () => showShop(),
+  (id) => buyFromShop(id),
+  reducedMotion,
+);
+/** What last happened at the counter, shown under the menu's header until it closes. */
+let shopStatus = '';
+
 const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill'), value: $('#energy-value'), detail: $('#energy-detail') });
 
 let game: Game;
@@ -202,6 +224,10 @@ function act(id: ActionId): void {
   else if (id === 'stop') game.stop(now);
   else if (id === 'enter') game.enter();
   else if (id === 'leave') game.leave();
+  else if (id === 'menu' && game.menu()) {
+    shopStatus = '';
+    shop.overlay.show($('#act-menu'));
+  }
 }
 
 // ───────────── The panel ─────────────
@@ -210,6 +236,8 @@ function act(id: ActionId): void {
 function refresh(): void {
   const now = Date.now();
   const trip = game.currentTrip;
+  // The menu is for where the player is; it goes when they leave.
+  if (shop.overlay.isOpen && !game.menu()) shop.overlay.close();
   if (target) {
     const to = destinationOf(target);
     const plans = to ? { foot: game.plan(to, 'foot', now), ncart: game.plan(to, 'ncart', now) } : null;
@@ -310,13 +338,14 @@ function hereView(now: number): PanelView {
   const name = game.nameOf(where);
   const location = game.location;
   if (location) {
+    const menu = game.menu();
     return {
       mode: 'here',
       kicker: `You are here · ${dname} · ${location.kindLabel}`,
       description: location.description,
-      actions: [],
+      actions: menu ? [menuAction(menu)] : [],
       closable: false,
-      announce: `${location.name}. ${stripMarkup(location.description)}`,
+      announce: `${location.name}. ${stripMarkup(location.description)}${menu ? ' There is a menu.' : ''}`,
     };
   }
   if (where.station) {
@@ -356,21 +385,37 @@ function hereView(now: number): PanelView {
 }
 
 /**
- * Inside a building. There's nothing to do in here yet: what each category of building holds
- * (counters, rooms, people, jobs) gets added to this view as the game grows.
+ * Inside a building. An eatery has a menu; there's nothing to do in the others yet. What each
+ * category of building holds (counters, rooms, people, jobs) gets added to this view as the
+ * game grows.
  */
 function insideView(building: Building): PanelView {
   const district = game.districtOf(game.whereabouts)?.name ?? 'Night City';
+  const menu = game.menu();
+  const description = menu ? FOOD.blurbs[menu.venue.chain ? 'chain' : menu.venue.quality] : 'Nothing to do in here yet.';
   return {
     mode: 'inside',
     kicker: `Inside · ${district} · Block ${building.block}`,
     title: building.name,
-    meta: [categoryOf(building).label, building.kindLabel, heightOf(building)].filter(Boolean).join(' · '),
-    description: 'Nothing to do in here yet.',
-    actions: [{ id: 'leave', label: 'Leave', sub: 'Back to the street' }],
+    meta: [menu ? qualityLabel(menu) : categoryOf(building).label, building.kindLabel, heightOf(building)].filter(Boolean).join(' · '),
+    description,
+    actions: [...(menu ? [menuAction(menu)] : []), { id: 'leave', label: 'Leave', sub: 'Back to the street' }],
     closable: false,
-    announce: `Inside ${building.name}. Nothing to do in here yet.`,
+    announce: `Inside ${building.name}. ${description}`,
   };
+}
+
+/** The menu button: how much there is to eat, and what the cheapest thing costs. */
+function menuAction(menu: Menu): PanelAction {
+  const dishes = menu.items.filter((i) => i.kind === 'food').length;
+  const from = Math.min(...menu.items.map((i) => i.price));
+  const sub = menu.items.length ? `${dishes} ${dishes === 1 ? 'dish' : 'dishes'} · from ${from} €$` : 'Nothing on it';
+  return { id: 'menu', label: 'Menu', sub, disabled: !menu.items.length };
+}
+
+/** "Luxury", "Cheap eats"…: the kind of eatery, as players read it. */
+function qualityLabel(menu: Menu): string {
+  return FOOD.labels[menu.venue.chain ? 'chain' : menu.venue.quality];
 }
 
 /** What the player is doing on this stretch of the trip. */
@@ -435,6 +480,36 @@ function showInventory(): void {
       items: items.filter((item) => item.kind === kind),
     })),
   });
+}
+
+/** Fills the menu with what's for sale where the player is, and whether they can afford it. */
+function showShop(): void {
+  const menu = game.menu();
+  const { eddies } = game.wallet;
+  if (!menu) {
+    shop.render({ title: game.nameOf(game.whereabouts), kicker: 'No menu', blurb: 'Nothing to eat here.', eddies: `€$ ${eddies}`, status: '', items: [] });
+    return;
+  }
+  const { venue, items } = menu;
+  const carried = new Map(game.inventory.map((item) => [item.id, item.count]));
+  shop.render({
+    title: venue.name,
+    kicker: `${qualityLabel(menu)} · ${venue.kindLabel} · ${game.world.districts[venue.district]?.name ?? 'Night City'}`,
+    blurb: FOOD.blurbs[venue.chain ? 'chain' : venue.quality],
+    eddies: `€$ ${eddies}`,
+    status: shopStatus,
+    items: items.map((item) => ({ ...item, affordable: item.price <= eddies, carried: carried.get(item.id) ?? 0 })),
+  });
+}
+
+/** Buys off the menu, and says how it went under the menu's header. */
+function buyFromShop(id: string): void {
+  lastActivity = performance.now();
+  const item = game.menu()?.items.find((i) => i.id === id);
+  if (!item) return;
+  const had = game.wallet.eddies;
+  shopStatus = game.buy(id) ? `Bought ${item.name} for ${item.price} €$ · €$ ${game.wallet.eddies} left` : `${item.name} is ${item.price} €$. You've got ${had} €$.`;
+  showShop();
 }
 
 /** What settings shows: the city, and what starting over would lose. */
@@ -539,7 +614,14 @@ function wire(g: Game): void {
   g.events.on('walletChanged', (wallet) => {
     showWallet(wallet, Date.now());
     if (inventory.overlay.isOpen) showInventory();
+    if (shop.overlay.isOpen) showShop();
     if (!target && !g.currentTrip) refresh();
+    queueSave();
+  });
+
+  g.events.on('inventoryChanged', () => {
+    if (inventory.overlay.isOpen) showInventory();
+    if (shop.overlay.isOpen) showShop();
     queueSave();
   });
 
@@ -551,7 +633,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD }, progress);
   wire(game);
   map.setWorld(world);
   seedLabel.textContent = `Seed ${world.seed.toUpperCase()}`;

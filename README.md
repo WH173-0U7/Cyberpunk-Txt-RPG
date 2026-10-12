@@ -69,8 +69,21 @@ own.
   address and size.
 - **Going inside**: walk to a building and **Go inside** (anything with floors; parks, plazas
   and parking lots are open ground). The map outlines the building, your marker waits at its
-  door, and the weather stays outside. There's nothing to do in there yet; **Leave** steps
-  back out, and walking off somewhere goes out the door first. Being inside is saved.
+  door, and the weather stays outside. Eateries have a menu (below); there's nothing to do
+  in the other buildings yet. **Leave** steps back out, and walking off somewhere goes out
+  the door first. Being inside is saved.
+- **Eating out**: inside anything that sells food (noodle bars, grills, food stalls, dumpling
+  houses, diners, restaurants, fast food) and at places that serve it, **Menu** covers the map
+  with what's on. Every dish and drink is a real Night City one, from RaMMMMen and Hawt Dawgs
+  to Got Escargot? and Chateau Delen 2012, and each kind of kitchen serves its own kind of
+  food. How good the place is depends on where it is: City Center eats luxury, Pacifica eats
+  cheap, and the rest sit in between, so the same noodle bar is a different place in
+  Japantown and in the Combat Zone. Luxury places serve the dear stuff at three times the
+  price; cheap ones serve the bottom shelf (Cat Food, Dried Meat, Filtered Rainwater) for
+  less. Franchises (Buck-A-Slice, Capitán Caliente, Yagami Market) serve the same menu at the
+  same prices wherever they are, and the real eateries that turn up in the city (Tom's Diner,
+  Au Cabanon, El Pinche Pollo, Kabuki Market…) have their own menus. **Buy** puts the dish in
+  your inventory under consumables; eating it is coming.
 - **Energy**: the bar under the sign. Energy is what doing things will cost, and it refills
   on the clock, a point every 6 minutes (faster at the testing speed), even while the game is
   closed. Max energy starts very low (10). Spending energy trains it: every point spent is
@@ -80,9 +93,9 @@ own.
 - **Inventory**: the **Inventory** button in the map's header (or **I**) covers the map with
   what you carry: your eddies and NCART pass, then your items, sorted by the kinds of item
   in Night City (weapons, attachments & mods, cyberware, quickhacks, clothing, consumables,
-  shards, junk, components). A kind only shows once you carry something of it, so for now
-  it's empty; items come with shops and loot. **×** or **Esc** closes it. The panel under
-  the map keeps working while it's open.
+  shards, junk, components). A kind only shows once you carry something of it: food you've
+  bought is under consumables, and the rest comes with shops and loot. **×** or **Esc**
+  closes it. The panel under the map keeps working while it's open.
 - **Settings**: the gear next to it covers the map with settings. For now that's the save:
   **Restart this city** puts the same city back to the start, and **Erase save** deletes the
   save from this device and starts a brand new city. Both ask first, with Cancel as the
@@ -136,15 +149,16 @@ effects layer decides how that should look:
 src/
   engine/   Game rules and state: the city generator, the NCART network, street routes,
             trip planning on the real clock, the wallet and pass, energy (energy.ts),
-            discovery, ambient chatter, the save format. No DOM, fully unit-tested.
+            menus (food.ts), discovery, ambient chatter, the save format. No DOM, fully
+            unit-tested.
   data/     The content the generator builds cities from (city.ts), travel times and
-            prices (travel.ts), energy's numbers (energy.ts), and the kinds of item the
-            inventory sorts by (items.ts).
+            prices (travel.ts), energy's numbers (energy.ts), the kinds of item the
+            inventory sorts by (items.ts), and what there is to eat (food.ts).
   ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
             ground, sea, buildings), the fog (fog.ts), the overlays over the map (overlay.ts:
-            the inventory in inventory.ts, settings in settings.ts), the energy bar
-            (energy.ts), place panel, transmissions, HUD, typewriter, markup parser,
-            the save slot in local storage.
+            the inventory in inventory.ts, settings in settings.ts, a menu in shop.ts), the
+            energy bar (energy.ts), place panel, transmissions, HUD, typewriter, markup
+            parser, the save slot in local storage.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.
 tests/      Vitest unit tests.
@@ -174,7 +188,15 @@ Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
   neighborhoods and `{n}` a small number: `{area} Night Market` → `Kabuki Night Market`.
 - **Buildings**: each district's `zoning` weights what its blocks are built as, and `BUILDINGS`
   gives every kind of building its label, height range and name templates (which can also use
-  `{corp}` and `{shop}`).
+  `{corp}` and `{shop}`). A storefront's business comes from `businesses`, weighted by the
+  district's `trade`; a `chain` business is named after its sign, and `where` keeps it to some
+  districts. Real eateries are `landmarks` with a `business`.
+- **Food** is in [`src/data/food.ts`](src/data/food.ts): every dish names the menus it turns
+  up `on` (noodles, grill, street, diner, fine, market…), which qualities of place serve it
+  (`where`; everywhere if not said) and the districts where it's a staple (`favored`).
+  `kitchens` say what each business (and kind of place) serves and how long its menu is;
+  `fixed` are the real eateries' and the chains' own menus. A district's `dining` weights how
+  good its places are. Menus never change the city, so they need no generator bump.
 
 A description is one sentence from the kind plus one mood sentence from the district, and has
 to fit in 160 characters, so keep sentences short. Add a new kind to `KINDS`, then list it in

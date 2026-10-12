@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
+import { FOOD } from '../src/data/food';
 import type { Progress } from '../src/engine/save';
 import type { TravelRules } from '../src/engine/travel';
 import type { GameEvents, Location, Whereabouts, World } from '../src/engine/types';
@@ -10,8 +11,8 @@ import type { GameEvents, Location, Whereabouts, World } from '../src/engine/typ
 //   [S1]       |       [S2]       (y = 50, NCART stations on Line 1)
 //             roof        dock    (y = 80; the dock has no routes, you find it on foot)
 //
-// Off the top street between the alley and the market, a gun shop you can go into; off the
-// middle street, a park you can't.
+// Off the top street between the alley and the market, a gun shop you can go into and a noodle
+// bar with a menu; off the middle street, a park you can't go into. The bar is a diner.
 function place(id: string, x: number, y: number, links: string[], extra: Partial<Location> = {}): Location {
   return {
     id,
@@ -38,6 +39,7 @@ const world: World = {
   buildings: [
     { id: 'b-shop', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Gun shop', category: 'firearms', business: 'gun-shop', name: 'Test Guns', floors: 3, x: 30, y: 21, w: 4, h: 4 },
     { id: 'b-park', block: 'B2', district: 'test', kind: 'park', kindLabel: 'Park', category: 'public', business: null, name: 'Test Park', floors: 0, x: 30, y: 51, w: 6, h: 6 },
+    { id: 'b-noodle', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Noodle bar', category: 'food', business: 'noodle-bar', name: 'Test Noodles', floors: 2, x: 36, y: 21, w: 4, h: 4 },
   ],
   districts: {
     test: {
@@ -48,6 +50,7 @@ const world: World = {
       weather: 'clear',
       mood: 'Quiet streets.',
       ambient: ['traffic hums'],
+      dining: { everyday: 1 },
       x: 50,
       y: 50,
     },
@@ -55,7 +58,7 @@ const world: World = {
   locations: {
     alley: place('alley', 20, 20, ['market'], { ambient: ['drip', { text: 'thunder', fx: 'lightning' }] }),
     market: place('market', 50, 20, ['alley', 'bar', 'roof']),
-    bar: place('bar', 80, 20, ['market']),
+    bar: place('bar', 80, 20, ['market'], { kind: 'diner', kindLabel: 'Diner' }),
     roof: place('roof', 50, 80, ['market']),
     dock: place('dock', 80, 80, []),
   },
@@ -81,6 +84,7 @@ const RULES: GameRules = {
   discoverRadius: 9,
   // Small numbers so a test can run energy down and level it up.
   energy: { start: 5, perLevel: 1, bed: 5, regenMinutes: 6, xpPerPoint: 1, exhaustedBonus: 2, xpFirstLevel: 10, xpGrowth: 1.5 },
+  food: FOOD,
 };
 
 const MINUTE = 60_000;
@@ -101,7 +105,7 @@ type Recorded = { [K in keyof GameEvents]: { type: K; payload: GameEvents[K] } }
 function setup(rules: Partial<TravelRules> = {}, progress?: Progress) {
   const game = new Game(world, { ...RULES, ...rules }, progress);
   const events: Recorded[] = [];
-  for (const type of ['output', 'arrived', 'tripChanged', 'interiorChanged', 'mapChanged', 'walletChanged', 'energyChanged', 'fx'] as const) {
+  for (const type of ['output', 'arrived', 'tripChanged', 'interiorChanged', 'mapChanged', 'walletChanged', 'inventoryChanged', 'energyChanged', 'fx'] as const) {
     game.events.on(type, (payload) => events.push({ type, payload } as Recorded));
   }
   const take = () => events.splice(0);
@@ -411,6 +415,96 @@ describe('Game', () => {
       // Never inside a building somewhere else, or inside open ground.
       expect(setup({}, progress('b-shop', at('alley'))).game.interior).toBeNull();
       expect(setup({}, progress('b-park', outside('b-park', 32, 50))).game.interior).toBeNull();
+    });
+  });
+
+  describe('eating', () => {
+    /** Walks into the noodle bar with some eddies. */
+    function inTheNoodleBar(eddies: number) {
+      const { game, take, outputs } = setup({ startingEddies: eddies });
+      game.start(T0);
+      go(game, outside('b-noodle', 38, 20), 'foot', T0);
+      game.tick(T0 + 60 * MINUTE);
+      expect(game.enter()).toBe(true);
+      take();
+      return { game, take, outputs };
+    }
+
+    it('has a menu inside an eatery or at a place that serves food, and nowhere else', () => {
+      const { game } = setup();
+      game.start(T0);
+      expect(game.menu()).toBeNull();
+
+      go(game, outside('b-shop', 32, 20), 'foot', T0);
+      game.tick(T0 + 60 * MINUTE);
+      game.enter();
+      expect(game.menu()).toBeNull();
+      game.leave();
+
+      go(game, outside('b-noodle', 38, 20), 'foot', T0 + 60 * MINUTE);
+      game.tick(T0 + 120 * MINUTE);
+      // Only once inside: the door is the street.
+      expect(game.menu()).toBeNull();
+      game.enter();
+      const menu = game.menu();
+      expect(menu?.venue).toEqual({ id: 'b-noodle', name: 'Test Noodles', district: 'test', kindLabel: 'Noodle bar', quality: 'everyday', chain: false });
+      expect(menu?.items.filter((i) => i.kind === 'food').length).toBeGreaterThanOrEqual(2);
+      expect(game.menu()).toEqual(menu);
+      game.leave();
+      expect(game.menu()).toBeNull();
+
+      go(game, at('bar'), 'foot', T0 + 120 * MINUTE);
+      game.tick(T0 + 240 * MINUTE);
+      expect(game.menu()?.venue).toMatchObject({ id: 'bar', kindLabel: 'Diner' });
+    });
+
+    it('sells what is on the menu, into the inventory', () => {
+      const { game, take, outputs } = inTheNoodleBar(50);
+      const dish = game.menu()?.items[0];
+      if (!dish) throw new Error('Nothing on the menu');
+
+      expect(game.buy(dish.id)).toBe(true);
+      expect(game.wallet.eddies).toBe(50 - dish.price);
+      expect(game.inventory).toEqual([{ id: dish.id, kind: 'consumable', name: dish.name, count: 1 }]);
+      const events = take();
+      expect(events.map((e) => e.type)).toEqual(['output', 'walletChanged', 'inventoryChanged']);
+      expect(outputs(events)[0]).toMatchObject({ text: `Bought ${dish.name} for ${dish.price} €$.`, tone: 'system' });
+
+      expect(game.buy(dish.id)).toBe(true);
+      expect(game.wallet.eddies).toBe(50 - 2 * dish.price);
+      expect(game.inventory).toEqual([{ id: dish.id, kind: 'consumable', name: dish.name, count: 2 }]);
+    });
+
+    it('needs the eddies, and only sells what is on the menu', () => {
+      const { game, take, outputs } = inTheNoodleBar(1);
+      const menu = game.menu();
+      const dear = menu?.items.reduce((a, b) => (b.price > a.price ? b : a));
+      if (!dear) throw new Error('Nothing on the menu');
+      expect(dear.price).toBeGreaterThan(1);
+
+      expect(game.buy(dear.id)).toBe(false);
+      expect(game.wallet.eddies).toBe(1);
+      expect(game.inventory).toEqual([]);
+      expect(outputs(take())).toEqual([{ text: `${dear.name} is ${dear.price} €$. You've got 1 €$.`, tone: 'error' }]);
+
+      // Fine dining is not on a noodle bar's menu, and there's no buying with the menu closed.
+      expect(game.buy('got-escargot')).toBe(false);
+      expect(game.buy('nothing')).toBe(false);
+      game.leave();
+      expect(game.buy(dear.id)).toBe(false);
+      expect(take()).toEqual([{ type: 'interiorChanged', payload: null }]);
+    });
+
+    it('hands out a menu the UI cannot use to change the game', () => {
+      const { game } = inTheNoodleBar(50);
+      const menu = game.menu();
+      if (!menu) throw new Error('Nothing on the menu');
+      const item = menu.items[0];
+      if (!item) throw new Error('Nothing on the menu');
+      item.price = 0;
+      expect(game.menu()?.items[0]?.price).toBeGreaterThan(0);
+      game.inventory.push({ id: 'x', kind: 'junk', name: 'X', count: 1 });
+      expect(game.inventory).toEqual([]);
     });
   });
 
