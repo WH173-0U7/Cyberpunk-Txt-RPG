@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
 import { FOOD } from '../src/data/food';
+import { LINES, PEOPLE } from '../src/data/people';
+import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
 import type { TravelRules } from '../src/engine/travel';
 import type { GameEvents, Location, Whereabouts, World } from '../src/engine/types';
@@ -95,6 +97,11 @@ const RULES: GameRules = {
       { id: 'drunk', label: 'Drunk', at: 3, up: 'Drunk.', down: 'Down to drunk.' },
     ],
   },
+  people: PEOPLE,
+  society: SOCIETY,
+  lines: LINES,
+  // People's days run on UTC here, whatever machine the tests run on.
+  clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
 };
 
 const MINUTE = 60_000;
@@ -121,6 +128,17 @@ function setup(rules: Partial<TravelRules> = {}, progress?: Progress) {
   const take = () => events.splice(0);
   const outputs = (recorded: Recorded[]) => recorded.flatMap((e) => (e.type === 'output' ? [e.payload] : []));
   return { game, take, outputs };
+}
+
+/** Records a game's events from here on, like `setup` does. */
+function record(game: Game) {
+  const events: Recorded[] = [];
+  for (const type of ['output', 'arrived', 'tripChanged', 'interiorChanged', 'mapChanged', 'walletChanged', 'inventoryChanged', 'energyChanged', 'inebriationChanged', 'societyChanged', 'fx'] as const) {
+    game.events.on(type, (payload) => events.push({ type, payload } as Recorded));
+  }
+  const take = () => events.splice(0);
+  const outputs = (recorded: Recorded[]) => recorded.flatMap((e) => (e.type === 'output' ? [e.payload] : []));
+  return { take, outputs };
 }
 
 /** Plans and sets off, failing the test if the trip can't be planned. */
@@ -417,6 +435,7 @@ describe('Game', () => {
         items: [],
         energy: null,
         inebriation: null,
+        society: null,
       });
       const { game, take } = setup({}, progress('b-shop', outside('b-shop', 32, 20)));
       expect(game.interior?.id).toBe('b-shop');
@@ -533,6 +552,7 @@ describe('Game', () => {
       items,
       energy: null,
       inebriation,
+      society: null,
     });
     const lager = { id: 'broseph-lager', kind: 'consumable', name: 'Broseph Lager', count: 1 } as const;
     const moonshine = { id: 'moonshine', kind: 'consumable', name: 'Moonshine', count: 2 } as const;
@@ -612,6 +632,172 @@ describe('Game', () => {
     });
   });
 
+  describe('people', () => {
+    const HOUR = 60 * MINUTE;
+    /** A weekday at 11:00 UTC on which someone is working at the noodle bar. */
+    function shiftAt() {
+      const { game } = setup();
+      for (let day = 0; day < 14; day++) {
+        // Tuesday 12 October 2077 is day 39366; count on from there.
+        const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
+        const inside = new Game(world, { ...RULES, startingEddies: 100 }, { ...carryingProgress([]), where: outside('b-noodle', 38, 20), inside: 'b-noodle' });
+        inside.start(now);
+        const here = inside.peopleHere(now);
+        const worker = here.find((p) => p.person.job.building === 'b-noodle');
+        if (worker && new Date(now).getUTCDay() % 6 !== 0) return { game: inside, now, worker: worker.person, here };
+      }
+      throw new Error(`Nobody ever works at the noodle bar (${game.population.people.length} people)`);
+    }
+    const carryingProgress = (items: Progress['items']): Progress => ({
+      where: at('alley'),
+      visited: ['alley'],
+      discovered: ['alley', 'market'],
+      explored: [],
+      eddies: 100,
+      passUntil: 0,
+      trip: null,
+      inside: null,
+      items,
+      energy: null,
+      inebriation: null,
+      society: null,
+    });
+
+    it('makes a population for the city, with the noodle bar staffed by day and nobody about on the street', () => {
+      const { game } = setup();
+      expect(game.population.people.length).toBeGreaterThanOrEqual(8);
+      expect(game.population.people.filter((p) => p.job.building === 'b-noodle').length).toBeGreaterThanOrEqual(1);
+      expect(game.population.people.filter((p) => p.job.building === 'b-shop').length).toBeGreaterThanOrEqual(1);
+      game.start(T0);
+      // At the alley (not a hangout kind) nobody turns up; on the street nobody can.
+      expect(game.peopleHere(T0)).toEqual([]);
+      const { here, worker } = shiftAt();
+      expect(here.map((p) => p.person.id)).toContain(worker.id);
+      expect(here.find((p) => p.person.id === worker.id)?.doing).toMatch(/stove|counter|shift/);
+      expect(here.every((p) => ['neutral', 'wary', 'warm'].includes(p.stance))).toBe(true);
+    });
+
+    it('talks: a greeting and a line about their life, rapport growing with each chat, but not twice in an hour', () => {
+      const { game, now, worker } = shiftAt();
+      const { take, outputs } = record(game);
+      expect(game.talk('nobody', now)).toBe(false);
+      expect(game.talk(worker.id, now)).toBe(true);
+      const said = outputs(take());
+      expect(said.length).toBeGreaterThanOrEqual(2);
+      expect(said[0]?.text.startsWith(`${worker.given}: "`)).toBe(true);
+      const standing = game.standingWith(worker.id, now);
+      expect(standing).toMatchObject({ stance: expect.any(String), ties: null });
+      expect(standing?.standing).toMatchObject({ met: true, talks: 1, lastTalkAt: now });
+      expect(standing?.standing.rapport).toBeGreaterThan(0);
+      expect(game.reputation(now).find((r) => r.key === 'district:test')?.value ?? 0).toBeGreaterThanOrEqual(0);
+
+      // Too soon: nothing more to say, nothing gained.
+      game.talk(worker.id, now + 10 * MINUTE);
+      expect(game.standingWith(worker.id, now + 10 * MINUTE)?.standing.talks).toBe(1);
+      // Day after day at the counter: more rapport, and once it's there, their people.
+      let later = now;
+      let chats = 1;
+      for (let day = 1; chats < 12 && day < 40; day++) {
+        later = now + day * 24 * HOUR;
+        if (game.talk(worker.id, later)) chats++;
+      }
+      const known = game.standingWith(worker.id, later);
+      expect(known?.standing.rapport).toBeGreaterThanOrEqual(SOCIETY.talk.revealAt);
+      expect(known?.ties?.length).toBeGreaterThan(0);
+      expect(['warm', 'friend', 'neutral']).toContain(known?.stance);
+    });
+
+    it('takes a gift from the inventory, their favorite most of all', () => {
+      const { game, now, worker } = shiftAt();
+      const favorite = worker.likes.dish;
+      const dish = FOOD.dishes.find((d) => d.id === favorite);
+      if (!dish) throw new Error('no favorite');
+      // Nothing to give yet.
+      expect(game.gift(worker.id, favorite, now)).toBe(false);
+      const other = FOOD.dishes.find((d) => d.kind === 'food' && d.id !== favorite);
+      if (!other) throw new Error('no other dish');
+      const stocked = new Game(world, { ...RULES, startingEddies: 100 }, {
+        ...carryingProgress([
+          { id: favorite, kind: 'consumable', name: dish.name, count: 1 },
+          { id: other.id, kind: 'consumable', name: other.name, count: 2 },
+        ]),
+        where: outside('b-noodle', 38, 20),
+        inside: 'b-noodle',
+      });
+      stocked.start(now);
+      const { take, outputs } = record(stocked);
+      expect(stocked.gift(worker.id, other.id, now)).toBe(true);
+      const plain = stocked.standingWith(worker.id, now)?.standing.rapport ?? 0;
+      expect(plain).toBe(SOCIETY.gift.base);
+      expect(stocked.inventory.find((i) => i.id === other.id)?.count).toBe(1);
+      expect(take().map((e) => e.type)).toEqual(['output', 'inventoryChanged', 'societyChanged']);
+      // The favorite, the next day so it counts in full.
+      const tomorrow = now + 25 * HOUR;
+      expect(stocked.gift(worker.id, favorite, tomorrow)).toBe(true);
+      expect(outputs(take())[0]?.text).toContain(dish.name);
+      expect(stocked.standingWith(worker.id, tomorrow)?.standing.rapport).toBe(SOCIETY.gift.base + SOCIETY.gift.favorite);
+      expect(stocked.inventory.find((i) => i.id === favorite)).toBeUndefined();
+    });
+
+    it('insults make an enemy of someone and sour their coworkers; a robbery bars the player and brings someone to collect', () => {
+      const { game, now, worker, here } = shiftAt();
+      const { take, outputs } = record(game);
+      expect(game.insult(worker.id, now)).toBe(true);
+      const sour = game.standingWith(worker.id, now);
+      expect(sour?.standing.grudge).toBe(SOCIETY.severity.insult);
+      expect(['cold', 'hostile', 'wary']).toContain(sour?.stance);
+      expect(outputs(take()).length).toBeGreaterThan(0);
+      expect(game.barred(now)).toBeNull();
+
+      const eddies = game.wallet.eddies;
+      expect(game.rob(worker.id, now)).toBe(true);
+      const events = take();
+      expect(game.wallet.eddies).toBeGreaterThan(eddies);
+      expect(events.some((e) => e.type === 'walletChanged')).toBe(true);
+      expect(game.standingWith(worker.id, now)?.stance).toBe('hostile');
+      // The noodle bar's people saw it; the counter is closed to the player.
+      expect(game.reputation(now).find((r) => r.key === 'business:b-noodle')?.value).toBeLessThanOrEqual(SOCIETY.rep.banAt);
+      expect(game.barred(now)).toMatch(/won't serve|closes/);
+      expect(game.buy(game.menu()?.items[0]?.id ?? '', now)).toBe(false);
+      for (const other of here.filter((p) => p.person.id !== worker.id)) {
+        expect(game.standingWith(other.person.id, now)?.standing.grudge, other.person.name).toBeGreaterThan(0);
+      }
+      // Robbed again this week: nothing left on them, and they won't talk.
+      const before = game.wallet.eddies;
+      expect(game.rob(worker.id, now + HOUR)).toBe(true);
+      expect(game.wallet.eddies).toBe(before);
+      take();
+      const talks = game.standingWith(worker.id, now + HOUR)?.standing.talks;
+      expect(game.talk(worker.id, now + HOUR)).toBe(true);
+      expect(outputs(take())).toHaveLength(1);
+      expect(game.standingWith(worker.id, now + HOUR)?.standing.talks).toBe(talks);
+
+      // Whoever comes to collect does, with the energy knocked out of the player.
+      const threats = game.societySaved.threats;
+      if (threats.length) {
+        const due = Math.max(...threats.map((t) => t.due));
+        game.tick(due + 1);
+        const hit = take();
+        expect(hit.some((e) => e.type === 'fx' && e.payload.effect === 'shake')).toBe(true);
+        expect(outputs(hit)[0]?.tone).toBe('error');
+        expect(game.energy(due + 1).current).toBe(0);
+        expect(game.societySaved.threats).toEqual([]);
+      }
+    });
+
+    it('keeps the player\'s standing in the save, and forgets people the city no longer has', () => {
+      const { game, now, worker } = shiftAt();
+      game.talk(worker.id, now);
+      const saved = game.societySaved;
+      saved.standings['nobody-here'] = { ...saved.standings[worker.id]!, met: true };
+      saved.threats.push({ id: 99, due: now, by: 'nobody-here', gang: null, incident: 0, amount: 5 });
+      const again = new Game(world, RULES, { ...carryingProgress([]), society: saved });
+      expect(again.standingWith(worker.id, now)?.standing.talks).toBe(1);
+      expect(again.societySaved.standings['nobody-here']).toBeUndefined();
+      expect(again.societySaved.threats).toEqual([]);
+    });
+  });
+
   describe('energy', () => {
     it('starts full, and nothing the player does yet spends it', () => {
       const { game } = setup();
@@ -657,6 +843,7 @@ describe('Game', () => {
       items: [],
       energy: null,
       inebriation: null,
+      society: null,
     };
 
     const { game, take, outputs } = setup({}, progress);

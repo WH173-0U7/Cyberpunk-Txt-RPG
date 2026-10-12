@@ -3,11 +3,14 @@ import { CITY } from './data/city';
 import { ENERGY } from './data/energy';
 import { FOOD } from './data/food';
 import { INEBRIATION } from './data/inebriation';
+import { LINES, PEOPLE } from './data/people';
+import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
 import { Game, streetSpot } from './engine/game';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu } from './engine/food';
+import { kinWord } from './engine/dialogue';
 import type { InebriationStatus } from './engine/inebriation';
 import { randomSeed } from './engine/rng';
 import { createSave, readSave, resume, savedSeed, type Progress } from './engine/save';
@@ -26,6 +29,7 @@ import { Inventory } from './ui/inventory';
 import { MapOverlay } from './ui/overlay';
 import { stripMarkup } from './ui/markup';
 import { CityMap, type Target } from './ui/map';
+import { People, STANCE_LABEL, type PersonAction } from './ui/people';
 import { PlacePanel, type ActionId, type PanelAction, type PanelView } from './ui/place';
 import { saveSlot } from './ui/save-slot';
 import { Settings } from './ui/settings';
@@ -73,6 +77,7 @@ const place = new PlacePanel(
       enter: $<HTMLButtonElement>('#act-enter'),
       leave: $<HTMLButtonElement>('#act-leave'),
       menu: $<HTMLButtonElement>('#act-menu'),
+      people: $<HTMLButtonElement>('#act-people'),
     },
     close: $<HTMLButtonElement>('#place-close'),
   },
@@ -168,6 +173,42 @@ const shop = new Shop(
 /** What last happened at the counter, shown under the menu's header until it closes. */
 let shopStatus = '';
 
+const people = new People(
+  {
+    root: $('#people'),
+    close: $<HTMLButtonElement>('#people-close'),
+    title: $('#people-title'),
+    kicker: $('#people-kicker'),
+    count: $('#people-count'),
+    reputation: $('#people-rep'),
+    list: $('#people-list'),
+    empty: $('#people-empty'),
+    card: $('#person'),
+    cardName: $('#person-name'),
+    cardKicker: $('#person-kicker'),
+    cardBio: $('#person-bio'),
+    cardTies: $('#person-ties'),
+    cardActions: $('#person-actions'),
+    cardGifts: $('#person-gifts'),
+    back: $<HTMLButtonElement>('#person-back'),
+  },
+  () => showPeople(),
+  {
+    onSelect: (id) => {
+      personShown = id;
+      showPeople();
+    },
+    onAction: (action, id) => actOn(action, id),
+    onGift: (id, itemId) => {
+      lastActivity = performance.now();
+      game.gift(id, itemId, Date.now());
+    },
+  },
+  reducedMotion,
+);
+/** The person whose card is open, if any. */
+let personShown: string | null = null;
+
 const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill'), value: $('#energy-value'), detail: $('#energy-detail') });
 
 let game: Game;
@@ -231,7 +272,19 @@ function act(id: ActionId): void {
   else if (id === 'menu' && game.menu()) {
     shopStatus = '';
     shop.overlay.show($('#act-menu'));
+  } else if (id === 'people') {
+    personShown = null;
+    people.overlay.show($('#act-people'));
   }
+}
+
+/** Something done to someone in the people overlay. */
+function actOn(action: PersonAction, id: string): void {
+  lastActivity = performance.now();
+  const now = Date.now();
+  if (action === 'talk') game.talk(id, now);
+  else if (action === 'insult') game.insult(id, now);
+  else if (action === 'rob') game.rob(id, now);
 }
 
 // ───────────── The panel ─────────────
@@ -240,8 +293,9 @@ function act(id: ActionId): void {
 function refresh(): void {
   const now = Date.now();
   const trip = game.currentTrip;
-  // The menu is for where the player is; it goes when they leave.
+  // The menu and the people are for where the player is; they go when they leave.
   if (shop.overlay.isOpen && !game.menu()) shop.overlay.close();
+  if (people.overlay.isOpen && !game.interior && !game.location) people.overlay.close();
   if (target) {
     const to = destinationOf(target);
     const plans = to ? { foot: game.plan(to, 'foot', now), ncart: game.plan(to, 'ncart', now) } : null;
@@ -343,13 +397,14 @@ function hereView(now: number): PanelView {
   const location = game.location;
   if (location) {
     const menu = game.menu();
+    const here = game.peopleHere(now).length;
     return {
       mode: 'here',
       kicker: `You are here · ${dname} · ${location.kindLabel}`,
       description: location.description,
-      actions: menu ? [menuAction(menu)] : [],
+      actions: [peopleAction(here), ...(menu ? [menuAction(menu)] : [])],
       closable: false,
-      announce: `${location.name}. ${stripMarkup(location.description)}${menu ? ' There is a menu.' : ''}`,
+      announce: `${location.name}. ${stripMarkup(location.description)}${menu ? ' There is a menu.' : ''} ${here ? `${here} people here.` : 'Nobody here.'}`,
     };
   }
   if (where.station) {
@@ -394,19 +449,27 @@ function hereView(now: number): PanelView {
  * game grows.
  */
 function insideView(building: Building): PanelView {
+  const now = Date.now();
   const district = game.districtOf(game.whereabouts)?.name ?? 'Night City';
   const menu = game.menu();
-  const description = menu ? FOOD.blurbs[menu.venue.chain ? 'chain' : menu.venue.quality] : 'Nothing to do in here yet.';
+  const here = game.peopleHere(now).length;
+  const barred = game.barred(now);
+  const description = barred ?? (menu ? FOOD.blurbs[menu.venue.chain ? 'chain' : menu.venue.quality] : here ? 'People live and work in here.' : 'Nobody around right now.');
   return {
     mode: 'inside',
     kicker: `Inside · ${district} · Block ${building.block}`,
     title: building.name,
     meta: [menu ? qualityLabel(menu) : categoryOf(building).label, building.kindLabel, heightOf(building)].filter(Boolean).join(' · '),
     description,
-    actions: [...(menu ? [menuAction(menu)] : []), { id: 'leave', label: 'Leave', sub: 'Back to the street' }],
+    actions: [peopleAction(here), ...(menu ? [barred ? { id: 'menu' as const, label: 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []), { id: 'leave', label: 'Leave', sub: 'Back to the street' }],
     closable: false,
-    announce: `Inside ${building.name}. ${description}`,
+    announce: `Inside ${building.name}. ${description} ${here ? `${here} people here.` : ''}`,
   };
+}
+
+/** The people button: how many are here. */
+function peopleAction(count: number): PanelAction {
+  return { id: 'people', label: 'People', sub: count ? `${count} here` : 'Nobody here', disabled: !count };
 }
 
 /** The menu button: how much there is to eat, and what the cheapest thing costs. */
@@ -519,13 +582,63 @@ function showShop(): void {
   }
   const { venue, items } = menu;
   const carried = new Map(game.inventory.map((item) => [item.id, item.count]));
+  const barred = game.barred(Date.now());
   shop.render({
     title: venue.name,
     kicker: `${qualityLabel(menu)} · ${venue.kindLabel} · ${game.world.districts[venue.district]?.name ?? 'Night City'}`,
-    blurb: FOOD.blurbs[venue.chain ? 'chain' : venue.quality],
+    blurb: barred ?? FOOD.blurbs[venue.chain ? 'chain' : venue.quality],
     eddies: `€$ ${eddies}`,
     status: shopStatus,
-    items: items.map((item) => ({ ...item, affordable: item.price <= eddies, carried: carried.get(item.id) ?? 0 })),
+    items: items.map((item) => ({ ...item, affordable: !barred && item.price <= eddies, carried: carried.get(item.id) ?? 0 })),
+  });
+}
+
+/** Fills the people overlay: everyone here, or the one person whose card is open. */
+function showPeople(): void {
+  const now = Date.now();
+  const here = game.peopleHere(now);
+  const at = game.interior ?? game.location;
+  const district = at ? (game.world.districts[at.district]?.name ?? 'Night City') : 'Night City';
+  const reputation = game.reputation(now).map((r) => `${r.label} ${r.value > 0 ? '+' : '−'}${Math.abs(r.value)}`);
+  const shown = personShown ? here.find((p) => p.person.id === personShown) : undefined;
+  if (personShown && !shown) personShown = null;
+  const standing = shown ? game.standingWith(shown.person.id, now) : null;
+  const gifts = game.inventory.filter((item) => item.kind === 'consumable' && FOOD.dishes.some((d) => d.id === item.id));
+  const gangOf = (id: string | null) => (id ? PEOPLE.gangs[id]?.name : undefined);
+  people.render({
+    title: at?.name ?? 'Here',
+    kicker: `${district} · ${at && 'floors' in at ? at.kindLabel : (at?.kindLabel ?? 'The street')}`,
+    count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
+    reputation,
+    rows: here.map(({ person, doing, stance }) => ({
+      id: person.id,
+      name: person.name,
+      sub: [gangOf(person.gang), person.job.role].filter(Boolean).join(' · '),
+      doing,
+      stance,
+      stanceLabel: STANCE_LABEL[stance],
+    })),
+    empty: 'Nobody here right now. People keep hours: workers by day, regulars in the evening, residents at night.',
+    card:
+      shown && standing
+        ? {
+            id: shown.person.id,
+            name: shown.person.name,
+            kicker: [STANCE_LABEL[standing.stance], gangOf(shown.person.gang), shown.doing].filter(Boolean).join(' · '),
+            bio: shown.person.bio,
+            stance: standing.stance,
+            ties: standing.ties
+              ? standing.ties.map((t) => `${kinWord(shown.person, t.kind, t.person)}: ${t.person.name}${t.person.gang ? ` (${gangOf(t.person.gang)})` : ''}`)
+              : null,
+            tiesHint: `Get to know ${shown.person.given} to hear about ${shown.person.pronouns === 'they' ? 'their' : shown.person.pronouns === 'she' ? 'her' : 'his'} people.`,
+            actions: [
+              { id: 'talk', label: 'Talk', sub: standing.stance === 'hostile' ? "Won't talk" : `Rapport ${standing.standing.rapport}` },
+              { id: 'insult', label: 'Insult', sub: 'Makes enemies', danger: true },
+              { id: 'rob', label: 'Rob', sub: `${shown.person.eddies} €$ on them`, danger: true },
+            ],
+            gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
+          }
+        : null,
   });
 }
 
@@ -609,6 +722,7 @@ function wire(g: Game): void {
   });
 
   g.events.on('interiorChanged', (building) => {
+    people.overlay.close();
     const where = g.whereabouts;
     const district = g.districtOf(where);
     map.setInside(building?.id ?? null);
@@ -649,6 +763,14 @@ function wire(g: Game): void {
   g.events.on('inventoryChanged', () => {
     if (inventory.overlay.isOpen) showInventory();
     if (shop.overlay.isOpen) showShop();
+    if (people.overlay.isOpen) showPeople();
+    queueSave();
+  });
+
+  g.events.on('societyChanged', () => {
+    if (people.overlay.isOpen) showPeople();
+    if (shop.overlay.isOpen) showShop();
+    if (!target && !g.currentTrip) refresh();
     queueSave();
   });
 
@@ -665,7 +787,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES }, progress);
   wire(game);
   map.setWorld(world);
   seedLabel.textContent = `Seed ${world.seed.toUpperCase()}`;
@@ -703,10 +825,20 @@ function boot(): void {
   begin(generateWorld(/^[0-9a-f]{8}$/.test(seedInAddress) ? seedInAddress : randomSeed(), CITY));
 }
 
-/** The clock: lands trips that are due and moves the trip panel on. */
+let lastHour = -1;
+/** The clock: lands trips that are due, moves the trip panel on, and lets people come and go on the hour. */
 function tick(): void {
   const now = Date.now();
   game.tick(now);
+  const hour = new Date(now).getHours();
+  if (hour !== lastHour) {
+    const first = lastHour === -1;
+    lastHour = hour;
+    if (!first) {
+      if (people.overlay.isOpen) showPeople();
+      if (!target && !game.currentTrip) refresh();
+    }
+  }
   const trip = game.currentTrip;
   if (trip && !target) place.update(tripProgress(trip, now).done, tripMeta(trip, now));
   showWallet(game.wallet, now);

@@ -2,7 +2,27 @@ import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
 import { menuFor, type FoodContent, type Menu } from './food';
+import { fill, talkLines, varsFor, type DialogueLines } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
+import { generatePeople, localClock, peopleAt, personById, tiesOf, type Clock, type PeopleContent, type Person, type Population, type Spot, type Tie } from './people';
+import { createRng } from './rng';
+import {
+  applyIncident,
+  attitude,
+  changeRep,
+  changeStanding,
+  dueThreats,
+  freshSociety,
+  repOf,
+  settleThreat,
+  standingOf,
+  stanceOf,
+  type IncidentKind,
+  type SocietyRules,
+  type SocietyState,
+  type Stance,
+  type Standing,
+} from './society';
 import { districtAt } from './geography';
 import type { Progress } from './save';
 import { pointAlong, snapToStreet } from './streets';
@@ -49,12 +69,41 @@ export function streetSpot(p: Point): Whereabouts {
   return { x: p.x, y: p.y, place: null, station: null, building: null };
 }
 
-/** How the game plays: getting around, energy, what there is to eat, and drink. The numbers are in `src/data/`. */
+/** How the game plays: getting around, energy, what there is to eat and drink, who lives here and how they take things. The numbers are in `src/data/`. */
 export interface GameRules extends TravelRules {
   energy: EnergyRules;
   food: FoodContent;
   inebriation: InebriationRules;
+  people: PeopleContent;
+  society: SocietyRules;
+  lines: DialogueLines;
+  /** The time of day people's days run on. The phone's local time if not said (tests say). */
+  clock?: (now: number) => Clock;
 }
+
+/** Someone where the player is, and how they feel about the player. */
+export interface Presence {
+  person: Person;
+  doing: string;
+  stance: Stance;
+}
+
+/** What the player stands with a person, all told. */
+export interface PersonStanding {
+  stance: Stance;
+  attitude: number;
+  standing: Standing;
+  /** The person's people, once the player has earned hearing about them. */
+  ties: Array<{ person: Person; kind: Tie['kind'] }> | null;
+}
+
+export interface Reputation {
+  key: string;
+  label: string;
+  value: number;
+}
+
+const HOUR = 3_600_000;
 
 /**
  * The game rules and state. It never touches the DOM: everything the player
@@ -78,6 +127,9 @@ export class Game {
   private drunkState: InebriationState;
   /** The stage the player was last told about, so sobering up gets a line as it eases. */
   private drunkStage: InebriationStage | null = null;
+  /** Everyone who lives here, made up for this city. */
+  readonly population: Population;
+  private society: SocietyState;
   /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
   private readonly home: { building: string; bed: boolean } | null = null;
   private lastAmbient: AmbientLine | null = null;
@@ -97,6 +149,12 @@ export class Game {
     this.passUntil = progress?.passUntil ?? 0;
     this.energyState = progress?.energy ? { ...progress.energy } : freshEnergy(rules.energy);
     this.drunkState = progress?.inebriation ? { ...progress.inebriation } : freshInebriation();
+    this.population = generatePeople(world, rules.people, rules.food.dishes);
+    this.society = progress?.society ? structuredClone(progress.society) : freshSociety();
+    // People this city doesn't have (the generator changed) are forgotten.
+    const known = new Set(this.population.people.map((p) => p.id));
+    for (const id of Object.keys(this.society.standings)) if (!known.has(id)) delete this.society.standings[id];
+    this.society.threats = this.society.threats.filter((t) => !t.by || known.has(t.by));
     this.items = (progress?.items ?? []).map((item) => ({ ...item }));
     this.resumed = Boolean(progress);
     const indoors = progress?.inside ? world.buildings.find((b) => b.id === progress.inside) : undefined;
@@ -192,9 +250,14 @@ export class Game {
   }
 
   /** Buys something off the menu here, into the inventory. False if it isn't on the menu or the eddies aren't there. */
-  buy(id: string): boolean {
+  buy(id: string, now = Date.now()): boolean {
     const item = this.menu()?.items.find((i) => i.id === id);
     if (!item) return false;
+    const barred = this.barred(now);
+    if (barred) {
+      this.say(barred, 'error');
+      return false;
+    }
     if (item.price > this.eddies) {
       this.say(`${item.name} is ${item.price} €$. You've got ${this.eddies} €$.`, 'error');
       return false;
@@ -232,6 +295,257 @@ export class Game {
     this.drunkStage = status.stage;
     this.say(`You drink the ${name}.${worse}`);
     this.events.emit('inebriationChanged', status);
+  }
+
+  // ───────────── People ─────────────
+
+  private clockAt(now: number): Clock {
+    return (this.rules.clock ?? localClock)(now);
+  }
+
+  /** Where the player is, as somewhere people can be: inside a building, or at a place. Null on the street or on the move. */
+  private get spot(): Spot | null {
+    if (this.inside) return { kind: 'building', id: this.inside.id };
+    const location = this.location;
+    return location ? { kind: 'location', id: location.id } : null;
+  }
+
+  /** Everyone where the player is right now. */
+  peopleHere(now: number): Presence[] {
+    const spot = this.spot;
+    if (!spot) return [];
+    return peopleAt(this.population, this.world, spot, this.clockAt(now), this.rules.food.dishes).map(({ person, doing }) => ({
+      person,
+      doing,
+      stance: this.stanceOf(person, now),
+    }));
+  }
+
+  person(id: string): Person | undefined {
+    return personById(this.population, id);
+  }
+
+  private stanceOf(person: Person, now: number): Stance {
+    return stanceOf(attitude(person, this.society, this.rules.society, this.rules.timeScale, now), this.rules.society);
+  }
+
+  /** What the player stands with a person. */
+  standingWith(id: string, now: number): PersonStanding | null {
+    const person = this.person(id);
+    if (!person) return null;
+    const { society, timeScale } = this.rules;
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const score = attitude(person, this.society, society, timeScale, now);
+    const ties =
+      standing.rapport >= society.talk.revealAt
+        ? tiesOf(this.population, id)
+            .map((t) => ({ person: this.person(t.to), kind: t.kind }))
+            .filter((t): t is { person: Person; kind: Tie['kind'] } => Boolean(t.person))
+        : null;
+    return { stance: stanceOf(score, society), attitude: score, standing, ties };
+  }
+
+  /** The player's reputations that stand at anything, worst first. */
+  reputation(now: number): Reputation[] {
+    const { society, timeScale, people } = this.rules;
+    const out: Reputation[] = [];
+    for (const key of Object.keys(this.society.rep)) {
+      const value = Math.round(repOf(this.society, key, society, timeScale, now));
+      if (!value) continue;
+      const [kind, id] = key.split(':') as [string, string];
+      let label = id;
+      if (kind === 'gang') label = people.gangs[id]?.name ?? id;
+      else if (kind === 'district') label = this.world.districts[id]?.name ?? id;
+      else if (kind === 'business') label = this.world.buildings.find((b) => b.id === id)?.name ?? id;
+      else if (kind === 'chain') label = `${this.rules.food.fixed[id] ? 'every ' : ''}${this.world.buildings.find((b) => b.business === id)?.business ?? id}`;
+      out.push({ key, label, value });
+    }
+    return out.sort((a, b) => a.value - b.value);
+  }
+
+  /** Why the eatery the player is at won't serve them, if it won't. */
+  barred(now: number): string | null {
+    const at = this.inside;
+    if (!at?.business) return null;
+    const { society, timeScale } = this.rules;
+    const banned = repOf(this.society, `business:${at.id}`, society, timeScale, now) <= society.rep.banAt || repOf(this.society, `chain:${at.business}`, society, timeScale, now) <= society.rep.banAt;
+    return banned ? fill(this.pickLine(this.rules.lines.barred, `${at.id}:barred`), { work: at.name }) : null;
+  }
+
+  private isHere(id: string, now: number): Presence | undefined {
+    return this.peopleHere(now).find((p) => p.person.id === id);
+  }
+
+  private pickLine(lines: string[], salt: string): string {
+    const rng = createRng(`${this.world.seed}:${salt}:${this.society.nextId}:${this.society.incidents.length}`);
+    return lines.length ? rng.pick(lines) : '';
+  }
+
+  private varsFor(person: Person): Record<string, string> {
+    return varsFor(person, this.world, this.population, this.rules.people, this.rules.food.dishes);
+  }
+
+  /** Talks to someone here. What they say depends on how they feel about the player; it warms them a little. */
+  talk(id: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    if (!here) return false;
+    const { person, stance } = here;
+    const { society, timeScale, lines } = this.rules;
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const vars = this.varsFor(person);
+    const rng = createRng(`${this.world.seed}:${id}:talk:${standing.talks}`);
+    if (stance === 'hostile') {
+      this.say(fill(rng.pick(lines.refuse), vars));
+      changeStanding(this.society, id, { met: true }, society, timeScale, now);
+      this.events.emit('societyChanged', { people: [id] });
+      return true;
+    }
+    if (standing.lastTalkAt && now - standing.lastTalkAt < (society.talk.cooldownMinutes * 60_000) / timeScale) {
+      this.say(fill(rng.pick(lines.talkedOut), vars));
+      return true;
+    }
+    const said = talkLines({ stance, reveal: standing.rapport >= society.talk.revealAt, grudge: standing.grudge }, vars, lines, rng);
+    for (const line of said) this.say(`${person.given}: "${line}"`);
+    const gain = Math.round(society.talk.base * (0.6 + person.traits.warmth * 0.8) * (stance === 'cold' ? 0.4 : 1));
+    changeStanding(this.society, id, { met: true, rapport: gain, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
+    // Getting on with someone counts for a little with their people.
+    if (person.gang) changeRep(this.society, `gang:${person.gang}`, 1, society, timeScale, now);
+    changeRep(this.society, `district:${person.district}`, 0.5, society, timeScale, now);
+    this.events.emit('societyChanged', { people: [id] });
+    return true;
+  }
+
+  /** Gives someone here something to eat or drink from the inventory. Their favorite counts double. */
+  gift(id: string, itemId: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    const item = this.items.find((i) => i.id === itemId && i.kind === 'consumable');
+    const dish = item ? this.rules.food.dishes.find((d) => d.id === itemId) : undefined;
+    if (!here || !item || !dish) return false;
+    const { person, stance } = here;
+    const { society, timeScale, lines } = this.rules;
+    const vars = { ...this.varsFor(person), item: dish.name };
+    const rng = createRng(`${this.world.seed}:${id}:gift:${now}`);
+    if (stance === 'hostile') {
+      this.say(fill(rng.pick(lines.gift.refuse), vars));
+      return false;
+    }
+    item.count--;
+    if (item.count <= 0) this.items.splice(this.items.indexOf(item), 1);
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const favorite = dish.id === person.likes.dish || dish.id === person.likes.drink;
+    // The second gift of the day means half as much.
+    const recent = standing.lastGiftAt && now - standing.lastGiftAt < (24 * HOUR) / timeScale;
+    const gain = Math.round((favorite ? society.gift.favorite : society.gift.base) * (recent ? 0.5 : 1));
+    this.say(`${person.given}: "${fill(rng.pick(favorite ? lines.gift.favorite : lines.gift.thanks), vars)}"`);
+    changeStanding(this.society, id, { met: true, rapport: gain, gifts: standing.gifts + 1, lastGiftAt: now }, society, timeScale, now);
+    this.events.emit('inventoryChanged', this.inventory);
+    this.events.emit('societyChanged', { people: [id] });
+    return true;
+  }
+
+  /** Insults someone here. They, and the people who hear of it, think less of the player; a temper answers in kind. */
+  insult(id: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    if (!here) return false;
+    const { person } = here;
+    const { society, timeScale, lines } = this.rules;
+    const vars = this.varsFor(person);
+    const rng = createRng(`${this.world.seed}:${id}:insult:${now}`);
+    const fallout = this.incident('insult', person, 0, now);
+    changeStanding(this.society, id, { met: true, rapport: -society.insult.rapport }, society, timeScale, now);
+    this.say(fill(rng.pick(lines.insult.reply), vars));
+    if (person.traits.temper > 0.55 && rng.chance(person.traits.temper)) {
+      this.say(fill(rng.pick(lines.insult.shove), vars), 'error');
+      this.drainEnergy(1, now);
+    }
+    this.events.emit('societyChanged', { people: fallout });
+    return true;
+  }
+
+  /**
+   * Robs someone here of what they carry. They won't forget it, nor will their family, friends,
+   * crew and coworkers, nor anyone who saw; their workplace stops serving the player, their gang
+   * takes note, and someone with a grudge and the nerve for it will come to collect.
+   */
+  rob(id: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    if (!here) return false;
+    const { person } = here;
+    const { society, timeScale, lines } = this.rules;
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const rng = createRng(`${this.world.seed}:${id}:rob:${now}`);
+    const emptied = standing.robbedAt && now - standing.robbedAt < (7 * 24 * HOUR) / timeScale;
+    const fought = !emptied && rng.chance(person.traits.courage * 0.5);
+    const take = emptied ? 0 : Math.round(person.eddies * rng.range(0.4, 0.8) * (fought ? 0.5 : 1));
+    const vars = { ...this.varsFor(person), take: String(take) };
+    const fallout = this.incident('robbery', person, take, now);
+    changeStanding(this.society, id, { met: true, robbedAt: now }, society, timeScale, now);
+    if (take) {
+      this.eddies += take;
+      this.say(fill(rng.pick(fought ? lines.rob.fought : lines.rob.done), vars), 'system');
+      if (fought) this.drainEnergy(2, now);
+      this.events.emit('walletChanged', this.wallet);
+    } else {
+      this.say(fill(rng.pick(lines.rob.nothing), vars));
+    }
+    const witnesses = this.peopleHere(now).filter((p) => p.person.id !== id).length;
+    if (witnesses) this.say(`${witnesses === 1 ? 'Someone' : `${witnesses} people`} saw that. Word will get around ${this.world.districts[person.district]?.name ?? 'the district'}.`, 'system');
+    const work = person.job.building ? this.world.buildings.find((b) => b.id === person.job.building) : undefined;
+    if (work && repOf(this.society, `business:${work.id}`, society, timeScale, now) <= society.rep.banAt) this.say(`${work.name} won't be serving you again.`, 'system');
+    this.events.emit('societyChanged', { people: fallout });
+    return true;
+  }
+
+  /** Writes an incident down and spreads it; returns everyone it touched, the victim first. */
+  private incident(kind: IncidentKind, victim: Person, took: number, now: number): string[] {
+    const { society, timeScale, people } = this.rules;
+    const witnesses = this.peopleHere(now).map((p) => p.person.id).filter((pid) => pid !== victim.id);
+    const rng = createRng(`${this.world.seed}:incident:${this.society.nextId}`);
+    const fallout = applyIncident(this.society, this.population, { at: now, kind, victim: victim.id, witnesses, district: victim.district, took }, society, timeScale, now, rng, {
+      // A chain is a business with its own fixed menu: every outlet hears about it.
+      chainOf: (p) => {
+        const building = p.job.building ? this.world.buildings.find((b) => b.id === p.job.building) : undefined;
+        return building?.business && this.rules.food.fixed[building.business] ? building.business : null;
+      },
+      rivalsOf: (gang) => people.gangs[gang]?.rivals ?? [],
+    });
+    return [victim.id, ...fallout.affected.map((a) => a.id).filter((pid) => pid !== victim.id)];
+  }
+
+  /** Whoever has come to collect does, if the player isn't on a train: eddies, and the wind out of them. */
+  private settleThreats(now: number): void {
+    const { society, timeScale, lines, people } = this.rules;
+    for (const threat of dueThreats(this.society, now)) {
+      if (this.trip?.mode === 'ncart') {
+        threat.due = now + (10 * 60_000) / timeScale;
+        continue;
+      }
+      const by = threat.by ? this.person(threat.by) : undefined;
+      const gang = threat.gang ? people.gangs[threat.gang] : undefined;
+      const take = Math.min(this.eddies, threat.amount);
+      const vars = { ...(by ? this.varsFor(by) : {}), gang: gang?.name ?? '', take: String(take), where: this.nameOf(this.where) };
+      const rng = createRng(`${this.world.seed}:threat:${threat.id}`);
+      this.events.emit('fx', { effect: 'shake' });
+      this.say(fill(rng.pick(by ? lines.revenge.person : lines.revenge.gang), vars), 'error');
+      this.eddies -= take;
+      this.drainEnergy(Infinity, now);
+      settleThreat(this.society, threat, society, timeScale, now);
+      this.events.emit('walletChanged', this.wallet);
+      this.events.emit('societyChanged', { people: by ? [by.id] : [] });
+    }
+  }
+
+  /** Takes energy away without the training that spending it gives: a shove, a beating. */
+  private drainEnergy(amount: number, now: number): void {
+    const status = this.energy(now);
+    if (!status.current) return;
+    this.energyState = { ...this.energyState, current: Math.max(0, status.current - amount), updatedAt: now };
+    this.events.emit('energyChanged', this.energy(now));
+  }
+
+  /** The player's dealings with the people, for saving. */
+  get societySaved(): SocietyState {
+    return structuredClone(this.society);
   }
 
   /** Sobering up on the clock: a line each time the stage eases, and one when it's over. */
@@ -326,6 +640,7 @@ export class Game {
   /** Moves the clock on: sobers up, reveals what's been walked past, and lands the player once the trip is over. */
   tick(now: number, away = false): void {
     this.soberUp(now);
+    this.settleThreats(now);
     const trip = this.trip;
     if (!trip) return;
     const changed = this.exploreTrip(now);

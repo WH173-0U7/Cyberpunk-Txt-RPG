@@ -1423,6 +1423,206 @@ button {
   outline: none;
 }
 
+/* ───────────── People ─────────────
+   Who's here, and one of them up close. Stances run from friend (green) to hostile (red). */
+.action.is-people {
+  border-color: #c8ff57;
+  background: color-mix(in srgb, #c8ff57 12%, transparent);
+  text-shadow: 0 0 8px #c8ff57;
+}
+.action.is-people:hover,
+.action.is-people:focus-visible {
+  background: color-mix(in srgb, #c8ff57 26%, transparent);
+}
+.people-rep {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.people-rep-item {
+  white-space: nowrap;
+}
+.people-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.people-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.person-row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+.person-row:hover,
+.person-row:focus-visible {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  outline: none;
+}
+.person-row-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.person-row-name,
+.person-name {
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.person-row-sub {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.person-row-doing {
+  color: color-mix(in srgb, var(--primary) 70%, var(--muted));
+  font-size: 11px;
+  font-style: italic;
+}
+.stance {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.stance.is-friend,
+[data-stance='friend'] {
+  color: #7dff9a;
+}
+.stance.is-warm,
+[data-stance='warm'] {
+  color: var(--primary);
+}
+.stance.is-neutral,
+[data-stance='neutral'] {
+  color: var(--muted);
+}
+.stance.is-wary,
+[data-stance='wary'] {
+  color: #ffd84d;
+}
+.stance.is-cold,
+[data-stance='cold'] {
+  color: #ff9a3d;
+}
+.stance.is-hostile,
+[data-stance='hostile'] {
+  color: var(--danger);
+}
+.person-card {
+  display: grid;
+  gap: 8px;
+}
+.person-back {
+  justify-self: start;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.person-kicker {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.person-name {
+  margin: 0;
+  font-size: 16px;
+}
+.person-bio {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.person-ties {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+  list-style: none;
+}
+.person-tie.is-hint {
+  font-style: italic;
+}
+.person-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.person-action {
+  flex: 1;
+  min-width: 96px;
+}
+.person-action.is-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--danger) 60%, transparent);
+}
+.person-action.is-danger:hover,
+.person-action.is-danger:focus-visible {
+  background: color-mix(in srgb, var(--danger) 24%, transparent);
+}
+.person-gifts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+}
+.person-gifts-label {
+  color: var(--muted);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.person-gift {
+  padding: 5px 10px;
+  border: 1px solid #ffd84d;
+  background: color-mix(in srgb, #ffd84d 12%, transparent);
+  color: #ffd84d;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+.person-gift:hover,
+.person-gift:focus-visible {
+  background: color-mix(in srgb, #ffd84d 28%, transparent);
+  outline: none;
+}
+
 /* A menu over the map: what an eatery sells, with a Buy on each line */
 .action.is-menu {
   border-color: #ffd84d;

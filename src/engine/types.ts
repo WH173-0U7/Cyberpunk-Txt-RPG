@@ -267,5 +267,7 @@ export type GameEvents = {
   inventoryChanged: Item[];
   /** The player had a drink, or sobered up a stage. Clearing on the clock doesn't fire this; ask `Game.inebriation(now)`. */
   inebriationChanged: InebriationStatus;
+  /** What people think of the player changed: a chat, a gift, an insult, a robbery, or someone collecting on one. */
+  societyChanged: { people: string[] };
   fx: { effect: FxName };
 };

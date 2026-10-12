@@ -84,6 +84,38 @@ own.
   same prices wherever they are, and the real eateries that turn up in the city (Tom's Diner,
   Au Cabanon, El Pinche Pollo, Kabuki Market…) have their own menus. **Buy** puts the dish in
   your inventory under consumables.
+- **People**: every city has its own people, made up for its seed and the same every time
+  you come back: a few hundred of them, with names from their district's communities
+  (Watson's Asian neighborhoods, Heywood's barrios, the Haitian diaspora of Pacifica, corpos
+  in City Center), homes in its apartment blocks and megabuildings, jobs in its storefronts,
+  towers and factories (or none to speak of), families who share a name (couples, children,
+  siblings, cousins, aunts and uncles, in-laws), friends, coworkers, and crews: the gangs
+  that run each district by canon (Maelstrom, Tyger Claws and the Mox in Watson, the
+  Valentinos in Heywood, 6th Street in Santo Domingo, the Voodoo Boys, Animals and BARGHEST
+  in Pacifica, the Wraiths in the Badlands), with their looks, their roles and their feuds.
+  Everyone has a personality (warmth, temper, loyalty, greed, courage, how chatty they are),
+  a favorite dish and drink, something they hate, a place they go in the evening and eddies
+  in their pocket. They keep hours on your phone's clock: home at night, work by day (with
+  days off), their hangout in the evening, out on the streets in between. Inside a building
+  or at a place, **People** lists who's there and what they're doing; tap one for their card.
+- **Getting on with people**: **Talk** gets a greeting that depends on how they feel about
+  you and a line about their life (their work, their district, their food, the gang they
+  can't stand), and builds rapport a little each time (not twice in an hour). Give them food
+  or drink from your inventory (their favorite counts double). Once you're on good terms they
+  tell you about their people, and their card lists them: who's family, who's a friend, who's
+  in their crew. The card shows where you stand: Stranger, Wary, Warm, Friend, Cold, Hostile.
+- **Crossing people**: **Insult** someone and they hold it against you (a temper shoves you
+  into the wall, which costs energy); **Rob** them and you take a share of their eddies. Every
+  such thing spreads: the victim holds a grudge, so do their spouse, parents, children,
+  siblings, cousins, friends, crew and coworkers (by how close they are and how loyal), and
+  their people a little; anyone who saw it talks. The victim's gang thinks less of you (its
+  rivals a little more), their workplace stops serving you (the whole chain, for a chain),
+  their neighborhood cools. Whoever has the grudge and the nerve comes to collect, hours or a
+  day later, wherever you are: they take eddies back with interest and leave you with no
+  energy; a gang that's had enough of you comes hunting the same way. Grudges fade a point a
+  day and reputations recover two, on the game's clock. The **People** overlay lists every
+  reputation that stands at anything. (Violence, once there is combat, goes through the same
+  machinery: assault and murder are already kinds of incident, with heavier consequences.)
 - **Eating and drinking**: in the inventory, every dish has an **Eat** or **Drink** button.
   Food and soft drinks do nothing yet. Alcohol goes to your head: every drink has its units
   (a beer about one, a shot of Moonshine three), they add up, and the body clears a unit an
@@ -158,17 +190,20 @@ effects layer decides how that should look:
 src/
   engine/   Game rules and state: the city generator, the NCART network, street routes,
             trip planning on the real clock, the wallet and pass, energy (energy.ts),
-            menus (food.ts), drink (inebriation.ts), discovery, ambient chatter, the save
-            format. No DOM, fully unit-tested.
+            menus (food.ts), drink (inebriation.ts), the people (people.ts: who lives
+            here and where they are), what they think of the player and what comes of it
+            (society.ts), what they say (dialogue.ts), discovery, ambient chatter, the
+            save format. No DOM, fully unit-tested.
   data/     The content the generator builds cities from (city.ts), travel times and
             prices (travel.ts), energy's numbers (energy.ts), the kinds of item the
-            inventory sorts by (items.ts), what there is to eat (food.ts) and the stages
-            of being drunk (inebriation.ts).
+            inventory sorts by (items.ts), what there is to eat (food.ts), the stages
+            of being drunk (inebriation.ts), the people's names, gangs, jobs and lines
+            (people.ts) and how grudges and reputations work (society.ts).
   ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
             ground, sea, buildings), the fog (fog.ts), the overlays over the map (overlay.ts:
-            the inventory in inventory.ts, settings in settings.ts, a menu in shop.ts), the
-            energy bar (energy.ts), place panel, transmissions, HUD, typewriter, markup
-            parser, the save slot in local storage.
+            the inventory in inventory.ts, settings in settings.ts, a menu in shop.ts, who's
+            here in people.ts), the energy bar (energy.ts), place panel, transmissions, HUD,
+            typewriter, markup parser, the save slot in local storage.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.
 tests/      Vitest unit tests.
@@ -182,6 +217,7 @@ tests/      Vitest unit tests.
 | Discovering places | The fog clears like smoke, new markers and routes appear, districts light up and get their names |
 | Ambient line with an effect | e.g. lightning flashes the screen and the sign; a bass drop shakes the bar |
 | Drinking | The whole terminal blurs and sways, more with every drink, and clears as you sober up |
+| Someone collecting on a grudge | The screen shakes, the line comes up red, the energy bar empties |
 | `{g\|word}` in any text | The word tears and scrambles every few seconds |
 
 Effects that rely on motion are toned down when the OS "reduce motion" setting is on.
@@ -202,6 +238,16 @@ Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
   `{corp}` and `{shop}`). A storefront's business comes from `businesses`, weighted by the
   district's `trade`; a `chain` business is named after its sign, and `where` keeps it to some
   districts. Real eateries are `landmarks` with a `business`.
+- **People** are in [`src/data/people.ts`](src/data/people.ts): name pools by community and
+  which communities each district draws from, the gangs (their members' look, roles and
+  rivals) and each district's turf, job roles by business, category and building kind,
+  freelance work, the kinds of place people hang out at, and everything they say (`LINES`,
+  with `{given}`, `{work}`, `{gang}`, `{dish}`, `{kinName}`… filled in). The cascade's numbers
+  (closeness of each tie, severity of each incident, reputation costs, the ban threshold,
+  how fast grudges fade, when someone comes to collect) are in
+  [`src/data/society.ts`](src/data/society.ts). People never change the city, so they need
+  no generator bump; a change to how they're made only loses the player's standings with
+  people who no longer exist.
 - **Food** is in [`src/data/food.ts`](src/data/food.ts): every dish names the menus it turns
   up `on` (noodles, grill, street, diner, fine, market…), which qualities of place serve it
   (`where`; everywhere if not said) and the districts where it's a staple (`favored`).
