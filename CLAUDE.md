@@ -3,7 +3,7 @@
 A browser game (TypeScript + Vite) set in the Cyberpunk 2077 universe, played mostly on phones.
 The README covers how it plays and how the code is laid out.
 
-## Content comes from the Cyberpunk Wiki
+## Content comes from canon: the Cyberpunk Wiki and the Cyberpunk TCG
 
 - **Canon first.** Names, places, districts, factions, corporations, history, slang and how
   systems work (the NCART, ripperdocs, braindance…) come from the Cyberpunk Wiki,
@@ -19,6 +19,20 @@ The README covers how it plays and how the code is laid out.
 - **Write our own words.** Wiki text is CC BY-SA: take the facts, don't copy the sentences.
 - **Images are reference only.** Wiki images are CD Projekt Red's art. Use them as a visual
   baseline for the look; don't add them to the repo or the game.
+
+## The Cyberpunk TCG
+
+https://cyberpunktcg.com is the official Cyberpunk Trading Card Game (Weird Co., licensed by
+CD PROJEKT RED). Use it alongside the wiki:
+
+- **Art direction.** Its card art and its look (dark panels, yellow accents, crosshair
+  brackets, barcode and data strips) are the inspiration for the game's art, and for making
+  the world feel real and lived in. As with the wiki: inspiration only, never copied in.
+- **Characters, items, abilities, weapons and attachments.** When these come into the game,
+  take their names and details from both the wiki and the TCG: the card database at
+  https://cyberpunktcg.com/cards and the rules at https://cyberpunktcg.com/comprehensive-rules.
+  Card text and card numbers are theirs: keep the facts, write our own words, and set our
+  own numbers.
 
 ## Checks before a PR
 
