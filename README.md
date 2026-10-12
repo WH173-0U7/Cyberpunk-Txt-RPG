@@ -55,10 +55,18 @@ own.
   Santo Domingo, derelicts in Pacifica, shacks and containers out in the Badlands, plus parks,
   plazas and parking lots. They're kept simple: they stand up off the map with lit windows,
   neon edges, shop signs, holo-ads and red warning lights on the towers.
+- **Building categories**: every building lands in exactly one category. Storefronts are
+  businesses, named after the kinds of vendor in Night City: commodity (bodegas, pawn and
+  junk shops), food, nightlife, firearms, melee weapons, cyberware (ripperdocs), netrunning
+  (quickhacks, cyberdecks), clothing, medical, vehicles, entertainment, services and lodging.
+  Each district leans its own way: Watson's storefronts run to ripperdocs and gun dealers,
+  Japantown's to pachinko and karaoke, Santo Domingo's to garages. Everything else is
+  residential, corporate, industrial, storage, public space, parking or abandoned. The
+  categories are in `src/data/city.ts` and will drive managing buildings later.
 - **Zoom**: drag to pan; pinch, scroll or use the **+ / −** buttons to zoom; the target button
   flies back to where you are. Zoomed out, tapping a block flies in to it. Close in, tapping a
-  building picks it out and the panel shows its name, block address and size. Buildings don't
-  do anything yet; they're there for what comes next.
+  building picks it out and the panel shows its name, category, what it is, its block
+  address and size. Buildings don't do anything yet; they're there for what comes next.
 - **Getting around**: tap a place, an NCART station, a building, or (zoomed in) any spot on
   a street. The panel shows two ways there:
   - **Walk**: free, along the streets, to anywhere on the map. Tapping the same thing again

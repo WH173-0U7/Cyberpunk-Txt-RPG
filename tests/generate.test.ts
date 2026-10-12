@@ -312,6 +312,52 @@ describe('buildings', () => {
     expect(blockAt(layout, { x: -1, y: 20 })).toBeNull();
   });
 
+  it('puts every building in exactly one category, and every storefront in business', () => {
+    const problems: string[] = [];
+    const businesses = new Map(CITY.buildings.businesses.map((b) => [b.id, b]));
+    for (const world of worlds.slice(0, 100)) {
+      for (const b of world.buildings) {
+        const style = CITY.buildings.styles[b.kind];
+        if (!CITY.buildings.categories[b.category]) problems.push(`${world.seed} ${b.id}: no category ${b.category}`);
+        if (b.kind === 'shops') {
+          const business = b.business ? businesses.get(b.business) : undefined;
+          if (!business) problems.push(`${world.seed} ${b.id}: storefront without a business`);
+          else if (business.category !== b.category || business.label !== b.kindLabel || !b.name.includes(business.sign)) {
+            problems.push(`${world.seed} ${b.id}: ${b.name} doesn't match ${business.id}`);
+          }
+          if (!CITY.buildings.categories[b.category]?.business) problems.push(`${world.seed} ${b.id}: storefront in ${b.category}`);
+        } else {
+          if (b.business !== null || b.category !== style.category || b.kindLabel !== style.label) problems.push(`${world.seed} ${b.id}: ${b.kind} as ${b.category}`);
+          if (CITY.buildings.categories[b.category]?.business) problems.push(`${world.seed} ${b.id}: ${b.kind} counted as a business`);
+        }
+      }
+    }
+    expect(problems.slice(0, 10)).toEqual([]);
+  });
+
+  it('opens every category of business somewhere, and leans each district its own way', () => {
+    const shares = new Map<string, Map<string, number>>();
+    for (const world of worlds) {
+      for (const b of world.buildings) {
+        if (b.kind !== 'shops') continue;
+        const counts = shares.get(b.district) ?? new Map<string, number>();
+        counts.set(b.category, (counts.get(b.category) ?? 0) + 1);
+        shares.set(b.district, counts);
+      }
+    }
+    const share = (district: string, category: string) => {
+      const counts = shares.get(district) ?? new Map<string, number>();
+      const total = [...counts.values()].reduce((sum, n) => sum + n, 0);
+      return (counts.get(category) ?? 0) / Math.max(1, total);
+    };
+    const seen = new Set([...shares.values()].flatMap((counts) => [...counts.keys()]));
+    for (const [id, info] of Object.entries(CITY.buildings.categories)) if (info.business) expect(seen, id).toContain(id);
+    expect(share('watson', 'cyberware')).toBeGreaterThan(share('city_center', 'cyberware'));
+    expect(share('westbrook', 'entertainment')).toBeGreaterThan(share('heywood', 'entertainment'));
+    expect(share('santo_domingo', 'vehicles')).toBeGreaterThan(share('city_center', 'vehicles'));
+    expect(share('city_center', 'clothing')).toBeGreaterThan(share('pacifica', 'clothing'));
+  });
+
   it('builds the Badlands out of shacks and containers, and keeps them sparse', () => {
     for (const world of worlds) {
       const desert = world.buildings.filter((b) => world.districts[b.district]?.terrain === 'desert');
@@ -336,6 +382,17 @@ describe('city content', () => {
         expect(landmark.description.length, landmark.name).toBeLessThanOrEqual(MAX_DESCRIPTION);
       }
     }
+  });
+
+  it('only trades in categories of business that exist', () => {
+    for (const district of CITY.districts) {
+      for (const category of Object.keys(district.trade ?? {})) {
+        expect(CITY.buildings.categories[category as keyof typeof CITY.buildings.categories]?.business, `${district.id}: ${category}`).toBe(true);
+      }
+    }
+    const ids = CITY.buildings.businesses.map((b) => b.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const b of CITY.buildings.businesses) expect(CITY.buildings.categories[b.category]?.business, b.id).toBe(true);
   });
 
   it('zones every district with at least one kind of building', () => {

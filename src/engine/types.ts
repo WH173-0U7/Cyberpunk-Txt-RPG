@@ -86,6 +86,33 @@ export type BuildingKind =
   | 'shack'
   | 'container';
 
+/**
+ * What a building is for. Every building lands in exactly one. The first group are businesses
+ * (storefronts), named after the kinds of vendor in Night City; the rest are everything else
+ * a city is made of.
+ */
+export type BuildingCategory =
+  | 'commodity'
+  | 'food'
+  | 'nightlife'
+  | 'firearms'
+  | 'melee'
+  | 'cyberware'
+  | 'netrunning'
+  | 'clothing'
+  | 'medical'
+  | 'vehicles'
+  | 'entertainment'
+  | 'services'
+  | 'lodging'
+  | 'residential'
+  | 'corporate'
+  | 'industrial'
+  | 'storage'
+  | 'public'
+  | 'parking'
+  | 'abandoned';
+
 /** One building (or open lot) in a city block. Every city generates its own. */
 export interface Building {
   id: string;
@@ -93,8 +120,11 @@ export interface Building {
   block: string;
   district: string;
   kind: BuildingKind;
-  /** The kind as players read it, e.g. "Apartment block". */
+  /** What it is as players read it, e.g. "Apartment block" or, for a storefront, "Gun shop". */
   kindLabel: string;
+  category: BuildingCategory;
+  /** The kind of business a storefront runs, e.g. "gun-shop". Null for anything that isn't a storefront. */
+  business: string | null;
   name: string;
   /** 0 for open ground such as parks, plazas and lots. */
   floors: number;

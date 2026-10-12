@@ -185,12 +185,18 @@ function heightOf(b: Building): string {
   return b.floors > 1 ? `${b.floors} floors` : '';
 }
 
+/** What a building is for, as players read it: e.g. "Firearms", and what that covers. */
+function categoryOf(b: Building): { label: string; description: string } {
+  return CITY.buildings.categories[b.category];
+}
+
 function targetView(t: Target, to: Whereabouts, plans: { foot: TripPlan | null; ncart: TripPlan | null }, now: number): PanelView {
   const { world } = game;
   const district = game.districtOf(to)?.name ?? 'Night City';
   let kicker = district;
   let title = game.nameOf(to);
   let meta = '';
+  let description: string | undefined;
   if (t.kind === 'place') {
     const l = world.locations[t.id];
     kicker = `${district} · ${l?.kindLabel ?? 'Place'}`;
@@ -202,7 +208,8 @@ function targetView(t: Target, to: Whereabouts, plans: { foot: TripPlan | null; 
     const b = buildingOf(t.id);
     kicker = `Block ${b?.block ?? '?'} · ${district}`;
     title = b?.name ?? title;
-    meta = b ? [b.kindLabel, heightOf(b)].filter(Boolean).join(' · ') : '';
+    meta = b ? [categoryOf(b).label, b.kindLabel, heightOf(b)].filter(Boolean).join(' · ') : '';
+    description = b ? categoryOf(b).description : undefined;
   } else {
     const block = blockAt(world.layout, to);
     kicker = block ? `Block ${block.address} · ${district}` : district;
@@ -217,6 +224,7 @@ function targetView(t: Target, to: Whereabouts, plans: { foot: TripPlan | null; 
     kicker,
     title,
     meta: [meta, stop ? `Train to ${stop}` : '', testSpeed].filter(Boolean).join(' · '),
+    description,
     actions,
     closable: true,
     announce: `${title}. ${actions.map((a) => [a.label, a.sub].filter(Boolean).join(' ')).join('. ')}.`,
@@ -287,7 +295,7 @@ function hereView(now: number): PanelView {
     mode: 'here',
     kicker: `You are here · ${dname}${building ? ` · Block ${building.block}` : ''}`,
     title: name,
-    description: building ? `${[building.kindLabel, heightOf(building)].filter(Boolean).join(', ')}. ${mood}` : mood,
+    description: building ? `${categoryOf(building).label} · ${[building.kindLabel, heightOf(building)].filter(Boolean).join(', ')}. ${mood}` : mood,
     actions: [],
     closable: false,
     announce: `${name}. ${mood}`,
