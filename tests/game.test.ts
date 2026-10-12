@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Game, streetSpot } from '../src/engine/game';
+import { cellOf, Game, streetSpot } from '../src/engine/game';
 import type { Progress } from '../src/engine/save';
 import type { TravelRules } from '../src/engine/travel';
 import type { GameEvents, Location, Whereabouts, World } from '../src/engine/types';
@@ -245,7 +245,7 @@ describe('Game', () => {
       game.tick(T0 + 35 * MINUTE);
       const middle = game.mapState.explored;
       game.tick(T0 + 68 * MINUTE);
-      expect([...middle].some((cell) => cell === 12 * 25 + 12)).toBe(false);
+      expect(middle.has(cellOf({ x: 50, y: 50 }))).toBe(false);
     });
 
     it('needs the fare', () => {

@@ -26,9 +26,8 @@ const MAX_STRETCH = 1.35;
 const PICK_SCALE = 7;
 /** How far (px) a finger can wander before a tap becomes a drag. */
 const DRAG_SLOP = 8;
-/** How far the fog clears around places, in map units. */
-const CLEAR_VISITED = 27;
-const CLEAR_KNOWN = 17;
+/** How far the fog clears around a place you've been to, in map units. Places you've only heard of stay in the dark. */
+const CLEAR_VISITED = 6;
 /** District names fade out as you zoom in, gone by this zoom. */
 const NAMES_GONE = 2;
 /** Fog canvas pixels per CSS pixel. */
@@ -102,7 +101,8 @@ export class CityMap {
   private moving = false;
   private frame = 0;
   private liveFrame = 0;
-  private lastTrail = 0;
+  /** When the player last moved the map themselves (performance.now()). */
+  private lastTouched = -Infinity;
   private flight: { frame: number; finish(): void } | null = null;
   private settleTimer: number | undefined;
   private readonly fog = document.createElement('canvas');
@@ -193,6 +193,7 @@ export class CityMap {
 
   /** Zooms in (factor above 1) or out around the middle of the map. */
   zoomBy(factor: number): void {
+    this.lastTouched = performance.now();
     void this.flyTo({ ...this.camera, zoom: this.camera.zoom * factor }, 280);
   }
 
@@ -219,16 +220,30 @@ export class CityMap {
     return this.state ? this.state.where : null;
   }
 
-  /** Every frame of a trip: move the player's marker; now and then, redraw the trail behind them. */
+  /** Every frame of a trip: move the player's marker and the trail behind them, and keep them in sight. */
   private followTrip(): void {
     if (!this.trip) return;
     this.placePlayer();
-    const now = performance.now();
-    if (now - this.lastTrail > 400) {
-      this.lastTrail = now;
-      this.drawTrail();
-    }
+    this.drawTrail();
+    this.keepInView();
     this.liveFrame = requestAnimationFrame(() => this.followTrip());
+  }
+
+  /**
+   * Zoomed in, glides the map along when the player gets near the edge of the view. Holds off
+   * for a few seconds after the player moves the map themselves, so it never fights them.
+   */
+  private keepInView(): void {
+    if (this.flight || this.gesture || performance.now() - this.lastTouched < 3000) return;
+    const here = this.playerAt();
+    if (!here) return;
+    const p = this.project(here);
+    const margin = Math.min(this.width, this.height) * 0.18;
+    if (p.x >= margin && p.x <= this.width - margin && p.y >= margin && p.y <= this.height - margin) return;
+    const to = this.clamp({ ...this.camera, x: here.x, y: here.y });
+    // Zoomed right out, the whole city is already on screen.
+    if (Math.hypot(to.x - this.camera.x, to.y - this.camera.y) < 0.5) return;
+    void this.flyTo(to, 900);
   }
 
   // ───────────── Camera ─────────────
@@ -350,6 +365,7 @@ export class CityMap {
     // A primary pointer starts a fresh gesture, even if an earlier one lost its pointerup.
     if (e.isPrimary) this.pointers.clear();
     if (this.pointers.size === 0) this.stageRect = null;
+    this.lastTouched = performance.now();
     const target = e.target instanceof Element ? e.target : null;
     if (target?.closest('.map-zoom')) return;
     if (this.pointers.size === 0) {
@@ -427,6 +443,7 @@ export class CityMap {
   private onWheel(e: WheelEvent): void {
     e.preventDefault();
     if (!this.world) return;
+    this.lastTouched = performance.now();
     this.stopFlight();
     const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
     // Trackpad pinches arrive as wheel events with ctrlKey and small deltas.
@@ -574,7 +591,7 @@ export class CityMap {
     );
   }
 
-  /** Paints where the fog lifts: around every street walked and every place known. Done once per change. */
+  /** Paints where the fog lifts: along every street walked and around every place visited. Done once per change. */
   private drawMask(): void {
     const { world, state } = this;
     const m = this.mask.getContext('2d', { willReadFrequently: true });
@@ -589,13 +606,13 @@ export class CityMap {
       m.fillStyle = glow;
       m.fillRect(p.x - radius, p.y - radius, radius * 2, radius * 2);
     };
-    for (const cell of state.explored) clear(cellCenter(cell), CELL * 1.25);
+    for (const cell of state.explored) clear(cellCenter(cell), CELL * 1.2);
     for (const location of Object.values(world.locations)) {
-      if (state.discovered.has(location.id)) clear(location, state.visited.has(location.id) ? CLEAR_VISITED : CLEAR_KNOWN);
+      if (state.visited.has(location.id)) clear(location, CLEAR_VISITED);
     }
   }
 
-  /** Darkness over the whole city, cut away where the mask says the player has been or knows of. */
+  /** Darkness over the whole city, cut away only where the mask says the player has been. */
   private drawFog(ctx: CanvasRenderingContext2D, view: View, dpr: number): void {
     const { fog, width, height } = this;
     // The fog is all soft gradients, so a quarter of the pixels look the same and draw far faster.
@@ -606,7 +623,7 @@ export class CityMap {
     f.setTransform(density, 0, 0, density, 0, 0);
     f.globalCompositeOperation = 'source-over';
     f.clearRect(0, 0, width, height);
-    f.fillStyle = 'rgba(3, 4, 9, 0.86)';
+    f.fillStyle = 'rgba(3, 4, 9, 0.92)';
     f.fillRect(0, 0, width, height);
     f.globalCompositeOperation = 'destination-out';
     f.imageSmoothingEnabled = true;

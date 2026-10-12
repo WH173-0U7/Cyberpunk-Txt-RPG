@@ -38,9 +38,10 @@ Motel…) and only makes up places once it runs out of those. Neighborhoods, gan
 corporations and street terms all come from the game. Arasaka Tower always stands downtown.
 
 - **City map**: a street grid of city blocks, desert and coastline, tinted by district.
-  Unexplored areas sit under fog that lifts around the places you know and along every
-  street you walk. Arriving somewhere reveals the places its routes lead to, and walking
-  past a place turns it up. The header counts how much you've mapped.
+  Unexplored areas sit under heavy fog. It only lifts along the streets you actually walk
+  and a little way around places you've been; riding the NCART doesn't clear it. Arriving
+  somewhere reveals the places its routes lead to, and walking past a place turns it up
+  (their markers show through the fog). The header counts how much you've mapped.
 - **Buildings**: every block is filled with its own buildings, zoned by district: corporate
   towers downtown, apartment blocks and storefronts in Watson, factories and warehouses in
   Santo Domingo, derelicts in Pacifica, shacks and containers out in the Badlands, plus parks,
@@ -60,6 +61,9 @@ corporations and street terms all come from the game. Arasaka Tower always stand
     you're going. A ride costs **1 €$**, or nothing with a **monthly pass** (20 €$ for 30
     days, sold at any station). You start with 50 €$. Once you've paid, the trip runs to the
     end.
+- **On the move**: your marker moves smoothly along the route the whole way, with the
+  trail behind you lit up. Zoomed in, the map glides along to keep you in view (unless
+  you've just moved it yourself).
 - **Real time**: trips run on your phone's clock, in real minutes: about a minute of walking
   per city block, and much less on the train. They carry on while the game is closed; come
   back and you've arrived (or you're still on your way). **For testing, everything currently

@@ -22,9 +22,11 @@ import type {
   World,
 } from './types';
 
-/** The fog lifts in square cells this many map units across. */
-export const CELL = 4;
+/** The fog lifts in square cells this many map units across (a couple of building widths). */
+export const CELL = 2;
 export const CELLS = Math.ceil(100 / CELL);
+/** Walking lifts the fog this far either side of the player, in map units: the street and the buildings along it. */
+const SIGHT = 2.5;
 const DAY = 86_400_000;
 
 /** The fog cell a map point falls in. */
@@ -275,18 +277,19 @@ export class Game {
 
   private exploreAround(p: Point): boolean {
     let changed = false;
+    const reach = Math.ceil(SIGHT / CELL);
     const cx = Math.floor(p.x / CELL);
     const cy = Math.floor(p.y / CELL);
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -reach; dy <= reach; dy++) {
+      for (let dx = -reach; dx <= reach; dx++) {
         const x = cx + dx;
         const y = cy + dy;
         if (x < 0 || y < 0 || x >= CELLS || y >= CELLS) continue;
         const cell = y * CELLS + x;
-        if (!this.explored.has(cell)) {
-          this.explored.add(cell);
-          changed = true;
-        }
+        const center = cellCenter(cell);
+        if (this.explored.has(cell) || Math.hypot(center.x - p.x, center.y - p.y) > SIGHT) continue;
+        this.explored.add(cell);
+        changed = true;
       }
     }
     for (const location of Object.values(this.world.locations)) {

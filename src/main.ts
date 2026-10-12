@@ -315,7 +315,9 @@ function tripView(trip: Trip, now: number): PanelView {
   const name = game.nameOf(trip.to);
   const mode = trip.mode === 'foot' ? 'On foot' : 'NCART';
   // Trips are planned in real minutes; at a test speed, the clock time is much shorter.
-  const real = testSpeed ? `${formatMinutes(trip.minutes)} trip, ${formatDuration(trip.endsAt - trip.startedAt)} at ${testSpeed.toLowerCase()}` : `${formatMinutes(trip.minutes)} trip`;
+  const real = testSpeed
+    ? `${formatMinutes(trip.minutes)} · ${formatDuration(trip.endsAt - trip.startedAt)} at ×${TRAVEL.timeScale}`
+    : `${formatMinutes(trip.minutes)} trip`;
   return {
     mode: 'trip',
     kicker: `${mode} · ${real}`,
