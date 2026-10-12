@@ -141,6 +141,7 @@ describe('generator version', () => {
   const FINGERPRINTS: Record<number, string> = {
     1: '1b8af260',
     2: '518b9b2b',
+    3: 'f56e245e',
   };
 
   it('matches the places this version of the generator builds', () => {

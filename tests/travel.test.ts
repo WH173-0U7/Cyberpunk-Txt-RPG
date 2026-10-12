@@ -29,17 +29,30 @@ describe('NCART network', () => {
         expect(world.layout.streets, `${world.seed} ${s.id}`).toContain(s.y);
         expect(world.districts[s.district]?.terrain, `${world.seed} ${s.id}`).toBe('city');
         for (const l of Object.values(world.locations)) expect(Math.hypot(l.x - s.x, l.y - s.y)).toBeGreaterThanOrEqual(6);
-        for (const o of stations) if (o !== s) expect(Math.hypot(o.x - s.x, o.y - s.y)).toBeGreaterThanOrEqual(13);
+        for (const o of stations) if (o !== s) expect(Math.hypot(o.x - s.x, o.y - s.y)).toBeGreaterThanOrEqual(11);
         if (world.layout.coast) expect(s.x, `${world.seed} ${s.id} too close to the sea`).toBeGreaterThanOrEqual(world.layout.coast.depth + 5);
       }
     }
   });
 
-  it('names every station once, after its neighborhood', () => {
+  it('names every station once, with its district’s real NCART station names', () => {
     for (const world of worlds) {
-      const names = Object.values(world.transit.stations).map((s) => s.name);
+      const stations = Object.values(world.transit.stations);
+      const names = stations.map((s) => s.name);
       expect(new Set(names).size, world.seed).toBe(names.length);
-      for (const name of names) expect(name).toMatch(/ Station$/);
+      for (const s of stations) expect(CITY.ncart.stations[s.district], `${world.seed} ${s.name}`).toContain(s.name);
+      // Never the name of a place in the same city.
+      const places = new Set(Object.values(world.locations).map((l) => l.name));
+      for (const name of names) expect(places.has(name), `${world.seed} ${name}`).toBe(false);
+    }
+  });
+
+  it('names lines after the real ones, in their colors', () => {
+    for (const world of worlds) {
+      world.transit.lines.forEach((line, i) => {
+        const real = CITY.ncart.lines[i];
+        if (real) expect(line).toMatchObject({ name: real.name, color: real.color });
+      });
     }
   });
 

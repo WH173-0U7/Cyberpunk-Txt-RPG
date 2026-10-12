@@ -329,6 +329,15 @@ describe('city content', () => {
     }
   });
 
+  it('gives every real place a kind that exists, and a description that fits', () => {
+    for (const district of CITY.districts) {
+      for (const landmark of district.landmarks ?? []) {
+        expect(CITY.kinds[landmark.kind], `${district.id}: ${landmark.name}`).toBeDefined();
+        expect(landmark.description.length, landmark.name).toBeLessThanOrEqual(MAX_DESCRIPTION);
+      }
+    }
+  });
+
   it('zones every district with at least one kind of building', () => {
     for (const district of CITY.districts) {
       const weights = Object.values(district.zoning).filter((w) => (w ?? 0) > 0);
