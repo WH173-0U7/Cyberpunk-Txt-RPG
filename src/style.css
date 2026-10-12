@@ -1563,17 +1563,101 @@ button {
   font-size: 13px;
   line-height: 1.5;
 }
-.person-ties {
-  display: grid;
-  gap: 2px;
+/* The web: the person in the middle, everyone the player knows they know around them */
+.person-web-box {
+  margin-top: 2px;
+}
+.person-web-hint {
   margin: 0;
-  padding: 0;
   color: var(--muted);
   font-size: 12px;
-  list-style: none;
-}
-.person-tie.is-hint {
   font-style: italic;
+  line-height: 1.5;
+}
+.person-web {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  margin: 0 auto;
+  overflow: visible;
+}
+.person-web-line {
+  stroke: color-mix(in srgb, var(--primary) 55%, transparent);
+  stroke-width: 1.2;
+}
+.person-web-line.is-unknown {
+  stroke: var(--muted);
+  stroke-dasharray: 3 4;
+}
+.person-web-label {
+  fill: color-mix(in srgb, var(--primary) 80%, #fff);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-anchor: middle;
+  text-transform: uppercase;
+  paint-order: stroke;
+  stroke: #06070d;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.person-web-node {
+  cursor: pointer;
+}
+.person-web-node circle {
+  fill: #0a0c16;
+  stroke: var(--primary);
+  stroke-width: 1.5;
+}
+.person-web-node:hover circle,
+.person-web-node:focus-visible circle {
+  fill: color-mix(in srgb, var(--primary) 35%, #0a0c16);
+}
+.person-web-node:focus-visible {
+  outline: none;
+}
+.person-web-center {
+  fill: color-mix(in srgb, #ffd84d 30%, #0a0c16);
+  stroke: #ffd84d;
+  stroke-width: 1.5;
+}
+.person-web-name {
+  fill: var(--text);
+  font-size: 10px;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #06070d;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.person-web-name.is-family {
+  fill: var(--muted);
+  font-size: 9px;
+}
+.person-web-name.is-center {
+  fill: #ffd84d;
+  font-size: 11px;
+}
+.people-known {
+  margin-top: 12px;
+}
+.person-chip,
+.person-ask {
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 50%, transparent);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+.person-chip:hover,
+.person-chip:focus-visible,
+.person-ask:hover,
+.person-ask:focus-visible {
+  background: color-mix(in srgb, var(--primary) 24%, transparent);
+  outline: none;
 }
 .person-actions {
   display: flex;

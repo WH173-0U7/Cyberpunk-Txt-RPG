@@ -4,6 +4,7 @@ import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
 import { INEBRIATION } from '../src/data/inebriation';
 import { LINES, PEOPLE } from '../src/data/people';
+import { CHARISMA } from '../src/data/skills';
 import { SOCIETY } from '../src/data/society';
 import { TRAVEL } from '../src/data/travel';
 import { Game } from '../src/engine/game';
@@ -14,7 +15,7 @@ import type { World } from '../src/engine/types';
 
 const world = generateWorld('7f3a29c1', CITY);
 const T0 = Date.UTC(2077, 9, 12, 20, 0);
-const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES };
+const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA };
 
 /** Plays a few moves on foot to places next door, letting each trip finish. Returns the game and the time. */
 function played(steps: number): { game: Game; now: number } {
@@ -120,6 +121,33 @@ describe('saving', () => {
     expect(readSave({ ...saved, inebriation: { units: 'two', updatedAt: now } })?.inebriation).toBeNull();
     const fresh = new Game(world, rules, resume(world, readSave(JSON.parse(JSON.stringify(old))) ?? saved) ?? undefined);
     expect(fresh.inebriation(now)).toEqual({ units: 0, stage: null, severity: 0, soberAt: null });
+  });
+
+  it('carries charisma and what the player knows of people, and starts fresh without them', () => {
+    const { game, now } = played(1);
+    const charisma = { level: 3, xp: 12 };
+    const someone = game.population.people[0];
+    const other = game.population.people[1];
+    if (!someone || !other) throw new Error('no people');
+    const society = { ...game.societySaved, known: { [someone.id]: { met: true, seen: false, told: false } }, links: { [[someone.id, other.id].sort().join('|')]: { kind: null, how: 'seen' as const, at: now } } };
+    const saved = { ...saveOf(game, now), charisma, society };
+    const read = readSave(JSON.parse(JSON.stringify(saved)));
+    expect(read?.charisma).toEqual(charisma);
+    expect(read?.society?.known).toEqual(society.known);
+    const progress = read && resume(world, read);
+    if (!progress) throw new Error('no progress');
+    const again = new Game(world, rules, progress);
+    expect(again.charisma()).toMatchObject({ level: 3, xp: 12 });
+    expect(again.knownPeople().map((p) => p.id)).toEqual([someone.id]);
+    expect(again.standingWith(someone.id, now)?.web.map((l) => l.person.id)).toEqual([other.id]);
+
+    // A save from before anyone could be known of: nobody is, and charisma starts at 1.
+    const { charisma: _c, ...old } = saveOf(game, now);
+    const { known: _k, links: _l, ...society0 } = game.societySaved;
+    const oldRead = readSave(JSON.parse(JSON.stringify({ ...old, society: society0 })));
+    expect(oldRead?.charisma).toBeNull();
+    expect(oldRead?.society).toMatchObject({ known: {}, links: {} });
+    expect(readSave({ ...saved, charisma: { level: 0, xp: 1 } })?.charisma).toBeNull();
   });
 
   it('ignores anything that is not a save it understands', () => {

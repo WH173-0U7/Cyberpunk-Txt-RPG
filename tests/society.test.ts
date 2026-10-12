@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SOCIETY } from '../src/data/society';
 import { INVERSE, type Person, type Population, type Tie, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
-import { applyIncident, attitude, changeRep, changeStanding, dueThreats, freshSociety, repOf, settleThreat, standingOf, stanceOf, type SocietyRules } from '../src/engine/society';
+import { applyIncident, attitude, changeRep, changeStanding, dueThreats, freshSociety, knowledgeOf, knownPeople, knowsOf, learnLink, learnOf, linkOf, repOf, settleThreat, standingOf, stanceOf, webOf, type SocietyRules } from '../src/engine/society';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -136,6 +136,33 @@ describe('society', () => {
       settleThreat(state, revenge, RULES, 1, T0);
       expect(standingOf(state, revenge.by, RULES, 1, T0).grudge).toBe(grudge - Math.round(grudge / 2));
     }
+  });
+
+  it('keeps what the player knows of people and of who knows whom, never less than before', () => {
+    const state = freshSociety();
+    expect(knowsOf(state, 'rosa')).toBe(false);
+    expect(learnOf(state, 'rosa', 'seen')).toBe(true);
+    expect(learnOf(state, 'rosa', 'seen')).toBe(false);
+    expect(learnOf(state, 'rosa', 'met')).toBe(true);
+    expect(knowledgeOf(state, 'rosa')).toEqual({ met: true, seen: true, told: false });
+    expect(knownPeople(state)).toEqual(['rosa']);
+
+    // Seen together: connected, somehow. Told: how. Asked again: nothing to add.
+    expect(learnLink(state, 'rosa', 'mateo', null, 'seen', T0)).toBe(true);
+    expect(linkOf(state, 'rosa', 'mateo')).toEqual({ kind: null, how: 'seen', at: T0 });
+    expect(learnLink(state, 'mateo', 'rosa', null, 'seen', T0 + 1)).toBe(false);
+    expect(learnLink(state, 'mateo', 'rosa', 'spouse', 'told', T0 + 2)).toBe(true);
+    expect(learnLink(state, 'rosa', 'mateo', 'spouse', 'asked', T0 + 3)).toBe(false);
+    expect(linkOf(state, 'rosa', 'mateo')).toMatchObject({ kind: 'spouse', how: 'told' });
+    // A one-way kind reads right from either side: Rosa's mother is Dolores; Dolores's child is Rosa.
+    expect(learnLink(state, 'rosa', 'dolores', 'parent', 'told', T0)).toBe(true);
+    expect(linkOf(state, 'rosa', 'dolores')?.kind).toBe('parent');
+    expect(linkOf(state, 'dolores', 'rosa')?.kind).toBe('child');
+    expect(learnLink(state, 'dolores', 'cousin', 'none', 'asked', T0)).toBe(true);
+    expect(webOf(state, 'rosa').map((l) => `${l.id}:${l.kind}:${l.how}`).sort()).toEqual(['dolores:parent:told', 'mateo:spouse:told']);
+    expect(webOf(state, 'dolores').map((l) => l.id)).toEqual(['rosa']);
+    expect(webOf(state, 'cousin')).toEqual([]);
+    expect(learnLink(state, 'rosa', 'rosa', 'friend', 'told', T0)).toBe(false);
   });
 
   it('forgives and forgets on the clock, sped up by the test speed', () => {

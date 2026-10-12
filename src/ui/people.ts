@@ -13,19 +13,33 @@ export interface PersonRowView {
 
 export type PersonAction = 'talk' | 'insult' | 'rob';
 
+/** Someone the player knows a person to be connected to. */
+export interface WebNodeView {
+  id: string;
+  name: string;
+  /** "sister", "crewmate"… or "?" when all the player knows is that they're connected. */
+  label: string;
+  /** Seen together, told, or asked. */
+  how: string;
+}
+
 export interface PersonCardView {
   id: string;
   name: string;
-  /** Stance, gang, age. */
+  /** Stance, gang, what they're doing (or that they're not here). */
   kicker: string;
   bio: string;
   stance: Stance;
-  /** Their people, once earned; otherwise a line saying how to earn it. */
-  ties: string[] | null;
-  tiesHint: string;
+  /** Whether they're here to be dealt with. */
+  here: boolean;
+  /** Who the player knows them to be connected to. */
+  web: WebNodeView[];
+  webHint: string;
   actions: Array<{ id: PersonAction; label: string; sub?: string; danger?: boolean }>;
   /** What the player could give them. */
   gifts: Array<{ id: string; name: string; count: number }>;
+  /** People the player knows of, to ask this person about. */
+  askAbout: Array<{ id: string; name: string }>;
 }
 
 export interface PeopleView {
@@ -37,6 +51,8 @@ export interface PeopleView {
   rows: PersonRowView[];
   /** Shown instead of the list when nobody is here. */
   empty: string;
+  /** Everyone the player knows of, to look up. */
+  known: Array<{ id: string; name: string }>;
   card: PersonCardView | null;
 }
 
@@ -47,13 +63,15 @@ export interface PeopleElements extends OverlayElements {
   reputation: HTMLElement;
   list: HTMLElement;
   empty: HTMLElement;
+  known: HTMLElement;
   card: HTMLElement;
   cardName: HTMLElement;
   cardKicker: HTMLElement;
   cardBio: HTMLElement;
-  cardTies: HTMLElement;
+  cardWeb: HTMLElement;
   cardActions: HTMLElement;
   cardGifts: HTMLElement;
+  cardAsk: HTMLElement;
   back: HTMLButtonElement;
 }
 
@@ -62,6 +80,7 @@ export interface PeopleHandlers {
   onSelect(id: string | null): void;
   onAction(action: PersonAction, id: string): void;
   onGift(id: string, itemId: string): void;
+  onAsk(id: string, aboutId: string): void;
 }
 
 export const STANCE_LABEL: Record<Stance, string> = {
@@ -100,6 +119,17 @@ export class People {
       const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('.person-gift') : null;
       if (button?.dataset.id && button.dataset.item) handlers.onGift(button.dataset.id, button.dataset.item);
     });
+    els.cardAsk.addEventListener('click', (e) => {
+      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('.person-ask') : null;
+      if (button?.dataset.id && button.dataset.about) handlers.onAsk(button.dataset.id, button.dataset.about);
+    });
+    // Anyone in the web, or among the people known of, opens on a tap.
+    const open = (e: Event) => {
+      const button = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-open]') : null;
+      if (button?.dataset.open) handlers.onSelect(button.dataset.open);
+    };
+    els.cardWeb.addEventListener('click', open);
+    els.known.addEventListener('click', open);
   }
 
   render(view: PeopleView): void {
@@ -121,6 +151,8 @@ export class People {
       els.empty.hidden = view.rows.length > 0;
       els.empty.textContent = view.empty;
       els.list.replaceChildren(...view.rows.map(row));
+      els.known.hidden = view.known.length === 0;
+      els.known.replaceChildren(el('span', 'person-gifts-label', `You know of ${view.known.length}`), ...view.known.map((k) => chip(k.name, { open: k.id })));
     }
     // Acting on someone redraws the card; whatever was tapped keeps focus.
     if (focused && focused !== ':') {
@@ -136,9 +168,10 @@ export class People {
     els.cardKicker.textContent = card.kicker;
     els.cardKicker.dataset.stance = card.stance;
     els.cardBio.textContent = card.bio;
-    els.cardTies.replaceChildren(
-      ...(card.ties ? card.ties.map((t) => el('li', 'person-tie', t)) : [el('li', 'person-tie is-hint', card.tiesHint)]),
-    );
+    els.cardWeb.replaceChildren(card.web.length ? web(card) : el('p', 'person-web-hint', card.webHint));
+    els.cardActions.hidden = !card.here;
+    els.cardGifts.hidden = !card.here;
+    els.cardAsk.hidden = !card.here;
     els.cardActions.replaceChildren(
       ...card.actions.map((action) => {
         const button = el('button', `action person-action${action.danger ? ' is-danger' : ''}`);
@@ -159,7 +192,88 @@ export class People {
       return button;
     });
     els.cardGifts.replaceChildren(el('span', 'person-gifts-label', gifts.length ? 'Give' : 'Nothing to give: buy food or drink first.'), ...gifts);
+    const asks = card.askAbout.map((about) => chip(about.name, { id: card.id, about: about.id }, 'person-ask'));
+    els.cardAsk.replaceChildren(el('span', 'person-gifts-label', asks.length ? 'Ask about' : 'Ask about: nobody yet. Meet people first.'), ...asks);
   }
+}
+
+/** The person in the middle, everyone the player knows them to know around them, names on the outside. */
+function web(card: PersonCardView): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const W = 320;
+  const H = card.web.length > 6 ? 300 : 250;
+  const cx = W / 2;
+  const cy = H / 2;
+  const rx = cx - 62;
+  const ry = cy - 42;
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('class', 'person-web');
+  svg.setAttribute('role', 'list');
+  svg.setAttribute('aria-label', `${card.name}'s web: ${card.web.map((n) => `${n.name}, ${n.label}`).join('; ')}`);
+  const text = (x: number, y: number, content: string, className: string, anchor = 'middle') => {
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', String(x));
+    t.setAttribute('y', String(y));
+    t.setAttribute('class', className);
+    t.setAttribute('text-anchor', anchor);
+    t.textContent = content;
+    return t;
+  };
+  card.web.forEach((node, i) => {
+    const angle = -Math.PI / 2 + (i / card.web.length) * Math.PI * 2;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    const x = cx + dx * rx;
+    const y = cy + dy * ry;
+    const line = document.createElementNS(NS, 'line');
+    line.setAttribute('x1', String(cx));
+    line.setAttribute('y1', String(cy));
+    line.setAttribute('x2', String(x));
+    line.setAttribute('y2', String(y));
+    line.setAttribute('class', `person-web-line${node.label === '?' ? ' is-unknown' : ''}`);
+    svg.append(line);
+    // The relation sits halfway along the spoke, nudged off it so it never covers the line.
+    svg.append(text((cx + x) / 2 - dy * 7, (cy + y) / 2 + dx * 7 + 3, node.label, 'person-web-label'));
+    const g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'person-web-node');
+    g.setAttribute('role', 'listitem');
+    g.setAttribute('tabindex', '0');
+    g.dataset.open = node.id;
+    g.setAttribute('aria-label', `${node.name}, ${node.label} (${node.how})`);
+    g.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        g.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+    });
+    const dot = document.createElementNS(NS, 'circle');
+    dot.setAttribute('cx', String(x));
+    dot.setAttribute('cy', String(y));
+    dot.setAttribute('r', '7');
+    // The name goes on the far side of the dot from the middle: above the top ones, below the bottom ones, beside the rest.
+    const [first = '', ...rest] = node.name.split(' ');
+    const anchor = dx > 0.35 ? 'start' : dx < -0.35 ? 'end' : 'middle';
+    const tx = x + (anchor === 'middle' ? 0 : dx > 0 ? 12 : -12);
+    const ty = anchor === 'middle' ? (dy < 0 ? y - 25 : y + 20) : y - 2;
+    g.append(dot, text(tx, ty, first, 'person-web-name', anchor), text(tx, ty + 11, rest.join(' '), 'person-web-name is-family', anchor));
+    svg.append(g);
+  });
+  const me = document.createElementNS(NS, 'circle');
+  me.setAttribute('cx', String(cx));
+  me.setAttribute('cy', String(cy));
+  me.setAttribute('r', '9');
+  me.setAttribute('class', 'person-web-center');
+  svg.append(me);
+  return svg;
+}
+
+function chip(label: string, data: Record<string, string>, className = 'person-chip'): HTMLButtonElement {
+  const button = el('button', className);
+  button.type = 'button';
+  for (const [key, value] of Object.entries(data)) button.dataset[key] = value;
+  button.textContent = label;
+  return button;
 }
 
 function row(person: PersonRowView): HTMLElement {

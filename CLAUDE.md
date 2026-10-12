@@ -76,6 +76,16 @@ it needs no generator bump. The pieces:
   kind of incident (assault, murder are already named) by giving it a severity in
   `src/data/society.ts` and calling `Game`'s private `incident()`. Anything that should
   change how someone feels goes through `changeStanding`/`changeRep` so it fades right.
+- What the player knows is separate from what is true: `SocietyState.known` (met, seen,
+  told of) and `links` (what the player knows of a tie, keyed `a|b`; `kind` null for
+  "connected somehow", `'none'` for "asked, and they'd never heard of them"). Everything
+  the UI shows about who knows whom comes from `webOf`/`knownPeople`, never from the
+  population's ties directly; new ways of finding things out go through `learnOf` and
+  `learnLink` (`Game.look` for seeing people together, the kin line in `talk`, `Game.ask`).
+- `src/engine/skills.ts` is a skill that grows with use (experience, levels, a bonus per
+  level); charisma is the one so far (`src/data/skills.ts`), applied in `Game.talk`,
+  `gift` and `ask`. A new skill is another `SkillRules` in `src/data/skills.ts`, a state on
+  `Game`, a save field and an event.
 - `src/engine/dialogue.ts` fills `LINES` templates; `varsFor` is everything a line can say
   about a person. Keep lines in `src/data/people.ts`, our own words.
 - Gangs are canon (wiki): keep their turf, looks and rivalries true to it. Names are made
