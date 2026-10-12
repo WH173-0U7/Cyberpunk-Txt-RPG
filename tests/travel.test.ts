@@ -120,25 +120,52 @@ describe('trip plans', () => {
     }
   });
 
-  it('beats walking on long trips by NCART, for a fare', () => {
-    let faster = 0;
-    let long = 0;
+  it('rides the NCART only from a stop, to the stop nearest the destination', () => {
+    let rides = 0;
     for (const world of worlds) {
-      const places = Object.values(world.locations).filter((l) => world.districts[l.district]?.terrain === 'city');
-      const pairs = places.flatMap((a) => places.map((b) => [a, b] as const)).filter(([a, b]) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) > 60);
-      for (const [a, b] of pairs.slice(0, 3)) {
-        const to = { ...streetSpot(b), place: b.id };
-        const walk = planTrip(world, a, to, 'foot', TRAVEL);
-        const ride = planTrip(world, a, to, 'ncart', TRAVEL);
-        if (!walk || !ride) continue;
-        long++;
-        if (ride.minutes < walk.minutes) faster++;
-        expect(ride.fare).toBe(TRAVEL.fare);
-        expect(ride.legs.some((l) => l.kind === 'ride')).toBe(true);
+      const stations = Object.values(world.transit.stations);
+      const place = Object.values(world.locations).find((l) => world.districts[l.district]?.terrain === 'city');
+      const board = stations[0];
+      if (!place || !board) continue;
+      const to = { ...streetSpot(place), place: place.id };
+      // Out on the street: no train.
+      expect(planTrip(world, place, to, 'ncart', TRAVEL)).toBeNull();
+
+      const plan = planTrip(world, { ...board, station: board.id }, to, 'ncart', TRAVEL);
+      const nearest = stations.reduce((best, s) =>
+        Math.abs(s.x - place.x) + Math.abs(s.y - place.y) < Math.abs(best.x - place.x) + Math.abs(best.y - place.y) ? s : best,
+      );
+      if (nearest.id === board.id) {
+        expect(plan).toBeNull();
+        continue;
+      }
+      rides++;
+      expect(plan?.legs.map((l) => l.kind)).toEqual(['wait', 'ride']);
+      expect(plan?.to.station).toBe(nearest.id);
+      expect(plan?.fare).toBe(TRAVEL.fare);
+    }
+    expect(rides).toBeGreaterThan(200);
+  });
+
+  it('is much quicker than walking between stops far apart', () => {
+    let faster = 0;
+    let far = 0;
+    for (const world of worlds) {
+      const stations = Object.values(world.transit.stations);
+      for (const a of stations) {
+        for (const b of stations) {
+          if (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) < 50) continue;
+          const to = { ...streetSpot(b), station: b.id };
+          const ride = planTrip(world, { ...a, station: a.id }, to, 'ncart', TRAVEL);
+          const walk = planTrip(world, a, to, 'foot', TRAVEL);
+          if (!ride || !walk) continue;
+          far++;
+          if (ride.minutes < walk.minutes) faster++;
+        }
       }
     }
-    expect(long).toBeGreaterThan(100);
-    expect(faster / long).toBeGreaterThan(0.75);
+    expect(far).toBeGreaterThan(200);
+    expect(faster / far).toBeGreaterThan(0.9);
   });
 
   it('moves the player along the trip as the clock runs', () => {

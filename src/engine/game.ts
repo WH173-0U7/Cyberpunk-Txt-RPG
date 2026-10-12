@@ -131,11 +131,20 @@ export class Game {
     return this.trip ? tripProgress(this.trip, now).at : { x: this.where.x, y: this.where.y };
   }
 
-  /** How to get somewhere from right here. Null when it can't be done: mid-ride, already there, or no NCART that helps. */
+  /**
+   * How to get somewhere from right here. Null when it can't be done: mid-ride, already there,
+   * or the NCART when the player isn't standing at a stop (or is already at the nearest one).
+   */
   plan(to: Whereabouts, mode: TravelMode, now: number): TripPlan | null {
     if (this.trip?.mode === 'ncart') return null;
+    if (mode === 'ncart' && (this.trip || !this.where.station)) return null;
     if (!this.trip && sameSpot(this.where, to)) return null;
-    return planTrip(this.world, this.positionAt(now), to, mode, this.rules);
+    return planTrip(this.world, mode === 'ncart' ? this.where : this.positionAt(now), to, mode, this.rules);
+  }
+
+  /** Whether the player is standing at an NCART stop, so could board a train. */
+  get atStation(): boolean {
+    return !this.trip && Boolean(this.where.station);
   }
 
   /** Sets off. Walking can change course partway; a train ride has to finish first. Pays the fare unless the pass covers it. */
