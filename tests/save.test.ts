@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CITY } from '../src/data/city';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
+import { INEBRIATION } from '../src/data/inebriation';
 import { TRAVEL } from '../src/data/travel';
 import { Game } from '../src/engine/game';
 import { GENERATOR_VERSION, generateWorld } from '../src/engine/generate';
@@ -11,7 +12,7 @@ import type { World } from '../src/engine/types';
 
 const world = generateWorld('7f3a29c1', CITY);
 const T0 = Date.UTC(2077, 9, 12, 20, 0);
-const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD };
+const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION };
 
 /** Plays a few moves on foot to places next door, letting each trip finish. Returns the game and the time. */
 function played(steps: number): { game: Game; now: number } {
@@ -99,6 +100,24 @@ describe('saving', () => {
     expect(readSave({ ...saved, energy: { ...energy, current: -1 } })?.energy).toBeNull();
     const fresh = new Game(world, rules, resume(world, readSave(JSON.parse(JSON.stringify(old))) ?? saved) ?? undefined);
     expect(fresh.energy(now)).toMatchObject({ current: ENERGY.start, max: ENERGY.start, level: 1 });
+  });
+
+  it('carries the drink in the player, and starts sober for saves from before it or that make no sense', () => {
+    const { game, now } = played(1);
+    const inebriation = { units: 2.5, updatedAt: now };
+    const saved = { ...saveOf(game, now), inebriation };
+    const read = readSave(JSON.parse(JSON.stringify(saved)));
+    expect(read?.inebriation).toEqual(inebriation);
+    const progress = read && resume(world, read);
+    if (!progress) throw new Error('no progress');
+    expect(new Game(world, rules, progress).inebriation(now)).toMatchObject({ units: 2.5, stage: expect.objectContaining({ id: 'tipsy' }) });
+
+    const { inebriation: _, ...old } = saveOf(game, now);
+    expect(readSave(JSON.parse(JSON.stringify(old)))?.inebriation).toBeNull();
+    expect(readSave({ ...saved, inebriation: { units: -1, updatedAt: now } })?.inebriation).toBeNull();
+    expect(readSave({ ...saved, inebriation: { units: 'two', updatedAt: now } })?.inebriation).toBeNull();
+    const fresh = new Game(world, rules, resume(world, readSave(JSON.parse(JSON.stringify(old))) ?? saved) ?? undefined);
+    expect(fresh.inebriation(now)).toEqual({ units: 0, stage: null, severity: 0, soberAt: null });
   });
 
   it('ignores anything that is not a save it understands', () => {

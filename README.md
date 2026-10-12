@@ -83,7 +83,15 @@ own.
   less. Franchises (Buck-A-Slice, Capitán Caliente, Yagami Market) serve the same menu at the
   same prices wherever they are, and the real eateries that turn up in the city (Tom's Diner,
   Au Cabanon, El Pinche Pollo, Kabuki Market…) have their own menus. **Buy** puts the dish in
-  your inventory under consumables; eating it is coming.
+  your inventory under consumables.
+- **Eating and drinking**: in the inventory, every dish has an **Eat** or **Drink** button.
+  Food and soft drinks do nothing yet. Alcohol goes to your head: every drink has its units
+  (a beer about one, a shot of Moonshine three), they add up, and the body clears a unit an
+  hour on the game's clock (a unit a minute at the testing speed), even while the game is
+  closed. From one unit you're **Tipsy**, from three **Drunk**, from five **Wasted**, from
+  eight **Blackout drunk**; the line under the energy bar says which and when you'll be
+  sober. The only effect so far is that the whole terminal blurs and sways with it (blurs
+  only, with "reduce motion" on), worse the more you've had.
 - **Energy**: the bar under the sign. Energy is what doing things will cost, and it refills
   on the clock, a point every 6 minutes (faster at the testing speed), even while the game is
   closed. Max energy starts very low (10). Spending energy trains it: every point spent is
@@ -93,9 +101,10 @@ own.
 - **Inventory**: the **Inventory** button in the map's header (or **I**) covers the map with
   what you carry: your eddies and NCART pass, then your items, sorted by the kinds of item
   in Night City (weapons, attachments & mods, cyberware, quickhacks, clothing, consumables,
-  shards, junk, components). A kind only shows once you carry something of it: food you've
-  bought is under consumables, and the rest comes with shops and loot. **×** or **Esc**
-  closes it. The panel under the map keeps working while it's open.
+  shards, junk, components). A kind only shows once you carry something of it: food and
+  drink you've bought are under consumables, with their Eat and Drink buttons, and the rest
+  comes with shops and loot. **×** or **Esc** closes it. The panel under the map keeps
+  working while it's open.
 - **Settings**: the gear next to it covers the map with settings. For now that's the save:
   **Restart this city** puts the same city back to the start, and **Erase save** deletes the
   save from this device and starts a brand new city. Both ask first, with Cancel as the
@@ -149,11 +158,12 @@ effects layer decides how that should look:
 src/
   engine/   Game rules and state: the city generator, the NCART network, street routes,
             trip planning on the real clock, the wallet and pass, energy (energy.ts),
-            menus (food.ts), discovery, ambient chatter, the save format. No DOM, fully
-            unit-tested.
+            menus (food.ts), drink (inebriation.ts), discovery, ambient chatter, the save
+            format. No DOM, fully unit-tested.
   data/     The content the generator builds cities from (city.ts), travel times and
             prices (travel.ts), energy's numbers (energy.ts), the kinds of item the
-            inventory sorts by (items.ts), and what there is to eat (food.ts).
+            inventory sorts by (items.ts), what there is to eat (food.ts) and the stages
+            of being drunk (inebriation.ts).
   ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
             ground, sea, buildings), the fog (fog.ts), the overlays over the map (overlay.ts:
             the inventory in inventory.ts, settings in settings.ts, a menu in shop.ts), the
@@ -171,6 +181,7 @@ tests/      Vitest unit tests.
 | Arriving somewhere | Signal-tear glitch, neon sign flickers on, colors crossfade to the district palette, weather changes, the panel rescans |
 | Discovering places | The fog clears like smoke, new markers and routes appear, districts light up and get their names |
 | Ambient line with an effect | e.g. lightning flashes the screen and the sign; a bass drop shakes the bar |
+| Drinking | The whole terminal blurs and sways, more with every drink, and clears as you sober up |
 | `{g\|word}` in any text | The word tears and scrambles every few seconds |
 
 Effects that rely on motion are toned down when the OS "reduce motion" setting is on.

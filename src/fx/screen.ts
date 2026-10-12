@@ -11,10 +11,25 @@ const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
 /** Whole-screen effects. Motion-heavy ones are toned down for prefers-reduced-motion. */
 export class ScreenFx {
+  private drunk = 0;
+
   constructor(
     private readonly els: ScreenElements,
     private readonly reducedMotion: boolean,
   ) {}
+
+  /**
+   * How drunk the screen looks, 0 (sober) to 1: a blur that thickens with it and, unless motion
+   * is reduced, a slow sway (both in the stylesheet, off `--drunk`).
+   */
+  setInebriation(severity: number): void {
+    const level = Math.round(Math.min(1, Math.max(0, severity)) * 50) / 50;
+    if (level === this.drunk) return;
+    this.drunk = level;
+    const { app } = this.els;
+    app.classList.toggle('is-drunk', level > 0);
+    app.style.setProperty('--drunk', String(level));
+  }
 
   play(effect: FxName): void {
     switch (effect) {

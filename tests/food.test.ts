@@ -34,6 +34,8 @@ describe('the food', () => {
       expect(dish.price, dish.id).toBeGreaterThanOrEqual(1);
       expect(dish.name.trim(), dish.id).toBe(dish.name);
       expect(dish.on.length > 0 || onFixedMenus.has(dish.id), `${dish.id} is on no menu`).toBe(true);
+      // Alcohol has its units; nothing else goes to the head.
+      expect((dish.alcohol ?? 0) > 0, `${dish.id} alcohol`).toBe(dish.kind === 'alcohol');
       for (const quality of dish.where ?? []) expect(QUALITIES, dish.id).toContain(quality);
     }
   });

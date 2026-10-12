@@ -36,6 +36,8 @@ export interface Dish {
   where?: Quality[];
   /** Districts where it's a local staple, so it turns up more often there. */
   favored?: string[];
+  /** Units of alcohol in one, for drinks that have any (src/engine/inebriation.ts). */
+  alcohol?: number;
 }
 
 /** What a kind of eatery serves, and how big its menu is. */

@@ -106,31 +106,31 @@ const DISHES: Dish[] = [
   { id: 'vatnajokull-still', name: 'Vatnajökull (Still)', note: 'Glacier water, from an actual glacier.', kind: 'drink', price: 3, on: ['water', 'fine'], where: ['luxury'] },
 
   // ── Beer ──
-  { id: 'broseph-lager', name: 'Broseph Lager', note: 'A cheap lager.', kind: 'alcohol', price: 5, on: ['beer', 'market'], favored: ['santo_domingo'], where: ['everyday', 'poverty'] },
-  { id: 'broseph-ale', name: 'Broseph Ale', note: 'A cheap ale.', kind: 'alcohol', price: 5, on: ['beer'], where: ['everyday', 'poverty'] },
-  { id: '21st-stout', name: '21st Stout', note: 'A plain stout.', kind: 'alcohol', price: 4, on: ['beer'], where: ['everyday', 'poverty'] },
-  { id: 'abydos-classic', name: 'Abydos Classic', note: 'A cheap beer that never changes.', kind: 'alcohol', price: 4, on: ['beer', 'market'], where: ['everyday', 'poverty'] },
-  { id: 'trailerbrew-beer', name: 'Trailerbrew Beer', note: 'Nomad beer, heavy on the yeast.', kind: 'alcohol', price: 3, on: ['beer'], favored: ['santo_domingo'], where: ['everyday', 'poverty'] },
-  { id: 'randver', name: 'Randver', note: 'A beer with ambitions.', kind: 'alcohol', price: 7, on: ['beer', 'fine'], where: ['everyday', 'luxury'] },
+  { id: 'broseph-lager', name: 'Broseph Lager', note: 'A cheap lager.', kind: 'alcohol', alcohol: 1, price: 5, on: ['beer', 'market'], favored: ['santo_domingo'], where: ['everyday', 'poverty'] },
+  { id: 'broseph-ale', name: 'Broseph Ale', note: 'A cheap ale.', kind: 'alcohol', alcohol: 1, price: 5, on: ['beer'], where: ['everyday', 'poverty'] },
+  { id: '21st-stout', name: '21st Stout', note: 'A plain stout.', kind: 'alcohol', alcohol: 1.2, price: 4, on: ['beer'], where: ['everyday', 'poverty'] },
+  { id: 'abydos-classic', name: 'Abydos Classic', note: 'A cheap beer that never changes.', kind: 'alcohol', alcohol: 1, price: 4, on: ['beer', 'market'], where: ['everyday', 'poverty'] },
+  { id: 'trailerbrew-beer', name: 'Trailerbrew Beer', note: 'Nomad beer, heavy on the yeast.', kind: 'alcohol', alcohol: 1, price: 3, on: ['beer'], favored: ['santo_domingo'], where: ['everyday', 'poverty'] },
+  { id: 'randver', name: 'Randver', note: 'A beer with ambitions.', kind: 'alcohol', alcohol: 1.2, price: 7, on: ['beer', 'fine'], where: ['everyday', 'luxury'] },
 
   // ── Spirits ──
-  { id: 'moonshine', name: 'Moonshine', note: 'Nomad moonshine. Sour going down, fuzzy after.', kind: 'alcohol', price: 3, on: ['spirits', 'street'], where: ['poverty'], favored: ['pacifica'] },
-  { id: 'pitorro', name: 'Pitorro', note: 'Rotgut rum. Cheap, and it might cost you your eyes.', kind: 'alcohol', price: 3, on: ['spirits', 'street'], where: ['poverty'], favored: ['pacifica'] },
-  { id: 'tequila-especial', name: 'Tequila Especial', note: 'A cheap tequila with agave bite.', kind: 'alcohol', price: 8, on: ['spirits'], favored: ['heywood'] },
-  { id: 'calavera-feliz', name: 'Calavera Feliz', note: 'A top-shelf tequila for fiestas.', kind: 'alcohol', price: 10, on: ['spirits'], where: ['everyday', 'luxury'], favored: ['heywood'] },
-  { id: 'centzon-totochtin', name: 'Centzon Totochtin', note: 'Blue-agave tequila, the good stuff.', kind: 'alcohol', price: 18, on: ['spirits', 'fine', 'market'], where: ['everyday', 'luxury'], favored: ['heywood'] },
-  { id: 'sake-utagawa', name: 'Sake Utagawa', note: 'Top-shelf sake.', kind: 'alcohol', price: 10, on: ['spirits', 'fine', 'tea'], where: ['everyday', 'luxury'], favored: ['westbrook'] },
-  { id: 'bolshevik-vodka', name: 'Bolshevik Vodka', note: 'Vodka with a kick.', kind: 'alcohol', price: 7, on: ['spirits'], where: ['everyday', 'poverty'] },
-  { id: 'odickin-whiskey', name: "O'Dickin Whiskey", note: 'A no-frills whiskey.', kind: 'alcohol', price: 12, on: ['spirits', 'market'] },
-  { id: 'blue-grass', name: 'Blue Grass', note: 'A bourbon for drowning sorrows.', kind: 'alcohol', price: 6, on: ['spirits'], where: ['everyday', 'poverty'] },
-  { id: 'conine', name: 'Conine', note: 'A cognac.', kind: 'alcohol', price: 12, on: ['spirits', 'fine'], where: ['everyday', 'luxury'] },
-  { id: 'armagnac-massy', name: 'Armagnac Massy', note: 'A brandy to savor, not drink.', kind: 'alcohol', price: 12, on: ['fine'], where: ['luxury'] },
-  { id: 'romvlvs-gin', name: 'ROMVLVS GIN', note: 'Gin as a status symbol.', kind: 'alcohol', price: 5, on: ['spirits', 'fine'], where: ['luxury'] },
+  { id: 'moonshine', name: 'Moonshine', note: 'Nomad moonshine. Sour going down, fuzzy after.', kind: 'alcohol', alcohol: 3, price: 3, on: ['spirits', 'street'], where: ['poverty'], favored: ['pacifica'] },
+  { id: 'pitorro', name: 'Pitorro', note: 'Rotgut rum. Cheap, and it might cost you your eyes.', kind: 'alcohol', alcohol: 2.5, price: 3, on: ['spirits', 'street'], where: ['poverty'], favored: ['pacifica'] },
+  { id: 'tequila-especial', name: 'Tequila Especial', note: 'A cheap tequila with agave bite.', kind: 'alcohol', alcohol: 2, price: 8, on: ['spirits'], favored: ['heywood'] },
+  { id: 'calavera-feliz', name: 'Calavera Feliz', note: 'A top-shelf tequila for fiestas.', kind: 'alcohol', alcohol: 2, price: 10, on: ['spirits'], where: ['everyday', 'luxury'], favored: ['heywood'] },
+  { id: 'centzon-totochtin', name: 'Centzon Totochtin', note: 'Blue-agave tequila, the good stuff.', kind: 'alcohol', alcohol: 2, price: 18, on: ['spirits', 'fine', 'market'], where: ['everyday', 'luxury'], favored: ['heywood'] },
+  { id: 'sake-utagawa', name: 'Sake Utagawa', note: 'Top-shelf sake.', kind: 'alcohol', alcohol: 1.5, price: 10, on: ['spirits', 'fine', 'tea'], where: ['everyday', 'luxury'], favored: ['westbrook'] },
+  { id: 'bolshevik-vodka', name: 'Bolshevik Vodka', note: 'Vodka with a kick.', kind: 'alcohol', alcohol: 2.5, price: 7, on: ['spirits'], where: ['everyday', 'poverty'] },
+  { id: 'odickin-whiskey', name: "O'Dickin Whiskey", note: 'A no-frills whiskey.', kind: 'alcohol', alcohol: 2, price: 12, on: ['spirits', 'market'] },
+  { id: 'blue-grass', name: 'Blue Grass', note: 'A bourbon for drowning sorrows.', kind: 'alcohol', alcohol: 2, price: 6, on: ['spirits'], where: ['everyday', 'poverty'] },
+  { id: 'conine', name: 'Conine', note: 'A cognac.', kind: 'alcohol', alcohol: 2, price: 12, on: ['spirits', 'fine'], where: ['everyday', 'luxury'] },
+  { id: 'armagnac-massy', name: 'Armagnac Massy', note: 'A brandy to savor, not drink.', kind: 'alcohol', alcohol: 2, price: 12, on: ['fine'], where: ['luxury'] },
+  { id: 'romvlvs-gin', name: 'ROMVLVS GIN', note: 'Gin as a status symbol.', kind: 'alcohol', alcohol: 2, price: 5, on: ['spirits', 'fine'], where: ['luxury'] },
 
   // ── Wine ──
-  { id: 'chateau-delen-2012', name: 'Chateau Delen 2012', note: 'One of two hundred bottles.', kind: 'alcohol', price: 25, on: ['wine', 'fine'], where: ['luxury'], favored: ['city_center'] },
-  { id: 'champaradise', name: 'Champaradise', note: 'Sparkling wine, expensive.', kind: 'alcohol', price: 15, on: ['wine', 'fine'], where: ['luxury'], favored: ['city_center'] },
-  { id: 'la-perle-des-alpes', name: 'La Perle des Alpes', note: 'An Alpine liqueur.', kind: 'alcohol', price: 10, on: ['wine', 'fine'], where: ['luxury'] },
+  { id: 'chateau-delen-2012', name: 'Chateau Delen 2012', note: 'One of two hundred bottles.', kind: 'alcohol', alcohol: 1.5, price: 25, on: ['wine', 'fine'], where: ['luxury'], favored: ['city_center'] },
+  { id: 'champaradise', name: 'Champaradise', note: 'Sparkling wine, expensive.', kind: 'alcohol', alcohol: 1.5, price: 15, on: ['wine', 'fine'], where: ['luxury'], favored: ['city_center'] },
+  { id: 'la-perle-des-alpes', name: 'La Perle des Alpes', note: 'An Alpine liqueur.', kind: 'alcohol', alcohol: 1.5, price: 10, on: ['wine', 'fine'], where: ['luxury'] },
 ];
 
 export const FOOD: FoodContent = {

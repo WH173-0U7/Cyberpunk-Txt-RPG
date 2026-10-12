@@ -2,16 +2,18 @@ import './style.css';
 import { CITY } from './data/city';
 import { ENERGY } from './data/energy';
 import { FOOD } from './data/food';
+import { INEBRIATION } from './data/inebriation';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
 import { Game, streetSpot } from './engine/game';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu } from './engine/food';
+import type { InebriationStatus } from './engine/inebriation';
 import { randomSeed } from './engine/rng';
 import { createSave, readSave, resume, savedSeed, type Progress } from './engine/save';
 import { snapToStreet } from './engine/streets';
 import { tripProgress } from './engine/travel';
-import type { Building, TravelMode, Trip, TripPlan, Wallet, Whereabouts, World } from './engine/types';
+import type { Building, Item, TravelMode, Trip, TripPlan, Wallet, Whereabouts, World } from './engine/types';
 import { GlitchText } from './fx/glitch';
 import { ScreenFx } from './fx/screen';
 import { applyTheme, resolveTheme } from './fx/theme';
@@ -49,6 +51,7 @@ const mapStage = $('#map-stage');
 const seedLabel = $('#map-seed');
 const saveStatus = $('#save-status');
 const walletLabel = $('#wallet');
+const conditionLabel = $('#condition');
 
 const transmissions = new Transmissions({ root: $('#transmissions'), announcer: $('#announcer') }, registerGlitch, reducedMotion);
 
@@ -118,6 +121,7 @@ const inventory = new Inventory(
     sections: $('#inventory-sections'),
   },
   () => showInventory(),
+  (id) => consume(id),
   reducedMotion,
 );
 
@@ -477,9 +481,32 @@ function showInventory(): void {
       kind: kind as keyof typeof ITEM_KINDS,
       label,
       hint,
-      items: items.filter((item) => item.kind === kind),
+      items: items.filter((item) => item.kind === kind).map((item) => ({ ...item, use: useLabel(item) })),
     })),
   });
+}
+
+/** What using an item is called: food is eaten, the rest drunk. Nothing else can be used yet. */
+function useLabel(item: Item): string | undefined {
+  const dish = item.kind === 'consumable' ? FOOD.dishes.find((d) => d.id === item.id) : undefined;
+  return dish ? (dish.kind === 'food' ? 'Eat' : 'Drink') : undefined;
+}
+
+/** Eats or drinks something from the inventory. */
+function consume(id: string): void {
+  lastActivity = performance.now();
+  game.consume(id, Date.now());
+}
+
+let shownCondition = '';
+/** Under the energy bar: how drunk the player is and when it wears off; and the screen to match. */
+function showCondition(status: InebriationStatus, now: number): void {
+  const text = status.stage ? `${status.stage.label} · sober in ${formatCountdown((status.soberAt ?? now) - now)}` : '';
+  if (text !== shownCondition) {
+    shownCondition = text;
+    conditionLabel.textContent = text;
+  }
+  screen.setInebriation(status.severity);
 }
 
 /** Fills the menu with what's for sale where the player is, and whether they can afford it. */
@@ -625,6 +652,11 @@ function wire(g: Game): void {
     queueSave();
   });
 
+  g.events.on('inebriationChanged', (status) => {
+    showCondition(status, Date.now());
+    queueSave();
+  });
+
   g.events.on('fx', ({ effect }) => {
     screen.play(effect);
     if (effect === 'lightning') hud.flickerSign();
@@ -633,7 +665,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION }, progress);
   wire(game);
   map.setWorld(world);
   seedLabel.textContent = `Seed ${world.seed.toUpperCase()}`;
@@ -679,6 +711,7 @@ function tick(): void {
   if (trip && !target) place.update(tripProgress(trip, now).done, tripMeta(trip, now));
   showWallet(game.wallet, now);
   energyMeter.update(game.energy(now), now);
+  showCondition(game.inebriation(now), now);
 }
 
 // Escape drops the current pick; + and - zoom.
