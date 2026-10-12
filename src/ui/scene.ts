@@ -1,4 +1,4 @@
-import type { Scene } from '../engine/types';
+import type { Location } from '../engine/types';
 import { stripMarkup } from './markup';
 import { typewrite, type Typing } from './typewriter';
 
@@ -24,7 +24,7 @@ export class SceneView {
     private readonly reducedMotion: boolean,
   ) {}
 
-  show({ location }: Scene): void {
+  show(location: Location): void {
     this.typing?.finish();
     this.typing = typewrite(this.els.text, location.description, {
       msPerChar: TYPE_MS,

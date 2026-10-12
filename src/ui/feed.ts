@@ -77,6 +77,12 @@ export class Feed {
     this.enqueue(label, 'divider', false);
   }
 
+  clear(): void {
+    this.skipTyping();
+    this.queue = [];
+    this.els.log.replaceChildren();
+  }
+
   /** Instantly finishes everything already queued. New output still types normally. */
   skipTyping(): void {
     this.skipThrough = this.seq;

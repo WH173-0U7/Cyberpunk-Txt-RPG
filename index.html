@@ -28,11 +28,28 @@
         <p id="scene-text" class="scene-text"></p>
       </section>
 
+      <section id="map" class="map panel" aria-label="City map">
+        <div class="map-head">
+          <span class="map-title">City grid</span>
+          <span id="map-progress" class="map-stat"></span>
+          <button id="new-city" class="map-button" type="button">New city</button>
+        </div>
+        <div id="map-stage" class="map-stage">
+          <div id="map-sweep" class="map-sweep" aria-hidden="true"></div>
+          <div id="map-zones" class="map-zones" aria-hidden="true"></div>
+          <svg id="map-routes" class="map-routes" aria-hidden="true"></svg>
+          <nav id="map-nodes" class="map-nodes" aria-label="Places you can travel to"></nav>
+          <div id="map-tracer" class="map-tracer" aria-hidden="true" hidden></div>
+        </div>
+        <div class="map-foot">
+          <span id="map-seed"></span>
+          <span id="map-coords"></span>
+        </div>
+      </section>
+
       <section class="feed" aria-label="Event feed">
         <div id="log" class="log"></div>
       </section>
-
-      <nav id="compass" class="compass" aria-label="Movement"></nav>
 
       <div id="announcer" class="sr-only" aria-live="polite"></div>
     </div>

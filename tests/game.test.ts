@@ -1,40 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../src/engine/game';
-import type { GameEvents, World } from '../src/engine/types';
+import type { GameEvents, Location, World } from '../src/engine/types';
+
+// A small city shaped like a line with a branch:  alley — market — bar
+//                                                             |
+//                                                            roof
+function place(id: string, links: string[], extra: Partial<Location> = {}): Location {
+  return {
+    id,
+    name: id[0]?.toUpperCase() + id.slice(1),
+    kind: 'test',
+    district: 'test',
+    weather: 'clear',
+    description: `The ${id}.`,
+    links,
+    ambient: [],
+    x: 50,
+    y: 50,
+    ...extra,
+  };
+}
 
 const world: World = {
+  seed: 'test',
   start: 'alley',
   intro: ['booting'],
   welcome: 'hello',
-  districts: {
-    test: { id: 'test', name: 'Testville', theme: { primary: '#111111', secondary: '#222222' } },
-  },
+  districts: { test: { id: 'test', name: 'Testville', theme: { primary: '#111111', secondary: '#222222' }, x: 50, y: 50 } },
   locations: {
-    alley: {
-      id: 'alley',
-      name: 'Alley',
-      district: 'test',
-      weather: 'rain',
-      description: 'A wet alley.',
-      exits: { west: 'garage', north: 'roof' },
-      ambient: ['drip', { text: 'thunder', fx: 'lightning' }],
-    },
-    roof: {
-      id: 'roof',
-      name: 'Roof',
-      district: 'test',
-      weather: 'clear',
-      description: 'A windy roof.',
-      exits: { south: 'alley' },
-    },
-    garage: {
-      id: 'garage',
-      name: 'Garage',
-      district: 'test',
-      weather: 'clear',
-      description: 'Oil stains.',
-      exits: { east: 'alley' },
-    },
+    alley: place('alley', ['market'], { ambient: ['drip', { text: 'thunder', fx: 'lightning' }] }),
+    market: place('market', ['alley', 'bar', 'roof']),
+    bar: place('bar', ['market']),
+    roof: place('roof', ['market']),
   },
 };
 
@@ -45,7 +42,7 @@ function setup() {
   const events: Recorded[] = [];
   game.events.on('output', (payload) => events.push({ type: 'output', payload }));
   game.events.on('locationChanged', (payload) => events.push({ type: 'locationChanged', payload }));
-  game.events.on('scene', (payload) => events.push({ type: 'scene', payload }));
+  game.events.on('mapChanged', (payload) => events.push({ type: 'mapChanged', payload }));
   game.events.on('fx', (payload) => events.push({ type: 'fx', payload }));
 
   const take = () => events.splice(0);
@@ -54,8 +51,10 @@ function setup() {
   return { game, take, types, outputs };
 }
 
+const sorted = (set: ReadonlySet<string>) => [...set].sort();
+
 describe('Game', () => {
-  it('boots with the intro, then enters the start location', () => {
+  it('boots, then arrives at the start knowing only its neighbors', () => {
     const { game, take, types, outputs } = setup();
     game.start();
     const events = take();
@@ -64,55 +63,78 @@ describe('Game', () => {
       { text: 'booting', tone: 'system' },
       { text: 'hello', tone: 'narrative' },
     ]);
-    expect(types(events).slice(-2)).toEqual(['locationChanged', 'scene']);
-    expect(events.at(-2)?.payload).toMatchObject({ from: null, to: { id: 'alley' }, district: { id: 'test' } });
+    expect(types(events).slice(-2)).toEqual(['locationChanged', 'mapChanged']);
+    expect(events.at(-2)?.payload).toMatchObject({ from: null, to: { id: 'alley' }, route: ['alley'] });
+    expect(sorted(game.mapState.visited)).toEqual(['alley']);
+    expect(sorted(game.mapState.discovered)).toEqual(['alley', 'market']);
   });
 
-  it('lists exits in compass order with their destination names', () => {
-    const { game, take } = setup();
-    game.look();
+  it('reveals what lies beyond each place it visits', () => {
+    const { game } = setup();
+    game.start();
+    game.travel('market');
 
-    expect(take()).toEqual([
-      {
-        type: 'scene',
-        payload: expect.objectContaining({
-          location: expect.objectContaining({ id: 'alley' }),
-          exits: [
-            { direction: 'north', name: 'Roof' },
-            { direction: 'west', name: 'Garage' },
-          ],
-        }),
-      },
-    ]);
+    expect(game.location.id).toBe('market');
+    expect(sorted(game.mapState.visited)).toEqual(['alley', 'market']);
+    expect(sorted(game.mapState.discovered)).toEqual(['alley', 'bar', 'market', 'roof']);
   });
 
-  it('moves through an exit, announcing the arrival and then the new scene', () => {
-    const { game, take, types } = setup();
-    game.move('north');
-    const events = take();
-
-    expect(game.location.id).toBe('roof');
-    expect(types(events)).toEqual(['locationChanged', 'scene']);
-    expect(events[0]?.payload).toMatchObject({ from: { id: 'alley' }, to: { id: 'roof' } });
-  });
-
-  it('refuses to move where there is no exit', () => {
+  it('refuses to travel somewhere it has not discovered', () => {
     const { game, take, outputs } = setup();
-    game.move('east');
+    game.start();
+    take();
+    game.travel('bar');
     const events = take();
 
     expect(game.location.id).toBe('alley');
     expect(events.some((e) => e.type === 'locationChanged')).toBe(false);
-    expect(outputs(events)).toEqual([{ text: "You can't go east from here.", tone: 'error' }]);
+    expect(outputs(events)).toEqual([{ text: 'No known route there yet.', tone: 'error' }]);
+    expect(game.routeTo('bar')).toBeNull();
   });
 
+  it('takes the shortest known route and passes through the places on it', () => {
+    const { game, take } = setup();
+    game.start();
+    game.travel('market');
+    game.travel('bar');
+    take();
 
-  it('rescans the current scene without moving', () => {
-    const { game, take, types } = setup();
-    game.look();
+    expect(game.routeTo('roof')).toEqual(['bar', 'market', 'roof']);
+    game.travel('roof');
+    const arrival = take().find((e) => e.type === 'locationChanged');
 
-    expect(types(take())).toEqual(['scene']);
-    expect(game.location.id).toBe('alley');
+    expect(arrival?.payload).toMatchObject({ from: { id: 'bar' }, to: { id: 'roof' }, route: ['bar', 'market', 'roof'] });
+  });
+
+  it('ignores a trip to where the player already is', () => {
+    const { game, take } = setup();
+    game.start();
+    take();
+    game.travel('alley');
+
+    expect(take()).toEqual([]);
+  });
+
+  it('announces when the whole city has been mapped, once', () => {
+    const { game, take, outputs } = setup();
+    game.start();
+    game.travel('market');
+    game.travel('bar');
+    expect(outputs(take()).some((o) => o.text.includes('fully mapped'))).toBe(false);
+
+    game.travel('roof');
+    game.travel('alley');
+    const mapped = outputs(take()).filter((o) => o.text.includes('fully mapped'));
+    expect(mapped).toEqual([{ text: 'City grid fully mapped. Every district, every dive.', tone: 'system' }]);
+  });
+
+  it('hands out map state the UI cannot use to change the game', () => {
+    const { game } = setup();
+    game.start();
+    const snapshot = game.mapState;
+    (snapshot.visited as Set<string>).add('roof');
+
+    expect(game.mapState.visited.has('roof')).toBe(false);
   });
 
   describe('ambient', () => {
@@ -136,7 +158,8 @@ describe('Game', () => {
 
     it('stays quiet in locations without ambient lines', () => {
       const { game, take } = setup();
-      game.move('north');
+      game.start();
+      game.travel('market');
       take();
       game.ambient();
 
