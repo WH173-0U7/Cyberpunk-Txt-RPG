@@ -17,10 +17,12 @@ import { ITEM_KINDS } from './data/items';
 import { formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
 import { Hud } from './ui/hud';
 import { Inventory } from './ui/inventory';
+import { MapOverlay } from './ui/overlay';
 import { stripMarkup } from './ui/markup';
 import { CityMap, type Target } from './ui/map';
 import { PlacePanel, type ActionId, type PanelAction, type PanelView } from './ui/place';
 import { saveSlot } from './ui/save-slot';
+import { Settings } from './ui/settings';
 import { Transmissions } from './ui/transmissions';
 
 function $<T extends Element = HTMLElement>(selector: string): T {
@@ -110,6 +112,31 @@ const inventory = new Inventory(
     sections: $('#inventory-sections'),
   },
   () => showInventory(),
+  reducedMotion,
+);
+
+const settings = new Settings(
+  {
+    root: $('#settings'),
+    toggle: $<HTMLButtonElement>('#settings-toggle'),
+    close: $<HTMLButtonElement>('#settings-close'),
+    seed: $('#settings-seed'),
+    progress: $('#settings-progress'),
+    restart: $<HTMLButtonElement>('#settings-restart'),
+    erase: $<HTMLButtonElement>('#settings-erase'),
+    confirm: $('#settings-confirm'),
+    confirmText: $('#settings-confirm-text'),
+    confirmYes: $<HTMLButtonElement>('#settings-confirm-yes'),
+    confirmNo: $<HTMLButtonElement>('#settings-confirm-no'),
+  },
+  () => showSettings(),
+  {
+    onRestart: () => startOver(game.world.seed, 'Progress reset. This city starts over from the beginning.'),
+    onErase: () => {
+      saveSlot.clear();
+      startOver(randomSeed(), 'Save erased. A new Night City boots up.');
+    },
+  },
   reducedMotion,
 );
 
@@ -406,6 +433,25 @@ function showInventory(): void {
   });
 }
 
+/** What settings shows: the city, and what starting over would lose. */
+function showSettings(): void {
+  const mapped = game.mapState.visited.size;
+  const places = Object.keys(game.world.locations).length;
+  settings.render({
+    seed: game.world.seed.toUpperCase(),
+    // A no-break space keeps the eddies sign with its number.
+    progress: `Right now you've mapped ${mapped} of ${places} places and have €$\u00a0${game.wallet.eddies}.`,
+  });
+}
+
+/** Throws away the game in progress and starts a city from the beginning. The new game saves over the old one. */
+function startOver(seed: string, notice: string): void {
+  MapOverlay.open?.close();
+  target = null;
+  transmissions.clear();
+  begin(generateWorld(seed, CITY), undefined, notice);
+}
+
 // ───────────── Saving ─────────────
 
 let savePending = false;
@@ -483,7 +529,7 @@ function wire(g: Game): void {
 
   g.events.on('walletChanged', (wallet) => {
     showWallet(wallet, Date.now());
-    if (inventory.isOpen) showInventory();
+    if (inventory.overlay.isOpen) showInventory();
     if (!target && !g.currentTrip) refresh();
     queueSave();
   });
@@ -545,12 +591,12 @@ function tick(): void {
 // Escape drops the current pick; + and - zoom.
 document.addEventListener('keydown', (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
-  if (event.key === 'i' || event.key === 'I') inventory.toggle();
-  // Escape closes the inventory first, then lets go of whatever's picked.
-  else if (event.key === 'Escape' && inventory.isOpen) inventory.close();
+  if (event.key === 'i' || event.key === 'I') inventory.overlay.toggle();
+  // Escape closes whatever covers the map first, then lets go of whatever's picked.
+  else if (event.key === 'Escape' && MapOverlay.open) MapOverlay.open.close();
   else if (event.key === 'Escape' && target) select(null);
-  // The map's keys rest while the inventory covers it.
-  else if (inventory.isOpen) return;
+  // The map's keys rest while something covers it.
+  else if (MapOverlay.open) return;
   else if (event.key === '+' || event.key === '=') map.zoomBy(2);
   else if (event.key === '-' || event.key === '_') map.zoomBy(0.5);
 });

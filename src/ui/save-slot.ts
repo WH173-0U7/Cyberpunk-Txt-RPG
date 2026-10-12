@@ -26,4 +26,14 @@ export const saveSlot = {
       return false;
     }
   },
+
+  /** Deletes the save from this device. */
+  clear(): boolean {
+    try {
+      localStorage.removeItem(KEY);
+      return true;
+    } catch {
+      return false;
+    }
+  },
 };

@@ -55,6 +55,12 @@ The inventory overlay is in place, with nothing in it yet:
 - `src/data/items.ts` names each kind and says what goes in it; the overlay lists them in
   that order, but only the kinds the player carries (no empty placeholders). Real items take their names and details from the wiki and the TCG (above).
 
+## Settings
+
+`src/ui/settings.ts` is the settings overlay (over the map, like the inventory; both are a
+`MapOverlay`). It only looks after the save for now: restart this city, or erase the save
+and start a new one, each asking first. New options go in it as their own groups.
+
 ## Checks before a PR
 
 ```bash
