@@ -121,7 +121,9 @@ export function generateBuildings(
       const pieces =
         district.terrain === 'desert' ? scatterStructures(rng, block) : subdivide(rng, block, weightedPick(rng, plan.zoning));
 
-      pieces.forEach(({ rect, kind: blockKind }, k) => {
+      pieces.forEach(({ rect: exact, kind: blockKind }, k) => {
+        // Checked after rounding, so a building on the shore can't round its way into the sea.
+        const rect = { x: round(exact.x), y: round(exact.y), w: round(exact.w), h: round(exact.h) };
         if (!onLand(rect)) return;
         // Apartment blocks have shops at street level now and then.
         const kind: BuildingKind = blockKind === 'apartments' && rng.chance(0.2) ? 'shops' : blockKind;
@@ -134,10 +136,7 @@ export function generateBuildings(
           kindLabel: style.label,
           name: makeName(rng, style, plan, content, reserved),
           floors: rng.int(style.floors[0], style.floors[1]),
-          x: round(rect.x),
-          y: round(rect.y),
-          w: round(rect.w),
-          h: round(rect.h),
+          ...rect,
         });
       });
     }

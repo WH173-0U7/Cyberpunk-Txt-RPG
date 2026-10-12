@@ -1,7 +1,10 @@
 import { blockAt } from '../engine/buildings';
+import { CELL, cellCenter } from '../engine/game';
 import { streetPath } from '../engine/generate';
-import { districtAt } from '../engine/geography';
-import type { Building, District, Location, MapState, Point, World } from '../engine/types';
+import { districtAt, seaTest } from '../engine/geography';
+import { pathLength, pathUpTo } from '../engine/streets';
+import { tripProgress } from '../engine/travel';
+import type { Building, District, Location, MapState, Point, Station, Trip, World } from '../engine/types';
 import { buildingAt, drawCity, drawSelection, hexToRgba, type Box, type BuildingHit, type Px, type View } from './draw-city';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -19,7 +22,7 @@ const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
 /** The most the city stretches to fill a stage that isn't square. */
 const MAX_STRETCH = 1.35;
-/** Px per map unit from which a tap picks a building. Further out, a tap zooms into the block. */
+/** Px per map unit from which a tap picks a building or a spot on the street. Further out, a tap zooms into the block. */
 const PICK_SCALE = 7;
 /** How far (px) a finger can wander before a tap becomes a drag. */
 const DRAG_SLOP = 8;
@@ -30,6 +33,10 @@ const CLEAR_KNOWN = 17;
 const NAMES_GONE = 2;
 /** Fog canvas pixels per CSS pixel. */
 const FOG_DENSITY = 0.5;
+/** The fog mask covers the map at this many pixels per map unit. */
+const MASK_SCALE = 2;
+/** Tapping this close (px) to a pinned spot counts as tapping it again. */
+const PIN_REACH = 26;
 
 /** Where the map is looking: how far in, and the map point at the middle of the stage. */
 interface Camera {
@@ -38,13 +45,26 @@ interface Camera {
   y: number;
 }
 
+/** Something on the map the player can pick, and then go to. */
+export type Target =
+  | { kind: 'place'; id: string }
+  | { kind: 'station'; id: string }
+  | { kind: 'building'; id: string }
+  | { kind: 'point'; point: Point };
+
+/** What a selection shows on the map: the walk there, and the stations an NCART trip would use. */
+export interface Preview {
+  path: Point[] | null;
+  stations: string[];
+}
+
 export interface MapElements {
   stage: HTMLElement;
   city: HTMLCanvasElement;
   routes: SVGSVGElement;
   nodes: HTMLElement;
   sweep: HTMLElement;
-  tracer: HTMLElement;
+  player: HTMLElement;
   progress: HTMLElement;
   coords: HTMLElement;
   controls: HTMLElement;
@@ -54,37 +74,40 @@ export interface MapElements {
 }
 
 export interface MapHandlers {
-  /** A marker was tapped (null: the player's own position). */
-  onSelect(id: string | null): void;
-  /** The already-selected marker was tapped again. */
-  onTravel(id: string): void;
-  /** A building was tapped (null: a tap on open street, clearing it). */
-  onSelectBuilding(id: string | null): void;
+  /** Something on the map was tapped (null: the player's own spot). */
+  onSelect(target: Target | null): void;
+  /** The selected thing was tapped again: go there. */
+  onGo(): void;
 }
 
 /**
- * The city: streets and buildings drawn to canvas, fog over everything unexplored, routes that
- * follow the streets, and tappable markers. Drag to pan, pinch or scroll to zoom. Zoomed out, a
- * tap on a block flies in to it; close enough in, a tap picks out a single building.
+ * The city: streets and buildings drawn to canvas, fog over everything unexplored, the NCART
+ * network, routes that follow the streets, and tappable markers. Drag to pan, pinch or scroll
+ * to zoom. Zoomed out, a tap on a block flies in to it; close in, a tap picks out a building
+ * or a spot on the street. The player's marker moves along their trip in real time.
  */
 export class CityMap {
   private world: World | null = null;
   private state: MapState | null = null;
-  private selected: string | null = null;
-  private selectedBuilding: string | null = null;
-  private plannedRoute: string[] = [];
+  private target: Target | null = null;
+  private preview: Preview = { path: null, stations: [] };
+  private trip: Trip | null = null;
   private buildings = new Map<string, Building>();
+  private inSea: (p: Point) => boolean = () => false;
   private hits: BuildingHit[] = [];
   private camera: Camera = { zoom: 1, x: 50, y: 50 };
   private width = 0;
   private height = 0;
-  private traveling = false;
   /** While the map is being dragged or flown, frames skip the costly glows. */
   private moving = false;
   private frame = 0;
+  private liveFrame = 0;
+  private lastTrail = 0;
   private flight: { frame: number; finish(): void } | null = null;
   private settleTimer: number | undefined;
   private readonly fog = document.createElement('canvas');
+  /** Where the fog lifts, drawn once per change of map state and stretched over the map. */
+  private readonly mask = document.createElement('canvas');
 
   private readonly pointers = new Map<number, Px>();
   /** The camera and finger positions a drag or pinch is measured from. */
@@ -101,6 +124,8 @@ export class CityMap {
     private readonly reducedMotion: boolean,
   ) {
     const { stage } = els;
+    this.mask.width = 100 * MASK_SCALE;
+    this.mask.height = 100 * MASK_SCALE;
     new ResizeObserver(() => this.render()).observe(stage);
     // District names are drawn on the canvas in the display font; redraw once it has loaded.
     void document.fonts?.ready.then(() => this.render());
@@ -127,72 +152,83 @@ export class CityMap {
     els.zoomHome.addEventListener('click', () => this.centerOnPlayer());
   }
 
-  get selection(): string | null {
-    return this.selected;
-  }
-
-  get buildingSelection(): string | null {
-    return this.selectedBuilding;
+  get selection(): Target | null {
+    return this.target;
   }
 
   setWorld(world: World): void {
     this.stopFlight();
     this.world = world;
     this.state = null;
-    this.selected = null;
-    this.selectedBuilding = null;
-    this.plannedRoute = [];
+    this.target = null;
+    this.preview = { path: null, stations: [] };
+    this.trip = null;
     this.buildings = new Map(world.buildings.map((b) => [b.id, b]));
+    this.inSea = seaTest(world.layout, world.seed);
     this.camera = { zoom: 1, x: 50, y: 50 };
   }
 
   update(state: MapState): void {
     this.state = state;
-    if (this.selected === state.current || (this.selected && !state.discovered.has(this.selected))) {
-      this.selected = null;
-      this.plannedRoute = [];
-    }
+    if (this.target?.kind === 'place' && !state.discovered.has(this.target.id)) this.target = null;
+    this.drawMask();
     this.render();
   }
 
-  /** Highlights a destination and the route there; null clears it. Clears any building. */
-  select(id: string | null, route: string[] = []): void {
-    this.selected = id;
-    this.plannedRoute = id ? route : [];
-    this.selectedBuilding = null;
+  /** Highlights something to go to, with the way there; null clears it. */
+  select(target: Target | null, preview: Preview = { path: null, stations: [] }): void {
+    this.target = target;
+    this.preview = target ? preview : { path: null, stations: [] };
     this.render();
   }
 
-  /** Outlines a building; null clears it. Clears any destination. */
-  selectBuilding(id: string | null): void {
-    this.selectedBuilding = id && this.buildings.has(id) ? id : null;
-    this.selected = null;
-    this.plannedRoute = [];
+  /** Shows a trip underway (null: none) and keeps the player's marker moving along it. */
+  setTrip(trip: Trip | null): void {
+    this.trip = trip;
+    cancelAnimationFrame(this.liveFrame);
+    this.liveFrame = 0;
     this.render();
+    if (trip) this.liveFrame = requestAnimationFrame(() => this.followTrip());
   }
 
   /** Zooms in (factor above 1) or out around the middle of the map. */
   zoomBy(factor: number): void {
-    if (this.traveling) return;
     void this.flyTo({ ...this.camera, zoom: this.camera.zoom * factor }, 280);
   }
 
-  /** Brings the whole route into view, then runs a tracer along its streets. Resolves on arrival. */
-  async animateRoute(route: string[]): Promise<void> {
-    const world = this.world;
-    if (!world || route.length < 2) return;
-    const { stage } = this.els;
-    this.traveling = true;
-    stage.classList.add('is-traveling');
-    this.updateControls();
-    try {
-      await this.bringIntoView(this.routeCorners(route));
-      if (!this.reducedMotion) await this.runTracer(route);
-    } finally {
-      this.traveling = false;
-      stage.classList.remove('is-traveling');
-      this.updateControls();
+  /** Zooms out, if it has to, until every point is on screen. */
+  bringIntoView(points: Point[]): Promise<void> {
+    const margin = 40;
+    const project = this.projector();
+    const fits = points.every((p) => {
+      const q = project(p);
+      return q.x >= margin && q.x <= this.width - margin && q.y >= margin && q.y <= this.height - margin;
+    });
+    if (fits || !points.length) return Promise.resolve();
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const { sx, sy } = this.units();
+    const fit = Math.min((this.width - margin * 2) / Math.max(1, (x1 - x0) * sx), (this.height - margin * 2) / Math.max(1, (y1 - y0) * sy));
+    return this.flyTo({ zoom: Math.min(this.camera.zoom, fit), x: (x0 + x1) / 2, y: (y0 + y1) / 2 });
+  }
+
+  /** Where the player is right now: along their trip, or where they stand. */
+  private playerAt(): Point | null {
+    if (this.trip) return tripProgress(this.trip, Date.now()).at;
+    return this.state ? this.state.where : null;
+  }
+
+  /** Every frame of a trip: move the player's marker; now and then, redraw the trail behind them. */
+  private followTrip(): void {
+    if (!this.trip) return;
+    this.placePlayer();
+    const now = performance.now();
+    if (now - this.lastTrail > 400) {
+      this.lastTrail = now;
+      this.drawTrail();
     }
+    this.liveFrame = requestAnimationFrame(() => this.followTrip());
   }
 
   // ───────────── Camera ─────────────
@@ -293,26 +329,9 @@ export class CityMap {
     flight.finish();
   }
 
-  /** Zooms out, if it has to, until every point is on screen. */
-  private bringIntoView(points: Point[]): Promise<void> {
-    const margin = 40;
-    const project = this.projector();
-    const fits = points.every((p) => {
-      const q = project(p);
-      return q.x >= margin && q.x <= this.width - margin && q.y >= margin && q.y <= this.height - margin;
-    });
-    if (fits || !points.length) return Promise.resolve();
-    const xs = points.map((p) => p.x);
-    const ys = points.map((p) => p.y);
-    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-    const { sx, sy } = this.units();
-    const fit = Math.min((this.width - margin * 2) / Math.max(1, (x1 - x0) * sx), (this.height - margin * 2) / Math.max(1, (y1 - y0) * sy));
-    return this.flyTo({ zoom: Math.min(this.camera.zoom, fit), x: (x0 + x1) / 2, y: (y0 + y1) / 2 });
-  }
-
   private centerOnPlayer(): void {
-    const here = this.state && this.world?.locations[this.state.current];
-    if (!here || this.traveling) return;
+    const here = this.playerAt();
+    if (!here) return;
     const close = (PICK_SCALE * 1.6) / this.scaleAt(1);
     void this.flyTo({ zoom: Math.max(this.camera.zoom, close), x: here.x, y: here.y });
   }
@@ -327,7 +346,7 @@ export class CityMap {
 
   private onPointerDown(e: PointerEvent): void {
     this.swallowClick = false;
-    if (this.traveling || !this.world || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (!this.world || (e.pointerType === 'mouse' && e.button !== 0)) return;
     // A primary pointer starts a fresh gesture, even if an earlier one lost its pointerup.
     if (e.isPrimary) this.pointers.clear();
     if (this.pointers.size === 0) this.stageRect = null;
@@ -407,7 +426,7 @@ export class CityMap {
 
   private onWheel(e: WheelEvent): void {
     e.preventDefault();
-    if (this.traveling || !this.world) return;
+    if (!this.world) return;
     this.stopFlight();
     const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
     // Trackpad pinches arrive as wheel events with ctrlKey and small deltas.
@@ -436,7 +455,10 @@ export class CityMap {
     });
   }
 
-  /** Zoomed out, a tap flies in to the block under it. Close in, a tap picks the building under it. */
+  /**
+   * Zoomed out, a tap flies in to the block under it. Close in, a tap picks the building under
+   * it, or the spot on the street. Tapping what's already picked means go there.
+   */
   private tap(q: Px): void {
     const world = this.world;
     if (!world) return;
@@ -446,11 +468,16 @@ export class CityMap {
     }
     const id = buildingAt(this.hits, q);
     const building = id ? this.buildings.get(id) : undefined;
-    if (building && this.revealed(this.project({ x: building.x + building.w / 2, y: building.y + building.h / 2 }))) {
-      if (building.id !== this.selectedBuilding) this.handlers.onSelectBuilding(building.id);
-    } else if (this.selectedBuilding) {
-      this.handlers.onSelectBuilding(null);
+    if (building && this.revealed({ x: building.x + building.w / 2, y: building.y + building.h / 2 })) {
+      if (this.target?.kind === 'building' && this.target.id === building.id) this.handlers.onGo();
+      else this.handlers.onSelect({ kind: 'building', id: building.id });
+      return;
     }
+    const p = this.unproject(q);
+    if (p.x < 0 || p.y < 0 || p.x > 100 || p.y > 100 || this.inSea(p)) return;
+    const pinned = this.target?.kind === 'point' ? this.project(this.target.point) : null;
+    if (pinned && Math.hypot(pinned.x - q.x, pinned.y - q.y) <= PIN_REACH) this.handlers.onGo();
+    else this.handlers.onSelect({ kind: 'point', point: p });
   }
 
   private zoomToBlock(q: Px): void {
@@ -469,25 +496,20 @@ export class CityMap {
     void this.flyTo({ zoom, x: (block.x0 + block.x1) / 2, y: (block.y0 + block.y1) / 2 });
   }
 
-  /** Whether a screen point is out of the fog, near enough to somewhere the player knows. */
-  private revealed(q: Px): boolean {
-    const { world, state } = this;
-    if (!world || !state) return false;
-    const scale = this.scaleAt(this.camera.zoom);
-    const project = this.projector();
-    return Object.values(world.locations).some((location) => {
-      if (!state.discovered.has(location.id)) return false;
-      const p = project(location);
-      const radius = (state.visited.has(location.id) ? CLEAR_VISITED : CLEAR_KNOWN) * scale * 0.75;
-      return Math.hypot(p.x - q.x, p.y - q.y) < radius;
-    });
+  /** Whether a map point is out of the fog. */
+  private revealed(p: Point): boolean {
+    const ctx = this.mask.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return true;
+    const x = Math.min(this.mask.width - 1, Math.max(0, Math.floor(p.x * MASK_SCALE)));
+    const y = Math.min(this.mask.height - 1, Math.max(0, Math.floor(p.y * MASK_SCALE)));
+    return (ctx.getImageData(x, y, 1, 1).data[3] ?? 0) > 110;
   }
 
   // ───────────── Drawing ─────────────
 
   private render(): void {
     const { world, state } = this;
-    const { stage, sweep, progress } = this.els;
+    const { stage, progress } = this.els;
     this.width = stage.clientWidth;
     this.height = stage.clientHeight;
     if (!world || !state || !this.width || !this.height) return;
@@ -495,11 +517,11 @@ export class CityMap {
 
     const project = this.projector();
     const markerBoxes = new Map<string, Box>();
+    const box = (p: Px): Box => ({ x: p.x - MARKER_BOX / 2, y: p.y - MARKER_BOX / 2, w: MARKER_BOX, h: MARKER_BOX });
     for (const location of Object.values(world.locations)) {
-      if (!state.discovered.has(location.id)) continue;
-      const p = project(location);
-      markerBoxes.set(location.id, { x: p.x - MARKER_BOX / 2, y: p.y - MARKER_BOX / 2, w: MARKER_BOX, h: MARKER_BOX });
+      if (state.discovered.has(location.id)) markerBoxes.set(location.id, box(project(location)));
     }
+    for (const station of Object.values(world.transit.stations)) markerBoxes.set(station.id, box(project(station)));
 
     const controls = this.controlsBox();
     const labelBoxes = this.placeLabels(world, state, markerBoxes, controls);
@@ -507,16 +529,22 @@ export class CityMap {
     this.drawCanvas(world, state, obstacles);
     this.drawRoutes(world, state);
     this.drawMarkers(world, state, labelBoxes);
-
-    const here = world.locations[state.current];
-    if (here) {
-      const p = project(here);
-      sweep.style.left = `${p.x}px`;
-      sweep.style.top = `${p.y}px`;
-    }
+    this.placePlayer();
     progress.textContent = `Mapped ${state.visited.size}/${Object.keys(world.locations).length}`;
     this.updateReadout(world);
     this.updateControls();
+  }
+
+  /** The player's marker, and the radar sweep that follows them. */
+  private placePlayer(): void {
+    const here = this.playerAt();
+    if (!here || !this.width) return;
+    const p = this.project(here);
+    const { player, sweep } = this.els;
+    player.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    player.classList.toggle('is-moving', Boolean(this.trip));
+    sweep.style.left = `${p.x}px`;
+    sweep.style.top = `${p.y}px`;
   }
 
   private drawCanvas(world: World, state: MapState, obstacles: Box[]): void {
@@ -536,8 +564,8 @@ export class CityMap {
       project: this.projector(),
     };
     this.hits = drawCity(ctx, world, view, known);
-    this.drawFog(ctx, world, state, view, dpr);
-    const selected = this.selectedBuilding ? this.hits.find((hit) => hit.id === this.selectedBuilding) : undefined;
+    this.drawFog(ctx, view, dpr);
+    const selected = this.target?.kind === 'building' ? this.hits.find((hit) => this.target?.kind === 'building' && hit.id === this.target.id) : undefined;
     if (selected) drawSelection(ctx, selected, view);
     this.drawDistrictNames(
       ctx,
@@ -546,8 +574,29 @@ export class CityMap {
     );
   }
 
-  /** Darkness over the whole city, cut away around everywhere the player knows. */
-  private drawFog(ctx: CanvasRenderingContext2D, world: World, state: MapState, view: View, dpr: number): void {
+  /** Paints where the fog lifts: around every street walked and every place known. Done once per change. */
+  private drawMask(): void {
+    const { world, state } = this;
+    const m = this.mask.getContext('2d', { willReadFrequently: true });
+    if (!world || !state || !m) return;
+    m.setTransform(MASK_SCALE, 0, 0, MASK_SCALE, 0, 0);
+    m.clearRect(0, 0, 100, 100);
+    const clear = (p: Point, radius: number) => {
+      const glow = m.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
+      glow.addColorStop(0, 'rgba(0, 0, 0, 1)');
+      glow.addColorStop(0.55, 'rgba(0, 0, 0, 0.85)');
+      glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      m.fillStyle = glow;
+      m.fillRect(p.x - radius, p.y - radius, radius * 2, radius * 2);
+    };
+    for (const cell of state.explored) clear(cellCenter(cell), CELL * 1.25);
+    for (const location of Object.values(world.locations)) {
+      if (state.discovered.has(location.id)) clear(location, state.visited.has(location.id) ? CLEAR_VISITED : CLEAR_KNOWN);
+    }
+  }
+
+  /** Darkness over the whole city, cut away where the mask says the player has been or knows of. */
+  private drawFog(ctx: CanvasRenderingContext2D, view: View, dpr: number): void {
     const { fog, width, height } = this;
     // The fog is all soft gradients, so a quarter of the pixels look the same and draw far faster.
     const density = Math.min(dpr, 1) * FOG_DENSITY;
@@ -560,18 +609,10 @@ export class CityMap {
     f.fillStyle = 'rgba(3, 4, 9, 0.86)';
     f.fillRect(0, 0, width, height);
     f.globalCompositeOperation = 'destination-out';
-    for (const location of Object.values(world.locations)) {
-      if (!state.discovered.has(location.id)) continue;
-      const p = view.project(location);
-      const r = (state.visited.has(location.id) ? CLEAR_VISITED : CLEAR_KNOWN) * view.scale;
-      if (p.x + r < 0 || p.y + r < 0 || p.x - r > width || p.y - r > height) continue;
-      const glow = f.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
-      glow.addColorStop(0, 'rgba(0, 0, 0, 1)');
-      glow.addColorStop(0.55, 'rgba(0, 0, 0, 0.85)');
-      glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      f.fillStyle = glow;
-      f.fillRect(p.x - r, p.y - r, r * 2, r * 2);
-    }
+    f.imageSmoothingEnabled = true;
+    const a = view.project({ x: 0, y: 0 });
+    const b = view.project({ x: 100, y: 100 });
+    f.drawImage(this.mask, a.x, a.y, b.x - a.x, b.y - a.y);
     ctx.drawImage(fog, 0, 0, width, height);
   }
 
@@ -640,10 +681,9 @@ export class CityMap {
   }
 
   private updateControls(): void {
-    const { zoomIn, zoomOut, zoomHome } = this.els;
-    zoomIn.disabled = this.traveling || this.camera.zoom >= MAX_ZOOM - 0.01;
-    zoomOut.disabled = this.traveling || this.camera.zoom <= MIN_ZOOM + 0.01;
-    zoomHome.disabled = this.traveling;
+    const { zoomIn, zoomOut } = this.els;
+    zoomIn.disabled = this.camera.zoom >= MAX_ZOOM - 0.01;
+    zoomOut.disabled = this.camera.zoom <= MIN_ZOOM + 0.01;
   }
 
   private controlsBox(): Box {
@@ -653,62 +693,22 @@ export class CityMap {
 
   // ───────────── Routes ─────────────
 
-  /** The street corners a multi-stop route passes through, in map units. */
-  private routeCorners(route: string[]): Point[] {
-    const world = this.world;
-    if (!world) return [];
+  /** The trip's whole path, end to end. */
+  private tripPath(trip: Trip): Point[] {
     const points: Point[] = [];
-    for (let i = 1; i < route.length; i++) {
-      const a = world.locations[route[i - 1] ?? ''];
-      const b = world.locations[route[i] ?? ''];
-      if (!a || !b) continue;
-      const leg = streetPath(a, b);
-      points.push(...(points.length ? leg.slice(1) : leg));
-    }
+    for (const leg of trip.legs) points.push(...(points.length ? leg.path.slice(1) : leg.path));
     return points;
   }
 
-  private routePoints(route: string[]): Px[] {
-    const project = this.projector();
-    return this.routeCorners(route).map(project);
-  }
-
-  /** Runs a tracer along the route's streets and lights the path behind it. */
-  private async runTracer(route: string[]): Promise<void> {
-    const points = this.routePoints(route);
-    if (points.length < 2) return;
-    const cumulative = [0];
-    for (let i = 1; i < points.length; i++) {
-      const a = points[i - 1];
-      const b = points[i];
-      cumulative.push((cumulative[i - 1] ?? 0) + (a && b ? Math.hypot(b.x - a.x, b.y - a.y) : 0));
-    }
-    const total = cumulative.at(-1) ?? 0;
-    if (total === 0) return;
-
-    const { routes, tracer } = this.els;
-    const duration = Math.min(1600, 340 + total * 1.5);
-    const easing = 'cubic-bezier(0.45, 0, 0.55, 1)';
-
-    const trail = document.createElementNS(SVG_NS, 'polyline');
-    trail.setAttribute('points', points.map((p) => `${p.x},${p.y}`).join(' '));
-    trail.setAttribute('class', 'route-trace');
-    trail.style.strokeDasharray = `${total}`;
-    routes.append(trail);
-    trail.animate([{ strokeDashoffset: total }, { strokeDashoffset: 0 }], { duration, easing, fill: 'forwards' });
-
-    tracer.hidden = false;
-    const run = tracer.animate(
-      points.map((p, i) => ({ transform: `translate(${p.x}px, ${p.y}px)`, offset: (cumulative[i] ?? 0) / total })),
-      { duration, easing },
-    );
-    try {
-      await run.finished;
-    } catch {
-      // Cancelled (e.g. the map re-rendered mid-trip); arrive anyway.
-    } finally {
-      tracer.hidden = true;
-    }
+  /** How far along its whole path the trip has got, in map units. */
+  private tripDistanceDone(trip: Trip): number {
+    const { leg, legDone } = tripProgress(trip, Date.now());
+    let distance = 0;
+    trip.legs.forEach((l, i) => {
+      if (i < leg) distance += pathLength(l.path);
+      else if (i === leg) distance += pathLength(l.path) * legDone;
+    });
+    return distance;
   }
 
   private drawRoutes(world: World, state: MapState): void {
@@ -718,6 +718,16 @@ export class CityMap {
     const lines: SVGElement[] = [];
     let gradientId = 0;
 
+    // The NCART network underneath everything.
+    for (const line of world.transit.lines) {
+      const points = line.stations.map((id) => world.transit.stations[id]).filter((s): s is Station => Boolean(s));
+      const track = polyline(points.map(project));
+      track.setAttribute('class', 'ncart-line');
+      track.setAttribute('stroke', line.color);
+      lines.push(track);
+    }
+
+    const here = state.where.place;
     for (const a of Object.values(world.locations)) {
       for (const id of a.links) {
         const b = world.locations[id];
@@ -730,7 +740,7 @@ export class CityMap {
           const gid = `route-${++gradientId}`;
           defs.append(gradient(gid, project(a), project(b), colorOf(world, a), colorOf(world, b)));
           line.setAttribute('stroke', `url(#${gid})`);
-          line.setAttribute('class', a.id === state.current || b.id === state.current ? 'route is-live' : 'route');
+          line.setAttribute('class', !this.trip && (a.id === here || b.id === here) ? 'route is-live' : 'route');
         } else {
           line.setAttribute('class', 'route is-hint');
         }
@@ -738,20 +748,39 @@ export class CityMap {
       }
     }
 
-    // The way to the selected destination, drawn on top.
-    if (this.plannedRoute.length > 1) {
-      const plan = polyline(this.routePoints(this.plannedRoute));
+    // The way to whatever is picked.
+    if (this.preview.path && this.preview.path.length > 1) {
+      const plan = polyline(this.preview.path.map(project));
       plan.setAttribute('class', 'route-plan');
       lines.push(plan);
     }
 
+    // The trip underway: the way ahead, and the trail behind.
+    if (this.trip) {
+      const ahead = polyline(this.tripPath(this.trip).map(project));
+      ahead.setAttribute('class', 'trip-path');
+      const behind = polyline([]);
+      behind.setAttribute('class', 'trip-done');
+      lines.push(ahead, behind);
+    }
+
     routes.setAttribute('viewBox', `0 0 ${this.width} ${this.height}`);
     routes.replaceChildren(defs, ...lines);
+    this.drawTrail();
+  }
+
+  /** Redraws just the part of the trip already behind the player. */
+  private drawTrail(): void {
+    const behind = this.els.routes.querySelector('.trip-done');
+    if (!behind || !this.trip) return;
+    const project = this.projector();
+    const done = pathUpTo(this.tripPath(this.trip), this.tripDistanceDone(this.trip));
+    behind.setAttribute('points', done.map((p) => project(p)).map((p) => `${p.x},${p.y}`).join(' '));
   }
 
   // ───────────── Markers ─────────────
 
-  /** Small boxes along every visible route (hints included), so district names keep off the lines. */
+  /** Small boxes along every visible route, so district names keep off the lines. */
   private routeSamples(world: World, state: MapState): Box[] {
     const project = this.projector();
     const samples: Box[] = [];
@@ -776,25 +805,37 @@ export class CityMap {
         }
       }
     }
-    sample(this.routePoints(this.plannedRoute));
+    for (const line of world.transit.lines) {
+      sample(line.stations.map((id) => world.transit.stations[id]).filter((s): s is Station => Boolean(s)).map(project));
+    }
+    if (this.preview.path) sample(this.preview.path.map(project));
+    if (this.trip) sample(this.tripPath(this.trip).map(project));
     return samples;
   }
 
-  /** Where you are and your selection always get a label; places one step away only if they fit. */
+  /**
+   * Where you are and what you've picked always get a label. Places a route away get one if it
+   * fits, and so do stations once you're zoomed in.
+   */
   private placeLabels(world: World, state: MapState, markerBoxes: Map<string, Box>, controls: Box): Map<string, Box> {
-    const neighbors = new Set(world.locations[state.current]?.links ?? []);
+    const here = this.trip ? null : (state.where.place ?? state.where.station);
+    const picked = this.target?.kind === 'place' || this.target?.kind === 'station' ? this.target.id : null;
+    const neighbors = (state.where.place && world.locations[state.where.place]?.links) || [];
+    const close = this.scaleAt(this.camera.zoom) >= PICK_SCALE;
+    const wanted = [
+      ...(here ? [here] : []),
+      ...(picked ? [picked] : []),
+      ...neighbors.filter((id) => state.discovered.has(id)),
+      ...this.preview.stations,
+      ...(close ? Object.keys(world.transit.stations) : []),
+    ];
     const labelBoxes = new Map<string, Box>();
     const placed: Box[] = [controls];
-    const wanted = [
-      state.current,
-      ...(this.selected ? [this.selected] : []),
-      ...[...neighbors].filter((id) => state.discovered.has(id) && id !== this.selected),
-    ];
     for (const id of wanted) {
-      const location = world.locations[id];
-      if (!location || labelBoxes.has(id)) continue;
-      const forced = id === state.current || id === this.selected;
-      const box = this.placeLabel(location, placed, markerBoxes, forced);
+      const spot = world.locations[id] ?? world.transit.stations[id];
+      if (!spot || labelBoxes.has(id)) continue;
+      const forced = id === here || id === picked;
+      const box = this.placeLabel(spot, placed, markerBoxes, forced);
       if (box) {
         labelBoxes.set(id, box);
         placed.push(box);
@@ -806,12 +847,22 @@ export class CityMap {
   private drawMarkers(world: World, state: MapState, labelBoxes: Map<string, Box>): void {
     const { nodes } = this.els;
     const focusedId = (document.activeElement as HTMLElement | null)?.dataset?.node;
-    const neighbors = new Set(world.locations[state.current]?.links ?? []);
+    const neighbors = new Set((state.where.place && world.locations[state.where.place]?.links) || []);
 
     const markers: HTMLElement[] = [];
     for (const location of Object.values(world.locations).sort((a, b) => a.y - b.y || a.x - b.x)) {
       if (!state.discovered.has(location.id)) continue;
-      markers.push(this.renderMarker(world, location, state, neighbors, labelBoxes.get(location.id)));
+      markers.push(this.renderPlace(world, location, state, neighbors, labelBoxes.get(location.id)));
+    }
+    for (const station of Object.values(world.transit.stations)) {
+      markers.push(this.renderStation(world, station, state, labelBoxes.get(station.id)));
+    }
+    if (this.target?.kind === 'point') {
+      const p = this.project(this.target.point);
+      const pin = document.createElement('div');
+      pin.className = 'pin';
+      pin.style.cssText = `left:${p.x}px;top:${p.y}px`;
+      markers.push(pin);
     }
     nodes.replaceChildren(...markers);
     if (focusedId) nodes.querySelector<HTMLElement>(`[data-node="${focusedId}"]`)?.focus({ preventScroll: true });
@@ -821,9 +872,9 @@ export class CityMap {
    * Tries each side of a marker. Takes the first spot that covers nothing; if none does,
    * a forced label takes the least-bad spot and any other label is left off.
    */
-  private placeLabel(location: Location, placed: Box[], markers: Map<string, Box>, forced: boolean): Box | null {
-    const p = this.project(location);
-    const w = location.name.length * CHAR_WIDTH + 12;
+  private placeLabel(spot: Location | Station, placed: Box[], markers: Map<string, Box>, forced: boolean): Box | null {
+    const p = this.project(spot);
+    const w = spot.name.length * CHAR_WIDTH + 12;
     const h = LABEL_HEIGHT;
     const right = { x: p.x + LABEL_GAP, y: p.y - h / 2, w, h };
     const left = { x: p.x - LABEL_GAP - w, y: p.y - h / 2, w, h };
@@ -833,7 +884,7 @@ export class CityMap {
 
     const cost = (box: Box) => {
       let covered = placed.reduce((sum, other) => sum + overlap(box, other), 0);
-      for (const [id, marker] of markers) if (id !== location.id) covered += overlap(box, marker);
+      for (const [id, marker] of markers) if (id !== spot.id) covered += overlap(box, marker);
       return covered + this.outOfBounds(box) * 4;
     };
     const clean = candidates.find((box) => cost(box) === 0);
@@ -842,48 +893,76 @@ export class CityMap {
     return candidates.reduce((best, box) => (cost(box) < cost(best) ? box : best));
   }
 
-  private renderMarker(world: World, location: Location, state: MapState, neighbors: Set<string>, labelBox: Box | undefined): HTMLElement {
-    const p = this.project(location);
-    const district = world.districts[location.district]?.name ?? '';
-    const isHere = location.id === state.current;
+  /** A marker button: the picked thing taps through to going there; the player's own spot clears the pick. */
+  private marker(id: string, name: string, at: Px, color: string, classes: string[], labelBox: Box | undefined, onTap: () => void): HTMLElement {
     const node = document.createElement('button');
     node.type = 'button';
-    node.dataset.node = location.id;
-    node.title = location.name;
-    node.className = [
-      'node',
-      isHere ? 'is-current' : neighbors.has(location.id) ? 'is-adjacent' : 'is-known',
-      state.visited.has(location.id) ? 'is-visited' : 'is-unexplored',
-      location.id === this.selected ? 'is-selected' : '',
-    ]
-      .filter(Boolean)
-      .join(' ');
-    node.style.cssText = `left:${p.x}px;top:${p.y}px;--node:${colorOf(world, location)}`;
-    if (isHere) {
-      node.setAttribute('aria-current', 'location');
-      node.setAttribute('aria-label', `You are here: ${location.name}, ${district}`);
-    } else {
-      node.setAttribute('aria-pressed', String(location.id === this.selected));
-      node.setAttribute('aria-label', `${location.name}, ${district}${state.visited.has(location.id) ? '' : ', unexplored'}`);
-    }
-
+    node.dataset.node = id;
+    node.title = name;
+    node.className = ['node', ...classes].filter(Boolean).join(' ');
+    node.style.cssText = `left:${at.x}px;top:${at.y}px;--node:${color}`;
     const mark = document.createElement('span');
     mark.className = 'node-mark';
     node.append(mark);
     if (labelBox) {
       const label = document.createElement('span');
       label.className = 'node-label';
-      label.textContent = location.name;
-      label.style.transform = `translate(${labelBox.x - p.x}px, ${labelBox.y - p.y}px)`;
+      label.textContent = name;
+      label.style.transform = `translate(${labelBox.x - at.x}px, ${labelBox.y - at.y}px)`;
       node.append(label);
     }
+    node.addEventListener('click', onTap);
+    return node;
+  }
 
-    node.addEventListener('click', () => {
-      if (this.traveling) return;
-      if (isHere) this.handlers.onSelect(null);
-      else if (this.selected === location.id) this.handlers.onTravel(location.id);
-      else this.handlers.onSelect(location.id);
-    });
+  private renderPlace(world: World, location: Location, state: MapState, neighbors: Set<string>, labelBox: Box | undefined): HTMLElement {
+    const district = world.districts[location.district]?.name ?? '';
+    const isHere = !this.trip && state.where.place === location.id;
+    const isPicked = this.target?.kind === 'place' && this.target.id === location.id;
+    const node = this.marker(
+      location.id,
+      location.name,
+      this.project(location),
+      colorOf(world, location),
+      [
+        isHere ? 'is-here' : neighbors.has(location.id) ? 'is-adjacent' : 'is-known',
+        state.visited.has(location.id) ? 'is-visited' : 'is-unexplored',
+        isPicked ? 'is-selected' : '',
+      ],
+      labelBox,
+      () => {
+        if (isPicked) this.handlers.onGo();
+        else this.handlers.onSelect(isHere ? null : { kind: 'place', id: location.id });
+      },
+    );
+    if (isHere) {
+      node.setAttribute('aria-current', 'location');
+      node.setAttribute('aria-label', `You are here: ${location.name}, ${district}`);
+    } else {
+      node.setAttribute('aria-pressed', String(isPicked));
+      node.setAttribute('aria-label', `${location.name}, ${district}${state.visited.has(location.id) ? '' : ', unexplored'}`);
+    }
+    return node;
+  }
+
+  private renderStation(world: World, station: Station, state: MapState, labelBox: Box | undefined): HTMLElement {
+    const isHere = !this.trip && state.where.station === station.id;
+    const isPicked = this.target?.kind === 'station' && this.target.id === station.id;
+    const color = world.transit.lines.find((l) => l.id === station.lines[0])?.color ?? '#ffd84d';
+    const node = this.marker(
+      station.id,
+      station.name,
+      this.project(station),
+      color,
+      ['station', isHere ? 'is-here' : '', isPicked ? 'is-selected' : '', this.preview.stations.includes(station.id) ? 'is-boarding' : ''],
+      labelBox,
+      () => {
+        if (isPicked) this.handlers.onGo();
+        else this.handlers.onSelect(isHere ? null : { kind: 'station', id: station.id });
+      },
+    );
+    node.setAttribute('aria-label', `${station.name}, NCART${isHere ? ', you are here' : ''}`);
+    if (!isHere) node.setAttribute('aria-pressed', String(isPicked));
     return node;
   }
 
@@ -893,6 +972,13 @@ export class CityMap {
 }
 
 // ───────────── Helpers ─────────────
+
+/** Whether two picks are the same thing. */
+export function sameTarget(a: Target | null, b: Target | null): boolean {
+  if (!a || !b || a.kind !== b.kind) return a === b;
+  if (a.kind === 'point' && b.kind === 'point') return Math.hypot(a.point.x - b.point.x, a.point.y - b.point.y) < 0.01;
+  return 'id' in a && 'id' in b && a.id === b.id;
+}
 
 /** Sizes a canvas to the stage at the screen's pixel density, leaving it alone if it already fits. */
 function fitCanvas(canvas: HTMLCanvasElement, width: number, height: number, dpr: number): void {

@@ -24,6 +24,42 @@ export interface District extends Point {
   theme: Theme;
   /** City blocks, or open desert like the Badlands. */
   terrain: 'city' | 'desert';
+  /** Out on its streets this city. */
+  weather: Weather;
+  /** A line about its streets, for when the player is between places. */
+  mood: string;
+  /** What plays while the player is out on its streets. */
+  ambient: AmbientLine[];
+}
+
+/** An NCART stop. Stations sit on street corners. */
+export interface Station extends Point {
+  id: string;
+  name: string;
+  district: string;
+  /** Ids of the lines that stop here. */
+  lines: string[];
+}
+
+/** One NCART line: the stations it runs through, in order. Trains run both ways. */
+export interface TransitLine {
+  id: string;
+  name: string;
+  color: string;
+  stations: string[];
+}
+
+export interface Transit {
+  stations: Record<string, Station>;
+  lines: TransitLine[];
+}
+
+/** Where the player is: always a point on the map, and whatever is there, if anything. */
+export interface Whereabouts extends Point {
+  place: string | null;
+  station: string | null;
+  /** Standing outside a building. */
+  building: string | null;
 }
 
 /** The street grid every location sits on. Positions run 0–100 like map coordinates. */
@@ -101,15 +137,54 @@ export interface World {
   districts: Record<string, District>;
   locations: Record<string, Location>;
   buildings: Building[];
+  transit: Transit;
 }
 
 /** What the player knows about the city. */
 export interface MapState {
-  current: string;
-  /** Places the player has been to (or passed through). */
+  /** Where the player is (or set off from, while on the move). */
+  where: Whereabouts;
+  /** Places the player has been to. */
   visited: ReadonlySet<string>;
-  /** Places the player knows exist: everything visited plus its neighbors. */
+  /** Places the player knows exist: everywhere visited, where its routes lead, and anything passed on foot. */
   discovered: ReadonlySet<string>;
+  /** Map cells the player has walked through (see `cellOf`). The fog lifts over them. */
+  explored: ReadonlySet<number>;
+}
+
+export interface Wallet {
+  /** Eurodollars (€$). */
+  eddies: number;
+  /** When the monthly NCART pass runs out, in ms since 1970 (0: never bought). */
+  passUntil: number;
+}
+
+export type TravelMode = 'foot' | 'ncart';
+
+/** One stretch of a trip. A ride passes through `stations`, boarding at the first. */
+export interface Leg {
+  kind: 'walk' | 'wait' | 'ride';
+  path: Point[];
+  /** Real minutes, before any test speed-up. */
+  minutes: number;
+  stations?: string[];
+}
+
+export interface TripPlan {
+  mode: TravelMode;
+  from: Point;
+  to: Whereabouts;
+  legs: Leg[];
+  /** Real minutes for the whole trip, before any test speed-up. */
+  minutes: number;
+  /** €$ a ride costs without a pass (0 on foot). */
+  fare: number;
+}
+
+/** A trip underway, timed by the phone's clock (ms since 1970). */
+export interface Trip extends TripPlan {
+  startedAt: number;
+  endsAt: number;
 }
 
 /** How a transmission should be presented. */
@@ -119,12 +194,20 @@ export type Tone = 'narrative' | 'system' | 'ambient' | 'error';
 export type GameEvents = {
   /** A short message shown over the map. */
   output: { text: string; tone: Tone };
-  /**
-   * The player arrived somewhere. `route` runs from where they were to where they are now
-   * (just the start location when the game begins, when `from` is null).
-   */
-  locationChanged: { from: Location | null; to: Location; district: District; route: string[] };
+  /** The player is somewhere new: the game began (`from` is null), they arrived, or they stopped. */
+  arrived: {
+    from: Whereabouts | null;
+    where: Whereabouts;
+    place: Location | null;
+    station: Station | null;
+    building: Building | null;
+    district: District | null;
+  };
+  /** A trip began (or changed course), or ended (null). */
+  tripChanged: Trip | null;
   /** The player's knowledge of the map changed. */
   mapChanged: MapState;
+  /** Eddies spent or the NCART pass changed. */
+  walletChanged: Wallet;
   fx: { effect: FxName };
 };

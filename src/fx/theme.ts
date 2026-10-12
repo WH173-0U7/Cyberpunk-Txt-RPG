@@ -1,8 +1,10 @@
 import type { District, Location, Theme } from '../engine/types';
 
-/** A location's own lighting wins over its district's. */
-export function resolveTheme(location: Location, district: District): Theme {
-  return { ...district.theme, ...location.theme };
+const STREETS: Theme = { primary: '#00f0ff', secondary: '#ff2a6d' };
+
+/** A location's own lighting wins over its district's. Out of every district, plain street neon. */
+export function resolveTheme(district: District | null, location?: Location | null): Theme {
+  return { ...(district?.theme ?? STREETS), ...location?.theme };
 }
 
 /**

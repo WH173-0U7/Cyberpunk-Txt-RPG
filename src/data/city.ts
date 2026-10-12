@@ -23,7 +23,7 @@ const DISTRICTS: DistrictTemplate[] = [
     weather: ['rain', 'rain', 'drizzle'],
     anchor: { x: 36, y: 24 },
     areas: ['Kabuki', 'Little China', 'Northside', 'Arasaka Waterfront'],
-    kinds: ['market', 'bar', 'ripperdoc', 'alley', 'megabuilding', 'noodle', 'metro', 'docks'],
+    kinds: ['market', 'bar', 'ripperdoc', 'alley', 'megabuilding', 'noodle', 'docks'],
     landmarks: [
       { name: 'Afterlife', kind: 'bar', description: 'The merc bar of Night City. Every drink is named after a legend who died on the job.' },
       { name: "Tom's Diner", kind: 'diner', description: 'A cheap all-night diner with cracked booths, bottomless synthcoffee and a jukebox.' },
@@ -67,7 +67,7 @@ const DISTRICTS: DistrictTemplate[] = [
     weather: ['drizzle', 'drizzle', 'clear'],
     anchor: { x: 68, y: 34 },
     areas: ['Japantown', 'Charter Hill', 'North Oak'],
-    kinds: ['club', 'shrine', 'noodle', 'rooftop', 'bar', 'metro', 'alley', 'market'],
+    kinds: ['club', 'shrine', 'noodle', 'rooftop', 'bar', 'alley', 'market'],
     landmarks: [
       { name: 'Jig-Jig Street', kind: 'street', description: 'A narrow street of neon, bars and pleasure houses, crowded at every hour of the night.' },
       { name: 'Cherry Blossom Market', kind: 'market', description: "Japantown's night market, all food stalls and paper lanterns under the towers." },
@@ -102,7 +102,7 @@ const DISTRICTS: DistrictTemplate[] = [
     weather: ['clear', 'clear', 'drizzle'],
     anchor: { x: 46, y: 48 },
     areas: ['Corpo Plaza', 'Downtown'],
-    kinds: ['plaza', 'rooftop', 'metro', 'club', 'bar', 'ripperdoc'],
+    kinds: ['plaza', 'rooftop', 'club', 'bar', 'ripperdoc'],
     landmarks: [
       { name: 'Corpo Plaza', kind: 'plaza', description: 'The open plaza at the foot of Arasaka Tower, swept by drones and private security.' },
       { name: 'Konpeki Plaza', kind: 'hotel', description: 'An Arasaka luxury hotel, all glass and gold, with security on every floor.' },
@@ -346,13 +346,6 @@ const KINDS: Record<string, LocationKind> = {
     descriptions: ['A noodle cart with four stools and a cook who has seen absolutely everything.', 'A steaming street-food stand that serves the best ramen in the city, allegedly.'],
     ambient: ['The cook flips a cleaver without looking.', 'A drone drops a box of dumplings on the stool next to you.'],
   },
-  metro: {
-    label: 'Metro station',
-    indoor: true,
-    names: ['{area} Metro', '{area} NCART Station'],
-    descriptions: ['An NCART platform tiled in flickering ads, where the next train is always late.', 'A metro station where commuters stare into their optics and never at each other.'],
-    ambient: ['A train screeches in, three minutes late.', 'A busker with a cybernetic voice box sings for spare eddies.'],
-  },
   rooftop: {
     label: 'Rooftop',
     indoor: false,
@@ -532,7 +525,7 @@ const BUILDINGS: BuildingContent = {
 export const CITY: CityContent = {
   // The real Night City has the Pacific to the west and the Badlands to the east.
   coast: 'west',
-  welcome: 'Welcome to Night City, choom. Tap a place, then hit {h|Travel}. Tap a block to zoom in on its buildings.',
+  welcome: 'Welcome to Night City, choom. Tap a place, then {h|Walk} or take the {h|NCART}. Tap a block to zoom in.',
   welcomeBack: 'Welcome back, choom. Your map is right where you left it.',
   districts: DISTRICTS,
   kinds: KINDS,

@@ -38,8 +38,9 @@ Motel…) and only makes up places once it runs out of those. Neighborhoods, gan
 corporations and street terms all come from the game. Arasaka Tower always stands downtown.
 
 - **City map**: a street grid of city blocks, desert and coastline, tinted by district.
-  Unexplored areas sit under fog that lifts around everywhere you've been, and every arrival
-  reveals the places its streets lead to. The header counts how much you've mapped.
+  Unexplored areas sit under fog that lifts around the places you know and along every
+  street you walk. Arriving somewhere reveals the places its routes lead to, and walking
+  past a place turns it up. The header counts how much you've mapped.
 - **Buildings**: every block is filled with its own buildings, zoned by district: corporate
   towers downtown, apartment blocks and storefronts in Watson, factories and warehouses in
   Santo Domingo, derelicts in Pacifica, shacks and containers out in the Badlands, plus parks,
@@ -49,15 +50,29 @@ corporations and street terms all come from the game. Arasaka Tower always stand
   flies back to where you are. Zoomed out, tapping a block flies in to it. Close in, tapping a
   building picks it out and the panel shows its name, block address and size. Buildings don't
   do anything yet; they're there for what comes next.
-- **Travel**: tap a place to select it. The panel under the map shows how far it is and
-  the route lights up; tap **Travel** (or the place again) and a tracer runs along the
-  streets before you arrive.
-- **Panel**: where you are and what it's like, the destination you've picked, or the building
-  you tapped.
+- **Getting around**: tap a place, an NCART station, a building, or (zoomed in) any spot on
+  a street. The panel shows two ways there:
+  - **Walk**: free, along the streets, to anywhere on the map. Tapping the same thing again
+    walks there too. You can stop partway (**Stop here**) or change course by picking
+    somewhere else.
+  - **NCART**: every city has its own metro lines and stations. The trip walks you to the
+    nearest station, waits for a train, rides, and walks you from the station nearest where
+    you're going. A ride costs **1 €$**, or nothing with a **monthly pass** (20 €$ for 30
+    days, sold at any station). You start with 50 €$. Once you've paid, the trip runs to the
+    end.
+- **Real time**: trips run on your phone's clock, in real minutes: about a minute of walking
+  per city block, and much less on the train. They carry on while the game is closed; come
+  back and you've arrived (or you're still on your way). **For testing, everything currently
+  runs 60× faster**, so a 20-minute walk takes 20 seconds. Set `timeScale` in
+  [`src/data/travel.ts`](src/data/travel.ts) to `1` for real time; walking speed, train
+  speed, waits, the fare and the pass are all set there too.
+- **Panel**: where you are and what it's like, what you've picked and how long getting there
+  takes each way, or the trip you're on with a countdown.
 - **Transmissions**: the city's chatter types across the top of the map, then fades.
 - **Saving**: progress saves automatically on your device after every move (the header says
   **Saved**, or **Not saved** if the browser won't allow it, e.g. in a private window). Come
-  back later and you pick up in the same city, at the same place, with the same map.
+  back later and you pick up in the same city, at the same place, with the same map, wallet
+  and pass, and any trip still underway.
 
 Each city has a **seed**, shown under the map and in the page address (e.g. `#7f3a29c1`). The
 same seed always rebuilds the same city, which is how a save stays small: it keeps only the
@@ -69,8 +84,8 @@ more. The game then starts that city over and says so. (Developers: bump `GENERA
 in `src/engine/generate.ts` when that happens; a test in `tests/save.test.ts` fails as a
 reminder.)
 
-There's no typing. On a keyboard, Tab moves between places on the map, Enter selects and
-travels, + and − zoom, and Esc clears the selection.
+There's no typing. On a keyboard, Tab moves between places and stations on the map, Enter
+picks one (and pressed again, walks there), + and − zoom, and Esc clears the pick.
 
 ## How it's built
 
@@ -79,9 +94,11 @@ effects layer decides how that should look:
 
 ```
 src/
-  engine/   Game rules and state: the city generator, seeded random numbers, travel and
-            discovery, ambient chatter, the save format. No DOM, fully unit-tested.
-  data/     The content the generator builds cities from (city.ts).
+  engine/   Game rules and state: the city generator, the NCART network, street routes,
+            trip planning on the real clock, the wallet and pass, discovery, ambient chatter,
+            the save format. No DOM, fully unit-tested.
+  data/     The content the generator builds cities from (city.ts), and travel times and
+            prices (travel.ts).
   ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
             ground, sea, buildings), place panel, transmissions, HUD, typewriter, markup parser,
             the save slot in local storage.
@@ -92,8 +109,8 @@ tests/      Vitest unit tests.
 
 | Game event | What the player sees |
 |---|---|
-| Picking a destination | Its marker lights up and the route there is drawn along the streets |
-| Travelling | A tracer races along the streets, lighting the path behind it |
+| Picking somewhere | Its marker lights up, the walk there is drawn along the streets, and the NCART stations a ride would use glow |
+| Travelling | Your marker moves along the route in real time, lighting the path behind it, with a countdown in the panel |
 | Arriving somewhere | Signal-tear glitch, neon sign flickers on, colors crossfade to the district palette, weather changes, the panel rescans |
 | Discovering places | Fog lifts, new markers and routes appear, districts light up and get their names |
 | Ambient line with an effect | e.g. lightning flashes the screen and the sign; a bass drop shakes the bar |

@@ -1,0 +1,29 @@
+/** "Under a minute", "18 min", "1 h 05 min". */
+export function formatMinutes(minutes: number): string {
+  if (minutes < 1) return '<1 min';
+  const total = Math.round(minutes);
+  if (total < 60) return `${total} min`;
+  return `${Math.floor(total / 60)} h ${String(total % 60).padStart(2, '0')} min`;
+}
+
+/** A countdown: "0:42", "12:03", "1:02:03". */
+export function formatCountdown(ms: number): string {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const ss = String(s).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+/** How long a clock duration really is, for test-speed notes: "18 s", "3 min". */
+export function formatDuration(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 90) return `${seconds} s`;
+  return formatMinutes(seconds / 60);
+}
+
+/** A short date in the game's calendar style: "Nov 11". */
+export function formatDay(ms: number): string {
+  return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}

@@ -387,8 +387,18 @@ button {
 }
 
 .map-stat {
-  margin-left: auto;
   color: var(--secondary);
+}
+
+/* Eddies, and whether the NCART pass is running */
+.wallet {
+  margin-left: auto;
+  color: #ffd84d;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wallet.has-pass {
+  text-shadow: 0 0 8px #ffd84d;
 }
 
 .save-status {
@@ -429,9 +439,6 @@ button {
 }
 .map-stage.is-dragging {
   cursor: grabbing;
-}
-.map-stage.is-traveling {
-  cursor: default;
 }
 
 /* Zoom buttons in the corner of the map */
@@ -544,13 +551,32 @@ button {
   filter: drop-shadow(0 0 4px var(--secondary));
   animation: route-flow 0.8s linear infinite;
 }
-.route-trace {
+/* The NCART network */
+.ncart-line {
   fill: none;
-  stroke: #fff;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 2.6;
-  filter: drop-shadow(0 0 3px var(--primary)) drop-shadow(0 0 8px var(--primary));
+  stroke-width: 3;
+  opacity: 0.45;
+}
+/* A trip underway: the way ahead, and the trail behind */
+.trip-path {
+  fill: none;
+  stroke: #fff;
+  stroke-dasharray: 2 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+  opacity: 0.75;
+  animation: route-flow 0.8s linear infinite;
+}
+.trip-done {
+  fill: none;
+  stroke: var(--primary);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px var(--primary));
 }
 
 /* A marker is a zero-size button at the place's position; its mark and label hang off it. */
@@ -568,11 +594,8 @@ button {
 .node:focus-visible {
   outline: none;
 }
-.node.is-current {
+.node.is-here {
   cursor: default;
-}
-.map-stage.is-traveling .node {
-  pointer-events: none;
 }
 
 .node-mark {
@@ -598,27 +621,40 @@ button {
 .node.is-visited .node-mark::before {
   background: color-mix(in srgb, var(--node) 55%, var(--bg));
 }
-.node.is-current .node-mark::before {
-  width: 13px;
-  height: 13px;
-  border-color: #fff;
-  background: #fff;
-  box-shadow:
-    0 0 10px var(--node),
-    0 0 22px var(--node);
+/* Where the player stands, their own marker covers this one. */
+.node.is-here .node-mark::before {
+  opacity: 0;
 }
-/* "You are here" ping */
-.node.is-current .node-mark::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 2px solid var(--node);
-  border-radius: 50%;
-  animation: ping 1.8s ease-out infinite;
-}
-.node:not(.is-current):hover .node-mark::before,
+.node:not(.is-here):hover .node-mark::before,
 .node:focus-visible .node-mark::before {
   transform: rotate(45deg) scale(1.35);
+}
+
+/* NCART stations: a rounded square on the line's color */
+.node.station .node-mark::before {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: #04050a;
+  transform: none;
+}
+.node.station .node-mark::after {
+  content: '';
+  position: absolute;
+  width: 5px;
+  height: 2px;
+  background: var(--node);
+}
+.node.station:not(.is-here):hover .node-mark::before,
+.node.station:focus-visible .node-mark::before {
+  transform: scale(1.35);
+}
+.node.station.is-boarding .node-mark::before {
+  background: color-mix(in srgb, var(--node) 45%, #04050a);
+  box-shadow: 0 0 12px var(--node);
+}
+.node.station.is-here .node-mark::after {
+  opacity: 0;
 }
 .node:focus-visible .node-mark {
   outline: 2px solid var(--primary);
@@ -643,13 +679,13 @@ button {
     opacity 0.15s;
 }
 .node.is-adjacent .node-label,
-.node.is-current .node-label {
+.node.is-here .node-label {
   color: #fff;
 }
-.node.is-current .node-label {
+.node.is-here .node-label {
   background: color-mix(in srgb, var(--node) 30%, rgba(4, 5, 10, 0.85));
 }
-.node:not(.is-current):hover .node-label,
+.node:not(.is-here):hover .node-label,
 .node:focus-visible .node-label {
   background: color-mix(in srgb, var(--node) 28%, rgba(4, 5, 10, 0.9));
   opacity: 1;
@@ -661,26 +697,86 @@ button {
   box-shadow: 0 0 12px var(--secondary);
   transform: rotate(45deg) scale(1.45);
 }
+.node.station.is-selected .node-mark::before {
+  transform: scale(1.45);
+}
+
+/* A spot picked on the street */
+.pin {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.pin::before,
+.pin::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+}
+.pin::before {
+  background: color-mix(in srgb, var(--secondary) 45%, transparent);
+  box-shadow: 0 0 12px var(--secondary);
+}
+.pin::after {
+  border-color: var(--secondary);
+  animation: ping 1.6s ease-out infinite;
+}
 .node.is-selected .node-label {
   border-left-color: var(--secondary);
   background: color-mix(in srgb, var(--secondary) 35%, rgba(4, 5, 10, 0.9));
   color: #fff;
 }
 
-.map-tracer {
+/* The player: a white diamond that pings where they stand, a glowing dot while on the move */
+.player {
   position: absolute;
   top: 0;
   left: 0;
   z-index: 2;
-  width: 10px;
-  height: 10px;
-  margin: -5px 0 0 -5px;
-  border-radius: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+.player-mark {
+  position: absolute;
+  top: -16px;
+  left: -16px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+}
+.player-mark::before {
+  content: '';
+  width: 13px;
+  height: 13px;
+  border: 2px solid #fff;
   background: #fff;
   box-shadow:
-    0 0 6px 2px var(--primary),
-    0 0 18px 6px var(--glow);
-  pointer-events: none;
+    0 0 10px var(--primary),
+    0 0 22px var(--primary);
+  transform: rotate(45deg);
+}
+.player-mark::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--primary);
+  border-radius: 50%;
+  animation: ping 1.8s ease-out infinite;
+}
+.player.is-moving .player-mark::before {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  transform: none;
 }
 
 /* ───────────── Where you are / where you're going ───────────── */
@@ -696,8 +792,8 @@ button {
   border-top: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
   background: linear-gradient(180deg, rgba(6, 8, 16, 0.92), rgba(6, 8, 16, 0.78));
 }
-.place.is-destination,
-.place.is-building {
+.place.is-target,
+.place.is-trip {
   border-top-color: color-mix(in srgb, var(--secondary) 45%, transparent);
 }
 
@@ -721,9 +817,30 @@ button {
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
-.place.is-destination .place-kicker,
-.place.is-building .place-kicker {
+.place.is-target .place-kicker,
+.place.is-trip .place-kicker {
   color: var(--secondary);
+}
+/* Room for the close button */
+.place.is-target .place-kicker {
+  padding-right: 34px;
+}
+
+/* How far through a trip */
+.place-progress {
+  position: relative;
+  height: 4px;
+  margin-top: 4px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+}
+.place-progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--progress, 0%);
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
+  transition: width 0.5s linear;
 }
 
 .place-title {
@@ -756,20 +873,25 @@ button {
 .place-actions {
   display: flex;
   flex: none;
-  align-items: center;
-  gap: 4px;
+  align-items: stretch;
+  gap: 8px;
 }
 
-.travel-button {
+.action {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  min-width: 112px;
   min-height: 44px;
-  padding: 8px 18px;
+  padding: 6px 14px;
   border: 1px solid var(--secondary);
   background: color-mix(in srgb, var(--secondary) 22%, transparent);
   color: #fff;
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 800;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   text-shadow: 0 0 8px var(--secondary);
   cursor: pointer;
@@ -778,16 +900,42 @@ button {
     background 0.15s,
     transform 0.1s;
 }
-.travel-button:hover,
-.travel-button:focus-visible {
+.action-sub {
+  color: color-mix(in srgb, #fff 78%, var(--secondary));
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-shadow: none;
+  text-transform: none;
+}
+.action-sub:empty {
+  display: none;
+}
+.action:hover,
+.action:focus-visible {
   background: color-mix(in srgb, var(--secondary) 38%, transparent);
 }
-.travel-button:active {
+.action:active {
   transform: scale(0.97);
 }
-.travel-button:disabled {
+.action:disabled {
   cursor: default;
-  opacity: 0.5;
+  opacity: 0.45;
+}
+.action.is-ncart {
+  border-color: #ffd84d;
+  background: color-mix(in srgb, #ffd84d 14%, transparent);
+  text-shadow: 0 0 8px #ffd84d;
+}
+.action.is-ncart:hover,
+.action.is-ncart:focus-visible {
+  background: color-mix(in srgb, #ffd84d 28%, transparent);
+}
+.action.is-stop {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  text-shadow: 0 0 8px var(--danger);
 }
 
 .icon-btn {
@@ -798,6 +946,13 @@ button {
   border: 0;
   background: none;
   cursor: pointer;
+}
+.place-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 34px;
+  height: 34px;
 }
 .icon-btn::before,
 .icon-btn::after {
@@ -1062,8 +1217,31 @@ button {
     font-size: 13px;
     text-wrap: balance;
   }
-  .travel-button {
-    padding-inline: 14px;
+  /* Choices go in a row under the text, sharing the width. */
+  .place {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .place-actions {
+    width: 100%;
+  }
+  .action {
+    flex: 1;
+    min-width: 0;
+    padding-inline: 8px;
+  }
+}
+
+@media (max-width: 420px) {
+  .map-title {
+    display: none;
+  }
+}
+
+/* Side by side with the text, the choices keep clear of the close button. */
+@media (min-width: 601px) {
+  .place.is-target {
+    padding-right: 52px;
   }
 }
 
@@ -1116,7 +1294,9 @@ button {
   .gl[data-text]::after,
   .route.is-live,
   .route-plan,
-  .node.is-current .node-mark::after,
+  .trip-path,
+  .player-mark::after,
+  .pin::after,
   .transmission::before {
     animation: none;
   }
