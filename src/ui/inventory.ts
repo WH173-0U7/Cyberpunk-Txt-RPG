@@ -28,8 +28,9 @@ export interface InventoryElements {
 
 /**
  * The inventory: an overlay that covers the map, opened from the map's header. It shows
- * whatever view it's given; the game decides what that is. The panel under the map stays
- * usable while it's open.
+ * whatever view it's given; the game decides what that is. Only kinds of item the player
+ * actually carries get a section, so with nothing carried it's empty. The panel under the
+ * map stays usable while it's open.
  */
 export class Inventory {
   constructor(
@@ -88,7 +89,9 @@ export class Inventory {
     pass.textContent = view.pass;
     const count = view.sections.reduce((sum, s) => sum + s.items.reduce((n, item) => n + item.count, 0), 0);
     total.textContent = `${count} ${count === 1 ? 'item' : 'items'}`;
-    sections.replaceChildren(...view.sections.map(section));
+    const carried = view.sections.filter((s) => s.items.length > 0);
+    sections.replaceChildren(...carried.map(section));
+    sections.hidden = carried.length === 0;
   }
 }
 
@@ -96,14 +99,9 @@ function section(s: InventorySection): HTMLElement {
   const count = s.items.reduce((n, item) => n + item.count, 0);
   const li = el('li', 'inv-section');
   li.dataset.kind = s.kind;
-  li.classList.toggle('is-empty', count === 0);
   const head = el('div', 'inv-section-head');
   head.append(el('h3', 'inv-section-label', s.label), el('span', 'inv-section-count', String(count)));
   li.append(head, el('p', 'inv-section-hint', s.hint));
-  if (!s.items.length) {
-    li.append(el('p', 'inv-empty', 'Empty'));
-    return li;
-  }
   const list = el('ul', 'inv-items');
   for (const item of s.items) {
     const row = el('li', 'inv-item');

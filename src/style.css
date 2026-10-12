@@ -1209,6 +1209,9 @@ button {
   letter-spacing: 0.06em;
 }
 
+.inventory-sections[hidden] {
+  display: none;
+}
 .inventory-sections {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -1250,16 +1253,6 @@ button {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.35;
-}
-.inv-empty {
-  margin: auto 0 0;
-  padding: 5px 0;
-  border: 1px dashed color-mix(in srgb, var(--muted) 45%, transparent);
-  color: color-mix(in srgb, var(--muted) 80%, transparent);
-  font-size: 10px;
-  letter-spacing: 0.24em;
-  text-align: center;
-  text-transform: uppercase;
 }
 .inv-items {
   display: grid;
