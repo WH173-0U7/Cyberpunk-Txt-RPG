@@ -46,9 +46,10 @@ own.
   and a little way around places you've been; riding the NCART doesn't clear it. Arriving
   somewhere reveals the places its routes lead to, and walking past a place turns it up
   (their markers show through the fog). Uncovered ground never pops out of the dark: the
-  fog thins like smoke, thin wisps first and thick ones last, with swirling edges, and
-  wherever you arrive the map glitches open in torn strips first. The header counts how
-  much you've mapped.
+  fog lights up and thins like smoke, thin wisps first and thick ones last, with swirling
+  edges, while puffs of smoke roll away from it. Walking flickers the edge of the fog with
+  scanlines, and wherever an arrival uncovers new ground the map glitches open in torn
+  strips first. The header counts how much you've mapped.
 - **Buildings**: every block is filled with its own buildings, zoned by district: corporate
   towers downtown, apartment blocks and storefronts in Watson, factories and warehouses in
   Santo Domingo, derelicts in Pacifica, shacks and containers out in the Badlands, plus parks,
