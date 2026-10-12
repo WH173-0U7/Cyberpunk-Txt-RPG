@@ -370,6 +370,22 @@ button {
 }
 .map-head {
   border-bottom: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  /* Its own width decides what fits (below), so it can never push the map wider than the screen. */
+  container-type: inline-size;
+}
+/* Short of room, the title goes first, then the inventory button's label. */
+@container (max-width: 560px) {
+  .map-title {
+    display: none;
+  }
+}
+@container (max-width: 450px) {
+  .head-button span {
+    display: none;
+  }
+  .head-button {
+    padding-inline: 8px;
+  }
 }
 .map-foot {
   justify-content: space-between;
@@ -419,6 +435,13 @@ button {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
+}
+.head-button.is-icon {
+  padding-inline: 7px;
+}
+.head-button.is-icon svg {
+  width: 14px;
+  height: 14px;
 }
 .head-button:hover,
 .head-button:focus-visible,
@@ -1070,11 +1093,11 @@ button {
   background: var(--secondary);
 }
 
-/* ───────────── Inventory ───────────── */
+/* ───────────── Overlays over the map: inventory, settings ───────────── */
 
 /* Covers the map, in the same grid cell. Dark panel, yellow accents, crosshair corners and a
    barcode strip, after the Cyberpunk TCG's cards. */
-.inventory {
+.overlay {
   position: relative;
   z-index: 10;
   grid-row: 2;
@@ -1091,11 +1114,11 @@ button {
   user-select: none;
   -webkit-user-select: none;
 }
-.inventory[hidden] {
+.overlay[hidden] {
   display: none;
 }
 /* Crosshair brackets in each corner */
-.inventory::before {
+.overlay::before {
   content: '';
   position: absolute;
   inset: 6px;
@@ -1113,20 +1136,20 @@ button {
     linear-gradient(var(--c), var(--c)) bottom right / 2px 14px no-repeat;
 }
 
-.inventory-head {
+.overlay-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
-.inventory-kicker {
+.overlay-kicker {
   margin: 0;
   color: var(--muted);
   font-size: 10px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
 }
-.inventory-title {
+.overlay-title {
   margin: 2px 0 0;
   color: #ffd84d;
   font-family: var(--font-display);
@@ -1136,13 +1159,13 @@ button {
   text-transform: uppercase;
   text-shadow: 0 0 12px color-mix(in srgb, #ffd84d 55%, transparent);
 }
-.inventory-close {
+.overlay-close {
   width: 36px;
   height: 36px;
   margin: -6px -6px 0 0;
 }
 
-.inventory-strip {
+.overlay-strip {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1153,11 +1176,11 @@ button {
   letter-spacing: 0.2em;
   text-transform: uppercase;
 }
-.inventory-strip > :last-child {
+.overlay-strip > :last-child {
   margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
-.inventory-barcode {
+.overlay-barcode {
   width: 64px;
   height: 12px;
   opacity: 0.7;
@@ -1172,7 +1195,7 @@ button {
   );
 }
 
-.inventory-body {
+.overlay-body {
   flex: 1;
   min-height: 0;
   margin-right: -6px;
@@ -1271,17 +1294,101 @@ button {
   color: #ffd84d;
 }
 
-@media (max-width: 380px) {
-  /* Narrow phones: the button shrinks to its icon so the header stays on one line. */
-  .head-button span {
-    display: none;
-  }
-  .head-button {
-    padding-inline: 8px;
-  }
+/* Settings: for now, looking after the save */
+.settings-group {
+  display: grid;
+  gap: 10px;
 }
+.settings-label {
+  margin: 0;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.settings-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-actions {
+  display: grid;
+  gap: 8px;
+}
+/* Choices that can't be taken back: red, and they always ask first */
+.danger-button {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 60%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%);
+  transition: background 0.15s;
+}
+.danger-button:hover,
+.danger-button:focus-visible,
+.danger-button[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+}
+.danger-label {
+  color: color-mix(in srgb, var(--danger) 55%, #fff);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.danger-sub {
+  color: var(--muted);
+  font-size: 11px;
+}
+.danger-button.is-solid {
+  justify-items: center;
+  align-content: center;
+  background: color-mix(in srgb, var(--danger) 32%, transparent);
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-shadow: 0 0 8px var(--danger);
+  text-transform: uppercase;
+}
+.settings-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, #05060b);
+}
+.settings-confirm[hidden] {
+  display: none;
+}
+.settings-confirm p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.settings-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.settings-confirm-actions .action {
+  min-width: 0;
+}
+
 @media (max-width: 420px) {
-  .inventory {
+  .overlay {
     padding: 12px 12px 10px;
   }
   .inventory-sections {
@@ -1543,11 +1650,6 @@ button {
   }
 }
 
-@media (max-width: 420px) {
-  .map-title {
-    display: none;
-  }
-}
 
 /* Side by side with the text, the choices keep clear of the close button. */
 @media (min-width: 601px) {

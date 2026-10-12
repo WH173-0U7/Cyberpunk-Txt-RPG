@@ -77,6 +77,10 @@ own.
   shards, junk, components). A kind only shows once you carry something of it, so for now
   it's empty; items come with shops and loot. **×** or **Esc** closes it. The panel under
   the map keeps working while it's open.
+- **Settings**: the gear next to it covers the map with settings. For now that's the save:
+  **Restart this city** puts the same city back to the start, and **Erase save** deletes the
+  save from this device and starts a brand new city. Both ask first, with Cancel as the
+  default.
 - **Getting around**: tap a place, an NCART station, a building, or (zoomed in) any spot on
   a street. The panel shows two ways there:
   - **Walk**: free, along the streets, to anywhere on the map. Tapping the same thing again
@@ -130,7 +134,8 @@ src/
   data/     The content the generator builds cities from (city.ts), travel times and
             prices (travel.ts), and the kinds of item the inventory sorts by (items.ts).
   ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
-            ground, sea, buildings), the fog (fog.ts), the inventory (inventory.ts), place panel, transmissions, HUD, typewriter, markup parser,
+            ground, sea, buildings), the fog (fog.ts), the overlays over the map (overlay.ts:
+            the inventory in inventory.ts, settings in settings.ts), place panel, transmissions, HUD, typewriter, markup parser,
             the save slot in local storage.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.
