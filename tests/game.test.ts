@@ -220,40 +220,61 @@ describe('Game', () => {
   });
 
   describe('NCART', () => {
-    it('walks to the nearest station, waits, rides, and walks the rest', () => {
+    /** Walks to the West station and waits there, returning the time on arrival. */
+    function atWestStation(game: Game): number {
+      go(game, station('s1'), 'foot', T0);
+      game.tick(T0 + 30 * MINUTE);
+      return T0 + 30 * MINUTE;
+    }
+
+    it('only boards at a stop', () => {
+      const { game } = setup();
+      game.start(T0);
+      expect(game.atStation).toBe(false);
+      expect(game.plan(at('bar'), 'ncart', T0)).toBeNull();
+
+      const now = atWestStation(game);
+      expect(game.atStation).toBe(true);
+      expect(game.plan(at('bar'), 'ncart', now)).not.toBeNull();
+    });
+
+    it('rides stop to stop: a wait, the ride, and off at the stop nearest the destination', () => {
       const { game, take, outputs } = setup();
       game.start(T0);
+      const now = atWestStation(game);
       take();
-      const { plan, started } = go(game, at('bar'), 'ncart', T0);
+      const { plan, started } = go(game, at('bar'), 'ncart', now);
 
       expect(started).toBe(true);
-      expect(plan.legs.map((l) => l.kind)).toEqual(['walk', 'wait', 'ride', 'walk']);
-      expect(plan.legs[2]?.stations).toEqual(['s1', 's2']);
-      expect(plan.minutes).toBeCloseTo(30 + 2 + 6 + 30);
+      expect(plan.legs.map((l) => l.kind)).toEqual(['wait', 'ride']);
+      expect(plan.legs[1]?.stations).toEqual(['s1', 's2']);
+      expect(plan.minutes).toBeCloseTo(2 + 6);
+      expect(plan.to).toEqual(station('s2'));
       expect(game.wallet.eddies).toBe(4);
       expect(outputs(take())).toContainEqual({ text: 'NCART fare paid: 1 €$.', tone: 'system' });
 
-      game.tick(T0 + 68 * MINUTE);
-      expect(game.location?.id).toBe('bar');
+      game.tick(now + 8 * MINUTE);
+      expect(game.whereabouts).toEqual(station('s2'));
+      // The last stretch to the bar is on foot.
+      expect(game.plan(at('bar'), 'foot', now + 8 * MINUTE)?.minutes).toBeCloseTo(30);
     });
 
-    it("doesn't explore from the train, only on foot", () => {
+    it("doesn't explore from the train", () => {
       const { game } = setup({ discoverRadius: 1 });
       game.start(T0);
-      go(game, at('bar'), 'ncart', T0);
-      // Halfway along the ride, between the stations.
-      game.tick(T0 + 35 * MINUTE);
-      const middle = game.mapState.explored;
-      game.tick(T0 + 68 * MINUTE);
-      expect(middle.has(cellOf({ x: 50, y: 50 }))).toBe(false);
+      const now = atWestStation(game);
+      go(game, station('s2'), 'ncart', now);
+      game.tick(now + 8 * MINUTE);
+      expect(game.mapState.explored.has(cellOf({ x: 50, y: 50 }))).toBe(false);
     });
 
     it('needs the fare', () => {
       const { game, take, outputs } = setup({ startingEddies: 0 });
       game.start(T0);
+      const now = atWestStation(game);
       take();
-      const plan = game.plan(at('bar'), 'ncart', T0);
-      expect(plan && game.go(plan, T0)).toBe(false);
+      const plan = game.plan(station('s2'), 'ncart', now);
+      expect(plan && game.go(plan, now)).toBe(false);
       expect(game.currentTrip).toBeNull();
       expect(outputs(take())[0]?.tone).toBe('error');
     });
@@ -261,15 +282,17 @@ describe('Game', () => {
     it("can't change plans mid-ride", () => {
       const { game } = setup();
       game.start(T0);
-      go(game, at('bar'), 'ncart', T0);
-      expect(game.plan(at('market'), 'foot', T0 + MINUTE)).toBeNull();
-      expect(game.stop(T0 + MINUTE)).toBe(false);
+      const now = atWestStation(game);
+      go(game, station('s2'), 'ncart', now);
+      expect(game.plan(at('market'), 'foot', now + MINUTE)).toBeNull();
+      expect(game.stop(now + MINUTE)).toBe(false);
     });
 
-    it('has nothing to offer when both ends are nearest the same station', () => {
+    it('has nothing to offer when the destination is nearest the stop you are at', () => {
       const { game } = setup();
       game.start(T0);
-      expect(game.plan(streetSpot({ x: 20, y: 40 }), 'ncart', T0)).toBeNull();
+      const now = atWestStation(game);
+      expect(game.plan(streetSpot({ x: 20, y: 40 }), 'ncart', now)).toBeNull();
     });
 
     it('sells a monthly pass at stations only, and rides are free while it lasts', () => {
@@ -277,9 +300,7 @@ describe('Game', () => {
       game.start(T0);
       expect(game.buyPass(T0)).toBe(false);
 
-      go(game, station('s1'), 'foot', T0);
-      game.tick(T0 + 30 * MINUTE);
-      const bought = T0 + 30 * MINUTE;
+      const bought = atWestStation(game);
       expect(game.buyPass(bought)).toBe(true);
       expect(game.wallet).toEqual({ eddies: 5, passUntil: bought + 30 * 86_400_000 });
       take();

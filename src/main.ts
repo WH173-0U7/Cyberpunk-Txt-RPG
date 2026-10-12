@@ -208,11 +208,13 @@ function targetView(t: Target, to: Whereabouts, plans: { foot: TripPlan | null; 
     meta = 'You can walk anywhere';
   }
   const actions = [walkAction(plans.foot), rideAction(plans.ncart, now)];
+  // The train only goes stop to stop: say which stop it would leave you at.
+  const stop = plans.ncart && t.kind !== 'station' ? world.transit.stations[plans.ncart.to.station ?? '']?.name : undefined;
   return {
     mode: 'target',
     kicker,
     title,
-    meta: [meta, testSpeed].filter(Boolean).join(' · '),
+    meta: [meta, stop ? `Train to ${stop}` : '', testSpeed].filter(Boolean).join(' · '),
     actions,
     closable: true,
     announce: `${title}. ${actions.map((a) => [a.label, a.sub].filter(Boolean).join(' ')).join('. ')}.`,
@@ -230,7 +232,8 @@ function rideAction(plan: TripPlan | null, now: number): PanelAction {
   if (game.currentTrip?.mode === 'ncart') return { id: 'ride', label: 'NCART', sub: 'NCART trip underway', disabled: true };
   if (!plan) {
     const none = Object.keys(game.world.transit.stations).length === 0;
-    return { id: 'ride', label: 'NCART', sub: none ? 'No NCART here' : 'Same station', disabled: true };
+    const why = none ? 'No NCART here' : game.atStation ? 'This is the nearest stop' : 'Board at a station';
+    return { id: 'ride', label: 'NCART', sub: why, disabled: true };
   }
   const covered = game.passActive(now);
   const fare = covered ? 'Pass' : `${plan.fare} €$`;

@@ -27,38 +27,48 @@ export interface TravelRules {
 }
 
 /**
- * How to get somewhere from a point. On foot, along the streets the whole way. By NCART, a
- * walk to the nearest station, a wait, the ride, and a walk from the station nearest the
- * destination. Null when the NCART can't help (no network, or the same station at both ends).
+ * How to get somewhere. On foot: from any point, along the streets the whole way. By NCART:
+ * only from the stop the player is standing at, waiting for a train and riding to the stop
+ * nearest the destination (or the stop picked); the rest is up to the player's feet. Null
+ * when that can't be done: not at a stop, no line there, or already at the nearest stop.
  */
-export function planTrip(world: World, from: Point, to: Whereabouts, mode: TravelMode, rules: TravelRules): TripPlan | null {
+export function planTrip(
+  world: World,
+  from: Point & { station?: string | null },
+  to: Whereabouts,
+  mode: TravelMode,
+  rules: TravelRules,
+): TripPlan | null {
   if (mode === 'foot') {
     const leg = walk(world, from, to, rules);
     return { mode, from: copy(from), to, legs: [leg], minutes: leg.minutes, fare: 0 };
   }
 
-  const stations = Object.values(world.transit.stations);
-  const board = nearestStation(stations, from);
-  const alight = to.station ? world.transit.stations[to.station] : nearestStation(stations, to);
+  const board = from.station ? world.transit.stations[from.station] : undefined;
+  const alight = to.station ? world.transit.stations[to.station] : nearestStation(Object.values(world.transit.stations), to);
   if (!board || !alight || board.id === alight.id) return null;
   const ride = rideBetween(world.transit, board.id, alight.id);
   if (!ride) return null;
 
   const track = ride.map((id) => world.transit.stations[id]).filter((s): s is Station => Boolean(s));
   const trackPath = track.map((s) => ({ x: s.x, y: s.y }));
-  const legs: Leg[] = [];
-  const toBoard = walk(world, from, board, rules);
-  if (toBoard.minutes > 0) legs.push(toBoard);
-  legs.push({ kind: 'wait', path: [copy(board)], minutes: rules.waitMinutes });
-  legs.push({
-    kind: 'ride',
-    path: trackPath,
-    minutes: pathLength(trackPath) * rules.rideMinutesPerUnit + Math.max(0, ride.length - 2) * rules.stopMinutes,
-    stations: ride,
-  });
-  const fromAlight = walk(world, alight, to, rules);
-  if (fromAlight.minutes > 0) legs.push(fromAlight);
-  return { mode, from: copy(from), to, legs, minutes: legs.reduce((sum, l) => sum + l.minutes, 0), fare: rules.fare };
+  const legs: Leg[] = [
+    { kind: 'wait', path: [copy(board)], minutes: rules.waitMinutes },
+    {
+      kind: 'ride',
+      path: trackPath,
+      minutes: pathLength(trackPath) * rules.rideMinutesPerUnit + Math.max(0, ride.length - 2) * rules.stopMinutes,
+      stations: ride,
+    },
+  ];
+  return {
+    mode,
+    from: copy(board),
+    to: { x: alight.x, y: alight.y, place: null, station: alight.id, building: null },
+    legs,
+    minutes: legs.reduce((sum, l) => sum + l.minutes, 0),
+    fare: rules.fare,
+  };
 }
 
 /** A plan set off at `now`. Real minutes become clock time, sped up by the test scale. */

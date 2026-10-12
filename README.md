@@ -60,11 +60,11 @@ own.
   - **Walk**: free, along the streets, to anywhere on the map. Tapping the same thing again
     walks there too. You can stop partway (**Stop here**) or change course by picking
     somewhere else.
-  - **NCART**: every city has its own metro lines and stations. The trip walks you to the
-    nearest station, waits for a train, rides, and walks you from the station nearest where
-    you're going. A ride costs **1 €$**, or nothing with a **monthly pass** (20 €$ for 30
-    days, sold at any station). You start with 50 €$. Once you've paid, the trip runs to the
-    end.
+  - **NCART**: every city has its own metro lines and stations. You can only board at a
+    stop, so walk to one first. From there, pick any station (or anywhere else, and the
+    train takes you to the stop nearest it), wait for a train and ride; the rest is on
+    foot. A ride costs **1 €$**, or nothing with a **monthly pass** (20 €$ for 30 days,
+    sold at any station). You start with 50 €$. Once you've paid, the ride runs to the end.
 - **On the move**: your marker moves smoothly along the route the whole way, with the
   trail behind you lit up. Zoomed in, the map glides along to keep you in view (unless
   you've just moved it yourself).
