@@ -45,7 +45,10 @@ own.
   Unexplored areas sit under heavy fog. It only lifts along the streets you actually walk
   and a little way around places you've been; riding the NCART doesn't clear it. Arriving
   somewhere reveals the places its routes lead to, and walking past a place turns it up
-  (their markers show through the fog). The header counts how much you've mapped.
+  (their markers show through the fog). Uncovered ground never pops out of the dark: the
+  fog thins like smoke, thin wisps first and thick ones last, with swirling edges, and
+  wherever you arrive the map glitches open in torn strips first. The header counts how
+  much you've mapped.
 - **Buildings**: every block is filled with its own buildings, zoned by district: corporate
   towers downtown, apartment blocks and storefronts in Watson, factories and warehouses in
   Santo Domingo, derelicts in Pacifica, shacks and containers out in the Badlands, plus parks,
@@ -108,7 +111,7 @@ src/
   data/     The content the generator builds cities from (city.ts), and travel times and
             prices (travel.ts).
   ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
-            ground, sea, buildings), place panel, transmissions, HUD, typewriter, markup parser,
+            ground, sea, buildings), the fog (fog.ts), place panel, transmissions, HUD, typewriter, markup parser,
             the save slot in local storage.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.
@@ -120,7 +123,7 @@ tests/      Vitest unit tests.
 | Picking somewhere | Its marker lights up, the walk there is drawn along the streets, and the NCART stations a ride would use glow |
 | Travelling | Your marker moves along the route in real time, lighting the path behind it, with a countdown in the panel |
 | Arriving somewhere | Signal-tear glitch, neon sign flickers on, colors crossfade to the district palette, weather changes, the panel rescans |
-| Discovering places | Fog lifts, new markers and routes appear, districts light up and get their names |
+| Discovering places | The fog clears like smoke, new markers and routes appear, districts light up and get their names |
 | Ambient line with an effect | e.g. lightning flashes the screen and the sign; a bass drop shakes the bar |
 | `{g\|word}` in any text | The word tears and scrambles every few seconds |
 

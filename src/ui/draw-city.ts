@@ -105,41 +105,30 @@ export function buildingAt(hits: BuildingHit[], q: Px): string | null {
   return null;
 }
 
-/** The selected building's outline, glowing. Drawn last, so it shows through the fog. */
-export function drawSelection(ctx: CanvasRenderingContext2D, hit: BuildingHit, view: View): void {
+/** The picked building's outline, as SVG path data: its whole silhouette, then the roof's front edges and the near corner. */
+export function selectionOutline(hit: BuildingHit): string {
   const { footprint: r, rise: d } = hit;
   const roof = { x: r.x + d.x, y: r.y + d.y };
-  ctx.save();
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = Math.max(1.5, Math.min(3, view.scale * 0.12));
-  ctx.shadowColor = '#ffffff';
-  ctx.shadowBlur = view.fast ? 0 : 12;
-  ctx.beginPath();
-  if (d.x === 0 && d.y === 0) {
-    ctx.rect(r.x, r.y, r.w, r.h);
-  } else {
-    // The whole silhouette, then the roof's front edges and the near corner.
-    ctx.moveTo(r.x, r.y);
-    ctx.lineTo(r.x, r.y + r.h);
-    ctx.lineTo(r.x + r.w, r.y + r.h);
-    ctx.lineTo(roof.x + r.w, roof.y + r.h);
-    ctx.lineTo(roof.x + r.w, roof.y);
-    ctx.lineTo(roof.x, roof.y);
-    ctx.closePath();
-    ctx.moveTo(roof.x, roof.y);
-    ctx.lineTo(roof.x, roof.y + r.h);
-    ctx.lineTo(roof.x + r.w, roof.y + r.h);
-    ctx.moveTo(r.x, r.y + r.h);
-    ctx.lineTo(roof.x, roof.y + r.h);
-  }
-  ctx.stroke();
-  ctx.restore();
+  const p = (x: number, y: number) => `${x.toFixed(1)} ${y.toFixed(1)}`;
+  if (d.x === 0 && d.y === 0) return `M${p(r.x, r.y)}H${(r.x + r.w).toFixed(1)}V${(r.y + r.h).toFixed(1)}H${r.x.toFixed(1)}Z`;
+  return [
+    `M${p(r.x, r.y)}L${p(r.x, r.y + r.h)}L${p(r.x + r.w, r.y + r.h)}L${p(roof.x + r.w, roof.y + r.h)}L${p(roof.x + r.w, roof.y)}L${p(roof.x, roof.y)}Z`,
+    `M${p(roof.x, roof.y)}L${p(roof.x, roof.y + r.h)}L${p(roof.x + r.w, roof.y + r.h)}`,
+    `M${p(r.x, r.y + r.h)}L${p(roof.x, roof.y + r.h)}`,
+  ].join('');
 }
 
 export function hexToRgba(hex: string, alpha: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+/** Sizes a canvas to the stage at a pixel density, leaving it alone if it already fits. */
+export function fitCanvas(canvas: HTMLCanvasElement, width: number, height: number, dpr: number): void {
+  const w = Math.round(width * dpr);
+  const h = Math.round(height * dpr);
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
 }
 
 // ───────────── Ground ─────────────

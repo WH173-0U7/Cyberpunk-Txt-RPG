@@ -490,6 +490,8 @@ button {
 }
 
 .map-city,
+.map-fog,
+.map-names,
 .map-routes,
 .map-nodes {
   position: absolute;
@@ -551,6 +553,36 @@ button {
   filter: drop-shadow(0 0 4px var(--secondary));
   animation: route-flow 0.8s linear infinite;
 }
+/* The picked building, outlined over the fog */
+.pick-glow,
+.pick-line {
+  fill: none;
+  stroke: #fff;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pick-glow {
+  stroke-opacity: 0.16;
+}
+
+/* District names across their territory, over the fog. Each is its own small layer, so
+   nothing else on the map has to be redrawn around them. */
+.map-names {
+  overflow: hidden;
+}
+.district-name {
+  position: absolute;
+  font: 800 1em Orbitron, 'Share Tech Mono', sans-serif;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 0 12px currentColor;
+  transform: translate(-50%, -50%);
+  will-change: transform;
+}
+.map-names.is-moving .district-name {
+  text-shadow: none;
+}
+
 /* The NCART network */
 .ncart-line {
   fill: none;

@@ -1,11 +1,11 @@
 import { blockAt } from '../engine/buildings';
-import { CELL, cellCenter } from '../engine/game';
 import { streetPath } from '../engine/generate';
 import { districtAt, seaTest } from '../engine/geography';
 import { pathLength, pathUpTo } from '../engine/streets';
 import { tripProgress } from '../engine/travel';
 import type { Building, District, Location, MapState, Point, Station, Trip, World } from '../engine/types';
-import { buildingAt, drawCity, drawSelection, hexToRgba, type Box, type BuildingHit, type Px, type View } from './draw-city';
+import { buildingAt, drawCity, fitCanvas, hexToRgba, selectionOutline, type Box, type BuildingHit, type Px, type View } from './draw-city';
+import { Fog } from './fog';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -26,14 +26,8 @@ const MAX_STRETCH = 1.35;
 const PICK_SCALE = 7;
 /** How far (px) a finger can wander before a tap becomes a drag. */
 const DRAG_SLOP = 8;
-/** How far the fog clears around a place you've been to, in map units. Places you've only heard of stay in the dark. */
-const CLEAR_VISITED = 6;
 /** District names fade out as you zoom in, gone by this zoom. */
 const NAMES_GONE = 2;
-/** Fog canvas pixels per CSS pixel. */
-const FOG_DENSITY = 0.5;
-/** The fog mask covers the map at this many pixels per map unit. */
-const MASK_SCALE = 2;
 /** Tapping this close (px) to a pinned spot counts as tapping it again. */
 const PIN_REACH = 26;
 
@@ -60,6 +54,10 @@ export interface Preview {
 export interface MapElements {
   stage: HTMLElement;
   city: HTMLCanvasElement;
+  /** The fog, over the city. */
+  fog: HTMLCanvasElement;
+  /** District names, over the fog. */
+  names: HTMLElement;
   routes: SVGSVGElement;
   nodes: HTMLElement;
   sweep: HTMLElement;
@@ -91,6 +89,8 @@ export class CityMap {
   private target: Target | null = null;
   private preview: Preview = { path: null, stations: [] };
   private trip: Trip | null = null;
+  /** A trip just ended: whatever it uncovers glitches in. */
+  private arriving = false;
   private buildings = new Map<string, Building>();
   private inSea: (p: Point) => boolean = () => false;
   private hits: BuildingHit[] = [];
@@ -105,9 +105,11 @@ export class CityMap {
   private lastTouched = -Infinity;
   private flight: { frame: number; finish(): void } | null = null;
   private settleTimer: number | undefined;
-  private readonly fog = document.createElement('canvas');
-  /** Where the fog lifts, drawn once per change of map state and stretched over the map. */
-  private readonly mask = document.createElement('canvas');
+  private readonly fog: Fog;
+  /** For measuring district names before they're placed. */
+  private readonly measure = document.createElement('canvas').getContext('2d');
+  /** District name labels, kept from frame to frame while the map moves. */
+  private readonly nameLabels = new Map<string, HTMLElement>();
 
   private readonly pointers = new Map<number, Px>();
   /** The camera and finger positions a drag or pinch is measured from. */
@@ -124,10 +126,9 @@ export class CityMap {
     private readonly reducedMotion: boolean,
   ) {
     const { stage } = els;
-    this.mask.width = 100 * MASK_SCALE;
-    this.mask.height = 100 * MASK_SCALE;
+    this.fog = new Fog(els.fog, reducedMotion);
     new ResizeObserver(() => this.render()).observe(stage);
-    // District names are drawn on the canvas in the display font; redraw once it has loaded.
+    // District names are measured in the display font; place them again once it has loaded.
     void document.fonts?.ready.then(() => this.render());
 
     stage.addEventListener('pointerdown', (e) => this.onPointerDown(e));
@@ -163,15 +164,20 @@ export class CityMap {
     this.target = null;
     this.preview = { path: null, stations: [] };
     this.trip = null;
+    this.arriving = false;
     this.buildings = new Map(world.buildings.map((b) => [b.id, b]));
     this.inSea = seaTest(world.layout, world.seed);
     this.camera = { zoom: 1, x: 50, y: 50 };
+    this.fog.reset();
+    for (const label of this.nameLabels.values()) label.remove();
+    this.nameLabels.clear();
   }
 
   update(state: MapState): void {
     this.state = state;
     if (this.target?.kind === 'place' && !state.discovered.has(this.target.id)) this.target = null;
-    this.drawMask();
+    if (this.world) this.fog.update(this.world, state, this.arriving);
+    this.arriving = false;
     this.render();
   }
 
@@ -184,6 +190,7 @@ export class CityMap {
 
   /** Shows a trip underway (null: none) and keeps the player's marker moving along it. */
   setTrip(trip: Trip | null): void {
+    if (this.trip && !trip) this.arriving = true;
     this.trip = trip;
     cancelAnimationFrame(this.liveFrame);
     this.liveFrame = 0;
@@ -485,7 +492,7 @@ export class CityMap {
     }
     const id = buildingAt(this.hits, q);
     const building = id ? this.buildings.get(id) : undefined;
-    if (building && this.revealed({ x: building.x + building.w / 2, y: building.y + building.h / 2 })) {
+    if (building && this.fog.revealed({ x: building.x + building.w / 2, y: building.y + building.h / 2 })) {
       if (this.target?.kind === 'building' && this.target.id === building.id) this.handlers.onGo();
       else this.handlers.onSelect({ kind: 'building', id: building.id });
       return;
@@ -511,15 +518,6 @@ export class CityMap {
     const fit = Math.min((this.width * 0.6) / ((block.x1 - block.x0) * sx), (this.height * 0.6) / ((block.y1 - block.y0) * sy));
     const zoom = Math.min(MAX_ZOOM, Math.max((PICK_SCALE * 1.5) / this.scaleAt(1), fit));
     void this.flyTo({ zoom, x: (block.x0 + block.x1) / 2, y: (block.y0 + block.y1) / 2 });
-  }
-
-  /** Whether a map point is out of the fog. */
-  private revealed(p: Point): boolean {
-    const ctx = this.mask.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return true;
-    const x = Math.min(this.mask.width - 1, Math.max(0, Math.floor(p.x * MASK_SCALE)));
-    const y = Math.min(this.mask.height - 1, Math.max(0, Math.floor(p.y * MASK_SCALE)));
-    return (ctx.getImageData(x, y, 1, 1).data[3] ?? 0) > 110;
   }
 
   // ───────────── Drawing ─────────────
@@ -564,14 +562,10 @@ export class CityMap {
     sweep.style.top = `${p.y}px`;
   }
 
+  /** The city, the fog over it, and the district names on top of the fog. */
   private drawCanvas(world: World, state: MapState, obstacles: Box[]): void {
     const { city } = this.els;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    fitCanvas(city, this.width, this.height, dpr);
-    const ctx = city.getContext('2d');
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
     const known = new Set(Object.values(world.locations).flatMap((l) => (state.discovered.has(l.id) ? [l.district] : [])));
     const view: View = {
       width: this.width,
@@ -580,57 +574,16 @@ export class CityMap {
       fast: this.moving,
       project: this.projector(),
     };
+    fitCanvas(city, this.width, this.height, dpr);
+    const ctx = city.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.hits = drawCity(ctx, world, view, known);
-    this.drawFog(ctx, view, dpr);
-    const selected = this.target?.kind === 'building' ? this.hits.find((hit) => this.target?.kind === 'building' && hit.id === this.target.id) : undefined;
-    if (selected) drawSelection(ctx, selected, view);
+    this.fog.draw({ width: this.width, height: this.height, dpr, project: view.project });
     this.drawDistrictNames(
-      ctx,
       Object.values(world.districts).filter((d) => known.has(d.id)),
       obstacles,
     );
-  }
-
-  /** Paints where the fog lifts: along every street walked and around every place visited. Done once per change. */
-  private drawMask(): void {
-    const { world, state } = this;
-    const m = this.mask.getContext('2d', { willReadFrequently: true });
-    if (!world || !state || !m) return;
-    m.setTransform(MASK_SCALE, 0, 0, MASK_SCALE, 0, 0);
-    m.clearRect(0, 0, 100, 100);
-    const clear = (p: Point, radius: number) => {
-      const glow = m.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
-      glow.addColorStop(0, 'rgba(0, 0, 0, 1)');
-      glow.addColorStop(0.55, 'rgba(0, 0, 0, 0.85)');
-      glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      m.fillStyle = glow;
-      m.fillRect(p.x - radius, p.y - radius, radius * 2, radius * 2);
-    };
-    for (const cell of state.explored) clear(cellCenter(cell), CELL * 1.2);
-    for (const location of Object.values(world.locations)) {
-      if (state.visited.has(location.id)) clear(location, CLEAR_VISITED);
-    }
-  }
-
-  /** Darkness over the whole city, cut away only where the mask says the player has been. */
-  private drawFog(ctx: CanvasRenderingContext2D, view: View, dpr: number): void {
-    const { fog, width, height } = this;
-    // The fog is all soft gradients, so a quarter of the pixels look the same and draw far faster.
-    const density = Math.min(dpr, 1) * FOG_DENSITY;
-    fitCanvas(fog, width, height, density);
-    const f = fog.getContext('2d');
-    if (!f) return;
-    f.setTransform(density, 0, 0, density, 0, 0);
-    f.globalCompositeOperation = 'source-over';
-    f.clearRect(0, 0, width, height);
-    f.fillStyle = 'rgba(3, 4, 9, 0.92)';
-    f.fillRect(0, 0, width, height);
-    f.globalCompositeOperation = 'destination-out';
-    f.imageSmoothingEnabled = true;
-    const a = view.project({ x: 0, y: 0 });
-    const b = view.project({ x: 100, y: 100 });
-    f.drawImage(this.mask, a.x, a.y, b.x - a.x, b.y - a.y);
-    ctx.drawImage(fog, 0, 0, width, height);
   }
 
   /**
@@ -639,22 +592,35 @@ export class CityMap {
    * markers, labels, routes and the other names. A name with no clear spot is left off rather
    * than drawn over something.
    */
-  private drawDistrictNames(ctx: CanvasRenderingContext2D, districts: District[], obstacles: Box[]): void {
+  private drawDistrictNames(districts: District[], obstacles: Box[]): void {
+    const { names } = this.els;
+    const ctx = this.measure;
     const fade = Math.min(1, Math.max(0, (NAMES_GONE - this.camera.zoom) / (NAMES_GONE - MIN_ZOOM)));
-    if (fade === 0) return;
+    const placed = new Set<string>();
+    const finish = () => {
+      for (const [id, label] of this.nameLabels) {
+        if (placed.has(id)) continue;
+        label.remove();
+        this.nameLabels.delete(id);
+      }
+      names.classList.toggle('is-moving', this.moving);
+    };
+    if (fade === 0 || !ctx) {
+      finish();
+      return;
+    }
     const base = Math.max(11, Math.min(22, Math.min(this.width, this.height) / 20));
     const taken = [...obstacles];
     const project = this.projector();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
     for (const district of districts) {
       const text = district.name.toUpperCase();
       const c = project(district);
       // Zoomed in, a district whose middle is off screen doesn't get its name pinned to the edge.
       if (c.x < 0 || c.y < 0 || c.x > this.width || c.y > this.height) continue;
       for (const size of [Math.round(base), Math.round(base * 0.72)]) {
+        const spacing = (size * 0.3).toFixed(1);
         ctx.font = `800 ${size}px Orbitron, "Share Tech Mono", sans-serif`;
-        if ('letterSpacing' in ctx) ctx.letterSpacing = `${(size * 0.3).toFixed(1)}px`;
+        if ('letterSpacing' in ctx) ctx.letterSpacing = `${spacing}px`;
         const textWidth = ctx.measureText(text).width;
         const boxAt = (p: Px) => ({ x: p.x - textWidth / 2, y: p.y - size / 2, w: textWidth, h: size });
         let spot: Px | null = null;
@@ -673,15 +639,21 @@ export class CityMap {
         }
         if (!spot) continue;
         taken.push(boxAt(spot));
-        ctx.shadowColor = district.theme.primary;
-        ctx.shadowBlur = this.moving ? 0 : 12;
-        ctx.fillStyle = hexToRgba(district.theme.primary, 0.42 * fade);
-        ctx.fillText(text, spot.x, spot.y);
+        let label = this.nameLabels.get(district.id);
+        if (!label) {
+          label = document.createElement('span');
+          label.className = 'district-name';
+          label.textContent = text;
+          names.append(label);
+          this.nameLabels.set(district.id, label);
+        }
+        const color = hexToRgba(district.theme.primary, 0.42 * fade);
+        label.style.cssText = `left:${spot.x}px;top:${spot.y}px;font-size:${size}px;letter-spacing:${spacing}px;padding-left:${spacing}px;color:${color}`;
+        placed.add(district.id);
         break;
       }
     }
-    ctx.shadowBlur = 0;
-    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+    finish();
   }
 
   /** The footer says what you're looking at: the whole city, or which block is in the middle. */
@@ -779,6 +751,23 @@ export class CityMap {
       const behind = polyline([]);
       behind.setAttribute('class', 'trip-done');
       lines.push(ahead, behind);
+    }
+
+    // The picked building, outlined over the fog.
+    const picked = this.target?.kind === 'building' ? this.target.id : null;
+    const hit = picked ? this.hits.find((h) => h.id === picked) : undefined;
+    if (hit) {
+      const width = Math.max(1.5, Math.min(3, this.scaleAt(this.camera.zoom) * 0.12));
+      for (const [kind, stroke] of [
+        ['pick-glow', width * 5],
+        ['pick-line', width],
+      ] as const) {
+        const outline = document.createElementNS(SVG_NS, 'path');
+        outline.setAttribute('d', selectionOutline(hit));
+        outline.setAttribute('class', kind);
+        outline.setAttribute('stroke-width', `${stroke}`);
+        lines.push(outline);
+      }
     }
 
     routes.setAttribute('viewBox', `0 0 ${this.width} ${this.height}`);
@@ -995,14 +984,6 @@ export function sameTarget(a: Target | null, b: Target | null): boolean {
   if (!a || !b || a.kind !== b.kind) return a === b;
   if (a.kind === 'point' && b.kind === 'point') return Math.hypot(a.point.x - b.point.x, a.point.y - b.point.y) < 0.01;
   return 'id' in a && 'id' in b && a.id === b.id;
-}
-
-/** Sizes a canvas to the stage at the screen's pixel density, leaving it alone if it already fits. */
-function fitCanvas(canvas: HTMLCanvasElement, width: number, height: number, dpr: number): void {
-  const w = Math.round(width * dpr);
-  const h = Math.round(height * dpr);
-  if (canvas.width !== w) canvas.width = w;
-  if (canvas.height !== h) canvas.height = h;
 }
 
 function polyline(points: Px[]): SVGPolylineElement {
