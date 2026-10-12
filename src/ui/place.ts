@@ -1,4 +1,4 @@
-import type { District, Location } from '../engine/types';
+import type { Building, District, Location } from '../engine/types';
 import { stripMarkup } from './markup';
 import { typewrite, type Typing } from './typewriter';
 
@@ -23,7 +23,7 @@ export interface PlaceHandlers {
   announce(text: string): void;
 }
 
-/** The strip under the map: where you are, or the destination you've picked. */
+/** The strip under the map: where you are, the destination you've picked, or a building you tapped. */
 export class PlacePanel {
   private typing: Typing | null = null;
 
@@ -38,7 +38,7 @@ export class PlacePanel {
 
   showCurrent(location: Location, district: District): void {
     const { els } = this;
-    els.root.classList.remove('is-destination');
+    els.root.classList.remove('is-destination', 'is-building');
     els.kicker.textContent = `You are here · ${district.name} · ${location.kindLabel}`;
     els.title.hidden = true;
     els.meta.hidden = true;
@@ -54,6 +54,7 @@ export class PlacePanel {
     const { els } = this;
     const distance = stops === 1 ? 'Next door' : `${stops} stops away`;
     this.typing?.finish();
+    els.root.classList.remove('is-building');
     els.root.classList.add('is-destination');
     els.kicker.textContent = `${distance} · ${district.name}`;
     els.title.textContent = location.name;
@@ -62,8 +63,28 @@ export class PlacePanel {
     els.meta.hidden = false;
     els.description.hidden = true;
     els.actions.hidden = false;
+    els.travel.hidden = false;
     els.travel.disabled = false;
     this.handlers.announce(`${location.name}, ${district.name}. ${distance}. Press Travel to go there.`);
+  }
+
+  /** A building picked out on the map: what it is and where. Nothing to do inside, yet. */
+  showBuilding(building: Building, district: District | undefined): void {
+    const { els } = this;
+    const where = district ? `Block ${building.block} · ${district.name}` : `Block ${building.block}`;
+    const height = building.floors > 1 ? `${building.floors} floors` : '';
+    this.typing?.finish();
+    els.root.classList.remove('is-destination');
+    els.root.classList.add('is-building');
+    els.kicker.textContent = where;
+    els.title.textContent = building.name;
+    els.title.hidden = false;
+    els.meta.textContent = [building.kindLabel, height].filter(Boolean).join(' · ');
+    els.meta.hidden = false;
+    els.description.hidden = true;
+    els.actions.hidden = false;
+    els.travel.hidden = true;
+    this.handlers.announce(`${building.name}. ${[building.kindLabel, height].filter(Boolean).join(', ')}. ${where}.`);
   }
 
   /** Locks the Travel button while a trip is underway. */

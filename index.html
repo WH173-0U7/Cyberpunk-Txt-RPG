@@ -36,6 +36,17 @@
           <nav id="map-nodes" class="map-nodes" aria-label="Places you know about"></nav>
           <div id="map-tracer" class="map-tracer" aria-hidden="true" hidden></div>
           <div id="transmissions" class="transmissions" aria-hidden="true"></div>
+          <div id="map-zoom" class="map-zoom" role="group" aria-label="Map zoom">
+            <button id="zoom-in" class="zoom-button" type="button" aria-label="Zoom in" title="Zoom in">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M2 8h12" /></svg>
+            </button>
+            <button id="zoom-out" class="zoom-button" type="button" aria-label="Zoom out" title="Zoom out">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h12" /></svg>
+            </button>
+            <button id="zoom-home" class="zoom-button" type="button" aria-label="Find yourself on the map" title="Find yourself">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5" /><path d="M8 0.5v3M8 12.5v3M0.5 8h3M12.5 8h3" /></svg>
+            </button>
+          </div>
         </div>
         <div id="place" class="place">
           <div class="scan-clip" aria-hidden="true"><div id="scan-beam" class="scan-beam"></div></div>

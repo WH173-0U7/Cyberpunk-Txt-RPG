@@ -66,10 +66,15 @@ const map = new CityMap(
     tracer: $('#map-tracer'),
     progress: $('#map-progress'),
     coords: $('#map-coords'),
+    controls: $('#map-zoom'),
+    zoomIn: $<HTMLButtonElement>('#zoom-in'),
+    zoomOut: $<HTMLButtonElement>('#zoom-out'),
+    zoomHome: $<HTMLButtonElement>('#zoom-home'),
   },
   {
     onSelect: (id) => select(id),
     onTravel: (id) => void travelTo(id),
+    onSelectBuilding: (id) => selectBuilding(id),
   },
   reducedMotion,
 );
@@ -96,6 +101,18 @@ function select(id: string | null): void {
   }
   map.select(id, route);
   place.showDestination(destination, districtOf(destination), route.length - 1, game.mapState.visited.has(id));
+}
+
+/** Picks out a building on the map (null: back to where you are). */
+function selectBuilding(id: string | null): void {
+  const building = id ? game.world.buildings.find((b) => b.id === id) : undefined;
+  if (!building) {
+    select(null);
+    return;
+  }
+  lastActivity = performance.now();
+  map.selectBuilding(building.id);
+  place.showBuilding(building, game.world.districts[building.district]);
 }
 
 /** Animates the trip on the map, then arrives. */
@@ -175,9 +192,12 @@ newCityButton.addEventListener('click', () => {
   startCity(randomSeed());
 });
 
-// Escape drops the current selection.
+// Escape drops the current selection; + and - zoom.
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && map.selection) select(null);
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.key === 'Escape' && (map.selection || map.buildingSelection)) select(null);
+  else if (event.key === '+' || event.key === '=') map.zoomBy(2);
+  else if (event.key === '-' || event.key === '_') map.zoomBy(0.5);
 });
 
 const seedInAddress = location.hash.slice(1).toLowerCase();

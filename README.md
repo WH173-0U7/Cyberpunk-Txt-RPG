@@ -29,13 +29,23 @@ Every game is a new, procedurally generated Night City: a different mix of distr
 (Watson, Westbrook, City Center, Heywood, Santo Domingo, Pacifica, sometimes the Badlands),
 different places in them, different names, weather and streets.
 
-- **City map**: a street grid of blocks, parks, desert and coastline, tinted by district.
+- **City map**: a street grid of city blocks, desert and coastline, tinted by district.
   Unexplored areas sit under fog that lifts around everywhere you've been, and every arrival
   reveals the places its streets lead to. The header counts how much you've mapped.
+- **Buildings**: every block is filled with its own buildings, zoned by district: corporate
+  towers downtown, apartment blocks and storefronts in Watson, factories and warehouses in
+  Santo Domingo, derelicts in Pacifica, shacks and containers out in the Badlands, plus parks,
+  plazas and parking lots. They stand up off the map with lit windows, neon signs, helipads,
+  holo-ads and rooftop clutter that fill in as you zoom.
+- **Zoom**: drag to pan; pinch, scroll or use the **+ / −** buttons to zoom; the target button
+  flies back to where you are. Zoomed out, tapping a block flies in to it. Close in, tapping a
+  building picks it out and the panel shows its name, block address and size. Buildings don't
+  do anything yet; they're there for what comes next.
 - **Travel**: tap a place to select it. The panel under the map shows how far it is and
   the route lights up; tap **Travel** (or the place again) and a tracer runs along the
   streets before you arrive.
-- **Panel**: where you are and what it's like, or the destination you've picked.
+- **Panel**: where you are and what it's like, the destination you've picked, or the building
+  you tapped.
 - **Transmissions**: the city's chatter types across the top of the map, then fades.
 - **New city**: generates a fresh city (tap twice to confirm).
 
@@ -43,7 +53,7 @@ Each city has a **seed**, shown under the map and in the page address (e.g. `#7f
 Opening the game with the same seed rebuilds exactly the same city, so you can share one.
 
 There's no typing. On a keyboard, Tab moves between places on the map, Enter selects and
-travels, and Esc clears the selection.
+travels, + and − zoom, and Esc clears the selection.
 
 ## How it's built
 
@@ -55,8 +65,8 @@ src/
   engine/   Game rules and state: the city generator, seeded random numbers, travel and
             discovery, ambient chatter. No DOM, fully unit-tested.
   data/     The content the generator builds cities from (city.ts).
-  ui/       City map (canvas city, routes, markers), place panel, transmissions, HUD,
-            typewriter, markup parser.
+  ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
+            ground, sea, buildings), place panel, transmissions, HUD, typewriter, markup parser.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.
 tests/      Vitest unit tests.
@@ -82,11 +92,15 @@ Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
 - **Kinds of place** (bar, ripperdoc, night market, rooftop, nomad camp…) have name templates,
   description sentences and ambient lines. In names, `{area}` becomes one of the district's
   neighborhoods and `{n}` a small number: `{area} Night Market` → `Kabuki Night Market`.
+- **Buildings**: each district's `zoning` weights what its blocks are built as, and `BUILDINGS`
+  gives every kind of building its label, height range and name templates (which can also use
+  `{corp}` and `{shop}`).
 
 A description is one sentence from the kind plus one mood sentence from the district, and has
 to fit in 160 characters, so keep sentences short. Add a new kind to `KINDS`, then list it in
 the `kinds` of every district it can appear in. `npm test` generates 500 cities and checks that
 every one is connected, has every place on its own street corner, routes that follow the
-streets, a coastline that never floods a place, unique names and descriptions that fit.
+streets, a coastline that never floods a place, unique names and descriptions that fit, and
+buildings that stay off the streets, out of the sea and out of each other's way.
 
 Text supports inline markup: `{h|highlight}`, `{w|danger}` and `{g|glitch}`.

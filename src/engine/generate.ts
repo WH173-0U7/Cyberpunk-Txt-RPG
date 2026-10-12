@@ -1,5 +1,6 @@
+import { generateBuildings, type BuildingContent, type ZoningPlan } from './buildings';
 import { createRng, hashSeed, type Rng } from './rng';
-import type { AmbientLine, CityLayout, District, Location, Point, Side, Theme, Weather, World } from './types';
+import type { AmbientLine, BuildingKind, CityLayout, District, Location, Point, Side, Theme, Weather, World } from './types';
 
 /** A district that may appear in a generated city. */
 export interface DistrictTemplate {
@@ -12,6 +13,8 @@ export interface DistrictTemplate {
   areas: string[];
   /** Kinds of location this district can contain (keys of `CityContent.kinds`). */
   kinds: string[];
+  /** What its blocks are built up with, as relative weights. */
+  zoning: Partial<Record<BuildingKind, number>>;
   /** "edge" districts sit at the border of the map as open desert, like the Badlands. */
   placement?: 'edge';
   /** Second sentences for descriptions, setting the district's mood. */
@@ -39,6 +42,7 @@ export interface CityContent {
   welcome: string;
   districts: DistrictTemplate[];
   kinds: Record<string, LocationKind>;
+  buildings: BuildingContent;
 }
 
 /** Longest description the location panel is designed for (raw text, markup included). */
@@ -110,13 +114,17 @@ export function generateWorld(seed: string, content: CityContent): World {
   linkLocations(rng, populated, districts, locations);
 
   const hasEdge = populated.some((t) => t.placement === 'edge');
+  const start = chooseStart(rng, populated, locations, content);
+  const layout: CityLayout = { avenues, streets, coast: chooseCoast(rng, Object.values(locations), hasEdge ? edgeSide : null) };
+  const plans: Record<string, ZoningPlan> = Object.fromEntries(populated.map((t) => [t.id, { zoning: t.zoning, areas: t.areas }]));
   return {
     seed,
-    start: chooseStart(rng, populated, locations, content),
+    start,
     welcome: content.welcome,
-    layout: { avenues, streets, coast: chooseCoast(rng, Object.values(locations), hasEdge ? edgeSide : null) },
+    layout,
     districts,
     locations,
+    buildings: generateBuildings(seed, layout, Object.values(districts), plans, content.buildings),
   };
 }
 

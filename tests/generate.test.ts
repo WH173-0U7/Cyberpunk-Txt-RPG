@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { CITY } from '../src/data/city';
+import { blockAt, STREET_HALF_WIDTH } from '../src/engine/buildings';
 import { distance, generateWorld, MAX_DESCRIPTION, streetPath } from '../src/engine/generate';
+import { seaTest } from '../src/engine/geography';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 import { stripMarkup } from '../src/ui/markup';
@@ -155,10 +157,108 @@ describe('generateWorld', () => {
   });
 });
 
+describe('buildings', () => {
+  it('fills the city with plenty of them', () => {
+    for (const world of worlds) expect(world.buildings.length, world.seed).toBeGreaterThan(150);
+  });
+
+  it('gives every building a unique id, a name and a valid size', () => {
+    for (const world of worlds) {
+      const ids = new Set(world.buildings.map((b) => b.id));
+      expect(ids.size, world.seed).toBe(world.buildings.length);
+      for (const b of world.buildings) {
+        expect(b.name, b.id).not.toMatch(/[{}]|^\s*$/);
+        expect(b.w).toBeGreaterThan(0.8);
+        expect(b.h).toBeGreaterThan(0.6);
+        const style = CITY.buildings.styles[b.kind];
+        expect(b.floors, b.id).toBeGreaterThanOrEqual(style.floors[0]);
+        expect(b.floors, b.id).toBeLessThanOrEqual(style.floors[1]);
+        expect(world.districts[b.district], b.id).toBeDefined();
+      }
+    }
+  });
+
+  it('never stacks buildings on top of each other', () => {
+    for (const world of worlds.slice(0, 100)) {
+      const byBlock = new Map<string, typeof world.buildings>();
+      for (const b of world.buildings) byBlock.set(b.block, [...(byBlock.get(b.block) ?? []), b]);
+      for (const group of byBlock.values()) {
+        for (let i = 0; i < group.length; i++) {
+          for (let j = i + 1; j < group.length; j++) {
+            const a = group[i];
+            const c = group[j];
+            if (!a || !c) continue;
+            const overlapping = a.x < c.x + c.w - 0.01 && c.x < a.x + a.w - 0.01 && a.y < c.y + c.h - 0.01 && c.y < a.y + a.h - 0.01;
+            expect(overlapping, `${world.seed}: ${a.id} overlaps ${c.id}`).toBe(false);
+          }
+        }
+      }
+    }
+  });
+
+  it('keeps buildings off the streets and out of the sea', () => {
+    const problems: string[] = [];
+    for (const world of worlds.slice(0, 150)) {
+      const inSea = seaTest(world.layout, world.seed);
+      for (const b of world.buildings) {
+        for (const x of world.layout.avenues) {
+          if (!(b.x + b.w <= x - STREET_HALF_WIDTH + 0.01 || b.x >= x + STREET_HALF_WIDTH - 0.01)) problems.push(`${world.seed}: ${b.id} on avenue ${x}`);
+        }
+        for (const y of world.layout.streets) {
+          if (!(b.y + b.h <= y - STREET_HALF_WIDTH + 0.01 || b.y >= y + STREET_HALF_WIDTH - 0.01)) problems.push(`${world.seed}: ${b.id} on street ${y}`);
+        }
+        const corners = [
+          { x: b.x, y: b.y },
+          { x: b.x + b.w, y: b.y + b.h },
+          { x: b.x + b.w, y: b.y },
+          { x: b.x, y: b.y + b.h },
+        ];
+        if (corners.some(inSea)) problems.push(`${world.seed}: ${b.id} in the sea`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('finds the block a point is in, matching every building address', () => {
+    for (const world of worlds.slice(0, 100)) {
+      for (const b of world.buildings) {
+        const block = blockAt(world.layout, { x: b.x + b.w / 2, y: b.y + b.h / 2 });
+        expect(block?.address, b.id).toBe(b.block);
+        if (!block) continue;
+        expect(b.x).toBeGreaterThanOrEqual(block.x0);
+        expect(b.x + b.w).toBeLessThanOrEqual(block.x1);
+        expect(b.y).toBeGreaterThanOrEqual(block.y0);
+        expect(b.y + b.h).toBeLessThanOrEqual(block.y1);
+      }
+    }
+    const layout = { avenues: [30, 60], streets: [50], coast: null };
+    expect(blockAt(layout, { x: 0, y: 0 })?.address).toBe('A1');
+    expect(blockAt(layout, { x: 30, y: 50 })?.address).toBe('B2');
+    expect(blockAt(layout, { x: 100, y: 100 })?.address).toBe('C2');
+    expect(blockAt(layout, { x: -1, y: 20 })).toBeNull();
+  });
+
+  it('builds the Badlands out of shacks and containers, and keeps them sparse', () => {
+    for (const world of worlds) {
+      const desert = world.buildings.filter((b) => world.districts[b.district]?.terrain === 'desert');
+      for (const b of desert) expect(['shack', 'container']).toContain(b.kind);
+      const city = world.buildings.filter((b) => world.districts[b.district]?.terrain === 'city');
+      for (const b of city) expect(['shack', 'container']).not.toContain(b.kind);
+    }
+  });
+});
+
 describe('city content', () => {
   it('only uses location kinds that exist', () => {
     for (const district of CITY.districts) {
       for (const kind of district.kinds) expect(CITY.kinds[kind], `${district.id}: ${kind}`).toBeDefined();
+    }
+  });
+
+  it('zones every district with at least one kind of building', () => {
+    for (const district of CITY.districts) {
+      const weights = Object.values(district.zoning).filter((w) => (w ?? 0) > 0);
+      expect(weights.length, district.id).toBeGreaterThan(0);
     }
   });
 

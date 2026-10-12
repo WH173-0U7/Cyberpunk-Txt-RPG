@@ -27,6 +27,7 @@ const world: World = {
   start: 'alley',
   welcome: 'hello',
   layout: { avenues: [50], streets: [50], coast: null },
+  buildings: [],
   districts: {
     test: { id: 'test', name: 'Testville', theme: { primary: '#111111', secondary: '#222222' }, terrain: 'city', x: 50, y: 50 },
   },

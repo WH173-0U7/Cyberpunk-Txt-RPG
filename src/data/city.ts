@@ -1,3 +1,4 @@
+import type { BuildingContent } from '../engine/buildings';
 import type { CityContent, DistrictTemplate, LocationKind } from '../engine/generate';
 
 /*
@@ -22,6 +23,7 @@ const DISTRICTS: DistrictTemplate[] = [
     weather: ['rain', 'rain', 'drizzle'],
     areas: ['Kabuki', 'Little China', 'Northside', 'Waterfront'],
     kinds: ['market', 'bar', 'ripperdoc', 'alley', 'megabuilding', 'noodle', 'metro', 'docks'],
+    zoning: { apartments: 4, shops: 3, megabuilding: 1, warehouse: 1, derelict: 0.6, lot: 0.6, park: 0.3 },
     atmosphere: {
       outdoor: [
         'Rain hammers everything, and the gutters run with neon.',
@@ -49,6 +51,7 @@ const DISTRICTS: DistrictTemplate[] = [
     weather: ['drizzle', 'drizzle', 'clear'],
     areas: ['Japantown', 'Charter Hill', 'North Oak'],
     kinds: ['club', 'shrine', 'noodle', 'rooftop', 'bar', 'metro', 'alley', 'market'],
+    zoning: { shops: 4, apartments: 2, tower: 1.5, park: 0.8, plaza: 0.6 },
     atmosphere: {
       outdoor: [
         'Holographic koi swim through the air above the street.',
@@ -76,6 +79,7 @@ const DISTRICTS: DistrictTemplate[] = [
     weather: ['clear', 'clear', 'drizzle'],
     areas: ['Corpo Plaza', 'Downtown'],
     kinds: ['plaza', 'rooftop', 'metro', 'club', 'bar', 'ripperdoc'],
+    zoning: { tower: 5, plaza: 1.2, shops: 1, park: 0.5, lot: 0.4 },
     atmosphere: {
       outdoor: [
         'Corpo security drones hum overhead, scanning faces.',
@@ -103,6 +107,7 @@ const DISTRICTS: DistrictTemplate[] = [
     weather: ['clear', 'haze'],
     areas: ['Wellsprings', 'The Glen', 'Vista del Rey'],
     kinds: ['bar', 'noodle', 'shrine', 'alley', 'megabuilding', 'market', 'ripperdoc'],
+    zoning: { apartments: 4, shops: 2, park: 0.8, lot: 0.8, megabuilding: 0.4 },
     atmosphere: {
       outdoor: [
         '{w|Valentinos} murals cover the walls, saints in gold and chrome.',
@@ -127,6 +132,7 @@ const DISTRICTS: DistrictTemplate[] = [
     weather: ['haze', 'dust', 'clear'],
     areas: ['Arroyo', 'Rancho Coronado'],
     kinds: ['factory', 'junkyard', 'megabuilding', 'ripperdoc', 'bar', 'docks', 'noodle'],
+    zoning: { factory: 3, warehouse: 3, apartments: 1.5, lot: 1, megabuilding: 0.8 },
     atmosphere: {
       outdoor: ['Smokestacks paint the sky a sick orange.', 'Power lines buzz and spark overhead.', 'The air tastes like rust and diesel.'],
       indoor: ['Machinery thumps through the walls like a heartbeat.', 'Every surface wears a thin coat of grime.'],
@@ -150,6 +156,7 @@ const DISTRICTS: DistrictTemplate[] = [
     weather: ['rain', 'drizzle'],
     areas: ['Coastview', 'West Wind'],
     kinds: ['boardwalk', 'alley', 'megabuilding', 'market', 'bar', 'club'],
+    zoning: { derelict: 3, apartments: 2, shops: 1, lot: 1, park: 0.4 },
     atmosphere: {
       outdoor: ['Half-finished resorts rot along the shore.', '{w|Voodoo Boys} graffiti marks the territory.', 'Salt wind blows trash across the empty streets.'],
       indoor: ['The ocean booms against the seawall outside.', 'Water drips through the ceiling into a row of buckets.'],
@@ -170,6 +177,7 @@ const DISTRICTS: DistrictTemplate[] = [
     weather: ['dust'],
     areas: ['Rocky Ridge', 'Red Peaks', 'Jackson Plains'],
     kinds: ['checkpoint', 'gas_station', 'nomad_camp', 'junkyard'],
+    zoning: { shack: 1, container: 1 },
     placement: 'edge',
     atmosphere: {
       outdoor: ['A dry wind full of grit stings your face.', 'Night City is a smear of light on the horizon.', 'Nothing grows out here but rust and rumors.'],
@@ -341,8 +349,44 @@ const KINDS: Record<string, LocationKind> = {
   },
 };
 
+const BUILDINGS: BuildingContent = {
+  styles: {
+    tower: { label: 'Corporate tower', floors: [40, 96], names: ['{corp} Tower', '{corp} Plaza One', '{corp} Spire', '{corp} Regional HQ'] },
+    apartments: { label: 'Apartment block', floors: [8, 26], names: ['{area} Block {n}', '{area} Residences', '{area} Heights', 'Unit Block {n}'] },
+    megabuilding: { label: 'Megabuilding', floors: [60, 110], names: ['Megabuilding H{n}', '{area} Arcology', 'Megabuilding {n}'] },
+    shops: { label: 'Storefront', floors: [2, 5], names: ['{shop}', '{area} {shop}', 'Neon {shop}', '24/7 {shop}'] },
+    warehouse: { label: 'Warehouse', floors: [2, 4], names: ['Warehouse {n}', '{corp} Depot', 'Cold Storage {n}', 'Freight Hall {n}'] },
+    factory: { label: 'Factory', floors: [3, 7], names: ['{corp} Assembly {n}', '{area} Works', 'Fab Plant {n}', 'Refinery {n}'] },
+    derelict: { label: 'Abandoned building', floors: [3, 16], names: ['Derelict Block {n}', 'Unfinished Hotel', 'Gutted Tower {n}', 'Condemned Flats {n}'] },
+    park: { label: 'Park', floors: [0, 0], names: ['{area} Park', 'Memorial Garden', 'Pocket Park {n}'] },
+    plaza: { label: 'Plaza', floors: [0, 0], names: ['{area} Square', '{corp} Plaza', 'Founders Plaza'] },
+    lot: { label: 'Parking lot', floors: [0, 0], names: ['Parking Lot {n}', 'Car Park {n}', 'Impound Lot {n}'] },
+    shack: { label: 'Shack', floors: [1, 1], names: ['Scrap Shack', 'Squatter Hut', 'Water Still', 'Signal Shack'] },
+    container: { label: 'Shipping container', floors: [1, 1], names: ['Container {n}', 'Smuggler Cache', 'Rusted Container'] },
+  },
+  corps: ['Arasaka', 'Militech', 'Kang Tao', 'Biotechnica', 'Petrochem', 'Zetatech', 'Kiroshi', 'Night Corp', 'Trauma Team'],
+  shops: [
+    'Noodle Bar',
+    'Pawn Shop',
+    'Braindance Parlor',
+    'Gun Shop',
+    'Pachinko Hall',
+    'Laundromat',
+    'Capsule Hotel',
+    'Arcade',
+    'Bodega',
+    'Cyberware Outlet',
+    'Synth-Meat Grill',
+    'Tattoo Studio',
+    'Repair Shop',
+    'Karaoke Box',
+    'Pharmacy',
+  ],
+};
+
 export const CITY: CityContent = {
-  welcome: 'Welcome to Night City, choom. Tap a place on the map, then hit {h|Travel}.',
+  welcome: 'Welcome to Night City, choom. Tap a place, then hit {h|Travel}. Tap a block to zoom in on its buildings.',
   districts: DISTRICTS,
   kinds: KINDS,
+  buildings: BUILDINGS,
 };
