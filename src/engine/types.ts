@@ -239,7 +239,8 @@ export interface Trip extends TripPlan {
 }
 
 /** How a transmission should be presented. */
-export type Tone = 'narrative' | 'system' | 'ambient' | 'error';
+/** `talk`: something a person said to the player; it's on their card, so the feed can skip it while that's open. */
+export type Tone = 'narrative' | 'system' | 'ambient' | 'error' | 'talk';
 
 /** Everything the engine announces. The UI and effects layers listen to these. */
 export type GameEvents = {

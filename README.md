@@ -126,10 +126,14 @@ own.
   around them, each spoke labeled with the relation or "?" (dashed) when all you know is
   that they're connected; tap a name to open that person's card (even if they're not here,
   then you can only look). The people you know of are listed under everyone here.
-- **The conversation**: everything said between you and a person sits under their card,
-  your lines and theirs, newest at the bottom and scrolling inside, so the choices above
-  stay where they are: what you asked, what they answered, what you gave, what you said
-  when you insulted them, and what it cost you when they came to collect.
+- **The conversation**: a person's card is a terminal: a short header (who they are as far
+  as you know, how they feel about you, what they're doing; what you know of them folded to
+  one line, tap to unfold), the transcript filling the rest (your lines after a `›`, theirs
+  under their name, newest at the bottom), and one row of commands at the bottom: **Talk**,
+  **Ask** (unfolds the questions and the people you can ask about), **Give** (what you
+  carry), **Web** (their web, unfolded in place) and **⋯** (insult, rob). A command's
+  choices show only while it's open. While the card is open, what they say stays off the
+  map's feed; it's on the card.
 - **Crossing people**: **Insult** someone and they hold it against you (a temper shoves you
   into the wall, which costs energy); **Rob** them and you take a share of their eddies. Every
   such thing spreads: the victim holds a grudge, so do their spouse, parents, children,

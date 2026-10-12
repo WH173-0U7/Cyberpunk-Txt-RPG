@@ -513,7 +513,7 @@ export class Game {
     this.logged(id, 'you', fill(rng.pick(lines.you.talk), vars), now);
     if (stance === 'hostile') {
       const line = fill(rng.pick(lines.refuse), vars);
-      this.say(line);
+      this.say(line, 'talk');
       this.logged(id, 'them', line, now);
       changeStanding(this.society, id, { met: true }, society, timeScale, now);
       this.events.emit('societyChanged', { people: [id] });
@@ -521,14 +521,14 @@ export class Game {
     }
     if (standing.lastTalkAt && now - standing.lastTalkAt < (society.talk.cooldownMinutes * 60_000) / timeScale) {
       const line = fill(rng.pick(lines.talkedOut), vars);
-      this.say(line);
+      this.say(line, 'talk');
       this.logged(id, 'them', line, now);
       this.events.emit('societyChanged', { people: [id] });
       return true;
     }
     const talk = talkLines({ stance, reveal: standing.rapport >= society.talk.revealAt, grudge: standing.grudge }, vars, lines, rng);
     for (const line of talk.said) {
-      this.say(`${person.given}: "${line}"`);
+      this.say(`${person.given}: "${line}"`, 'talk');
       this.logged(id, 'them', line, now);
     }
     const learned = [id];
@@ -582,14 +582,14 @@ export class Game {
     this.logged(id, 'you', fill(rng.pick(lines.you.askAbout), vars), now);
     if (!this.answers(stance, rng)) {
       const line = fill(rng.pick(lines.ask.refuse), vars);
-      this.say(line);
+      this.say(line, 'talk');
       this.logged(id, 'them', line, now);
       changeStanding(this.society, id, { met: true }, society, timeScale, now);
       this.events.emit('societyChanged', { people: [id] });
       return true;
     }
     const line = fill(rng.pick(tie ? lines.ask.knows : lines.ask.unknown), vars);
-    this.say(`${person.given}: "${line}"`);
+    this.say(`${person.given}: "${line}"`, 'talk');
     this.logged(id, 'them', line, now);
     if (tie) {
       learnLink(this.society, id, aboutId, tie.kind, 'asked', now);
@@ -621,7 +621,7 @@ export class Game {
     this.logged(id, 'you', `"${lines.questions[fact]}"`, now);
     if (!this.answers(stance, rng)) {
       const line = fill(rng.pick(stance === 'hostile' ? lines.refuse : lines.ask.refuse), vars);
-      this.say(line);
+      this.say(line, 'talk');
       this.logged(id, 'them', line, now);
       changeStanding(this.society, id, { met: true }, society, timeScale, now);
       this.events.emit('societyChanged', { people: [id] });
@@ -629,7 +629,7 @@ export class Game {
     }
     const pool = fact === 'job' && !person.job.building && !person.gang ? lines.facts.freelance : fact === 'home' && !person.home ? lines.facts.homeless : fact === 'hates' && !person.hates ? lines.facts.nobody : lines.facts[fact];
     const line = fill(rng.pick(pool), vars);
-    this.say(`${person.given}: "${line}"`);
+    this.say(`${person.given}: "${line}"`, 'talk');
     this.logged(id, 'them', line, now);
     const news = learnFact(this.society, id, fact);
     // Asked what they like, they say what they eat and what they drink.
@@ -653,7 +653,7 @@ export class Game {
     const rng = createRng(`${this.world.seed}:${id}:gift:${now}`);
     if (stance === 'hostile') {
       const line = fill(rng.pick(lines.gift.refuse), vars);
-      this.say(line);
+      this.say(line, 'talk');
       this.logged(id, 'you', fill(rng.pick(lines.you.gift), vars), now);
       this.logged(id, 'them', line, now);
       this.events.emit('societyChanged', { people: [id] });
@@ -667,7 +667,7 @@ export class Game {
     const recent = standing.lastGiftAt && now - standing.lastGiftAt < (24 * HOUR) / timeScale;
     const gain = Math.round((favorite ? society.gift.favorite : society.gift.base) * (recent ? 0.5 : 1) * this.charisma().bonus);
     const thanks = fill(rng.pick(favorite ? lines.gift.favorite : lines.gift.thanks), vars);
-    this.say(`${person.given}: "${thanks}"`);
+    this.say(`${person.given}: "${thanks}"`, 'talk');
     learnOf(this.society, id, 'met');
     this.logged(id, 'you', fill(rng.pick(lines.you.gift), vars), now);
     this.logged(id, 'them', thanks, now);
@@ -692,7 +692,7 @@ export class Game {
     changeStanding(this.society, id, { met: true, rapport: -society.insult.rapport }, society, timeScale, now);
     this.logged(id, 'you', fill(rng.pick(lines.you.insult), vars), now);
     const reply = fill(rng.pick(lines.insult.reply), vars);
-    this.say(reply);
+    this.say(reply, 'talk');
     this.logged(id, 'them', reply, now);
     if (person.traits.temper > 0.55 && rng.chance(person.traits.temper)) {
       const shove = fill(rng.pick(lines.insult.shove), vars);
