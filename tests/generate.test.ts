@@ -157,6 +157,79 @@ describe('generateWorld', () => {
   });
 });
 
+describe('canon first', () => {
+  const realNames = new Set(CITY.districts.flatMap((d) => (d.landmarks ?? []).map((l) => l.name)));
+
+  it('uses real Night City places before making any up', () => {
+    for (const world of worlds) {
+      for (const template of CITY.districts) {
+        const places = Object.values(world.locations).filter((l) => l.district === template.id);
+        const landmarks = template.landmarks ?? [];
+        const real = places.filter((l) => landmarks.some((m) => m.name === l.name));
+        expect(real.length, `${world.seed} ${template.id}`).toBe(Math.min(places.length, landmarks.length));
+      }
+    }
+  });
+
+  it('gives real places their own description and kind', () => {
+    for (const world of worlds) {
+      for (const location of Object.values(world.locations)) {
+        const landmark = CITY.districts.flatMap((d) => d.landmarks ?? []).find((m) => m.name === location.name);
+        if (!landmark) continue;
+        expect(location.description.startsWith(landmark.description), location.name).toBe(true);
+        expect(location.kind).toBe(landmark.kind);
+      }
+    }
+  });
+
+  it('never gives a made-up place a real place name', () => {
+    for (const world of worlds) {
+      for (const location of Object.values(world.locations)) {
+        if (!realNames.has(location.name)) continue;
+        const home = CITY.districts.find((d) => d.landmarks?.some((m) => m.name === location.name));
+        expect(home?.id, `${world.seed} ${location.name}`).toBe(location.district);
+      }
+    }
+  });
+
+  it('lays the city out like the real Night City', () => {
+    const mean = (world: World, id: string) => world.districts[id];
+    for (const world of worlds) {
+      expect(world.layout.coast?.side, world.seed).toBe('west');
+      const center = mean(world, 'city_center');
+      const watson = mean(world, 'watson');
+      const pacifica = mean(world, 'pacifica');
+      const westbrook = mean(world, 'westbrook');
+      const heywood = mean(world, 'heywood');
+      const badlands = mean(world, 'badlands');
+      if (center && watson) expect(watson.y, `${world.seed} Watson is north`).toBeLessThan(center.y);
+      if (center && heywood) expect(heywood.y, `${world.seed} Heywood is south`).toBeGreaterThan(center.y);
+      if (center && westbrook) expect(westbrook.x, `${world.seed} Westbrook is east`).toBeGreaterThan(center.x);
+      if (center && pacifica) {
+        expect(pacifica.x, `${world.seed} Pacifica is west`).toBeLessThan(center.x);
+        expect(pacifica.y, `${world.seed} Pacifica is south`).toBeGreaterThan(center.y);
+      }
+      if (badlands) {
+        for (const other of Object.values(world.districts)) {
+          if (other !== badlands) expect(badlands.x, `${world.seed} the Badlands are east of ${other.id}`).toBeGreaterThan(other.x);
+        }
+      }
+    }
+  });
+
+  it('raises exactly one Arasaka Tower downtown, taller than anything else there', () => {
+    for (const world of worlds) {
+      const named = world.buildings.filter((b) => b.name === 'Arasaka Tower');
+      const towers = world.buildings.filter((b) => b.district === 'city_center' && b.kind === 'tower');
+      expect(named.length, world.seed).toBe(towers.length ? 1 : 0);
+      const tower = named[0];
+      if (!tower) continue;
+      expect(tower.district).toBe('city_center');
+      expect(tower.floors).toBe(Math.max(...towers.map((b) => b.floors)));
+    }
+  });
+});
+
 describe('buildings', () => {
   it('fills the city with plenty of them', () => {
     for (const world of worlds) expect(world.buildings.length, world.seed).toBeGreaterThan(150);

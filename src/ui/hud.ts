@@ -4,7 +4,7 @@ const WEATHER_LABEL: Record<Weather, string> = {
   rain: 'Heavy rain',
   drizzle: 'Drizzle',
   dust: 'Dust storm',
-  haze: 'Indoors',
+  haze: 'Hazy',
   clear: 'Clear',
 };
 

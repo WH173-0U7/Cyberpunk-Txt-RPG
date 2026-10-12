@@ -27,7 +27,15 @@ Other scripts:
 
 Every game is a new, procedurally generated Night City: a different mix of districts
 (Watson, Westbrook, City Center, Heywood, Santo Domingo, Pacifica, sometimes the Badlands),
-different places in them, different names, weather and streets.
+different places in them, weather and streets.
+
+**Canon first.** Districts sit where they are in the real Night City (Watson north, City
+Center in the middle, Westbrook east, Heywood and Santo Domingo south, Pacifica south-west,
+the Pacific to the west and the Badlands to the east), nudged a little each game. Each
+district fills up with real places from Cyberpunk 2077 first (the Afterlife, Tom's Diner,
+Viktor's Clinic, Lizzie's Bar, Jig-Jig Street, Konpeki Plaza, El Coyote Cojo, the Sunset
+Motel…) and only makes up places once it runs out of those. Neighborhoods, gangs,
+corporations and street terms all come from the game. Arasaka Tower always stands downtown.
 
 - **City map**: a street grid of city blocks, desert and coastline, tinted by district.
   Unexplored areas sit under fog that lifts around everywhere you've been, and every arrival
@@ -35,8 +43,8 @@ different places in them, different names, weather and streets.
 - **Buildings**: every block is filled with its own buildings, zoned by district: corporate
   towers downtown, apartment blocks and storefronts in Watson, factories and warehouses in
   Santo Domingo, derelicts in Pacifica, shacks and containers out in the Badlands, plus parks,
-  plazas and parking lots. They stand up off the map with lit windows, neon signs, helipads,
-  holo-ads and rooftop clutter that fill in as you zoom.
+  plazas and parking lots. They're kept simple: they stand up off the map with lit windows,
+  neon edges, shop signs, holo-ads and red warning lights on the towers.
 - **Zoom**: drag to pan; pinch, scroll or use the **+ / −** buttons to zoom; the target button
   flies back to where you are. Zoomed out, tapping a block flies in to it. Close in, tapping a
   building picks it out and the panel shows its name, block address and size. Buildings don't
@@ -87,8 +95,10 @@ Effects that rely on motion are toned down when the OS "reduce motion" setting i
 
 Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
 
-- **Districts** have colors, weather options, neighborhood names, the kinds of place they
-  can contain, mood sentences and ambient lines (separate indoor and outdoor sets).
+- **Districts** have colors, weather options, where they sit on the map (`anchor`), their
+  real neighborhoods, their real places (`landmarks`, used before anything is made up), the
+  kinds of place they can make up, mood sentences and ambient lines (separate indoor and
+  outdoor sets).
 - **Kinds of place** (bar, ripperdoc, night market, rooftop, nomad camp…) have name templates,
   description sentences and ambient lines. In names, `{area}` becomes one of the district's
   neighborhoods and `{n}` a small number: `{area} Night Market` → `Kabuki Night Market`.
