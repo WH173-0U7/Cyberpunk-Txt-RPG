@@ -1,4 +1,5 @@
 import { EventBus } from './events';
+import type { Progress } from './save';
 import type { AmbientLine, District, GameEvents, Location, MapState, Tone, World } from './types';
 
 /**
@@ -12,9 +13,19 @@ export class Game {
   private readonly discovered = new Set<string>();
   private lastAmbient: AmbientLine | null = null;
   private fullyMapped = false;
+  private readonly resumed: boolean;
 
-  constructor(readonly world: World) {
-    this.current = this.locationById(world.start);
+  /** A new game at the city's start, or, given saved progress, right where the player left off. */
+  constructor(
+    readonly world: World,
+    progress?: Progress,
+  ) {
+    this.current = this.locationById(progress?.current ?? world.start);
+    this.resumed = Boolean(progress);
+    if (!progress) return;
+    for (const id of progress.visited) this.visit(this.locationById(id));
+    for (const id of progress.discovered) this.discovered.add(this.locationById(id).id);
+    this.fullyMapped = this.visited.size === Object.keys(world.locations).length;
   }
 
   get location(): Location {
@@ -25,9 +36,9 @@ export class Game {
     return { current: this.current.id, visited: new Set(this.visited), discovered: new Set(this.discovered) };
   }
 
-  /** Greets the player and drops them into the starting location. */
+  /** Greets the player (or welcomes them back) and drops them into their location. */
   start(): void {
-    this.say(this.world.welcome);
+    this.say(this.resumed ? this.world.welcomeBack : this.world.welcome);
     this.arrive([this.current.id], null);
   }
 

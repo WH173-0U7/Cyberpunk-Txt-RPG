@@ -95,6 +95,8 @@ export interface World {
   seed: string;
   start: string;
   welcome: string;
+  /** Said instead of `welcome` when a saved game picks up again. */
+  welcomeBack: string;
   layout: CityLayout;
   districts: Record<string, District>;
   locations: Record<string, Location>;

@@ -391,28 +391,28 @@ button {
   color: var(--secondary);
 }
 
-.map-button {
-  min-height: 32px;
-  padding: 4px 12px;
-  border: 1px solid color-mix(in srgb, var(--secondary) 55%, transparent);
-  background: color-mix(in srgb, var(--secondary) 10%, transparent);
+.save-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   color: var(--secondary);
-  font-size: 10.5px;
+  font-size: 10px;
   letter-spacing: 0.18em;
-  text-transform: uppercase;
-  cursor: pointer;
-  clip-path: var(--notch);
-  transition: background 0.15s;
+  opacity: 0.6;
+  cursor: default;
 }
-.map-button:hover,
-.map-button:focus-visible {
-  background: color-mix(in srgb, var(--secondary) 24%, transparent);
+/* Signal light */
+.save-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
 }
-.map-button.is-armed {
-  border-color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 25%, transparent);
-  color: #fff;
-  animation: armed 0.6s steps(2) infinite;
+.save-status.is-failed {
+  color: var(--danger);
+  opacity: 1;
 }
 
 .map-stage {
@@ -1031,12 +1031,6 @@ button {
   }
 }
 
-@keyframes armed {
-  50% {
-    opacity: 0.6;
-  }
-}
-
 /* ───────────── Small screens ───────────── */
 
 @media (max-width: 600px) {
@@ -1123,8 +1117,7 @@ button {
   .route.is-live,
   .route-plan,
   .node.is-current .node-mark::after,
-  .transmission::before,
-  .map-button.is-armed {
+  .transmission::before {
     animation: none;
   }
   .map-sweep {

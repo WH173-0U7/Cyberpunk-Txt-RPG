@@ -1,9 +1,10 @@
 import './style.css';
 import { CITY } from './data/city';
 import { Game } from './engine/game';
-import { generateWorld } from './engine/generate';
+import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import { randomSeed } from './engine/rng';
-import type { District, Location } from './engine/types';
+import { createSave, readSave, resume, type Progress } from './engine/save';
+import type { District, Location, MapState, World } from './engine/types';
 import { GlitchText } from './fx/glitch';
 import { ScreenFx } from './fx/screen';
 import { applyTheme, resolveTheme } from './fx/theme';
@@ -11,6 +12,7 @@ import { WeatherFx } from './fx/weather';
 import { Hud } from './ui/hud';
 import { CityMap } from './ui/map';
 import { PlacePanel } from './ui/place';
+import { saveSlot } from './ui/save-slot';
 import { Transmissions } from './ui/transmissions';
 
 function $<T extends Element = HTMLElement>(selector: string): T {
@@ -28,7 +30,7 @@ const registerGlitch = (el: HTMLElement, text: string) => glitchText.register(el
 const hud = new Hud({ sign: $('#hud-sign'), path: $('#hud-path'), weather: $('#hud-weather'), clock: $('#hud-clock') });
 const mapStage = $('#map-stage');
 const seedLabel = $('#map-seed');
-const newCityButton = $<HTMLButtonElement>('#new-city');
+const saveStatus = $('#save-status');
 
 const transmissions = new Transmissions({ root: $('#transmissions'), announcer: $('#announcer') }, registerGlitch, reducedMotion);
 
@@ -122,10 +124,8 @@ async function travelTo(id: string): Promise<void> {
   traveling = true;
   lastActivity = performance.now();
   place.setTraveling(true);
-  const trip = game;
   await map.animateRoute(route);
-  // A new city may have been generated while the tracer was moving.
-  if (trip === game) game.travel(id);
+  game.travel(id);
   place.setTraveling(false);
   traveling = false;
 }
@@ -147,7 +147,10 @@ function wire(g: Game): void {
     if (from) screen.glitch();
   });
 
-  g.events.on('mapChanged', (state) => map.update(state));
+  g.events.on('mapChanged', (state) => {
+    map.update(state);
+    save(g.world.seed, state);
+  });
 
   g.events.on('fx', ({ effect }) => {
     screen.play(effect);
@@ -155,42 +158,58 @@ function wire(g: Game): void {
   });
 }
 
-/** Generates a city from the seed and drops the player into it. */
-function startCity(seed: string): void {
-  game = new Game(generateWorld(seed, CITY));
+/** Saves after every move, and lets the player see that it did. */
+function save(seed: string, state: MapState): void {
+  const saved = saveSlot.write(createSave(seed, state, GENERATOR_VERSION));
+  saveStatus.textContent = saved ? 'Saved' : 'Not saved';
+  saveStatus.classList.toggle('is-failed', !saved);
+  saveStatus.title = saved
+    ? 'Your progress saves on this device after every move.'
+    : "This browser won't let the game save (a private window, maybe). Progress will be lost when you leave.";
+  if (saved && !reducedMotion) {
+    saveStatus.animate(
+      [
+        { opacity: 1, textShadow: '0 0 8px currentColor' },
+        { opacity: 0.6, textShadow: '0 0 0 transparent' },
+      ],
+      { duration: 1400, easing: 'ease-out' },
+    );
+  }
+}
+
+/** Drops the player into a city: a new game, or a saved one picking up where it left off. */
+function begin(world: World, progress?: Progress, notice?: string): void {
+  game = new Game(world, progress);
   wire(game);
-  transmissions.clear();
-  map.setWorld(game.world);
-  seedLabel.textContent = `Seed ${seed.toUpperCase()}`;
+  map.setWorld(world);
+  seedLabel.textContent = `Seed ${world.seed.toUpperCase()}`;
   try {
-    // Put the seed in the address so the same city can be reopened or shared.
-    history.replaceState(null, '', `#${seed}`);
+    // Show the seed in the address, so a new player can be sent to the same city.
+    history.replaceState(null, '', `#${world.seed}`);
   } catch {
     // Some hosts don't let the page change its address; the game works without it.
   }
+  if (notice) game.say(notice, 'system');
   game.start();
 }
 
-// A new city takes two taps, so a stray one can't throw away the current city.
-let confirmTimer: number | undefined;
-function resetNewCityButton(): void {
-  window.clearTimeout(confirmTimer);
-  confirmTimer = undefined;
-  newCityButton.textContent = 'New city';
-  newCityButton.classList.remove('is-armed');
-}
-newCityButton.addEventListener('click', () => {
-  if (confirmTimer === undefined) {
-    newCityButton.textContent = 'Tap to confirm';
-    newCityButton.classList.add('is-armed');
-    confirmTimer = window.setTimeout(resetNewCityButton, 3000);
+/**
+ * Picks up the saved game on this device if there is one. Otherwise starts the city in the
+ * address (a shared link) or a brand new one.
+ */
+function boot(): void {
+  const saved = readSave(saveSlot.load());
+  if (saved) {
+    const world = generateWorld(saved.seed, CITY);
+    const progress = saved.generator === GENERATOR_VERSION ? resume(world, saved) : null;
+    if (progress) begin(world, progress);
+    // The game has changed how cities are built since this save, so its places no longer line up.
+    else begin(world, undefined, 'Night City has changed since you were last here. Your map starts over.');
     return;
   }
-  resetNewCityButton();
-  lastActivity = performance.now();
-  screen.glitch();
-  startCity(randomSeed());
-});
+  const seedInAddress = location.hash.slice(1).toLowerCase();
+  begin(generateWorld(/^[0-9a-f]{8}$/.test(seedInAddress) ? seedInAddress : randomSeed(), CITY));
+}
 
 // Escape drops the current selection; + and - zoom.
 document.addEventListener('keydown', (event) => {
@@ -200,8 +219,7 @@ document.addEventListener('keydown', (event) => {
   else if (event.key === '-' || event.key === '_') map.zoomBy(0.5);
 });
 
-const seedInAddress = location.hash.slice(1).toLowerCase();
-startCity(/^[0-9a-f]{8}$/.test(seedInAddress) ? seedInAddress : randomSeed());
+boot();
 
 // The city keeps talking when the player goes quiet.
 function scheduleAmbient(): void {
