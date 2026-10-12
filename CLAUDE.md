@@ -55,6 +55,19 @@ The inventory overlay is in place, with nothing in it yet:
 - `src/data/items.ts` names each kind and says what goes in it; the overlay lists them in
   that order, but only the kinds the player carries (no empty placeholders). Real items take their names and details from the wiki and the TCG (above).
 
+## Energy
+
+Energy is in place, with nothing spending it yet:
+
+- The rules are in `src/engine/energy.ts` (refilling on the clock, spending, experience,
+  levels); the numbers are in `src/data/energy.ts`. It starts very low and levels very slowly
+  on purpose: keep it a long grind.
+- Anything that costs energy calls `Game.spendEnergy(amount, now)`, which says false (and
+  tells the player) when there isn't enough, and does the training: experience, the bonus
+  for running down to empty, level-ups. `Game.energy(now)` is where it stands. It's saved.
+- A home with a bed adds `ENERGY.bed` to the max. There are no homes yet: when there are,
+  set `Game`'s `home` (and save it).
+
 ## Settings
 
 `src/ui/settings.ts` is the settings overlay (over the map, like the inventory; both are a

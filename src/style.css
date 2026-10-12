@@ -167,6 +167,74 @@ button {
   color: var(--secondary);
 }
 
+/* Energy, under the sign: a segment per point, electric cyan */
+.energy {
+  --energy: #00f0ff;
+  --segments: 10;
+  display: grid;
+  grid-template-columns: auto minmax(60px, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+  max-width: 520px;
+  margin-top: 8px;
+  color: color-mix(in srgb, var(--energy) 70%, var(--muted));
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.energy-label {
+  color: var(--energy);
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--energy) 60%, transparent);
+}
+.energy-bar {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--energy) 45%, transparent);
+  background: color-mix(in srgb, var(--energy) 7%, #05060b);
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+.energy-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--energy) 55%, #0a3a4a), var(--energy));
+  box-shadow: 0 0 10px var(--energy);
+  transition: width 0.4s ease;
+}
+/* The gaps between segments */
+.energy-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(100% / var(--segments) - 2px),
+    #05060b calc(100% / var(--segments) - 2px) calc(100% / var(--segments))
+  );
+  pointer-events: none;
+}
+.energy-value {
+  min-width: 4ch;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-align: right;
+}
+.energy-detail {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+.energy.is-empty .energy-value {
+  color: var(--danger);
+}
+
 .sign {
   margin: 0;
   overflow: hidden;

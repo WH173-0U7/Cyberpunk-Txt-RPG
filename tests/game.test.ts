@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cellOf, Game, streetSpot } from '../src/engine/game';
+import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
 import type { Progress } from '../src/engine/save';
 import type { TravelRules } from '../src/engine/travel';
 import type { GameEvents, Location, Whereabouts, World } from '../src/engine/types';
@@ -68,7 +68,7 @@ const world: World = {
   },
 };
 
-const RULES: TravelRules = {
+const RULES: GameRules = {
   timeScale: 1,
   walkMinutesPerUnit: 1,
   rideMinutesPerUnit: 0.1,
@@ -79,6 +79,8 @@ const RULES: TravelRules = {
   passDays: 30,
   startingEddies: 5,
   discoverRadius: 9,
+  // Small numbers so a test can run energy down and level it up.
+  energy: { start: 5, perLevel: 1, bed: 5, regenMinutes: 6, xpPerPoint: 1, exhaustedBonus: 2, xpFirstLevel: 10, xpGrowth: 1.5 },
 };
 
 const MINUTE = 60_000;
@@ -99,7 +101,7 @@ type Recorded = { [K in keyof GameEvents]: { type: K; payload: GameEvents[K] } }
 function setup(rules: Partial<TravelRules> = {}, progress?: Progress) {
   const game = new Game(world, { ...RULES, ...rules }, progress);
   const events: Recorded[] = [];
-  for (const type of ['output', 'arrived', 'tripChanged', 'interiorChanged', 'mapChanged', 'walletChanged', 'fx'] as const) {
+  for (const type of ['output', 'arrived', 'tripChanged', 'interiorChanged', 'mapChanged', 'walletChanged', 'energyChanged', 'fx'] as const) {
     game.events.on(type, (payload) => events.push({ type, payload } as Recorded));
   }
   const take = () => events.splice(0);
@@ -399,6 +401,7 @@ describe('Game', () => {
         trip: null,
         inside,
         items: [],
+        energy: null,
       });
       const { game, take } = setup({}, progress('b-shop', outside('b-shop', 32, 20)));
       expect(game.interior?.id).toBe('b-shop');
@@ -408,6 +411,34 @@ describe('Game', () => {
       // Never inside a building somewhere else, or inside open ground.
       expect(setup({}, progress('b-shop', at('alley'))).game.interior).toBeNull();
       expect(setup({}, progress('b-park', outside('b-park', 32, 50))).game.interior).toBeNull();
+    });
+  });
+
+  describe('energy', () => {
+    it('starts full, and nothing the player does yet spends it', () => {
+      const { game } = setup();
+      game.start(T0);
+      go(game, at('market'), 'foot', T0);
+      game.tick(T0 + 60 * MINUTE);
+      expect(game.energy(T0 + 60 * MINUTE)).toMatchObject({ current: 5, max: 5, level: 1, xp: 0, nextPointAt: null });
+    });
+
+    it('spends it for things that need it, says when there isn’t enough, and levels up', () => {
+      const { game, take, outputs } = setup();
+      game.start(T0);
+      take();
+      expect(game.spendEnergy(5, T0)).toBe(true);
+      expect(take()).toEqual([{ type: 'energyChanged', payload: expect.objectContaining({ current: 0, xp: 7 }) }]);
+
+      expect(game.spendEnergy(1, T0)).toBe(false);
+      expect(outputs(take())[0]?.tone).toBe('error');
+
+      // Back to full in half an hour; spend it all again and it's enough for level 2.
+      const later = T0 + 30 * MINUTE;
+      expect(game.spendEnergy(5, later)).toBe(true);
+      const events = take();
+      expect(outputs(events)[0]?.text).toMatch(/Energy level 2/);
+      expect(game.energy(later)).toMatchObject({ level: 2, max: 6, current: 0 });
     });
   });
 
@@ -426,6 +457,7 @@ describe('Game', () => {
       trip: currentTrip,
       inside: null,
       items: [],
+      energy: null,
     };
 
     const { game, take, outputs } = setup({}, progress);

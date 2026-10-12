@@ -1,4 +1,5 @@
 import { blockAt, canEnter } from './buildings';
+import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
 import { districtAt } from './geography';
 import type { Progress } from './save';
@@ -46,6 +47,11 @@ export function streetSpot(p: Point): Whereabouts {
   return { x: p.x, y: p.y, place: null, station: null, building: null };
 }
 
+/** How the game plays: getting around, and energy. The numbers are in `src/data/`. */
+export interface GameRules extends TravelRules {
+  energy: EnergyRules;
+}
+
 /**
  * The game rules and state. It never touches the DOM: everything the player
  * sees or feels is driven by the events it emits. Time comes in as `now`
@@ -64,6 +70,9 @@ export class Game {
   private readonly items: Item[];
   private eddies: number;
   private passUntil: number;
+  private energyState: EnergyState;
+  /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
+  private readonly home: { building: string; bed: boolean } | null = null;
   private lastAmbient: AmbientLine | null = null;
   private fullyMapped = false;
   private readonly resumed: boolean;
@@ -71,7 +80,7 @@ export class Game {
   /** A new game at the city's start, or, given saved progress, right where the player left off. */
   constructor(
     readonly world: World,
-    readonly rules: TravelRules,
+    readonly rules: GameRules,
     progress?: Progress,
   ) {
     const start = this.locationById(world.start);
@@ -79,6 +88,7 @@ export class Game {
     this.trip = progress?.trip ?? null;
     this.eddies = progress?.eddies ?? rules.startingEddies;
     this.passUntil = progress?.passUntil ?? 0;
+    this.energyState = progress?.energy ? { ...progress.energy } : freshEnergy(rules.energy);
     this.items = (progress?.items ?? []).map((item) => ({ ...item }));
     this.resumed = Boolean(progress);
     const indoors = progress?.inside ? world.buildings.find((b) => b.id === progress.inside) : undefined;
@@ -119,6 +129,37 @@ export class Game {
 
   get wallet(): Wallet {
     return { eddies: this.eddies, passUntil: this.passUntil };
+  }
+
+  /** The player's energy at `now`: refilled on the clock since it was last spent. */
+  energy(now: number): EnergyStatus {
+    return energyStatus(this.energyState, this.rules.energy, this.rules.timeScale, this.hasBed, now);
+  }
+
+  /** Energy as it was last written down, for saving. */
+  get energySaved(): EnergyState {
+    return { ...this.energyState };
+  }
+
+  /**
+   * Spends energy on doing something, which also trains it. False if there isn't enough.
+   * Nothing spends it yet: jobs, training and the rest will.
+   */
+  spendEnergy(amount: number, now: number): boolean {
+    const spent = spendEnergy(this.energyState, amount, this.rules.energy, this.rules.timeScale, this.hasBed, now);
+    if (!spent) {
+      this.say(`Not enough energy: that takes ${amount}, you've got ${this.energy(now).current}.`, 'error');
+      return false;
+    }
+    this.energyState = spent.state;
+    const status = this.energy(now);
+    if (spent.levels > 0) this.say(`Energy level ${status.level}. You can hold ${status.max} energy now.`, 'system');
+    this.events.emit('energyChanged', status);
+    return true;
+  }
+
+  private get hasBed(): boolean {
+    return this.home?.bed ?? false;
   }
 
   /** Everything the player carries, as copies the UI can't change the game through. */
