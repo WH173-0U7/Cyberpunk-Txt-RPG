@@ -71,6 +71,11 @@ own.
   and parking lots are open ground). The map outlines the building, your marker waits at its
   door, and the weather stays outside. There's nothing to do in there yet; **Leave** steps
   back out, and walking off somewhere goes out the door first. Being inside is saved.
+- **Inventory**: the **Inventory** button in the map's header (or **I**) covers the map with
+  what you carry: your eddies and NCART pass, then a section for each kind of item in Night
+  City (weapons, attachments & mods, cyberware, quickhacks, clothing, consumables, shards,
+  junk, components). They're all empty for now; items come with shops and loot. **×** or
+  **Esc** closes it. The panel under the map keeps working while it's open.
 - **Getting around**: tap a place, an NCART station, a building, or (zoomed in) any spot on
   a street. The panel shows two ways there:
   - **Walk**: free, along the streets, to anywhere on the map. Tapping the same thing again
@@ -121,10 +126,10 @@ src/
   engine/   Game rules and state: the city generator, the NCART network, street routes,
             trip planning on the real clock, the wallet and pass, discovery, ambient chatter,
             the save format. No DOM, fully unit-tested.
-  data/     The content the generator builds cities from (city.ts), and travel times and
-            prices (travel.ts).
+  data/     The content the generator builds cities from (city.ts), travel times and
+            prices (travel.ts), and the kinds of item the inventory sorts by (items.ts).
   ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
-            ground, sea, buildings), the fog (fog.ts), place panel, transmissions, HUD, typewriter, markup parser,
+            ground, sea, buildings), the fog (fog.ts), the inventory (inventory.ts), place panel, transmissions, HUD, typewriter, markup parser,
             the save slot in local storage.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
   main.ts   Wires engine events to the UI and effects.

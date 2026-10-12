@@ -25,6 +25,10 @@
 
       <section id="map" class="map panel" aria-label="City map">
         <div class="map-head">
+          <button id="inventory-toggle" class="head-button" type="button" aria-controls="inventory" aria-expanded="false" aria-label="Inventory" title="Inventory (I)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z" /></svg>
+            <span>Inventory</span>
+          </button>
           <span class="map-title">City grid</span>
           <span id="wallet" class="wallet"></span>
           <span id="map-progress" class="map-stat"></span>
@@ -49,6 +53,27 @@
             <button id="zoom-home" class="zoom-button" type="button" aria-label="Find yourself on the map" title="Find yourself">
               <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5" /><path d="M8 0.5v3M8 12.5v3M0.5 8h3M12.5 8h3" /></svg>
             </button>
+          </div>
+        </div>
+        <div id="inventory" class="inventory" role="dialog" aria-labelledby="inventory-title" hidden>
+          <div class="inventory-head">
+            <div>
+              <p class="inventory-kicker">Carried on you</p>
+              <h2 id="inventory-title" class="inventory-title">Inventory</h2>
+            </div>
+            <button id="inventory-close" class="icon-btn inventory-close" type="button" aria-label="Close inventory" title="Close (Esc)"></button>
+          </div>
+          <div class="inventory-strip" aria-hidden="true">
+            <span class="inventory-barcode"></span>
+            <span>NCNET//INV</span>
+            <span id="inventory-total"></span>
+          </div>
+          <div class="inventory-body">
+            <dl class="inventory-wallet">
+              <div><dt>Eddies</dt><dd id="inventory-eddies"></dd></div>
+              <div><dt>NCART pass</dt><dd id="inventory-pass"></dd></div>
+            </dl>
+            <ul id="inventory-sections" class="inventory-sections"></ul>
           </div>
         </div>
         <div id="place" class="place">

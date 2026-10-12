@@ -1,5 +1,7 @@
 import { CELLS } from './game';
-import type { Leg, MapState, Point, Trip, Wallet, Whereabouts, World } from './types';
+import type { Item, ItemKind, Leg, MapState, Point, Trip, Wallet, Whereabouts, World } from './types';
+
+const ITEM_KINDS: ReadonlySet<string> = new Set<ItemKind>(['weapon', 'attachment', 'cyberware', 'quickhack', 'clothing', 'consumable', 'shard', 'junk', 'component']);
 
 /** Where a player has got to in their city: enough to put them back exactly there. */
 export interface Progress {
@@ -13,6 +15,17 @@ export interface Progress {
   trip: Trip | null;
   /** The building the player is inside (always the one at `where`), if any. */
   inside: string | null;
+  /** What the player carries. */
+  items: Item[];
+}
+
+/** What a save takes from a game in progress (a `Game` has all of it). */
+export interface SaveSource {
+  readonly mapState: MapState;
+  readonly wallet: Wallet;
+  readonly currentTrip: Trip | null;
+  readonly interior: { id: string } | null;
+  readonly inventory: readonly Item[];
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -26,15 +39,8 @@ export interface SaveData extends Progress {
   savedAt: number;
 }
 
-export function createSave(
-  seed: string,
-  state: MapState,
-  wallet: Wallet,
-  trip: Trip | null,
-  inside: string | null,
-  generator: number,
-  now = Date.now(),
-): SaveData {
+export function createSave(seed: string, game: SaveSource, generator: number, now = Date.now()): SaveData {
+  const { mapState: state, wallet } = game;
   return {
     version: 2,
     generator,
@@ -45,8 +51,9 @@ export function createSave(
     explored: [...state.explored].sort((a, b) => a - b),
     eddies: wallet.eddies,
     passUntil: wallet.passUntil,
-    trip,
-    inside,
+    trip: game.currentTrip,
+    inside: game.interior?.id ?? null,
+    items: game.inventory.map((item) => ({ ...item })),
     savedAt: now,
   };
 }
@@ -79,6 +86,8 @@ export function readSave(raw: unknown): SaveData | null {
     trip: save.trip,
     // Saves from before buildings could be entered don't have it: the player was outside.
     inside: typeof save.inside === 'string' ? save.inside : null,
+    // Nor do saves from before the inventory: the player carried nothing. Anything unreadable is dropped.
+    items: Array.isArray(save.items) ? save.items.filter(isItem) : [],
     savedAt: save.savedAt,
   };
 }
@@ -91,11 +100,25 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items } = save;
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items };
+}
+
+function isItem(value: unknown): value is Item {
+  const item = value as Record<string, unknown> | null;
+  return (
+    typeof item === 'object' &&
+    item !== null &&
+    typeof item.id === 'string' &&
+    typeof item.name === 'string' &&
+    typeof item.kind === 'string' &&
+    ITEM_KINDS.has(item.kind) &&
+    Number.isInteger(item.count) &&
+    (item.count as number) > 0
+  );
 }
 
 function isNumber(value: unknown): value is number {
