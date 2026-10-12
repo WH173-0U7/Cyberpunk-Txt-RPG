@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SOCIETY } from '../src/data/society';
 import { INVERSE, type Person, type Population, type Tie, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
-import { applyIncident, attitude, changeRep, changeStanding, dueThreats, freshSociety, knowledgeOf, knownPeople, knowsOf, learnLink, learnOf, linkOf, repOf, settleThreat, standingOf, stanceOf, webOf, type SocietyRules } from '../src/engine/society';
+import { applyIncident, attitude, changeRep, changeStanding, dueThreats, freshSociety, knowledgeOf, knownPeople, knowsOf, learnFact, learnLink, learnOf, linkOf, LOG_CAP, logLine, repOf, settleThreat, standingOf, stanceOf, webOf, type SocietyRules } from '../src/engine/society';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -144,8 +144,20 @@ describe('society', () => {
     expect(learnOf(state, 'rosa', 'seen')).toBe(true);
     expect(learnOf(state, 'rosa', 'seen')).toBe(false);
     expect(learnOf(state, 'rosa', 'met')).toBe(true);
-    expect(knowledgeOf(state, 'rosa')).toEqual({ met: true, seen: true, told: false });
+    expect(knowledgeOf(state, 'rosa')).toEqual({ met: true, seen: true, told: false, facts: [], log: [] });
     expect(knownPeople(state)).toEqual(['rosa']);
+    // Facts come one at a time and stay; being told of someone comes with their name.
+    expect(learnFact(state, 'rosa', 'job')).toBe(true);
+    expect(learnFact(state, 'rosa', 'job')).toBe(false);
+    expect(learnOf(state, 'mateo', 'told')).toBe(true);
+    expect(knowledgeOf(state, 'mateo').facts).toEqual(['name']);
+    expect(knowledgeOf(state, 'rosa').facts).toEqual(['job']);
+    // What was said is kept, the last so many lines.
+    for (let i = 0; i < LOG_CAP + 5; i++) logLine(state, 'rosa', i % 2 ? 'them' : 'you', `line ${i}`, T0 + i);
+    const log = knowledgeOf(state, 'rosa').log;
+    expect(log).toHaveLength(LOG_CAP);
+    expect(log[0]).toEqual({ at: T0 + 5, who: 'them', text: 'line 5' });
+    expect(log.at(-1)?.text).toBe(`line ${LOG_CAP + 4}`);
 
     // Seen together: connected, somehow. Told: how. Asked again: nothing to add.
     expect(learnLink(state, 'rosa', 'mateo', null, 'seen', T0)).toBe(true);

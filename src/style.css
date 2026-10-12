@@ -1558,10 +1558,64 @@ button {
   margin: 0;
   font-size: 16px;
 }
-.person-bio {
+.person-facts {
   margin: 0;
-  font-size: 13px;
+  color: var(--muted);
+  font-size: 12px;
   line-height: 1.5;
+}
+.person-web-toggle {
+  justify-self: start;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+/* What was said, the newest at the bottom, scrolling inside so the choices above stay put */
+.person-log {
+  display: grid;
+  gap: 6px;
+  max-height: 200px;
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  line-height: 1.45;
+  list-style: none;
+}
+.person-log-line {
+  display: grid;
+  grid-template-columns: 5.5em 1fr;
+  gap: 8px;
+}
+.person-log-who {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  line-height: 1.8;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.person-log-line.is-you .person-log-who {
+  color: #ffd84d;
+}
+.person-log-line.is-them .person-log-text {
+  color: #fff;
+}
+.person-log-line.is-empty {
+  display: block;
+  color: var(--muted);
+  font-style: italic;
 }
 /* The web: the person in the middle, everyone the player knows they know around them */
 .person-web-box {

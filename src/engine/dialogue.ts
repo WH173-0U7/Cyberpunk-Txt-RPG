@@ -1,6 +1,6 @@
 import { gangOf, pronounsOf, type PeopleContent, type Person, type Population, type Tie, type TieKind } from './people';
 import type { Rng } from './rng';
-import type { Stance } from './society';
+import type { Fact, Stance } from './society';
 import type { World } from './types';
 
 /** What people say. Our words, in Night City's voice. */
@@ -28,6 +28,21 @@ export interface DialogueLines {
   barred: string[];
   /** Asked whether they know someone: they do (`{other}`, `{word}`), they don't, or they won't say. */
   ask: { knows: string[]; unknown: string[]; refuse: string[] };
+  /** The player's questions about a person's own life, by what they'd find out. */
+  questions: Record<Exclude<Fact, 'nature' | 'drinks'>, string>;
+  /** The answers; `freelance` for work with no address, `homeless` for no home, `nobody` for no gang hated. */
+  facts: Record<Exclude<Fact, 'nature' | 'drinks'> | 'freelance' | 'homeless' | 'nobody', string[]>;
+  /** The player's own lines, for the record. */
+  you: { talk: string[]; askAbout: string[]; gift: string[]; insult: string[]; rob: string[] };
+}
+
+/** Someone the player hasn't been introduced to, as they look: "A young woman in Valentinos colors". */
+export function describeStranger(person: Person, content: PeopleContent): string {
+  const gang = gangOf(person, content);
+  const age = person.age < 28 ? 'young ' : person.age > 55 ? 'older ' : '';
+  const noun = person.pronouns === 'she' ? 'woman' : person.pronouns === 'he' ? 'man' : 'person';
+  const article = age.startsWith('o') ? 'An' : 'A';
+  return `${article} ${age}${noun}${gang ? ` in ${gang.name} colors` : ''}`;
 }
 
 export const KIN_LABEL: Record<TieKind, string> = {
@@ -84,8 +99,13 @@ export function varsFor(person: Person, world: World, population: Population, co
   const kinPerson = kin ? population.people.find((p) => p.id === kin.to) : undefined;
   const kinWork = kinPerson?.job.building ? world.buildings.find((b) => b.id === kinPerson.job.building) : undefined;
   const kinPronouns = kinPerson ? pronounsOf(kinPerson) : null;
+  const home = person.home ? world.buildings.find((b) => b.id === person.home) : undefined;
   return {
     ...pronounsOf(person),
+    age: String(person.age),
+    home: home?.name ?? '',
+    Role: capitalize(person.job.role),
+    hateMember: hate?.member ?? '',
     kinHe: kinPronouns?.he ?? 'they',
     kinHim: kinPronouns?.him ?? 'them',
     kinHis: kinPronouns?.his ?? 'their',
@@ -105,24 +125,26 @@ export function varsFor(person: Person, world: World, population: Population, co
   };
 }
 
-/** What a person says when talked to: a greeting for how they feel, then something about their life. `kin`: whether that was about their relative. */
-export function talkLines(ctx: TalkContext, vars: Record<string, string>, lines: DialogueLines, rng: Rng): { said: string[]; kin: boolean } {
-  if (ctx.stance === 'hostile') return { said: [fill(rng.pick(lines.refuse), vars)], kin: false };
+export type Topic = 'refuse' | 'grudge' | 'job' | 'likes' | 'hates' | 'kin' | 'district';
+
+/** What a person says when talked to: a greeting for how they feel, then something about their life, and which part of it. */
+export function talkLines(ctx: TalkContext, vars: Record<string, string>, lines: DialogueLines, rng: Rng): { said: string[]; topic: Topic } {
+  if (ctx.stance === 'hostile') return { said: [fill(rng.pick(lines.refuse), vars)], topic: 'refuse' };
   const said = [fill(rng.pick(lines.greeting[ctx.stance]), vars)];
   if (ctx.grudge >= 10 && rng.chance(0.6)) {
     said.push(fill(rng.pick(lines.grudge), vars));
-    return { said, kin: false };
+    return { said, topic: 'grudge' };
   }
-  const topics: string[][] = [];
-  if (vars.gang) topics.push(lines.topics.gang);
-  else if (vars.work) topics.push(lines.topics.job);
-  else topics.push(lines.topics.freelance);
-  topics.push(lines.topics.dish, lines.topics.district);
-  if (vars.hate) topics.push(lines.topics.hate);
-  if (ctx.reveal && vars.kinName) topics.push(lines.topics.kin, lines.topics.kin);
-  const topic = rng.pick(topics);
-  said.push(fill(rng.pick(topic), vars));
-  return { said, kin: topic === lines.topics.kin };
+  const topics: Array<[Topic, string[]]> = [];
+  if (vars.gang) topics.push(['job', lines.topics.gang]);
+  else if (vars.work) topics.push(['job', lines.topics.job]);
+  else topics.push(['job', lines.topics.freelance]);
+  topics.push(['likes', lines.topics.dish], ['district', lines.topics.district]);
+  if (vars.hate) topics.push(['hates', lines.topics.hate]);
+  if (ctx.reveal && vars.kinName) topics.push(['kin', lines.topics.kin], ['kin', lines.topics.kin]);
+  const [topic, pool] = rng.pick(topics);
+  said.push(fill(rng.pick(pool), vars));
+  return { said, topic };
 }
 
 function capitalize(text: string): string {

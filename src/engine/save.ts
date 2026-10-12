@@ -112,7 +112,7 @@ export function readSave(raw: unknown): SaveData | null {
     energy: isEnergy(save.energy) ? save.energy : null,
     inebriation: isInebriation(save.inebriation) ? save.inebriation : null,
     // And before there were people to deal with, nobody knew the player (and before they could be known of, no one was).
-    society: isSociety(save.society) ? { ...save.society, known: save.society.known ?? {}, links: save.society.links ?? {} } : null,
+    society: isSociety(save.society) ? { ...save.society, known: knownOf(save.society.known), links: save.society.links ?? {} } : null,
     charisma: isSkill(save.charisma) ? save.charisma : null,
     savedAt: save.savedAt,
   };
@@ -160,6 +160,13 @@ function isEnergy(value: unknown): value is EnergyState {
     e.xp >= 0 &&
     isNumber(e.updatedAt)
   );
+}
+
+/** What's known of each person, with the facts and the log that older saves don't have. */
+function knownOf(known: SocietyState['known'] | undefined): SocietyState['known'] {
+  const out: SocietyState['known'] = {};
+  for (const [id, k] of Object.entries(known ?? {})) out[id] = { ...k, facts: Array.isArray(k.facts) ? k.facts : [], log: Array.isArray(k.log) ? k.log : [] };
+  return out;
 }
 
 function isSkill(value: unknown): value is SkillState {

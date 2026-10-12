@@ -23,23 +23,36 @@ export interface WebNodeView {
   how: string;
 }
 
+export interface LogLineView {
+  who: 'you' | 'them';
+  text: string;
+}
+
 export interface PersonCardView {
   id: string;
+  /** Their name, or how they look until introduced. */
   name: string;
   /** Stance, gang, what they're doing (or that they're not here). */
   kicker: string;
-  bio: string;
+  /** What the player knows of them, or a line saying nothing yet. */
+  facts: string;
   stance: Stance;
   /** Whether they're here to be dealt with. */
   here: boolean;
   /** Who the player knows them to be connected to. */
   web: WebNodeView[];
   webHint: string;
+  /** Whether the web is unfolded. */
+  webOpen: boolean;
   actions: Array<{ id: PersonAction; label: string; sub?: string; danger?: boolean }>;
+  /** Things to ask them about themselves. */
+  questions: Array<{ fact: string; label: string }>;
   /** What the player could give them. */
   gifts: Array<{ id: string; name: string; count: number }>;
   /** People the player knows of, to ask this person about. */
   askAbout: Array<{ id: string; name: string }>;
+  /** What has passed between them, oldest first. */
+  log: LogLineView[];
 }
 
 export interface PeopleView {
@@ -67,11 +80,14 @@ export interface PeopleElements extends OverlayElements {
   card: HTMLElement;
   cardName: HTMLElement;
   cardKicker: HTMLElement;
-  cardBio: HTMLElement;
+  cardFacts: HTMLElement;
+  cardWebToggle: HTMLButtonElement;
   cardWeb: HTMLElement;
   cardActions: HTMLElement;
+  cardQuestions: HTMLElement;
   cardGifts: HTMLElement;
   cardAsk: HTMLElement;
+  cardLog: HTMLElement;
   back: HTMLButtonElement;
 }
 
@@ -81,6 +97,8 @@ export interface PeopleHandlers {
   onAction(action: PersonAction, id: string): void;
   onGift(id: string, itemId: string): void;
   onAsk(id: string, aboutId: string): void;
+  onQuestion(id: string, fact: string): void;
+  onToggleWeb(): void;
 }
 
 export const STANCE_LABEL: Record<Stance, string> = {
@@ -123,6 +141,11 @@ export class People {
       const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('.person-ask') : null;
       if (button?.dataset.id && button.dataset.about) handlers.onAsk(button.dataset.id, button.dataset.about);
     });
+    els.cardQuestions.addEventListener('click', (e) => {
+      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('.person-question') : null;
+      if (button?.dataset.id && button.dataset.fact) handlers.onQuestion(button.dataset.id, button.dataset.fact);
+    });
+    els.cardWebToggle.addEventListener('click', () => handlers.onToggleWeb());
     // Anyone in the web, or among the people known of, opens on a tap.
     const open = (e: Event) => {
       const button = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-open]') : null;
@@ -167,11 +190,30 @@ export class People {
     els.cardName.textContent = card.name;
     els.cardKicker.textContent = card.kicker;
     els.cardKicker.dataset.stance = card.stance;
-    els.cardBio.textContent = card.bio;
+    els.cardFacts.textContent = card.facts;
+    els.cardWebToggle.textContent = `${card.webOpen ? '▾' : '▸'} Web (${card.web.length})`;
+    els.cardWebToggle.setAttribute('aria-expanded', String(card.webOpen));
+    els.cardWeb.hidden = !card.webOpen;
     els.cardWeb.replaceChildren(card.web.length ? web(card) : el('p', 'person-web-hint', card.webHint));
+    // Only rows with something in them; an empty one would only push the conversation down.
     els.cardActions.hidden = !card.here;
-    els.cardGifts.hidden = !card.here;
-    els.cardAsk.hidden = !card.here;
+    els.cardQuestions.hidden = !card.here || card.questions.length === 0;
+    els.cardGifts.hidden = !card.here || card.gifts.length === 0;
+    els.cardAsk.hidden = !card.here || card.askAbout.length === 0;
+    els.cardQuestions.replaceChildren(el('span', 'person-gifts-label', 'Ask'), ...card.questions.map((q) => chip(q.label, { id: card.id, fact: q.fact }, 'person-question')));
+    const { cardLog } = els;
+    const atBottom = cardLog.scrollTop + cardLog.clientHeight >= cardLog.scrollHeight - 4;
+    cardLog.replaceChildren(
+      ...(card.log.length
+        ? card.log.map((line) => {
+            const li = el('li', `person-log-line is-${line.who}`);
+            li.append(el('span', 'person-log-who', line.who === 'you' ? 'You' : card.name.split(' ')[0] ?? card.name), el('span', 'person-log-text', line.text));
+            return li;
+          })
+        : [el('li', 'person-log-line is-empty', card.here ? 'Nothing said yet.' : 'Nothing said.')]),
+    );
+    // The newest line is the one to read.
+    if (atBottom || card.log.length) cardLog.scrollTop = cardLog.scrollHeight;
     els.cardActions.replaceChildren(
       ...card.actions.map((action) => {
         const button = el('button', `action person-action${action.danger ? ' is-danger' : ''}`);
@@ -191,9 +233,9 @@ export class People {
       button.setAttribute('aria-label', `Give ${gift.name}`);
       return button;
     });
-    els.cardGifts.replaceChildren(el('span', 'person-gifts-label', gifts.length ? 'Give' : 'Nothing to give: buy food or drink first.'), ...gifts);
+    els.cardGifts.replaceChildren(el('span', 'person-gifts-label', 'Give'), ...gifts);
     const asks = card.askAbout.map((about) => chip(about.name, { id: card.id, about: about.id }, 'person-ask'));
-    els.cardAsk.replaceChildren(el('span', 'person-gifts-label', asks.length ? 'Ask about' : 'Ask about: nobody yet. Meet people first.'), ...asks);
+    els.cardAsk.replaceChildren(el('span', 'person-gifts-label', 'Ask about'), ...asks);
   }
 }
 

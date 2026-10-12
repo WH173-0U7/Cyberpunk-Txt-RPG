@@ -745,7 +745,7 @@ describe('Game', () => {
         ...carryingProgress([]),
         where: outside('b-noodle', 38, 20),
         inside: 'b-noodle',
-        society: { ...game.societySaved, known: { [relative.to]: { met: false, seen: true, told: false }, [stranger.id]: { met: true, seen: false, told: false } } },
+        society: { ...game.societySaved, known: { [relative.to]: { met: false, seen: true, told: false, facts: ['name'], log: [] }, [stranger.id]: { met: true, seen: false, told: false, facts: ['name'], log: [] } } },
       });
       told.start(now);
       const recorded = record(told);
@@ -842,6 +842,41 @@ describe('Game', () => {
         expect(game.energy(due + 1).current).toBe(0);
         expect(game.societySaved.threats).toEqual([]);
       }
+    });
+
+    it('tells people apart by their look until introduced, and learns the rest by watching, talking and asking', () => {
+      const { game, now, worker } = shiftAt();
+      const { take, outputs } = record(game);
+      // A stranger: no name, no facts; only what's plain to see.
+      const stranger = game.describe(worker.id);
+      expect(stranger).toMatchObject({ named: false, lines: [] });
+      expect(stranger?.name).toMatch(/^(A|An) (young |older )?(man|woman|person)/);
+      expect(game.conversation(worker.id)).toEqual([]);
+      // Looking around the noodle bar: whoever is at work here plainly works here.
+      game.look(now);
+      expect(game.describe(worker.id)?.facts.job).toContain('Test Noodles');
+      expect(game.describe(worker.id)?.named).toBe(false);
+      // Talking is an introduction, on the record both ways.
+      expect(game.talk(worker.id, now)).toBe(true);
+      expect(game.describe(worker.id)).toMatchObject({ named: true, name: worker.name });
+      const log = game.conversation(worker.id);
+      expect(log[0]?.who).toBe('you');
+      expect(log.some((l) => l.who === 'them')).toBe(true);
+      take();
+      // Asking: a neutral person answers, and the answer is a fact from then on.
+      expect(game.askFact(worker.id, 'age', now)).toBe(true);
+      const answer = outputs(take())[0]?.text ?? '';
+      const known = game.describe(worker.id);
+      if (known?.facts.age) {
+        expect(known.facts.age).toBe(String(worker.age));
+        expect(answer).toContain(String(worker.age));
+      }
+      expect(game.conversation(worker.id).at(-2)?.text).toBe(`"${LINES.questions.age}"`);
+      expect(game.conversation(worker.id).at(-1)?.who).toBe('them');
+      expect(game.askFact('nobody', 'age', now)).toBe(false);
+      // Only someone whose name the player has can be asked about.
+      const other = game.population.people.find((p) => p.id !== worker.id);
+      if (other) expect(game.ask(worker.id, other.id, now)).toBe(false);
     });
 
     it('keeps the player\'s standing in the save, and forgets people the city no longer has', () => {
