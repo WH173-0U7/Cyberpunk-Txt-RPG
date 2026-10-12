@@ -16,10 +16,24 @@ export interface Point {
   y: number;
 }
 
+export type Side = 'north' | 'east' | 'south' | 'west';
+
 export interface District extends Point {
   id: string;
   name: string;
   theme: Theme;
+  /** City blocks, or open desert like the Badlands. */
+  terrain: 'city' | 'desert';
+}
+
+/** The street grid every location sits on. Positions run 0–100 like map coordinates. */
+export interface CityLayout {
+  /** Streets running north–south, by x position. */
+  avenues: number[];
+  /** Streets running east–west, by y position. */
+  streets: number[];
+  /** The sea along one edge: everything closer than `depth` to that edge is water. */
+  coast: { side: Side; depth: number } | null;
 }
 
 /** Flavor text that plays while the player is idle, optionally firing an effect. */
@@ -30,6 +44,8 @@ export interface Location extends Point {
   name: string;
   /** What sort of place this is, e.g. "bar" or "ripperdoc". */
   kind: string;
+  /** The kind as players read it, e.g. "Night market". */
+  kindLabel: string;
   district: string;
   weather: Weather;
   /** Overrides the district colors, e.g. for an interior with its own lighting. */
@@ -45,9 +61,8 @@ export interface World {
   /** Regenerating from this seed rebuilds exactly the same city. */
   seed: string;
   start: string;
-  /** System lines shown while the terminal boots. */
-  intro: string[];
   welcome: string;
+  layout: CityLayout;
   districts: Record<string, District>;
   locations: Record<string, Location>;
 }
@@ -61,12 +76,12 @@ export interface MapState {
   discovered: ReadonlySet<string>;
 }
 
-/** How a feed message should be presented. */
+/** How a transmission should be presented. */
 export type Tone = 'narrative' | 'system' | 'ambient' | 'error';
 
 /** Everything the engine announces. The UI and effects layers listen to these. */
 export type GameEvents = {
-  /** A message for the event feed. */
+  /** A short message shown over the map. */
   output: { text: string; tone: Tone };
   /**
    * The player arrived somewhere. `route` runs from where they were to where they are now

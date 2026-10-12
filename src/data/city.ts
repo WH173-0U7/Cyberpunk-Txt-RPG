@@ -5,7 +5,8 @@ import type { CityContent, DistrictTemplate, LocationKind } from '../engine/gene
  * with kinds of location, and combines the sentences below into names and descriptions.
  *
  * Keep each sentence short: a description is one kind sentence plus one district mood
- * sentence, and must fit in 160 characters.
+ * sentence, and must fit in 160 characters. Each kind's `label` is what the panel shows
+ * ("Street market", "Ripperdoc").
  *
  * Inline markup for any text in here:
  *   {h|text}  highlight (district accent color)
@@ -187,6 +188,7 @@ const DISTRICTS: DistrictTemplate[] = [
 
 const KINDS: Record<string, LocationKind> = {
   market: {
+    label: 'Street market',
     indoor: false,
     names: ['{area} Market', '{area} Night Market', '{area} Bazaar'],
     descriptions: [
@@ -196,6 +198,7 @@ const KINDS: Record<string, LocationKind> = {
     ambient: ['A vendor holds up a pair of secondhand optics and winks at you.', "Someone's pocket gets picked right in front of you. Nobody reacts."],
   },
   bar: {
+    label: 'Bar',
     indoor: true,
     weather: 'haze',
     theme: { primary: '#ff3b3b', secondary: '#ffb347' },
@@ -211,6 +214,7 @@ const KINDS: Record<string, LocationKind> = {
     ],
   },
   ripperdoc: {
+    label: 'Ripperdoc',
     indoor: true,
     theme: { primary: '#5cffc8', secondary: '#3d8bff' },
     names: ['{area} Chrome Clinic', "Doc Vasquez's", 'Second-Hand Surgery', 'Midnight Clinic', 'The Stitch Shop'],
@@ -221,18 +225,21 @@ const KINDS: Record<string, LocationKind> = {
     ambient: ['A surgical drill whines to life in the back room.', { text: 'The surgical lights stutter and {g|reboot}.', fx: 'glitch' }],
   },
   alley: {
+    label: 'Back alley',
     indoor: false,
     names: ['{area} Back Alley', 'Gutter Lane', 'Neon Alley', "Rat's Run"],
     descriptions: ['Steam vents, overflowing dumpsters and gang tags layered three deep.', 'A narrow gap between towers where the neon never quite reaches the ground.'],
     ambient: ['A rat the size of a cat watches you from a dumpster.', "Footsteps echo behind you. When you turn, nobody's there."],
   },
   megabuilding: {
+    label: 'Megabuilding',
     indoor: true,
     names: ['Megabuilding H{n}', '{area} Tower Block'],
     descriptions: ['Forty floors of cramped apartments stacked like shipping crates.', 'A concrete hive where the elevators stopped working years ago.'],
     ambient: ["Somebody's arguing through a paper-thin wall.", 'The elevator chimes. The doors open on nothing.'],
   },
   plaza: {
+    label: 'Corporate plaza',
     indoor: false,
     names: ['{area} Plaza', 'Corporate Plaza', 'Glass Square'],
     descriptions: [
@@ -242,6 +249,7 @@ const KINDS: Record<string, LocationKind> = {
     ambient: ['A news feed scrolls across a tower: stocks up, sanity down.', 'Guards in matte armor rotate through their patrol.'],
   },
   club: {
+    label: 'Nightclub',
     indoor: true,
     weather: 'haze',
     theme: { primary: '#ff2bd6', secondary: '#7a5cff' },
@@ -254,54 +262,63 @@ const KINDS: Record<string, LocationKind> = {
     ],
   },
   docks: {
+    label: 'Docks',
     indoor: false,
     names: ['{area} Docks', '{area} Container Yard', 'Pier {n}'],
     descriptions: ['Cranes loom over stacked containers, and half the cargo never sees customs.', "Rusting piers where smugglers unload at night and nobody asks what's in the crates."],
     ambient: ['A crane groans as it swings a container overhead.', "Somewhere a ship's horn moans across the water."],
   },
   noodle: {
+    label: 'Street food',
     indoor: false,
     names: ['{area} Noodle Stand', 'Ramen Cart', "Mama Wen's Noodles"],
     descriptions: ['A noodle cart with four stools and a cook who has seen absolutely everything.', 'A steaming street-food stand that serves the best ramen in the city, allegedly.'],
     ambient: ['The cook flips a cleaver without looking.', 'A drone drops a box of dumplings on the stool next to you.'],
   },
   metro: {
+    label: 'Metro station',
     indoor: true,
     names: ['{area} Metro', '{area} NCART Station'],
     descriptions: ['An NCART platform tiled in flickering ads, where the next train is always late.', 'A metro station where commuters stare into their optics and never at each other.'],
     ambient: ['A train screeches in, three minutes late.', 'A busker with a cybernetic voice box sings for spare eddies.'],
   },
   rooftop: {
+    label: 'Rooftop',
     indoor: false,
     names: ['{area} Rooftops', 'Antenna Garden', 'Skyline Ledge'],
     descriptions: ['Antenna farms and humming AC units, with the skyline burning neon all around you.', 'A rooftop above the traffic, the city spread out below like a circuit board.'],
     ambient: ['An AV roars past close enough to feel the heat.', 'Down below, sirens weave through traffic.'],
   },
   junkyard: {
+    label: 'Scrapyard',
     indoor: false,
     names: ['{area} Scrapyard', 'The Boneyard', 'Rust Heap'],
     descriptions: ['Mountains of rusting cars and dead robots, picked over by scavengers.', 'A scrapyard where anything with a chip in it gets stripped and sold.'],
     ambient: ['A scavenger drone buzzes past carrying a car door.', 'Something under a pile of scrap is still beeping.'],
   },
   checkpoint: {
+    label: 'Checkpoint',
     indoor: false,
     names: ['Militech Checkpoint', 'Old Border Checkpoint'],
     descriptions: ['A burned-out Militech checkpoint, its warning sign still blinking {g|RESTRICTED ZONE}.', 'An abandoned border checkpoint with a rusted turret still pointed at the road.'],
     ambient: ['The checkpoint sign stutters. {g|RESTRICTED ZONE}.', 'A rusted turret twitches, then goes still.'],
   },
   gas_station: {
+    label: 'Truck stop',
     indoor: true,
     names: ['Sunrise Gas & Go', 'Last Stop Diner', 'Coyote Fuel'],
     descriptions: ['A gas station with one working pump and coffee strong enough to strip paint.', 'A lonely truck stop whose neon sign flickers against the dark.'],
     ambient: ['The neon OPEN sign buzzes, dies, then flickers back.', 'A truck rolls in, refuels, and leaves without a word.'],
   },
   nomad_camp: {
+    label: 'Nomad camp',
     indoor: false,
     names: ['{area} Camp', 'Convoy Camp'],
     descriptions: ['Armored trucks circled around a fire, and a clan that watches you closely.', "A nomad camp of patched tents, solar rigs and dogs that don't bark."],
     ambient: ['Someone tunes a guitar by the fire.', 'A mechanic curses at an engine that refuses to start.'],
   },
   factory: {
+    label: 'Factory',
     indoor: true,
     weather: 'haze',
     names: ['{area} Assembly Plant', '{area} Works', 'Plant {n}'],
@@ -309,12 +326,14 @@ const KINDS: Record<string, LocationKind> = {
     ambient: ['A robotic arm keeps welding an empty frame.', { text: 'Sparks shower from a broken conveyor.', fx: 'flash' }],
   },
   boardwalk: {
+    label: 'Boardwalk',
     indoor: false,
     names: ['{area} Boardwalk', '{area} Pier'],
     descriptions: ['A half-built luxury boardwalk, abandoned before it ever opened.', 'Broken resort piers stretching out over black water.'],
     ambient: ['Waves slap the pilings under your feet.', 'An abandoned carousel turns a quarter-rotation in the wind.'],
   },
   shrine: {
+    label: 'Shrine',
     indoor: false,
     names: ['{area} Shrine', 'Lantern Shrine'],
     descriptions: ['A tiny shrine squeezed between two pachinko parlors, incense curling through the neon.', 'A quiet shrine of paper lanterns and wishes tied to wire.'],
@@ -323,13 +342,7 @@ const KINDS: Record<string, LocationKind> = {
 };
 
 export const CITY: CityContent = {
-  intro: [
-    'NCNET OS v0.3 // cold boot',
-    '[ OK ] neural link handshake',
-    '[ OK ] city grid uplink',
-    '[WARN] {w|unregistered cyberware detected}, ignoring',
-  ],
-  welcome: 'Welcome to Night City, choom. Tap a place on the map to travel there.',
+  welcome: 'Welcome to Night City, choom. Tap a place on the map, then hit {h|Travel}.',
   districts: DISTRICTS,
   kinds: KINDS,
 };

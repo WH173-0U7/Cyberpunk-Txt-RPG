@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CITY } from '../src/data/city';
-import { distance, generateWorld, MAX_DESCRIPTION, segmentsCross } from '../src/engine/generate';
+import { distance, generateWorld, MAX_DESCRIPTION, streetPath } from '../src/engine/generate';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 import { stripMarkup } from '../src/ui/markup';
@@ -64,17 +64,58 @@ describe('generateWorld', () => {
     }
   });
 
-  it('never draws routes that cross each other', () => {
+  it('puts every location on its own street corner', () => {
     for (const world of worlds) {
-      const list = edges(world);
-      for (let i = 0; i < list.length; i++) {
-        for (let j = i + 1; j < list.length; j++) {
-          const [a, b] = list[i] ?? [];
-          const [c, d] = list[j] ?? [];
-          const [pa, pb, pc, pd] = [a, b, c, d].map((id) => world.locations[id ?? '']);
-          if (!pa || !pb || !pc || !pd) continue;
-          expect(segmentsCross(pa, pb, pc, pd), `${world.seed}: ${a}-${b} crosses ${c}-${d}`).toBe(false);
+      const corners = new Set<string>();
+      for (const location of Object.values(world.locations)) {
+        expect(world.layout.avenues, `${world.seed} ${location.id}`).toContain(location.x);
+        expect(world.layout.streets, `${world.seed} ${location.id}`).toContain(location.y);
+        corners.add(`${location.x},${location.y}`);
+      }
+      expect(corners.size).toBe(Object.keys(world.locations).length);
+    }
+  });
+
+  it('runs every route along the streets', () => {
+    for (const world of worlds) {
+      for (const [a, b] of edges(world)) {
+        const from = world.locations[a];
+        const to = world.locations[b];
+        if (!from || !to) continue;
+        const path = streetPath(from, to);
+        expect(path[0]).toEqual({ x: from.x, y: from.y });
+        expect(path.at(-1)).toEqual({ x: to.x, y: to.y });
+        for (let i = 1; i < path.length; i++) {
+          const p = path[i - 1];
+          const q = path[i];
+          // Every leg is horizontal or vertical, i.e. it follows a street.
+          expect(p?.x === q?.x || p?.y === q?.y, `${world.seed} ${a}-${b}`).toBe(true);
         }
+        // Coming back takes the same streets.
+        expect(streetPath(to, from)).toEqual([...path].reverse());
+      }
+    }
+  });
+
+  it('keeps the sea off every location and away from the desert', () => {
+    for (const world of worlds) {
+      const { coast } = world.layout;
+      if (!coast) continue;
+      const reach = { north: (y: number) => y, south: (y: number) => 100 - y, west: (x: number) => x, east: (x: number) => 100 - x };
+      for (const location of Object.values(world.locations)) {
+        const along = coast.side === 'north' || coast.side === 'south' ? location.y : location.x;
+        expect(reach[coast.side](along), `${world.seed} ${location.id}`).toBeGreaterThanOrEqual(coast.depth + 4);
+      }
+    }
+  });
+
+  it('centers each district on its locations', () => {
+    for (const world of worlds) {
+      for (const district of Object.values(world.districts)) {
+        const members = Object.values(world.locations).filter((l) => l.district === district.id);
+        expect(members.length, `${world.seed} ${district.id}`).toBeGreaterThan(0);
+        expect(district.x).toBeCloseTo(members.reduce((s, l) => s + l.x, 0) / members.length);
+        expect(district.y).toBeCloseTo(members.reduce((s, l) => s + l.y, 0) / members.length);
       }
     }
   });
@@ -123,7 +164,6 @@ describe('city content', () => {
 
   it('uses only known markup tags', () => {
     const texts = [
-      ...CITY.intro,
       CITY.welcome,
       ...CITY.districts.flatMap((d) => [...d.atmosphere.outdoor, ...d.atmosphere.indoor, ...d.ambient.outdoor, ...d.ambient.indoor]),
       ...Object.values(CITY.kinds).flatMap((k) => [...k.descriptions, ...k.ambient]),
