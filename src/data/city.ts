@@ -25,15 +25,20 @@ const DISTRICTS: DistrictTemplate[] = [
     areas: ['Kabuki', 'Little China', 'Northside', 'Arasaka Waterfront'],
     kinds: ['market', 'bar', 'ripperdoc', 'alley', 'megabuilding', 'noodle', 'docks'],
     landmarks: [
-      { name: 'Afterlife', kind: 'bar', description: 'The merc bar of Night City. Every drink is named after a legend who died on the job.' },
-      { name: "Tom's Diner", kind: 'diner', description: 'A cheap all-night diner with cracked booths, bottomless synthcoffee and a jukebox.' },
-      { name: "Misty's Esoterica", kind: 'curio', description: 'A little shop of tarot cards, crystals and incense, glowing softly in the dark.' },
-      { name: "Viktor's Clinic", kind: 'ripperdoc', description: "Vik's ripperdoc clinic, down a flight of stairs, with old boxing posters on the walls." },
-      { name: 'Megabuilding H10', kind: 'megabuilding', description: 'A city inside a tower: thousands of apartments, shops, a gun range and one crowded elevator.' },
-      { name: "Lizzie's Bar", kind: 'club', description: 'A pink-lit club and braindance bar run by the {w|Mox}, who look after their own.' },
+      { name: 'Afterlife', kind: 'bar', description: 'The merc bar of Night City, in Little China. Every drink is named after a legend who died on the job.' },
+      { name: "Tom's Diner", kind: 'diner', description: 'A cheap all-night diner in Little China with cracked booths, bottomless synthcoffee and a jukebox.' },
+      { name: "Misty's Esoterica", kind: 'curio', description: 'A little new-age shop of tarot cards, crystals and incense, glowing softly in Little China.' },
+      { name: "Viktor's Clinic", kind: 'ripperdoc', description: "Vik's ripperdoc clinic, behind Misty's Esoterica and down the stairs, old boxing posters on the walls." },
+      { name: 'Megabuilding H10', kind: 'megabuilding', description: 'A city inside a tower in Little China: thousands of apartments, shops, a gun range and one crowded elevator.' },
+      { name: "Lizzie's Bar", kind: 'club', description: 'A pink-lit braindance club in Kabuki, and home turf of the {w|Mox}, who look after their own.' },
       { name: 'Kabuki Market', kind: 'market', description: 'A maze of stalls under tarps, selling street food, cheap chrome and things nobody asks about.' },
-      { name: 'Totentanz', kind: 'club', description: 'A {w|Maelstrom} club where chrome-heavy dancers move to music like a factory falling down stairs.' },
-      { name: 'All Foods Plant', kind: 'factory', description: 'An old food processing plant turned {w|Maelstrom} fortress, full of borgs and bad ideas.' },
+      { name: 'Totentanz', kind: 'club', description: 'A {w|Maelstrom} club in Northside where chrome-heavy dancers move to music like a factory falling down stairs.' },
+      { name: 'All Foods Factory', kind: 'factory', description: 'A defunct protein processing plant in Northside, now a {w|Maelstrom} hideout full of borgs and bad ideas.' },
+      { name: 'Konpeki Plaza', kind: 'hotel', description: 'The most exclusive hotel in Night City, on the Arasaka Waterfront. Arasaka owns it and guards every floor.' },
+      { name: 'Ho-Oh', kind: 'club', description: 'A casino and club in Kabuki where the stakes run high and the drinks run all night.' },
+      { name: 'Riot', kind: 'club', description: 'A nightclub in Little China, loud enough to rattle your implants loose.' },
+      { name: 'Night City Medical Center', kind: 'hospital', description: "The MedCenter: Little China's huge hospital complex, and one of Watson's landmarks." },
+      { name: 'Megabuilding H11', kind: 'megabuilding', description: 'A Northside megabuilding of cramped apartments, deep in {w|Maelstrom} country.' },
     ],
     zoning: { apartments: 4, shops: 3, megabuilding: 1, warehouse: 1, derelict: 0.6, lot: 0.6, park: 0.3 },
     atmosphere: {
@@ -69,10 +74,14 @@ const DISTRICTS: DistrictTemplate[] = [
     areas: ['Japantown', 'Charter Hill', 'North Oak'],
     kinds: ['club', 'shrine', 'noodle', 'rooftop', 'bar', 'alley', 'market'],
     landmarks: [
-      { name: 'Jig-Jig Street', kind: 'street', description: 'A narrow street of neon, bars and pleasure houses, crowded at every hour of the night.' },
+      { name: 'Jig-Jig Street', kind: 'street', description: "Japantown's red-light marketplace: neon, bars and pleasure houses, crowded at every hour of the night." },
       { name: 'Cherry Blossom Market', kind: 'market', description: "Japantown's night market, all food stalls and paper lanterns under the towers." },
-      { name: "Wakako's Pachinko Parlor", kind: 'pachinko', description: 'A roaring pachinko parlor. The fixer Wakako Okada does her business in the back.' },
-      { name: 'Clouds', kind: 'dollhouse', description: 'An upscale doll house in Japantown, where every doll runs a chip and never stops smiling.' },
+      { name: "Wakako's Pachinko Parlor", kind: 'pachinko', description: 'A roaring pachinko parlor on Jig-Jig Street, where the fixer Wakako Okada does her business.' },
+      { name: 'Clouds', kind: 'dollhouse', description: 'A {w|Tyger Claws} doll house on floor 12 of Megabuilding H8, where every doll runs a chip and never stops smiling.' },
+      { name: 'Dark Matter', kind: 'club', description: "A Japantown nightclub where Westbrook's money comes to dance." },
+      { name: 'Lele Park', kind: 'mall', description: 'A shopping mall and park in Charter Hill, all clean walkways and corporate calm.' },
+      { name: 'North Oak Columbarium', kind: 'columbarium', description: 'Columbarium towers on the southern hills of North Oak, holding the ashes of thousands.' },
+      { name: 'Megabuilding H8', kind: 'megabuilding', description: 'A Japantown megabuilding stacked with apartments, shops and Tyger Claws business.' },
     ],
     zoning: { shops: 4, apartments: 2, tower: 1.5, park: 0.8, plaza: 0.6 },
     atmosphere: {
@@ -105,7 +114,7 @@ const DISTRICTS: DistrictTemplate[] = [
     kinds: ['plaza', 'rooftop', 'club', 'bar', 'ripperdoc'],
     landmarks: [
       { name: 'Corpo Plaza', kind: 'plaza', description: 'The open plaza at the foot of Arasaka Tower, swept by drones and private security.' },
-      { name: 'Konpeki Plaza', kind: 'hotel', description: 'An Arasaka luxury hotel, all glass and gold, with security on every floor.' },
+      { name: 'Memorial Park', kind: 'park', description: 'A park in the middle of Corpo Plaza, green and quiet under the towers.' },
     ],
     zoning: { tower: 5, plaza: 1.2, shops: 1, park: 0.5, lot: 0.4 },
     atmosphere: {
@@ -139,7 +148,10 @@ const DISTRICTS: DistrictTemplate[] = [
     areas: ['Wellsprings', 'The Glen', 'Vista del Rey'],
     kinds: ['bar', 'noodle', 'shrine', 'alley', 'megabuilding', 'market', 'ripperdoc'],
     landmarks: [
-      { name: 'El Coyote Cojo', kind: 'bar', description: "Mama Welles' bar, where the neighborhood comes to drink, eat and argue about everything." },
+      { name: 'El Coyote Cojo', kind: 'bar', description: "Mamá Welles' bar on Los Lobos and Ebunike in the Glen, where the neighborhood drinks, eats and argues." },
+      { name: 'Embers', kind: 'restaurant', description: 'An upscale restaurant and club in the Glen, with a view worth the prices.' },
+      { name: 'Night City Hall', kind: 'cityhall', description: "The seat of Night City's government, in the Glen, with the NCPD never far away." },
+      { name: 'Dicky Twister', kind: 'club', description: 'A club in Vista del Rey with loud music, cheap drinks and a reputation.' },
     ],
     zoning: { apartments: 4, shops: 2, park: 0.8, lot: 0.8, megabuilding: 0.4 },
     atmosphere: {
@@ -167,6 +179,11 @@ const DISTRICTS: DistrictTemplate[] = [
     anchor: { x: 68, y: 68 },
     areas: ['Arroyo', 'Rancho Coronado'],
     kinds: ['factory', 'junkyard', 'megabuilding', 'ripperdoc', 'bar', 'noodle'],
+    landmarks: [
+      { name: 'Megabuilding H7', kind: 'megabuilding', description: "A megablock in Rancho Coronado, where Arroyo's factory workers come home to sleep." },
+      { name: 'Arasaka Industrial Park', kind: 'warehouse', description: 'Arasaka warehouses in Arroyo, fenced, floodlit and watched around the clock.' },
+      { name: 'Container Freight Station', kind: 'freight', description: "Rancho Coronado's freight station: cranes, rail sidings and containers stacked to the sky." },
+    ],
     zoning: { factory: 3, warehouse: 3, apartments: 1.5, lot: 1, megabuilding: 0.8 },
     atmosphere: {
       outdoor: [
@@ -199,9 +216,13 @@ const DISTRICTS: DistrictTemplate[] = [
     areas: ['Coastview', 'West Wind Estate', 'Dogtown'],
     kinds: ['boardwalk', 'alley', 'megabuilding', 'market', 'bar', 'club'],
     landmarks: [
-      { name: 'Grand Imperial Mall', kind: 'mall', description: 'A giant shopping mall, abandoned when the money ran out of Pacifica.' },
-      { name: 'Black Sapphire', kind: 'club', description: "Dogtown's most exclusive club, where the elite party behind {w|Barghest} guns." },
+      { name: 'Grand Imperial Mall', kind: 'mall', description: 'A giant shopping mall that was never finished, left to rot in Coastview.' },
+      { name: 'Black Sapphire', kind: 'stronghold', description: 'A towering unfinished hotel in Dogtown, now the headquarters of {w|BARGHEST}.' },
       { name: 'Heavy Hearts', kind: 'club', description: 'A rowdy Dogtown club with a stage, a long bar and a crowd that likes it loud.' },
+      { name: "Batty's Hotel", kind: 'squat', description: 'A defunct Coastview hotel turned commune, and a {w|Voodoo Boys} hideout.' },
+      { name: 'Pacifica Pier', kind: 'boardwalk', description: "Coastview's old pier, stretching out over black water." },
+      { name: 'EBM Petrochem Stadium', kind: 'stadium', description: 'A dilapidated stadium in Dogtown, now a black market and gang hideout.' },
+      { name: 'The Moth', kind: 'bar', description: 'A Dogtown bar where the neon is dim and nobody asks questions.' },
     ],
     zoning: { derelict: 3, apartments: 2, shops: 1, lot: 1, park: 0.4 },
     atmosphere: {
@@ -210,7 +231,7 @@ const DISTRICTS: DistrictTemplate[] = [
         '{w|Voodoo Boys} graffiti marks the territory.',
         'Salt wind blows trash across the empty streets.',
         '{w|Animals} lift weights in an empty lot, juiced to the eyeballs.',
-        '{w|Barghest} soldiers watch the street from the Dogtown wall.',
+        '{w|BARGHEST} soldiers watch the street from the Dogtown wall.',
       ],
       indoor: ['The ocean booms against the seawall outside.', 'Water drips through the ceiling into a row of buckets.'],
     },
@@ -228,12 +249,14 @@ const DISTRICTS: DistrictTemplate[] = [
     name: 'The Badlands',
     theme: { primary: '#ff9e3d', secondary: '#ffd36b' },
     weather: ['dust'],
-    anchor: { x: 86, y: 50 },
+    anchor: { x: 88, y: 50 },
     areas: ['Rocky Ridge', 'Red Peaks', 'Jackson Plains', 'Laguna Bend', 'Biotechnica Flats', 'Sierra Sonora'],
     kinds: ['checkpoint', 'gas_station', 'nomad_camp', 'junkyard'],
     landmarks: [
-      { name: 'Sunset Motel', kind: 'motel', description: 'A roadside motel out in the desert, with a buzzing sign and a view of nothing but sand.' },
-      { name: 'Aldecaldos Camp', kind: 'nomad_camp', description: 'The Aldecaldos clan camp: armored trucks, tents and a fire that never goes out.' },
+      { name: 'Sunset Motel', kind: 'motel', description: 'A roadside motel on Interstate 9, with a buzzing sign and a view of nothing but desert.' },
+      { name: 'Aldecaldos Camp', kind: 'nomad_camp', description: 'The Aldecaldos make camp out here for now: armored trucks, tents and a fire that never goes out.' },
+      { name: 'Rocky Ridge', kind: 'ghost_town', description: 'An abandoned town on the eastern Badlands, all empty houses and blowing dust.' },
+      { name: 'Biotechnica Flats', kind: 'farm', description: "Biotechnica's protein farms, row after row across the southern Badlands." },
     ],
     zoning: { shack: 1, container: 1 },
     placement: 'edge',
@@ -446,7 +469,7 @@ const KINDS: Record<string, LocationKind> = {
     ambient: ['A bellbot glides past with a stack of designer luggage.', 'Soft music plays in the lobby. Nobody listens.'],
   },
   mall: {
-    label: 'Abandoned mall',
+    label: 'Mall',
     indoor: true,
     names: ['{area} Galleria', 'Seaside Mall'],
     descriptions: ['An abandoned shopping mall, its escalators frozen and its fountains full of trash.'],
@@ -458,6 +481,93 @@ const KINDS: Record<string, LocationKind> = {
     names: ['{area} Motel', 'Desert Rose Motel'],
     descriptions: ['A desert motel with thin walls, a humming ice machine and a view of nothing.'],
     ambient: ['The ice machine rattles awake.', 'A truck pulls in, headlights sweeping the curtains.'],
+  },
+  // Kinds used by real places (see each district's landmarks).
+  hospital: {
+    label: 'Hospital',
+    indoor: true,
+    theme: { primary: '#7cf5ff', secondary: '#ff3355' },
+    names: ['{area} Clinic'],
+    descriptions: ['A hospital where the waiting room is full and the insurance checks come first.'],
+    ambient: ['A Trauma Team AV lands on the roof pad overhead.', 'An announcement calls a doctor to the cyberware ward.'],
+  },
+  columbarium: {
+    label: 'Columbarium',
+    indoor: false,
+    names: ['{area} Columbarium'],
+    descriptions: ['Towers of urns and holo-portraits, quiet above the city.'],
+    ambient: ['A holo-portrait flickers on, smiles, and fades.', 'Wind moves through the rows of urns.'],
+  },
+  park: {
+    label: 'Park',
+    indoor: false,
+    names: ['{area} Park'],
+    descriptions: ['A strip of green between the towers, watched by cameras on every lamp post.'],
+    ambient: ['A maintenance drone trims a hedge with a laser.', 'Someone feeds the pigeons synthetic bread.'],
+  },
+  restaurant: {
+    label: 'Restaurant',
+    indoor: true,
+    theme: { primary: '#ffb347', secondary: '#ff2bd6' },
+    names: ['{area} Grill'],
+    descriptions: ['A restaurant where the menu is real food and the prices prove it.'],
+    ambient: ['Glasses clink at the next table.', 'A waiter glides past with a tray of real oysters.'],
+  },
+  cityhall: {
+    label: 'City hall',
+    indoor: false,
+    names: ['{area} Civic Center'],
+    descriptions: ["Marble steps and metal detectors: the city's government at work."],
+    ambient: ['A protest chant rises and is drowned out by an NCPD drone.', 'Reporters cluster around someone in a good suit.'],
+  },
+  warehouse: {
+    label: 'Warehouse',
+    indoor: false,
+    names: ['{area} Warehouses'],
+    descriptions: ['Rows of corporate warehouses behind fences and floodlights.'],
+    ambient: ['A forklift drone beeps as it reverses.', 'Floodlights sweep the yard.'],
+  },
+  freight: {
+    label: 'Freight station',
+    indoor: false,
+    names: ['{area} Freight Yard'],
+    descriptions: ['A rail freight yard of cranes and stacked containers.'],
+    ambient: ['A crane swings a container onto a flatcar.', 'A freight train clanks into the yard.'],
+  },
+  stronghold: {
+    label: 'Stronghold',
+    indoor: true,
+    names: ['{area} Stronghold'],
+    descriptions: ['A gang stronghold with guards on every door.'],
+    ambient: ['Boots on the stairs. Then silence.', 'Someone checks your face against a list.'],
+  },
+  squat: {
+    label: 'Abandoned hotel',
+    indoor: true,
+    names: ['{area} Squat'],
+    descriptions: ['A hotel nobody runs any more, full of people who live there anyway.'],
+    ambient: ['Music leaks from a room down the hall.', 'Someone has painted over the old room numbers.'],
+  },
+  stadium: {
+    label: 'Stadium',
+    indoor: false,
+    names: ['{area} Stadium'],
+    descriptions: ['A dead stadium where the stands are empty and the parking lot is a market.'],
+    ambient: ['A dead scoreboard flickers to life for a second.', 'Haggling echoes around the empty stands.'],
+  },
+  ghost_town: {
+    label: 'Ghost town',
+    indoor: false,
+    names: ['{area} Ghost Town'],
+    descriptions: ['An empty town the desert is slowly taking back.'],
+    ambient: ['A door bangs somewhere in the wind.', 'Tumbleweed rolls down the main street.'],
+  },
+  farm: {
+    label: 'Protein farm',
+    indoor: false,
+    names: ['{area} Farms'],
+    descriptions: ['Endless rows of protein crops under a dirty sky.'],
+    ambient: ['Irrigation drones hum along the rows.', 'A harvester grinds past in the distance.'],
   },
   shrine: {
     label: 'Shrine',
@@ -491,10 +601,9 @@ const BUILDINGS: BuildingContent = {
     'Petrochem',
     'Zetatech',
     'Kiroshi',
-    'NightCorp',
+    'Night Corp',
     'Trauma Team',
     'Orbital Air',
-    'Ziggurat',
     'Dynalar',
     'Tsunami',
     'Budget Arms',
@@ -522,9 +631,32 @@ const BUILDINGS: BuildingContent = {
   ],
 };
 
+/**
+ * The NCART as it runs in 2077: five lines (A red, B yellow, C cyan, D green, E orange) and
+ * nineteen stations, by district. From the Cyberpunk Wiki's NCART Rail Network page.
+ */
+const NCART: CityContent['ncart'] = {
+  lines: [
+    { name: 'Line A', color: '#ff3b3b' },
+    { name: 'Line B', color: '#ffd84d' },
+    { name: 'Line C', color: '#00f0ff' },
+    { name: 'Line D', color: '#39ff88' },
+    { name: 'Line E', color: '#ff8a3d' },
+  ],
+  stations: {
+    watson: ['Eisenhower Street', 'MedCenter', 'Farrier & Ferguson', 'Megabuilding H10', 'Ellison Plaza'],
+    city_center: ['Alexander Street', 'Sarasti & Republic', 'Memorial Park'],
+    heywood: ['Congress Street & MLK', 'Glen North', 'Ebunike', 'Wellsprings Station', 'Glen South'],
+    santo_domingo: ['Wollesen Street', 'Megabuilding H7'],
+    westbrook: ['Charter Hill Station', 'Monroe & Sagan', 'Japantown South'],
+    pacifica: ['Pacifica - Stadium'],
+  },
+};
+
 export const CITY: CityContent = {
   // The real Night City has the Pacific to the west and the Badlands to the east.
   coast: 'west',
+  ncart: NCART,
   welcome: 'Welcome to Night City, choom. Tap a place, then {h|Walk} or take the {h|NCART}. Tap a block to zoom in.',
   welcomeBack: 'Welcome back, choom. Your map is right where you left it.',
   districts: DISTRICTS,

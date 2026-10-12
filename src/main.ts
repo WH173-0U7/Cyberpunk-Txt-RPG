@@ -263,7 +263,7 @@ function hereView(now: number): PanelView {
       kicker: `You are here · ${dname} · NCART`,
       title: name,
       meta: active ? `Monthly pass valid until ${formatDay(game.wallet.passUntil)}` : undefined,
-      description: `${lines}. A ride costs ${fare} €$, or nothing with a monthly pass.`,
+      description: `NCART, run by Night Corp. ${lines}. A ride costs ${fare} €$, or nothing with a monthly pass.`,
       actions: [
         {
           id: 'pass',

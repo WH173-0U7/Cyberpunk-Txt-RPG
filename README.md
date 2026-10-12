@@ -34,8 +34,12 @@ Center in the middle, Westbrook east, Heywood and Santo Domingo south, Pacifica 
 the Pacific to the west and the Badlands to the east), nudged a little each game. Each
 district fills up with real places from Cyberpunk 2077 first (the Afterlife, Tom's Diner,
 Viktor's Clinic, Lizzie's Bar, Jig-Jig Street, Konpeki Plaza, El Coyote Cojo, the Sunset
-Motel…) and only makes up places once it runs out of those. Neighborhoods, gangs,
-corporations and street terms all come from the game. Arasaka Tower always stands downtown.
+Motel…) and only makes up places once it runs out of those. The NCART uses the real 2077
+network's station names (Eisenhower Street, MedCenter, Memorial Park, Monroe & Sagan…) and
+its line names and colors. Neighborhoods, gangs, corporations and street terms all come
+from the game. Arasaka Tower always stands downtown. Names, locations and lore are checked
+against the [Cyberpunk Wiki](https://cyberpunk.fandom.com); prices and times are the game's
+own.
 
 - **City map**: a street grid of city blocks, desert and coastline, tinted by district.
   Unexplored areas sit under heavy fog. It only lifts along the streets you actually walk

@@ -2,19 +2,26 @@ import { coastFrame, districtAt } from './geography';
 import { createRng } from './rng';
 import type { CityLayout, District, Location, Point, Station, Transit, TransitLine } from './types';
 
-const LINE_COLORS = ['#ffd84d', '#ff2bd6', '#00f0ff', '#39ff88', '#ff8a3d', '#a46bff'];
-/** Up to this many stations per city district. */
-const PER_DISTRICT = 2;
+/** The real network's lines and stations: names come from these before anything is made up. */
+export interface TransitContent {
+  /** In order: the first line drawn takes the first name and color. */
+  lines: Array<{ name: string; color: string }>;
+  /** Real station names, by district id. */
+  stations: Record<string, string[]>;
+}
+
+const FALLBACK_COLORS = ['#a46bff', '#ff8a3d', '#00f0ff'];
 /** Stations keep this far apart, and this far from any place's corner. */
-const STATION_GAP = 13;
+const STATION_GAP = 11;
 const PLACE_GAP = 6;
 /** How far from a district's middle its stations can be. */
 const REACH = 18;
 
 /**
- * The city's NCART network: a couple of stations in every city district (the Badlands get
- * none), joined into lines. Its own random stream, so it never shifts the rest of the city.
- * `areas` names stations after each district's neighborhoods.
+ * The city's NCART network: stations in every city district (the Badlands get none), joined
+ * into lines. A district gets as many of its real stations as fit, named as in the real
+ * Night City; only a district with no real stations gets one named after a neighborhood.
+ * Its own random stream, so it never shifts the rest of the city.
  */
 export function generateTransit(
   seed: string,
@@ -22,6 +29,7 @@ export function generateTransit(
   districts: District[],
   locations: Location[],
   areas: Record<string, string[]>,
+  content: TransitContent,
 ): Transit {
   const rng = createRng(`${seed}:ncart`);
   const { coast } = layout;
@@ -33,24 +41,24 @@ export function generateTransit(
     .filter((c) => locations.every((l) => distance(l, c) >= PLACE_GAP));
 
   const stations: Station[] = [];
-  const names = new Set<string>();
+  // A station never borrows the name of a place in this city (Megabuilding H10, say).
+  const taken = new Set(locations.map((l) => l.name));
   for (const district of rng.shuffle(districts.filter((d) => d.terrain === 'city'))) {
     const nearby = rng.shuffle(corners.filter((c) => districtAt(districts, c)?.id === district.id && distance(c, district) <= REACH));
-    const neighborhoods = rng.shuffle(areas[district.id] ?? []);
-    let made = 0;
+    const real = rng.shuffle(content.stations[district.id] ?? []).filter((name) => !taken.has(name));
+    const names = real.length ? real : [`${rng.pick(areas[district.id] ?? [district.name])} Station`];
     for (const corner of nearby) {
-      if (made >= PER_DISTRICT) break;
+      const name = names[0];
+      if (!name) break;
       if (stations.some((s) => distance(s, corner) < STATION_GAP)) continue;
-      const fallback = `${district.name} ${['Central', 'East', 'West', 'North', 'South'][made] ?? made + 1}`;
-      const base = neighborhoods.find((n) => !names.has(n)) ?? fallback;
-      names.add(base);
-      stations.push({ id: `ncart-${stations.length + 1}`, name: `${base} Station`, district: district.id, lines: [], ...corner });
-      made++;
+      names.shift();
+      taken.add(name);
+      stations.push({ id: `ncart-${stations.length + 1}`, name, district: district.id, lines: [], ...corner });
     }
   }
   if (stations.length < 2) return { stations: {}, lines: [] };
 
-  const lines = drawLines(connect(stations), stations);
+  const lines = drawLines(connect(stations), stations, content);
   for (const line of lines) {
     for (const id of line.stations) stations.find((s) => s.id === id)?.lines.push(line.id);
   }
@@ -133,7 +141,7 @@ function connect(stations: Station[]): Array<[Station, Station]> {
 }
 
 /** Splits the track into lines, each running as straight as it can until it runs out of track. */
-function drawLines(edges: Array<[Station, Station]>, stations: Station[]): TransitLine[] {
+function drawLines(edges: Array<[Station, Station]>, stations: Station[], content: TransitContent): TransitLine[] {
   const unused = new Set(edges);
   const touching = (s: Station) => [...unused].filter(([a, b]) => a === s || b === s);
   const lines: TransitLine[] = [];
@@ -163,7 +171,13 @@ function drawLines(edges: Array<[Station, Station]>, stations: Station[]): Trans
       at = next;
     }
     const n = lines.length;
-    lines.push({ id: `line-${n + 1}`, name: `Line ${n + 1}`, color: LINE_COLORS[n % LINE_COLORS.length] ?? '#ffd84d', stations: path.map((s) => s.id) });
+    const real = content.lines[n];
+    lines.push({
+      id: `line-${n + 1}`,
+      name: real?.name ?? `Line ${n + 1}`,
+      color: real?.color ?? FALLBACK_COLORS[n % FALLBACK_COLORS.length] ?? '#ffd84d',
+      stations: path.map((s) => s.id),
+    });
   }
   return lines;
 }

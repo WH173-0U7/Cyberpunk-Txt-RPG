@@ -1,6 +1,6 @@
 import { generateBuildings, type BuildingContent, type ZoningPlan } from './buildings';
 import { createRng, hashSeed, type Rng } from './rng';
-import { generateTransit } from './transit';
+import { generateTransit, type TransitContent } from './transit';
 import type { AmbientLine, BuildingKind, CityLayout, District, Location, Point, Side, Theme, Weather, World } from './types';
 
 /** A real place from Night City. A district uses its own before it makes any up. */
@@ -57,6 +57,8 @@ export interface CityContent {
   coast: Side;
   welcome: string;
   welcomeBack: string;
+  /** The real NCART's lines and stations. */
+  ncart: TransitContent;
   districts: DistrictTemplate[];
   kinds: Record<string, LocationKind>;
   buildings: BuildingContent;
@@ -69,10 +71,12 @@ export interface CityContent {
  * landing somewhere that no longer matches. The fingerprint test in tests/save.test.ts fails
  * as a reminder.
  */
-export const GENERATOR_VERSION = 2;
+export const GENERATOR_VERSION = 3;
 
 /** Longest description the location panel is designed for (raw text, markup included). */
 export const MAX_DESCRIPTION = 160;
+
+const MIDDLE: Point = { x: 50, y: 50 };
 
 /** Locations stay this far inside the map edge. */
 const MAP_MIN = 7;
@@ -110,7 +114,9 @@ export function generateWorld(seed: string, content: CityContent): World {
     const repeats = template.kinds.filter((k) => !fresh.includes(k));
     const madeUp = [...rng.shuffle(fresh), ...rng.shuffle(repeats)].slice(0, Math.max(0, Math.min(count, template.kinds.length) - landmarks.length));
     const plan = [...landmarks.map((landmark) => ({ kindId: landmark.kind, landmark })), ...madeUp.map((kindId) => ({ kindId, landmark: null }))];
-    const spots = pickCorners(rng, corners, center, plan.length, isEdge ? 14 : 15, Object.values(locations));
+    // Out at the edge, the desert keeps to the outer side of its patch, away from the city.
+    const pool = isEdge ? corners.filter((c) => distance(c, MIDDLE) >= distance(center, MIDDLE) - 6) : corners;
+    const spots = pickCorners(rng, pool, center, plan.length, isEdge ? 14 : 15, Object.values(locations));
     // A district with no free corners for any location is left off the map entirely.
     if (spots.length === 0) continue;
     populated.push(template);
@@ -168,7 +174,7 @@ export function generateWorld(seed: string, content: CityContent): World {
     districts,
     locations,
     buildings: generateBuildings(seed, layout, Object.values(districts), plans, content.buildings),
-    transit: generateTransit(seed, layout, Object.values(districts), Object.values(locations), areas),
+    transit: generateTransit(seed, layout, Object.values(districts), Object.values(locations), areas, content.ncart),
   };
 }
 
@@ -200,7 +206,7 @@ function placeDistricts(rng: Rng, templates: DistrictTemplate[]): Map<string, Po
   const centers = new Map<string, Point>();
   for (const template of templates) {
     const edge = template.placement === 'edge';
-    const dx = rng.range(-5, 5);
+    const dx = edge ? rng.range(-2, 2) : rng.range(-5, 5);
     const dy = edge ? rng.range(-18, 18) : rng.range(-5, 5);
     centers.set(template.id, { x: template.anchor.x + dx, y: template.anchor.y + dy });
   }
