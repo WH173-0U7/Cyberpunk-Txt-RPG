@@ -91,6 +91,8 @@ export class CityMap {
   private trip: Trip | null = null;
   /** A trip just ended: whatever it uncovers glitches in. */
   private arriving = false;
+  /** The building the player is inside, if any. */
+  private inside: string | null = null;
   private buildings = new Map<string, Building>();
   private inSea: (p: Point) => boolean = () => false;
   private hits: BuildingHit[] = [];
@@ -165,6 +167,7 @@ export class CityMap {
     this.preview = { path: null, stations: [] };
     this.trip = null;
     this.arriving = false;
+    this.inside = null;
     this.buildings = new Map(world.buildings.map((b) => [b.id, b]));
     this.inSea = seaTest(world.layout, world.seed);
     this.camera = { zoom: 1, x: 50, y: 50 };
@@ -185,6 +188,12 @@ export class CityMap {
   select(target: Target | null, preview: Preview = { path: null, stations: [] }): void {
     this.target = target;
     this.preview = target ? preview : { path: null, stations: [] };
+    this.render();
+  }
+
+  /** Marks the building the player has gone into (null: back out on the street). */
+  setInside(id: string | null): void {
+    this.inside = id;
     this.render();
   }
 
@@ -558,6 +567,7 @@ export class CityMap {
     const { player, sweep } = this.els;
     player.style.transform = `translate(${p.x}px, ${p.y}px)`;
     player.classList.toggle('is-moving', Boolean(this.trip));
+    player.classList.toggle('is-inside', Boolean(this.inside));
     sweep.style.left = `${p.x}px`;
     sweep.style.top = `${p.y}px`;
   }
@@ -751,6 +761,15 @@ export class CityMap {
       const behind = polyline([]);
       behind.setAttribute('class', 'trip-done');
       lines.push(ahead, behind);
+    }
+
+    // The building the player is inside, outlined in the district's color.
+    const home = this.inside ? this.hits.find((h) => h.id === this.inside) : undefined;
+    if (home) {
+      const outline = document.createElementNS(SVG_NS, 'path');
+      outline.setAttribute('d', selectionOutline(home));
+      outline.setAttribute('class', 'inside-line');
+      lines.push(outline);
     }
 
     // The picked building, outlined over the fog.

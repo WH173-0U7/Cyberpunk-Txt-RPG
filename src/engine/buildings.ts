@@ -62,6 +62,11 @@ export interface ZoningPlan {
   areas: string[];
 }
 
+/** Whether a building has an inside to go into. Open ground (parks, plazas, parking lots) doesn't. */
+export function canEnter(building: Building): boolean {
+  return building.floors > 0;
+}
+
 /** Buildings stop this far (map units) from a street's centerline. */
 export const STREET_HALF_WIDTH = 0.9;
 /** Gap between buildings sharing a block. */

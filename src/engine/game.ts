@@ -1,4 +1,4 @@
-import { blockAt } from './buildings';
+import { blockAt, canEnter } from './buildings';
 import { EventBus } from './events';
 import { districtAt } from './geography';
 import type { Progress } from './save';
@@ -54,6 +54,8 @@ export class Game {
   readonly events = new EventBus<GameEvents>();
   private where: Whereabouts;
   private trip: Trip | null;
+  /** The building the player has gone into, if any. They're inside it, standing at its door on the map. */
+  private inside: Building | null = null;
   private readonly visited = new Set<string>();
   private readonly discovered = new Set<string>();
   private readonly explored = new Set<number>();
@@ -75,6 +77,8 @@ export class Game {
     this.eddies = progress?.eddies ?? rules.startingEddies;
     this.passUntil = progress?.passUntil ?? 0;
     this.resumed = Boolean(progress);
+    const indoors = progress?.inside ? world.buildings.find((b) => b.id === progress.inside) : undefined;
+    if (indoors && !this.trip && this.where.building === indoors.id && canEnter(indoors)) this.inside = indoors;
     if (progress) {
       for (const id of progress.visited) this.visit(this.locationById(id));
       for (const id of progress.discovered) this.discovered.add(this.locationById(id).id);
@@ -97,6 +101,18 @@ export class Game {
     return this.trip;
   }
 
+  /** The building the player is inside, if any. */
+  get interior(): Building | null {
+    return this.inside;
+  }
+
+  /** The building the player is standing outside, if it has an inside they could go into. */
+  get door(): Building | null {
+    if (this.trip || this.inside || !this.where.building) return null;
+    const building = this.world.buildings.find((b) => b.id === this.where.building);
+    return building && canEnter(building) ? building : null;
+  }
+
   get wallet(): Wallet {
     return { eddies: this.eddies, passUntil: this.passUntil };
   }
@@ -114,6 +130,7 @@ export class Game {
     this.say(this.resumed ? this.world.welcomeBack : this.world.welcome);
     if (!this.resumed) this.settle(this.where);
     this.emitArrived(null);
+    if (this.inside) this.events.emit('interiorChanged', this.inside);
     this.events.emit('walletChanged', this.wallet);
     if (this.trip) {
       this.events.emit('tripChanged', this.trip);
@@ -156,6 +173,8 @@ export class Game {
       this.say(`Not enough eddies for the NCART fare (${fare} €$).`, 'error');
       return false;
     }
+    // Heading off from inside a building: out the door first.
+    this.leave();
     if (this.trip) {
       // Changing course: whatever was walked so far still counts.
       this.exploreTrip(now);
@@ -194,6 +213,23 @@ export class Game {
     this.events.emit('tripChanged', null);
     this.emitArrived(from);
     this.events.emit('mapChanged', this.mapState);
+    return true;
+  }
+
+  /** Goes into the building the player is standing outside. Nothing to do in there yet. */
+  enter(): boolean {
+    const building = this.door;
+    if (!building) return false;
+    this.inside = building;
+    this.events.emit('interiorChanged', building);
+    return true;
+  }
+
+  /** Steps back out onto the street, at the building's door. */
+  leave(): boolean {
+    if (!this.inside) return false;
+    this.inside = null;
+    this.events.emit('interiorChanged', null);
     return true;
   }
 

@@ -58,6 +58,8 @@ const place = new PlacePanel(
       ride: $<HTMLButtonElement>('#act-ride'),
       pass: $<HTMLButtonElement>('#act-pass'),
       stop: $<HTMLButtonElement>('#act-stop'),
+      enter: $<HTMLButtonElement>('#act-enter'),
+      leave: $<HTMLButtonElement>('#act-leave'),
     },
     close: $<HTMLButtonElement>('#place-close'),
   },
@@ -151,11 +153,13 @@ function act(id: ActionId): void {
   else if (id === 'ride') go('ncart');
   else if (id === 'pass') game.buyPass(now);
   else if (id === 'stop') game.stop(now);
+  else if (id === 'enter') game.enter();
+  else if (id === 'leave') game.leave();
 }
 
 // ───────────── The panel ─────────────
 
-/** Shows what the player has picked, or the trip they're on, or where they are. */
+/** Shows what the player has picked, or the trip they're on, or the building they're in, or where they are. */
 function refresh(): void {
   const now = Date.now();
   const trip = game.currentTrip;
@@ -173,7 +177,8 @@ function refresh(): void {
     return;
   }
   map.select(null);
-  place.show(trip ? tripView(trip, now) : hereView(now));
+  const inside = game.interior;
+  place.show(trip ? tripView(trip, now) : inside ? insideView(inside) : hereView(now));
 }
 
 function lineNames(stationId: string): string {
@@ -291,14 +296,33 @@ function hereView(now: number): PanelView {
   }
   const building = where.building ? buildingOf(where.building) : undefined;
   const mood = district?.mood ?? '';
+  const door = game.door;
   return {
     mode: 'here',
     kicker: `You are here · ${dname}${building ? ` · Block ${building.block}` : ''}`,
     title: name,
     description: building ? `${categoryOf(building).label} · ${[building.kindLabel, heightOf(building)].filter(Boolean).join(', ')}. ${mood}` : mood,
-    actions: [],
+    actions: door ? [{ id: 'enter', label: 'Go inside', sub: door.kindLabel }] : [],
     closable: false,
     announce: `${name}. ${mood}`,
+  };
+}
+
+/**
+ * Inside a building. There's nothing to do in here yet: what each category of building holds
+ * (counters, rooms, people, jobs) gets added to this view as the game grows.
+ */
+function insideView(building: Building): PanelView {
+  const district = game.districtOf(game.whereabouts)?.name ?? 'Night City';
+  return {
+    mode: 'inside',
+    kicker: `Inside · ${district} · Block ${building.block}`,
+    title: building.name,
+    meta: [categoryOf(building).label, building.kindLabel, heightOf(building)].filter(Boolean).join(' · '),
+    description: 'Nothing to do in here yet.',
+    actions: [{ id: 'leave', label: 'Leave', sub: 'Back to the street' }],
+    closable: false,
+    announce: `Inside ${building.name}. Nothing to do in here yet.`,
   };
 }
 
@@ -360,7 +384,7 @@ function queueSave(): void {
   savePending = true;
   queueMicrotask(() => {
     savePending = false;
-    const saved = saveSlot.write(createSave(game.world.seed, game.mapState, game.wallet, game.currentTrip, GENERATOR_VERSION));
+    const saved = saveSlot.write(createSave(game.world.seed, game.mapState, game.wallet, game.currentTrip, game.interior?.id ?? null, GENERATOR_VERSION));
     saveStatus.textContent = saved ? 'Saved' : 'Not saved';
     saveStatus.classList.toggle('is-failed', !saved);
     saveStatus.title = saved
@@ -398,6 +422,19 @@ function wire(g: Game): void {
     if (from) screen.glitch();
     place.scan();
     refresh();
+  });
+
+  g.events.on('interiorChanged', (building) => {
+    const where = g.whereabouts;
+    const district = g.districtOf(where);
+    map.setInside(building?.id ?? null);
+    // Indoors, the weather stays outside.
+    const sky = building ? 'clear' : (district?.weather ?? 'clear');
+    weather.setWeather(sky);
+    hud.setLocation(building ? building.name : g.nameOf(where), district?.name ?? 'Night City', sky);
+    place.scan();
+    refresh();
+    queueSave();
   });
 
   g.events.on('tripChanged', (trip) => {

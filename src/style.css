@@ -565,6 +565,16 @@ button {
   stroke-opacity: 0.16;
 }
 
+/* The building the player is inside */
+.inside-line {
+  fill: none;
+  stroke: var(--primary);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+  filter: drop-shadow(0 0 5px var(--primary));
+}
+
 /* District names across their territory, over the fog. Each is its own small layer, so
    nothing else on the map has to be redrawn around them. */
 .map-names {
@@ -803,6 +813,16 @@ button {
   border: 2px solid var(--primary);
   border-radius: 50%;
   animation: ping 1.8s ease-out infinite;
+}
+/* Inside a building: the marker waits small at the door, without its ping. */
+.player.is-inside .player-mark::before {
+  width: 8px;
+  height: 8px;
+  opacity: 0.8;
+}
+.player.is-inside .player-mark::after {
+  opacity: 0;
+  animation: none;
 }
 .player.is-moving .player-mark::before {
   width: 11px;

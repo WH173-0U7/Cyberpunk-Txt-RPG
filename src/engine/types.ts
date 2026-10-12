@@ -235,6 +235,8 @@ export type GameEvents = {
   };
   /** A trip began (or changed course), or ended (null). */
   tripChanged: Trip | null;
+  /** The player went into a building, or came back out onto the street (null). */
+  interiorChanged: Building | null;
   /** The player's knowledge of the map changed. */
   mapChanged: MapState;
   /** Eddies spent or the NCART pass changed. */
