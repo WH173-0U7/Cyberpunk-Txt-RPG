@@ -57,6 +57,33 @@ The inventory overlay is in place; food and drink are the only items so far:
 - `src/ui/inventory.ts` shows an Eat/Drink button on anything that can be used (`use` on the
   item view); what using something does is `Game`'s business.
 
+## People
+
+Every city has a population, made up for its seed in `Game`'s constructor (`generatePeople`
+in `src/engine/people.ts`, from `src/data/people.ts`): it never touches the city itself, so
+it needs no generator bump. The pieces:
+
+- A `Person` has a home, a job (`building` null for freelance work), maybe a `gang`,
+  `traits`, `likes` (a dish, a drink, a `hangout` spot), `hates` (a gang) and `eddies`.
+  `Tie`s link people both ways: `to` is `from`'s `kind` (spouse, parent, uncle, friend, crew,
+  coworker…; `INVERSE` gives the other side). `whereIs` puts a person somewhere by the clock
+  (`Clock`: hour, weekday, day; the phone's local time, or `rules.clock` in tests); nobody is
+  placed on the streets, only in buildings and at places, so `Game.peopleHere(now)` works
+  inside a building or at a location.
+- `src/engine/society.ts` is the player's side: `Standing` per person (rapport, grudge,
+  fading on the clock), `Rep` per circle (`gang:`, `district:`, `business:<building id>`,
+  `chain:<business id>`), incidents and threats. `applyIncident` is the cascade; add a new
+  kind of incident (assault, murder are already named) by giving it a severity in
+  `src/data/society.ts` and calling `Game`'s private `incident()`. Anything that should
+  change how someone feels goes through `changeStanding`/`changeRep` so it fades right.
+- `src/engine/dialogue.ts` fills `LINES` templates; `varsFor` is everything a line can say
+  about a person. Keep lines in `src/data/people.ts`, our own words.
+- Gangs are canon (wiki): keep their turf, looks and rivalries true to it. Names are made
+  up in each community's style and must never be a real character's (`tests/people.test.ts`
+  checks a few).
+- `src/ui/people.ts` is the overlay (a `MapOverlay` off the panel's **People** action); the
+  game decides who is here and what the actions do.
+
 ## Inebriation
 
 Drinking alcohol makes the player drunk; nothing else happens yet:

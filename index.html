@@ -125,6 +125,34 @@
             </section>
           </div>
         </div>
+        <div id="people" class="overlay people" role="dialog" aria-labelledby="people-title" hidden>
+          <div class="overlay-head">
+            <div>
+              <p id="people-kicker" class="overlay-kicker"></p>
+              <h2 id="people-title" class="overlay-title"></h2>
+            </div>
+            <button id="people-close" class="icon-btn overlay-close" type="button" aria-label="Close" title="Close (Esc)"></button>
+          </div>
+          <div class="overlay-strip" aria-hidden="true">
+            <span class="overlay-barcode"></span>
+            <span>NCNET//PEOPLE</span>
+            <span id="people-count"></span>
+          </div>
+          <div class="overlay-body">
+            <p id="people-rep" class="people-rep" hidden></p>
+            <p id="people-empty" class="people-empty" hidden></p>
+            <ul id="people-list" class="people-list"></ul>
+            <div id="person" class="person-card" hidden>
+              <button id="person-back" class="person-back" type="button">‹ Everyone here</button>
+              <p id="person-kicker" class="person-kicker"></p>
+              <h3 id="person-name" class="person-name"></h3>
+              <p id="person-bio" class="person-bio"></p>
+              <ul id="person-ties" class="person-ties"></ul>
+              <div id="person-actions" class="person-actions"></div>
+              <div id="person-gifts" class="person-gifts"></div>
+            </div>
+          </div>
+        </div>
         <div id="shop" class="overlay shop" role="dialog" aria-labelledby="shop-title" hidden>
           <div class="overlay-head">
             <div>
@@ -158,6 +186,7 @@
             <button id="act-ride" class="action is-ncart" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-pass" class="action is-ncart" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-stop" class="action is-stop" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-people" class="action is-people" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-menu" class="action is-menu" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-enter" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-leave" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
