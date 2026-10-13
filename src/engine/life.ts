@@ -225,12 +225,13 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
     const byHangout = new Map<string, Person[]>();
     for (const p of locals) if (p.likes.hangout) byHangout.set(`${p.likes.hangout.kind}:${p.likes.hangout.id}`, [...(byHangout.get(`${p.likes.hangout.kind}:${p.likes.hangout.id}`) ?? []), p]);
     const pairs: Array<[Person, Person]> = [];
+    const known = new Set(population.ties.map((t) => `${t.from}|${t.to}`));
     for (const regulars of byHangout.values()) {
       for (let i = 0; i < regulars.length; i++) {
         for (let j = i + 1; j < regulars.length; j++) {
           const a = regulars[i] as Person;
           const b = regulars[j] as Person;
-          if (!tiesOf(population, a.id).some((t) => t.to === b.id)) pairs.push([a, b]);
+          if (!known.has(`${a.id}|${b.id}`)) pairs.push([a, b]);
         }
       }
     }

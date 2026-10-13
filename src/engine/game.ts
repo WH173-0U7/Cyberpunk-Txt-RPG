@@ -420,14 +420,28 @@ export class Game {
     return placeFor(this.pockets, this.items, this.money, item, 1, this.rules.gear, this.rules.food.dishes);
   }
 
+  /**
+   * Puts a stack into a pocket: onto the stack of the same thing already there, if there is
+   * one (a pocket holds one stack of a thing, and that's how its room was counted), else as
+   * its own. Nothing to put it in leaves it where it was.
+   */
+  private putAway(items: Item[], item: Item, home: string | undefined): void {
+    if (!home) return;
+    const stack = items.find((i) => i !== item && i.id === item.id && i.kind === item.kind && i.in === home);
+    if (stack) {
+      stack.count += item.count;
+      items.splice(items.indexOf(item), 1);
+    } else item.in = home;
+  }
+
   /** Puts away anything not in a pocket the player has: where it fits, or, failing that, the first pocket, overfull. */
   private stow(): void {
     const ids = new Set(this.pockets.map((p) => p.id));
     const fallback = this.pockets.find((p) => p.in === null && !this.rules.gear.kinds[p.kind]?.holds) ?? this.pockets[0];
-    for (const item of this.items) {
+    for (const item of [...this.items]) {
       if (item.in && ids.has(item.in)) continue;
       const others = this.items.filter((i) => i !== item);
-      item.in = placeFor(this.pockets, others, this.money, item, item.count, this.rules.gear, this.rules.food.dishes) ?? fallback?.id;
+      this.putAway(this.items, item, placeFor(this.pockets, others, this.money, item, item.count, this.rules.gear, this.rules.food.dishes) ?? fallback?.id);
     }
   }
 
@@ -557,7 +571,7 @@ export class Game {
         this.say(`No room for the ${i.name} that's in your ${currentKind?.name ?? 'pockets'}. Make room first.`, 'error');
         return false;
       }
-      i.in = home;
+      this.putAway(items, i, home);
     }
     let left = '';
     if (current && currentKind) {
@@ -1048,11 +1062,15 @@ export class Game {
       if (doing.startsWith('eating') && learnFact(this.society, person.id, 'likes')) learned.push(person.id);
       if (doing.startsWith('nursing') && learnFact(this.society, person.id, 'drinks')) learned.push(person.id);
     }
+    // Who here is tied to whom: the ties among those present, once, not a scan per pair.
+    const hereIds = new Set(here.map((p) => p.id));
+    const linked = new Set<string>();
+    for (const t of this.population.ties) if (hereIds.has(t.from) && hereIds.has(t.to)) linked.add(`${t.from}|${t.to}`);
     for (let i = 0; i < here.length; i++) {
       for (let j = i + 1; j < here.length; j++) {
         const a = here[i] as Person;
         const b = here[j] as Person;
-        if (!tiesOf(this.population, a.id).some((t) => t.to === b.id)) continue;
+        if (!linked.has(`${a.id}|${b.id}`)) continue;
         if (learnLink(this.society, a.id, b.id, null, 'seen', now)) learned.push(a.id, b.id);
       }
     }

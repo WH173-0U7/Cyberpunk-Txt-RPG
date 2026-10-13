@@ -1107,6 +1107,20 @@ describe('Game', () => {
       expect(tight.gearSaved.find((p) => p.kind === 'wallet')?.in).toBe('golden-pocket-hotpants-1');
     });
 
+    it('moves a stack out of a swapped garment onto the stack of the same thing, never beside it', () => {
+      // Two slots in the pants, the wallet in one and a taco in the other; another taco in the jacket, with the vest to put on.
+      const snug: GearContent = { ...GEAR, kinds: { ...GEAR.kinds, pants: { ...GEAR.kinds.pants!, slots: 2, change: false } } };
+      const inJacket = { id: 'taco', kind: 'consumable' as const, name: 'Taco', count: 1, in: 'jacket' };
+      const inPants = { id: 'taco', kind: 'consumable' as const, name: 'Taco', count: 1, in: 'pants' };
+      const vest = { id: 'duolayer-nylon-vest', kind: 'clothing' as const, name: GEAR.kinds['duolayer-nylon-vest']!.name, count: 1, gear: 'duolayer-nylon-vest', in: 'jacket' };
+      const { game } = inside('b-noodle', 38, 20, { gear: snug }, [inJacket, inPants, vest]);
+      expect(game.wear('duolayer-nylon-vest')).toBe(true);
+      // The jacket's taco joined the pants' one: one stack of two, and the pants are not over.
+      expect(game.inventory.filter((i) => i.id === 'taco')).toEqual([expect.objectContaining({ count: 2, in: 'pants' })]);
+      expect(game.carry().pockets.find((p) => p.id === 'pants')).toMatchObject({ load: { slots: 2, grams: expect.any(Number) }, over: false });
+      expect(game.carry().pockets.some((p) => p.over)).toBe(false);
+    });
+
     it('puts what it buys where there is room, refuses when there is none, and drops things to make some', () => {
       const { game, take, outputs } = inside('b-noodle', 38, 20, { gear: tiny });
       const dish = game.menu()?.items.find((i) => i.kind === 'food');

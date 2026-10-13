@@ -85,7 +85,7 @@ own.
   Au Cabanon, El Pinche Pollo, Kabuki Market…) have their own menus. **Buy** puts the dish in
   your inventory under consumables.
 - **People**: every city has its own people, made up for its seed and the same every time
-  you come back: a few hundred of them, with names from their district's communities
+  you come back: five or six hundred of them, with names from their district's communities
   (Watson's Asian neighborhoods, Heywood's barrios, the Haitian diaspora of Pacifica, corpos
   in City Center), homes in its apartment blocks and megabuildings, jobs in its storefronts,
   towers and factories (or none to speak of), families who share a name (couples, children,

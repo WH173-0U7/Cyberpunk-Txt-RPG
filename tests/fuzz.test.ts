@@ -74,9 +74,10 @@ function check(game: Game, about: string): void {
   expect(again.jobSaved, `${about}: job after a save`).toEqual(game.jobSaved);
   expect(again.lifeSaved, `${about}: the people's days after a save`).toEqual(game.lifeSaved);
   // The people come back the same (their ties as a set: a friendship made again after a falling out sits elsewhere in the list).
+  // Compared as text first, which is quick for hundreds of people; the slow deep match only says what differs.
   const tiesOf = (ties: Array<{ from: string; to: string; kind: string }>) => [...ties].map((t) => `${t.from}|${t.to}|${t.kind}`).sort();
-  expect(again.population.people, `${about}: the people after a save`).toEqual(game.population.people);
-  expect(tiesOf(again.population.ties), `${about}: the ties after a save`).toEqual(tiesOf(game.population.ties));
+  if (JSON.stringify(again.population.people) !== JSON.stringify(game.population.people)) expect(again.population.people, `${about}: the people after a save`).toEqual(game.population.people);
+  if (tiesOf(again.population.ties).join() !== tiesOf(game.population.ties).join()) expect(tiesOf(again.population.ties), `${about}: the ties after a save`).toEqual(tiesOf(game.population.ties));
   // A job is always at a storefront that hires, on a rung of its ladder.
   const job = game.jobSaved;
   if (job) {

@@ -3,7 +3,7 @@ import { CITY } from '../src/data/city';
 import { FOOD } from '../src/data/food';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
-import { generatePeople, INVERSE, isNetrunner, peopleAt, tiesOf, whereIs, type Population, type TieKind } from '../src/engine/people';
+import { generatePeople, INVERSE, isNetrunner, peopleAt, whereIs, type Population, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 
@@ -88,10 +88,13 @@ describe('the people', () => {
   it('tie people together both ways: family who share a name, friends, crews and coworkers', () => {
     for (const { world, population } of cities) {
       const byId = new Map(population.people.map((p) => [p.id, p]));
+      const keys = new Set(population.ties.map((t) => `${t.from}|${t.to}|${t.kind}`));
+      const knows = new Map<string, number>();
+      for (const t of population.ties) knows.set(t.from, (knows.get(t.from) ?? 0) + 1);
       for (const t of population.ties) {
         expect(t.from, world.seed).not.toBe(t.to);
         expect(byId.has(t.to), `${world.seed} ${t.to}`).toBe(true);
-        expect(population.ties.some((u) => u.from === t.to && u.to === t.from && u.kind === INVERSE[t.kind]), `${world.seed} ${t.from} ${t.kind} ${t.to}`).toBe(true);
+        expect(keys.has(`${t.to}|${t.from}|${INVERSE[t.kind]}`), `${world.seed} ${t.from} ${t.kind} ${t.to}`).toBe(true);
         const a = byId.get(t.from);
         const b = byId.get(t.to);
         if (!a || !b) continue;
@@ -102,7 +105,7 @@ describe('the people', () => {
         if (t.kind === 'parent') expect(b.age - a.age, `${b.name} is ${a.name}'s parent`).toBeGreaterThanOrEqual(18);
         if (t.kind === 'spouse') expect(Math.abs(a.age - b.age)).toBeLessThanOrEqual(12);
       }
-      for (const p of population.people) expect(tiesOf(population, p.id).length, `${world.seed} ${p.name} knows nobody`).toBeGreaterThan(0);
+      for (const p of population.people) expect(knows.get(p.id) ?? 0, `${world.seed} ${p.name} knows nobody`).toBeGreaterThan(0);
       const kinds = new Set(population.ties.map((t) => t.kind));
       for (const kind of ['friend', 'coworker', 'spouse', 'sibling'] as TieKind[]) expect(kinds, `${world.seed} has no ${kind}`).toContain(kind);
       // Blood runs across the city too.

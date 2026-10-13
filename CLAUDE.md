@@ -126,6 +126,14 @@ Every city has a population, made up for its seed in `Game`'s constructor (`gene
 in `src/engine/people.ts`, from `src/data/people.ts`): it never touches the city itself, so
 it needs no generator bump. The pieces:
 
+- The people come in two draws, each on its own RNG stream, so the first (`seed:people`: the
+  staff by `rolesFor`, `residents` per home, the gangs by their district weights) never
+  changes and every save keeps the people it knows; the second (`seed:people:more`) fills
+  the city out by `PEOPLE.more` (the chance of one more pair of hands per storefront, with a
+  role from `roles.extra` by the building's category; residents `perHome`, more in a `tall`
+  block and a `megabuilding`; the gangs again, by `gangs`). Make a city bigger or smaller
+  there, or with a third draw on a new stream, never by changing the first. Families, ties
+  and hangouts are made within a draw; coworkers, crews and bios over everyone at the end.
 - A `Person` has a home, a job (`building` null for freelance work), maybe a `gang`,
   `traits`, `likes` (a dish, a drink, a `hangout` spot), `hates` (a gang) and `eddies`.
   `Tie`s link people both ways: `to` is `from`'s `kind` (spouse, parent, uncle, friend, crew,
