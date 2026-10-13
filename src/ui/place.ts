@@ -2,7 +2,7 @@ import { typewrite, type Typing } from './typewriter';
 
 const TYPE_MS = 9;
 
-export type ActionId = 'walk' | 'ride' | 'pass' | 'stop' | 'enter' | 'leave' | 'menu' | 'people';
+export type ActionId = 'walk' | 'ride' | 'pass' | 'stop' | 'enter' | 'leave' | 'menu' | 'people' | 'bank';
 
 export interface PanelAction {
   id: ActionId;

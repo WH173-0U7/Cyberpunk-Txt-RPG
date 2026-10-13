@@ -182,6 +182,7 @@ export const PEOPLE: PeopleContent = {
       laundromat: ['runs the laundromat'],
       'tattoo-studio': ['tattoo artist'],
       'repair-shop': ['repair tech'],
+      bank: ['teller', 'security guard', 'branch manager'],
       'capsule-hotel': ['night clerk'],
       motel: ['motel clerk', 'runs the motel'],
     },

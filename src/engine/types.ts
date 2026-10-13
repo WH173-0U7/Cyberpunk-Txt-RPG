@@ -206,8 +206,12 @@ export interface MapState {
 }
 
 export interface Wallet {
-  /** Eurodollars (€$). */
+  /** Cash on hand, in eurodollars (€$): bills and coins together. */
   eddies: number;
+  bills: number;
+  coins: number;
+  /** In the bank. */
+  account: number;
   /** When the monthly NCART pass runs out, in ms since 1970 (0: never bought). */
   passUntil: number;
 }

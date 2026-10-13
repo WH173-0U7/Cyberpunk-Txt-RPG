@@ -3,6 +3,7 @@ import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
 import type { GearContent } from '../src/engine/carry';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
+import { MONEY } from '../src/data/money';
 import { LINES } from '../src/data/dialogue';
 import { PEOPLE } from '../src/data/people';
 import { CHARISMA } from '../src/data/skills';
@@ -47,6 +48,7 @@ const world: World = {
     { id: 'b-shop', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Gun shop', category: 'firearms', business: 'gun-shop', name: 'Test Guns', floors: 3, x: 30, y: 21, w: 4, h: 4 },
     { id: 'b-park', block: 'B2', district: 'test', kind: 'park', kindLabel: 'Park', category: 'public', business: null, name: 'Test Park', floors: 0, x: 30, y: 51, w: 6, h: 6 },
     { id: 'b-noodle', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Noodle bar', category: 'food', business: 'noodle-bar', name: 'Test Noodles', floors: 2, x: 36, y: 21, w: 4, h: 4 },
+    { id: 'b-bank', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Bank', category: 'services', business: 'bank', name: 'EuroBank', floors: 2, x: 42, y: 21, w: 4, h: 4 },
   ],
   districts: {
     test: {
@@ -107,6 +109,7 @@ const RULES: GameRules = {
   lines: LINES,
   charisma: CHARISMA,
   gear: GEAR,
+  money: MONEY,
   // People's days run on UTC here, whatever machine the tests run on.
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
 };
@@ -168,7 +171,7 @@ describe('Game', () => {
     expect(arrived?.payload).toMatchObject({ from: null, place: { id: 'alley' }, district: { id: 'test' } });
     expect(sorted(game.mapState.visited)).toEqual(['alley']);
     expect(sorted(game.mapState.discovered)).toEqual(['alley', 'market']);
-    expect(game.wallet).toEqual({ eddies: 5, passUntil: 0 });
+    expect(game.wallet).toEqual({ eddies: 5, bills: 5, coins: 0, account: 0, passUntil: 0 });
   });
 
   describe('on foot', () => {
@@ -351,7 +354,7 @@ describe('Game', () => {
 
       const bought = atWestStation(game);
       expect(game.buyPass(bought)).toBe(true);
-      expect(game.wallet).toEqual({ eddies: 5, passUntil: bought + 30 * 86_400_000 });
+      expect(game.wallet).toMatchObject({ eddies: 5, passUntil: bought + 30 * 86_400_000 });
       take();
 
       go(game, at('bar'), 'ncart', bought);
@@ -441,6 +444,7 @@ describe('Game', () => {
         inside,
         items: [],
         gear: null,
+        money: null,
         energy: null,
         inebriation: null,
         society: null,
@@ -524,7 +528,7 @@ describe('Game', () => {
       expect(game.buy(dear.id)).toBe(false);
       expect(game.wallet.eddies).toBe(1);
       expect(game.inventory).toEqual([]);
-      expect(outputs(take())).toEqual([{ text: `${dear.name} is ${dear.price} €$. You've got 1 €$.`, tone: 'error' }]);
+      expect(outputs(take())).toEqual([{ text: `${dear.name} is ${dear.price} €$. You've got 1 €$ in cash.`, tone: 'error' }]);
 
       // Fine dining is not on a noodle bar's menu, and there's no buying with the menu closed.
       expect(game.buy('got-escargot')).toBe(false);
@@ -560,6 +564,7 @@ describe('Game', () => {
       inside: null,
       items,
       gear: null,
+      money: null,
       energy: null,
       inebriation,
       society: null,
@@ -670,6 +675,7 @@ describe('Game', () => {
       inside: null,
       items,
       gear: null,
+      money: null,
       energy: null,
       inebriation: null,
       society: null,
@@ -944,6 +950,7 @@ describe('Game', () => {
       inside: building,
       items,
       gear: null,
+      money: null,
       energy: null,
       inebriation: null,
       society: null,
@@ -960,7 +967,7 @@ describe('Game', () => {
     const tiny: GearContent = {
       ...GEAR,
       items: { ...GEAR.items, consumable: { grams: 250, perSlot: 1 } },
-      kinds: { ...GEAR.kinds, jacket: { ...GEAR.kinds.jacket!, slots: 1 }, pants: { ...GEAR.kinds.pants!, slots: 2 } },
+      kinds: { ...GEAR.kinds, jacket: { ...GEAR.kinds.jacket!, slots: 1 }, pants: { ...GEAR.kinds.pants!, slots: 2, change: false } },
     };
 
     it('wears the usual pockets, with the wallet in the pants weighing what the eddies weigh', () => {
@@ -968,9 +975,11 @@ describe('Game', () => {
       expect(game.gearSaved).toEqual(GEAR.start);
       const { grams, pockets } = game.carry();
       expect(pockets.map((p) => p.id)).toEqual(['jacket', 'pants', 'wallet']);
-      expect(pockets[2]).toMatchObject({ eddies: 100, holds: GEAR.kinds.wallet!.holds, grams: GEAR.kinds.wallet!.grams + 100 * GEAR.gramsPerEddy, over: false });
-      expect(pockets[1]?.load).toEqual({ slots: 1, grams: GEAR.kinds.wallet!.grams + 100 * GEAR.gramsPerEddy });
-      expect(grams).toBe(GEAR.kinds.wallet!.grams + 100 * GEAR.gramsPerEddy);
+      const walletGrams = Math.round(GEAR.kinds.wallet!.grams + 100 * GEAR.gramsPerBill);
+      expect(pockets[2]).toMatchObject({ bills: 100, holds: GEAR.kinds.wallet!.holds, grams: walletGrams, over: false });
+      expect(pockets[1]?.load).toEqual({ slots: 1, grams: walletGrams });
+      expect(grams).toBe(walletGrams);
+      expect(game.wallet).toMatchObject({ eddies: 100, bills: 100, coins: 0, account: 0 });
     });
 
     it('puts what it buys where there is room, refuses when there is none, and drops things to make some', () => {
@@ -1021,8 +1030,9 @@ describe('Game', () => {
       expect(inside('b-noodle', 38, 20, { gear: rack }).game.menu()?.kind).toBe('food');
     });
 
-    it('nets a robbery only what the wallet will hold', () => {
-      const full: GearContent = { ...GEAR, kinds: { ...GEAR.kinds, wallet: { ...GEAR.kinds.wallet!, holds: 100 } } };
+    it('nets a robbery only what the wallet and the pocket will hold', () => {
+      // A wallet that holds exactly the bills carried, and pants with no room for a first coin.
+      const full: GearContent = { ...GEAR, kinds: { ...GEAR.kinds, wallet: { ...GEAR.kinds.wallet!, holds: 100 }, pants: { ...GEAR.kinds.pants!, slots: 1 } } };
       for (let day = 0; day < 14; day++) {
         const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
         const game = new Game(world, { ...RULES, startingEddies: 100, gear: full }, progressInside('b-noodle', 38, 20));
@@ -1031,13 +1041,84 @@ describe('Game', () => {
         if (!worker) continue;
         const { take, outputs } = record(game);
         expect(game.rob(worker.person.id, now)).toBe(true);
-        // A wallet full at 100 €$: nothing comes away, but it was still a robbery.
+        // No room for bills or coins: nothing comes away, but it was still a robbery.
         expect(game.wallet.eddies).toBe(100);
-        expect(outputs(take()).some((o) => /wallet is full/.test(o.text))).toBe(true);
+        expect(outputs(take()).some((o) => /No room on you/.test(o.text))).toBe(true);
         expect(game.standingWith(worker.person.id, now)?.stance).toBe('hostile');
         return;
       }
       throw new Error('nobody at the noodle bar');
+    });
+
+    it('pays cash coins first and gets change in coins, which weigh', () => {
+      const { game, take, outputs } = inside('b-noodle', 38, 20);
+      const dish = game.menu()?.items.find((i) => i.price % 5 !== 0);
+      if (!dish) throw new Error('every price is a round one');
+      expect(game.buy(dish.id)).toBe(true);
+      // A note or two handed over, the difference back in coins.
+      const change = Math.ceil(dish.price / MONEY.noteMin) * MONEY.noteMin - dish.price;
+      expect(game.wallet).toMatchObject({ bills: 100 - dish.price - change, coins: change, eddies: 100 - dish.price });
+      expect(game.carry().pockets.find((p) => p.id === 'pants')).toMatchObject({ coins: change });
+      take();
+      // Next time the coins go first.
+      expect(game.buy(dish.id)).toBe(true);
+      const paidFromCoins = Math.min(change, dish.price);
+      expect(game.wallet.coins).toBeLessThan(change + MONEY.noteMin);
+      expect(game.wallet.eddies).toBe(100 - 2 * dish.price);
+      expect(paidFromCoins).toBeGreaterThan(0);
+      expect(outputs(take()).map((o) => o.text)).not.toContain('No room for the change');
+    });
+
+    it('takes a transfer where the counter does, and cash where it does not', () => {
+      // A rack of gear takes a transfer when the account covers it; a neighborhood noodle bar wants cash.
+      const rack: GearContent = { ...GEAR, racks: { 'gun-shop': ['belt-pouch'] } };
+      const banked = new Game(world, { ...RULES, startingEddies: 100, gear: rack }, { ...progressInside('b-shop', 32, 20), money: { bills: 5, coins: 0, account: 200 } });
+      banked.start(T0);
+      const pouch = banked.menu()?.items[0];
+      if (!pouch) throw new Error('no pouch');
+      expect(banked.canBuy(pouch.id)).toBeNull();
+      expect(banked.buy(pouch.id)).toBe(true);
+      expect(banked.wallet).toMatchObject({ bills: 5, coins: 0, account: 200 - pouch.price });
+      const street = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside('b-noodle', 38, 20), money: { bills: 1, coins: 0, account: 200 } });
+      street.start(T0);
+      const dish = street.menu()?.items[0];
+      if (!dish) throw new Error('no dish');
+      expect(street.canBuy(dish.id)).toBe(`${dish.name} is ${dish.price} €$. You've got 1 €$ in cash.`);
+      expect(street.buy(dish.id)).toBe(false);
+      // The NCART takes a transfer too.
+      const rider = new Game(world, { ...RULES, startingEddies: 0, fare: 3 }, { ...progressInside('b-noodle', 38, 20), where: station('s1'), inside: null, money: { bills: 0, coins: 0, account: 10 } });
+      rider.start(T0);
+      expect(go(rider, station('s2'), 'ncart', T0).started).toBe(true);
+      expect(rider.wallet).toMatchObject({ account: 7, eddies: 0 });
+    });
+
+    it('banks: deposits cash less the cut for coins, hands out bills as far as the wallet holds them, and changes coins', () => {
+      const { game, take, outputs } = inside('b-bank', 44, 20);
+      expect(game.bank()).toMatchObject({ name: 'EuroBank', fee: MONEY.coinFee, withdrawals: MONEY.withdrawals });
+      // Nothing to change yet; a deposit of 100 €$ in bills is free.
+      expect(game.exchange()).toBe(false);
+      expect(game.deposit()).toBe(true);
+      expect(game.wallet).toMatchObject({ bills: 0, coins: 0, account: 100 });
+      expect(outputs(take()).at(-1)?.text).toBe('Deposited 100 €$. €$ 100 in the bank.');
+      expect(game.deposit()).toBe(false);
+      // Out again, in bills.
+      expect(game.withdraw(200)).toBe(false);
+      expect(game.withdraw(50)).toBe(true);
+      expect(game.wallet).toMatchObject({ bills: 50, account: 50 });
+      // Coins get counted for a cut, in or out.
+      const coined = new Game(world, { ...RULES, startingEddies: 0 }, { ...progressInside('b-bank', 44, 20), money: { bills: 10, coins: 40, account: 0 } });
+      coined.start(T0);
+      expect(coined.exchange()).toBe(true);
+      expect(coined.wallet).toMatchObject({ bills: 48, coins: 0, account: 0 });
+      const depositor = new Game(world, { ...RULES, startingEddies: 0 }, { ...progressInside('b-bank', 44, 20), money: { bills: 10, coins: 40, account: 0 } });
+      depositor.start(T0);
+      expect(depositor.deposit()).toBe(true);
+      expect(depositor.wallet).toMatchObject({ bills: 0, coins: 0, account: 48 });
+      // No counter outside a bank.
+      const { game: elsewhere } = inside('b-noodle', 38, 20);
+      expect(elsewhere.bank()).toBeNull();
+      expect(elsewhere.deposit()).toBe(false);
+      expect(elsewhere.withdraw(10)).toBe(false);
     });
 
     it('keeps pockets and what is in them, and forgets pockets of kinds it no longer has', () => {
@@ -1098,6 +1179,7 @@ describe('Game', () => {
       inside: null,
       items: [],
       gear: null,
+      money: null,
       energy: null,
       inebriation: null,
       society: null,

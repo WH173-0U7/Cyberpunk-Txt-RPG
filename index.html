@@ -152,6 +152,20 @@
             <ul id="shop-list" class="shop-list"></ul>
           </div>
         </div>
+        <div id="bank" class="overlay bank" role="dialog" aria-labelledby="bank-title" hidden>
+          <div class="overlay-strip">
+            <span class="overlay-barcode" aria-hidden="true"></span>
+            <span id="bank-title" class="overlay-label">NCNET//BANK</span>
+            <span id="bank-name" class="overlay-detail"></span>
+            <button id="bank-close" class="icon-btn overlay-close" type="button" aria-label="Leave the counter" title="Close (Esc)"></button>
+          </div>
+          <div class="overlay-body bank-body">
+            <div id="bank-figures" class="bank-figures"></div>
+            <p id="bank-status" class="shop-status" role="status"></p>
+            <div id="bank-picker" class="person-picker" hidden></div>
+            <div id="bank-commands" class="person-commands" role="toolbar" aria-label="The counter"></div>
+          </div>
+        </div>
         <div id="place" class="place">
           <div class="scan-clip" aria-hidden="true"><div id="scan-beam" class="scan-beam"></div></div>
           <div class="place-text">
@@ -168,6 +182,7 @@
             <button id="act-stop" class="action is-stop" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-people" class="action is-people" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-menu" class="action is-menu" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-bank" class="action is-bank" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-enter" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-leave" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
           </div>

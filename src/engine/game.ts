@@ -1,7 +1,8 @@
 import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
-import { loads, newPocketId, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState } from './carry';
+import { changeRoom, loads, newPocketId, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState } from './carry';
+import { cash, changeCoins as coinsToBills, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Venue } from './food';
 import { answer, compose, deflect, describeStranger, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, moodOf, openness, openTopics, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
@@ -95,6 +96,8 @@ export interface GameRules extends TravelRules {
   charisma: SkillRules;
   /** What things weigh and what they're carried in. */
   gear: GearContent;
+  /** How eddies change hands: cash, change, transfers, the bank's cut. */
+  money: MoneyRules;
   /** The time of day people's days run on. The phone's local time if not said (tests say). */
   clock?: (now: number) => Clock;
 }
@@ -152,7 +155,8 @@ export class Game {
   private readonly items: Item[];
   /** The pockets to carry things in: the clothes' own, the wallet, and any bag bought. */
   private readonly pockets: PocketState[];
-  private eddies: number;
+  /** Cash in bills and coins, and the account. */
+  private money: Money;
   private passUntil: number;
   private energyState: EnergyState;
   private drunkState: InebriationState;
@@ -177,7 +181,8 @@ export class Game {
     const start = this.locationById(world.start);
     this.where = progress ? { ...progress.where } : { ...streetSpot(start), place: start.id };
     this.trip = progress?.trip ?? null;
-    this.eddies = progress?.eddies ?? rules.startingEddies;
+    // Saves from before cash was bills and coins had one number: it was bills.
+    this.money = progress?.money ? { ...progress.money } : freshMoney(progress?.eddies ?? rules.startingEddies);
     this.passUntil = progress?.passUntil ?? 0;
     this.energyState = progress?.energy ? { ...progress.energy } : freshEnergy(rules.energy);
     this.drunkState = progress?.inebriation ? { ...progress.inebriation } : freshInebriation();
@@ -233,7 +238,48 @@ export class Game {
   }
 
   get wallet(): Wallet {
-    return { eddies: this.eddies, passUntil: this.passUntil };
+    const { bills, coins, account } = this.money;
+    return { eddies: cash(this.money), bills, coins, account, passUntil: this.passUntil };
+  }
+
+  /** Cash and the account, for saving. */
+  get moneySaved(): Money {
+    return { ...this.money };
+  }
+
+  /** Whether the player can pay a price: in cash, or by transfer where the counter takes one. */
+  private canPay(price: number, transfers: boolean): boolean {
+    return cash(this.money) >= price || (transfers && this.money.account >= price);
+  }
+
+  /** Why the player can't pay a price, by what the counter takes. */
+  private shortBy(what: string, price: number, transfers: boolean): string {
+    const have = transfers ? `${cash(this.money)} €$ in cash and ${this.money.account} €$ in the bank` : `${cash(this.money)} €$ in cash`;
+    return `${what} is ${price} €$. You've got ${have}.`;
+  }
+
+  /**
+   * Pays a price: by transfer from the account where the counter takes one and the account
+   * covers it (the holo's way), else in cash, coins first, the change back in coins as far
+   * as there's room for it, the counter keeping the rest. False if it can't be paid.
+   */
+  private pay(price: number, transfers: boolean): boolean {
+    if (transfers && this.money.account >= price) {
+      this.money = { ...this.money, account: this.money.account - price };
+      return true;
+    }
+    const room = changeRoom(this.pockets, this.items, this.money, this.rules.gear, this.rules.food.dishes);
+    const paid = payCash(this.money, price, this.rules.money, room);
+    if (!paid) return false;
+    this.money = paid.money;
+    if (paid.kept) this.say(`No room for the change: ${paid.kept} €$ stays on the counter.`, 'system');
+    return true;
+  }
+
+  /** Whether a counter takes a transfer from the account: chains, luxury places, racks of gear. */
+  private takesTransfers(menu: Menu): boolean {
+    const { transfers } = this.rules.money;
+    return (menu.kind === 'gear' && transfers.gear) || (menu.venue.chain && transfers.chain) || (menu.venue.quality === 'luxury' && transfers.luxury);
   }
 
   /** The player's energy at `now`: refilled on the clock since it was last spent. */
@@ -290,12 +336,12 @@ export class Game {
   /** Every pocket and what it holds, worked out, and the weight of all of it. */
   carry(): { grams: number; pockets: PocketLoad[] } {
     const { gear, food } = this.rules;
-    return { grams: totalGrams(this.pockets, this.items, this.eddies, gear, food.dishes), pockets: loads(this.pockets, this.items, this.eddies, gear, food.dishes) };
+    return { grams: totalGrams(this.pockets, this.items, this.money, gear, food.dishes), pockets: loads(this.pockets, this.items, this.money, gear, food.dishes) };
   }
 
   /** The pocket with room for one of something, if any. */
   private pocketFor(item: Pick<Item, 'id' | 'kind'>): string | null {
-    return placeFor(this.pockets, this.items, this.eddies, item, 1, this.rules.gear, this.rules.food.dishes);
+    return placeFor(this.pockets, this.items, this.money, item, 1, this.rules.gear, this.rules.food.dishes);
   }
 
   /** Puts away anything not in a pocket the player has: where it fits, or, failing that, the first pocket, overfull. */
@@ -305,7 +351,7 @@ export class Game {
     for (const item of this.items) {
       if (item.in && ids.has(item.in)) continue;
       const others = this.items.filter((i) => i !== item);
-      item.in = placeFor(this.pockets, others, this.eddies, item, item.count, this.rules.gear, this.rules.food.dishes) ?? fallback?.id;
+      item.in = placeFor(this.pockets, others, this.money, item, item.count, this.rules.gear, this.rules.food.dishes) ?? fallback?.id;
     }
   }
 
@@ -331,25 +377,27 @@ export class Game {
 
   /** Why the player can't buy something here, or null if they can: it isn't for sale, they're barred, short of eddies, or out of room. */
   canBuy(id: string, now = Date.now()): string | null {
-    const item = this.menu()?.items.find((i) => i.id === id);
-    if (!item) return 'Not for sale here.';
+    const menu = this.menu();
+    const item = menu?.items.find((i) => i.id === id);
+    if (!menu || !item) return 'Not for sale here.';
     const barred = this.barred(now);
     if (barred) return barred;
-    if (item.price > this.eddies) return `${item.name} is ${item.price} €$. You've got ${this.eddies} €$.`;
+    if (!this.canPay(item.price, this.takesTransfers(menu))) return this.shortBy(item.name, item.price, this.takesTransfers(menu));
     if (item.kind !== 'gear' && !this.pocketFor({ id: item.id, kind: 'consumable' })) return `No room for ${item.name}: your pockets are full. Eat something, or drop something.`;
     return null;
   }
 
   /** Buys something off the menu here: a dish into a pocket with room, or a bag to wear. False, and why, if it can't be. */
   buy(id: string, now = Date.now()): boolean {
-    const item = this.menu()?.items.find((i) => i.id === id);
-    if (!item) return false;
+    const menu = this.menu();
+    const item = menu?.items.find((i) => i.id === id);
+    if (!menu || !item) return false;
     const why = this.canBuy(id, now);
     if (why) {
       this.say(why, 'error');
       return false;
     }
-    this.eddies -= item.price;
+    this.pay(item.price, this.takesTransfers(menu));
     if (item.kind === 'gear') {
       this.pockets.push({ id: newPocketId(item.id, this.pockets), kind: item.id, in: null });
       this.say(`Bought a ${item.name.toLowerCase()} for ${item.price} €$. More room.`, 'system');
@@ -372,6 +420,64 @@ export class Game {
     this.takeOne(item);
     this.say(`You drop the ${item.name}.`);
     this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  // ───────────── The bank ─────────────
+
+  /** The bank the player is inside, if any: its name, its cut for coins, and what it hands over in one go. */
+  bank(): { name: string; fee: number; withdrawals: number[] } | null {
+    const at = this.inside;
+    return at?.business === 'bank' ? { name: at.name, fee: this.rules.money.coinFee, withdrawals: [...this.rules.money.withdrawals] } : null;
+  }
+
+  /** Puts all the cash in the account, less the bank's cut for counting the coins. False with no bank or no cash. */
+  deposit(): boolean {
+    if (!this.bank() || !cash(this.money)) return false;
+    const put = cash(this.money);
+    const { money, fee } = toAccount(this.money, this.rules.money);
+    this.money = money;
+    this.say(`Deposited ${put} €$${fee ? `, less ${fee} €$ for counting the coins` : ''}. €$ ${money.account} in the bank.`, 'system');
+    this.events.emit('walletChanged', this.wallet);
+    return true;
+  }
+
+  /** Takes bills out of the account, as far as the account has them and the wallet will hold them. */
+  withdraw(amount: number): boolean {
+    if (!this.bank()) return false;
+    const room = walletRoom(this.pockets, this.money, this.rules.gear);
+    const money = fromAccount(this.money, amount);
+    if (!money) {
+      this.say(`There isn't ${amount} €$ in the account: €$ ${this.money.account}.`, 'error');
+      return false;
+    }
+    if (amount > room) {
+      this.say(`Your wallet won't hold ${amount} €$ more in bills${room ? ` (room for ${room})` : ''}.`, 'error');
+      return false;
+    }
+    this.money = money;
+    this.say(`Withdrew ${amount} €$ in bills. €$ ${money.account} left in the bank.`, 'system');
+    this.events.emit('walletChanged', this.wallet);
+    return true;
+  }
+
+  /** Changes the coins for bills, less the bank's cut. False with no coins, or no room for the bills. */
+  exchange(): boolean {
+    if (!this.bank()) return false;
+    const changed = coinsToBills(this.money, this.rules.money);
+    if (!changed) {
+      this.say('No coins to change.', 'error');
+      return false;
+    }
+    const notes = changed.money.bills - this.money.bills;
+    if (notes > walletRoom(this.pockets, this.money, this.rules.gear)) {
+      this.say(`Your wallet won't hold ${notes} €$ more in bills.`, 'error');
+      return false;
+    }
+    const coins = this.money.coins;
+    this.money = changed.money;
+    this.say(`Changed ${coins} €$ in coins for ${notes} €$ in bills${changed.fee ? `; the bank kept ${changed.fee} €$` : ''}.`, 'system');
+    this.events.emit('walletChanged', this.wallet);
     return true;
   }
 
@@ -854,20 +960,23 @@ export class Game {
     const emptied = standing.robbedAt && now - standing.robbedAt < (7 * 24 * HOUR) / timeScale;
     const fought = !emptied && rng.chance(person.traits.courage * 0.5);
     const wanted = emptied ? 0 : Math.round(person.eddies * rng.range(0.4, 0.8) * (fought ? 0.5 : 1));
-    // Cash is cash: only what the wallet will hold comes away.
-    const take = Math.min(wanted, walletRoom(this.pockets, this.eddies, this.rules.gear));
+    // Cash is cash: bills as far as the wallet will hold them, coins as far as the pocket will.
+    const loot = splitLoot(wanted, this.rules.money);
+    const bills = Math.min(loot.bills, walletRoom(this.pockets, this.money, this.rules.gear));
+    const coins = Math.min(loot.coins, changeRoom(this.pockets, this.items, this.money, this.rules.gear, this.rules.food.dishes));
+    const take = bills + coins;
     const speaker = this.speakerFor(person, stance, doing, now);
     speaker.vars = { ...speaker.vars, take: String(take) };
     const fallout = this.incident('robbery', person, take, now);
     learnOf(this.society, id, 'met');
     changeStanding(this.society, id, { met: true, robbedAt: now }, society, timeScale, now);
     this.logged(id, 'you', line(lines.you.rob, speaker, rng), now);
-    const outcome = wanted && !take ? `Your wallet is full. ${person.given} keeps ${speaker.vars.his} eddies, and remembers your face.` : line(take ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
+    const outcome = wanted && !take ? `No room on you for the eddies. ${person.given} keeps ${speaker.vars.his}, and remembers your face.` : line(take ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
     this.logged(id, 'them', outcome, now);
     if (take) {
-      this.eddies += take;
+      this.money = { ...this.money, bills: this.money.bills + bills, coins: this.money.coins + coins };
       this.say(outcome, 'system');
-      if (wanted > take) this.say(`Your wallet won't hold the rest: ${wanted - take} €$ stays with ${person.given}.`, 'system');
+      if (wanted > take) this.say(`Your pockets won't hold the rest: ${wanted - take} €$ stays with ${person.given}.`, 'system');
       if (fought) this.drainEnergy(2, now);
       this.events.emit('walletChanged', this.wallet);
     } else {
@@ -907,14 +1016,15 @@ export class Game {
       }
       const by = threat.by ? this.person(threat.by) : undefined;
       const gang = threat.gang ? people.gangs[threat.gang] : undefined;
-      const take = Math.min(this.eddies, threat.amount);
+      const grab = takeCash(this.money, threat.amount);
+      const take = grab.taken;
       const vars = { ...(by ? this.speakerFor(by, this.stanceOf(by, now), 'killing time', now).vars : {}), gang: gang?.name ?? '', take: String(take), where: this.nameOf(this.where) };
       const rng = createRng(`${this.world.seed}:threat:${threat.id}`);
       this.events.emit('fx', { effect: 'shake' });
       const hit = finish(textOf(rng.pick(by ? lines.revenge.person : lines.revenge.gang)), vars);
       this.say(hit, 'error');
       if (by) this.logged(by.id, 'them', hit, now);
-      this.eddies -= take;
+      this.money = grab.money;
       this.drainEnergy(Infinity, now);
       settleThreat(this.society, threat, society, timeScale, now);
       this.events.emit('walletChanged', this.wallet);
@@ -1001,7 +1111,7 @@ export class Game {
     if (this.trip?.mode === 'ncart') return false;
     const covered = plan.mode === 'ncart' && this.passActive(now);
     const fare = plan.mode === 'ncart' && !covered ? plan.fare : 0;
-    if (fare > this.eddies) {
+    if (fare && !this.canPay(fare, this.rules.money.transfers.ncart)) {
       this.say(`Not enough eddies for the NCART fare (${fare} €$).`, 'error');
       return false;
     }
@@ -1014,7 +1124,7 @@ export class Game {
     }
     this.trip = startTrip(plan, now, this.rules);
     if (fare) {
-      this.eddies -= fare;
+      this.pay(fare, this.rules.money.transfers.ncart);
       this.events.emit('walletChanged', this.wallet);
       this.say(`NCART fare paid: ${fare} €$.`, 'system');
     } else if (covered) {
@@ -1071,11 +1181,11 @@ export class Game {
   buyPass(now: number): boolean {
     if (this.trip || !this.where.station) return false;
     const { passPrice, passDays } = this.rules;
-    if (this.eddies < passPrice) {
-      this.say(`A monthly pass costs ${passPrice} €$. You've got ${this.eddies} €$.`, 'error');
+    if (!this.canPay(passPrice, this.rules.money.transfers.ncart)) {
+      this.say(this.shortBy('A monthly pass', passPrice, this.rules.money.transfers.ncart), 'error');
       return false;
     }
-    this.eddies -= passPrice;
+    this.pay(passPrice, this.rules.money.transfers.ncart);
     this.passUntil = Math.max(now, this.passUntil) + passDays * DAY;
     this.events.emit('walletChanged', this.wallet);
     this.say(`Monthly NCART pass bought. Unlimited rides for ${passDays} days.`, 'system');

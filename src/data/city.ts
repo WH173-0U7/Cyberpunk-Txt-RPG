@@ -629,7 +629,7 @@ const BUILDINGS: BuildingContent = {
     medical: { label: 'Medical', business: true, share: 1.2, description: 'Pharmacies and street clinics: meds, injectors and patching up.' },
     vehicles: { label: 'Vehicles', business: true, share: 0.8, description: 'Garages and chop shops that fix, mod and strip cars and bikes.' },
     entertainment: { label: 'Entertainment', business: true, share: 1.5, description: 'Braindance parlors, arcades and pachinko halls.' },
-    services: { label: 'Services', business: true, share: 2, description: 'Laundromats, tattoo studios and repair shops.' },
+    services: { label: 'Services', business: true, share: 2, description: 'Laundromats, tattoo studios, repair shops and bank branches.' },
     lodging: { label: 'Lodging', business: true, share: 0.8, description: 'Capsule hotels and motels that rent beds by the night.' },
     residential: { label: 'Residential', business: false, share: 0, description: 'Where people live: apartment blocks, megabuildings and squats.' },
     corporate: { label: 'Corporate', business: false, share: 0, description: 'Corporate towers and offices.' },
@@ -660,6 +660,7 @@ const BUILDINGS: BuildingContent = {
   // Real buildings, where the wiki puts them. The eateries run their real businesses.
   landmarks: [
     { district: 'city_center', kind: 'tower', name: 'Arasaka Tower' },
+    { district: 'city_center', kind: 'shops', name: 'Asukaga & Finch Bank', business: 'bank' },
     { district: 'city_center', kind: 'shops', name: 'Pickles!', business: 'fast-food' },
     { district: 'watson', kind: 'shops', name: 'Corpo Snack', business: 'food-stall' },
     { district: 'westbrook', kind: 'shops', name: 'Au Cabanon', business: 'restaurant' },
@@ -712,6 +713,8 @@ const BUILDINGS: BuildingContent = {
     { id: 'laundromat', sign: 'Laundromat', label: 'Laundromat', category: 'services' },
     { id: 'tattoo-studio', sign: 'Tattoo Studio', label: 'Tattoo studio', category: 'services' },
     { id: 'repair-shop', sign: 'Repair Shop', label: 'Repair shop', category: 'services' },
+    // EuroBank backs the eurodollar (wiki); its branches take deposits, hand out bills and count coins. Not in Pacifica or the Badlands.
+    { id: 'bank', sign: 'EuroBank', label: 'Bank', category: 'services', chain: true, where: ['city_center', 'westbrook', 'watson', 'heywood', 'santo_domingo'] },
     { id: 'capsule-hotel', sign: 'Capsule Hotel', label: 'Capsule hotel', category: 'lodging' },
     { id: 'motel', sign: 'Motel', label: 'Motel', category: 'lodging' },
   ],
