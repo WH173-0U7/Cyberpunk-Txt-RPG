@@ -1,12 +1,12 @@
 import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
-import { changeRoom, loads, newPocketId, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState } from './carry';
-import { cash, changeCoins as coinsToBills, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
+import { changeRoom, loads, newChipId, newPocketId, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState } from './carry';
+import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Venue } from './food';
 import { answer, compose, deflect, describeStranger, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, moodOf, openness, openTopics, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
-import { generatePeople, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type PeopleContent, type Person, type Population, type Spot, type Tie } from './people';
+import { generatePeople, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type PeopleContent, type Person, type Population, type Spot, type Tie } from './people';
 import { createRng } from './rng';
 import { freshSkill, gainXp, skillStatus, type SkillRules, type SkillState, type SkillStatus } from './skills';
 import {
@@ -239,7 +239,29 @@ export class Game {
 
   get wallet(): Wallet {
     const { bills, coins, account } = this.money;
-    return { eddies: cash(this.money), bills, coins, account, passUntil: this.passUntil };
+    return { eddies: cash(this.money), bills, coins, account, chips: this.chipTotal(), passUntil: this.passUntil };
+  }
+
+  /** The credchips carried: all of them, the clean ones (in the player's name), or the locked ones (somebody else's still). */
+  private chips(which: 'all' | 'clean' | 'locked' = 'all'): Item[] {
+    return this.items.filter((i) => i.kind === 'credchip' && (which === 'all' || Boolean(i.locked) === (which === 'locked')));
+  }
+
+  /** Eddies on the clean chips. */
+  private chipTotal(): number {
+    return this.chips('clean').reduce((sum, c) => sum + (c.balance ?? 0), 0);
+  }
+
+  /** The clean chip to pay a price with: the one with the least on it that covers it. */
+  private chipFor(price: number): Item | undefined {
+    return this.chips('clean')
+      .filter((c) => (c.balance ?? 0) >= price)
+      .sort((a, b) => (a.balance ?? 0) - (b.balance ?? 0))[0];
+  }
+
+  /** A netrunner's cut for chopping a chip with `balance` on it. */
+  chopCut(balance: number): number {
+    return chipCut(balance, this.rules.money);
   }
 
   /** Cash and the account, for saving. */
@@ -249,12 +271,15 @@ export class Game {
 
   /** Whether the player can pay a price: in cash, or by transfer where the counter takes one. */
   private canPay(price: number, transfers: boolean): boolean {
-    return cash(this.money) >= price || (transfers && this.money.account >= price);
+    return cash(this.money) >= price || (transfers && (this.money.account >= price || Boolean(this.chipFor(price))));
   }
 
   /** Why the player can't pay a price, by what the counter takes. */
   private shortBy(what: string, price: number, transfers: boolean): string {
-    const have = transfers ? `${cash(this.money)} €$ in cash and ${this.money.account} €$ in the bank` : `${cash(this.money)} €$ in cash`;
+    const parts = [`${cash(this.money)} €$ in cash`];
+    if (transfers) parts.push(`${this.money.account} €$ in the bank`);
+    if (transfers && this.chipTotal()) parts.push(`${this.chipTotal()} €$ on chips`);
+    const have = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
     return `${what} is ${price} €$. You've got ${have}.`;
   }
 
@@ -264,9 +289,22 @@ export class Game {
    * as there's room for it, the counter keeping the rest. False if it can't be paid.
    */
   private pay(price: number, transfers: boolean): boolean {
-    if (transfers && this.money.account >= price) {
-      this.money = { ...this.money, account: this.money.account - price };
-      return true;
+    if (transfers) {
+      // A chip in your name first (a chip can be lost; the account can't), then the account.
+      const chip = this.chipFor(price);
+      if (chip) {
+        chip.balance = (chip.balance ?? 0) - price;
+        if (!chip.balance) {
+          this.items.splice(this.items.indexOf(chip), 1);
+          this.say('That empties the chip; you toss it.', 'system');
+        }
+        this.events.emit('inventoryChanged', this.inventory);
+        return true;
+      }
+      if (this.money.account >= price) {
+        this.money = { ...this.money, account: this.money.account - price };
+        return true;
+      }
     }
     const room = changeRoom(this.pockets, this.items, this.money, this.rules.gear, this.rules.food.dishes);
     const paid = payCash(this.money, price, this.rules.money, room);
@@ -478,6 +516,26 @@ export class Game {
     this.money = changed.money;
     this.say(`Changed ${coins} €$ in coins for ${notes} €$ in bills${changed.fee ? `; the bank kept ${changed.fee} €$` : ''}.`, 'system');
     this.events.emit('walletChanged', this.wallet);
+    return true;
+  }
+
+  /** Banks the credchips in the player's name: what's on them into the account. A locked chip is somebody else's; the teller slides it back. */
+  bankChips(): boolean {
+    const at = this.bank();
+    if (!at) return false;
+    const clean = this.chips('clean');
+    const locked = this.chips('locked').length;
+    if (!clean.length) {
+      this.say(locked ? `${locked === 1 ? "That chip isn't" : "Those chips aren't"} in your name. ${at.name} won't touch ${locked === 1 ? 'it' : 'them'}.` : 'No chips to bank.', 'error');
+      return false;
+    }
+    const sum = clean.reduce((n, c) => n + (c.balance ?? 0), 0);
+    for (const chip of clean) this.items.splice(this.items.indexOf(chip), 1);
+    this.money = { ...this.money, account: this.money.account + sum };
+    const back = locked ? ` The teller slides the ${locked === 1 ? 'other one' : 'others'} back: not in your name.` : '';
+    this.say(`Banked ${clean.length === 1 ? 'the chip' : `${clean.length} chips`}: ${sum} €$ into the account. €$ ${this.money.account} in the bank.${back}`, 'system');
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('inventoryChanged', this.inventory);
     return true;
   }
 
@@ -960,25 +1018,36 @@ export class Game {
     const emptied = standing.robbedAt && now - standing.robbedAt < (7 * 24 * HOUR) / timeScale;
     const fought = !emptied && rng.chance(person.traits.courage * 0.5);
     const wanted = emptied ? 0 : Math.round(person.eddies * rng.range(0.4, 0.8) * (fought ? 0.5 : 1));
-    // Cash is cash: bills as far as the wallet will hold them, coins as far as the pocket will.
+    // Their credchip too, if they carry one and there's a slot for it: it comes locked, and wants chopping before any of it is yours.
+    const chipWanted = emptied ? 0 : person.chip;
+    const chipPocket = chipWanted ? this.pocketFor({ id: 'credchip', kind: 'credchip' }) : null;
+    const chipItem: Item | null = chipPocket ? { id: newChipId(this.items), kind: 'credchip', name: 'CredChip', count: 1, in: chipPocket, balance: chipWanted, locked: true } : null;
+    const chip = chipItem ? chipWanted : 0;
+    // Cash is cash: bills as far as the wallet will hold them, coins as far as the pocket will (with the chip in it).
     const loot = splitLoot(wanted, this.rules.money);
     const bills = Math.min(loot.bills, walletRoom(this.pockets, this.money, this.rules.gear));
-    const coins = Math.min(loot.coins, changeRoom(this.pockets, this.items, this.money, this.rules.gear, this.rules.food.dishes));
+    const coins = Math.min(loot.coins, changeRoom(this.pockets, chipItem ? [...this.items, chipItem] : this.items, this.money, this.rules.gear, this.rules.food.dishes));
     const take = bills + coins;
     const speaker = this.speakerFor(person, stance, doing, now);
-    speaker.vars = { ...speaker.vars, take: String(take) };
-    const fallout = this.incident('robbery', person, take, now);
+    const haul = [take ? `${take} €$` : '', chip ? `a credchip with ${chip} €$ on it` : ''].filter(Boolean).join(' and ');
+    speaker.vars = { ...speaker.vars, take: String(take), haul };
+    const fallout = this.incident('robbery', person, take + chip, now);
     learnOf(this.society, id, 'met');
     changeStanding(this.society, id, { met: true, robbedAt: now }, society, timeScale, now);
     this.logged(id, 'you', line(lines.you.rob, speaker, rng), now);
-    const outcome = wanted && !take ? `No room on you for the eddies. ${person.given} keeps ${speaker.vars.his}, and remembers your face.` : line(take ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
+    const got = take > 0 || chip > 0;
+    const outcome = (wanted || chipWanted) && !got ? `No room on you for the eddies. ${person.given} keeps ${speaker.vars.his}, and remembers your face.` : line(got ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
     this.logged(id, 'them', outcome, now);
-    if (take) {
+    if (got) {
       this.money = { ...this.money, bills: this.money.bills + bills, coins: this.money.coins + coins };
+      if (chipItem) this.items.push(chipItem);
       this.say(outcome, 'system');
       if (wanted > take) this.say(`Your pockets won't hold the rest: ${wanted - take} €$ stays with ${person.given}.`, 'system');
+      if (chipWanted && !chip) this.say(`No room on you for ${speaker.vars.his} credchip: it stays in ${speaker.vars.his} hand.`, 'system');
+      if (chip) this.say(`The chip is locked to ${person.given}. A netrunner will have to chop it before any of it is yours.`, 'system');
       if (fought) this.drainEnergy(2, now);
       this.events.emit('walletChanged', this.wallet);
+      if (chipItem) this.events.emit('inventoryChanged', this.inventory);
     } else {
       this.say(outcome);
     }
@@ -991,6 +1060,69 @@ export class Game {
   }
 
   /** Writes an incident down and spreads it; returns everyone it touched, the victim first. */
+  /**
+   * Whether someone could chop a stolen credchip for the player, as far as the player can
+   * tell: a netrunner whose line of work they know, or who is at it behind a netrunning
+   * counter right here.
+   */
+  canChop(id: string): boolean {
+    const person = this.person(id);
+    if (!person || !isNetrunner(person, this.world)) return false;
+    return knowledgeOf(this.society, id).facts.includes('job') || (Boolean(person.job.building) && this.inside?.id === person.job.building);
+  }
+
+  /**
+   * Asks someone here to chop a stolen credchip: a netrunner cracks it for a cut, and the
+   * rest is the player's to spend or bank. Whether they will is their openness (the greedy
+   * are readier); a no holds for the talk cooldown, and pressing costs rapport.
+   */
+  chop(id: string, chipId: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    const chip = this.items.find((i) => i.id === chipId && i.kind === 'credchip' && i.locked);
+    if (!here || !chip || !isNetrunner(here.person, this.world)) return false;
+    const { person, stance, doing } = here;
+    const { society, timeScale, lines } = this.rules;
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const balance = chip.balance ?? 0;
+    const cut = this.chopCut(balance);
+    const speaker = this.speakerFor(person, stance, doing, now);
+    speaker.vars = { ...speaker.vars, balance: String(balance), cut: String(cut), left: String(balance - cut) };
+    const rng = createRng(`${this.world.seed}:${id}:chop:${standing.asks}`);
+    learnOf(this.society, id, 'met');
+    this.logged(id, 'you', line(lines.you.chop, speaker, rng), now);
+    const refused = { ...standing.refused };
+    let pressed = false;
+    let done = false;
+    if (speaker.mood === 'asleep' || stance === 'hostile') {
+      this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
+    } else if (this.pressing(standing, 'chop', now)) {
+      pressed = true;
+      this.speech(person, line(lines.pressed, speaker, rng), now);
+    } else {
+      const reply = replyTo(openness('chop', stance, this.charismaState.level, person.traits, society.openness), society.openness, rng);
+      if (reply === 'answer') {
+        done = true;
+        chip.locked = false;
+        chip.balance = balance - cut;
+        this.speech(person, compose(lines.chop.done, speaker, lines, rng, { opener: false }), now);
+        // Watching them work is as good as being told what they do.
+        learnFact(this.society, id, 'name');
+        learnFact(this.society, id, 'job');
+      } else {
+        this.speech(person, reply === 'deflect' ? deflect(speaker, 'chop', lines, rng) : line(lines.chop.refuse, speaker, rng), now);
+        refused.chop = now;
+      }
+    }
+    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport: pressed ? -society.openness.press : done ? society.chop.rapport : 0 }, society, timeScale, now);
+    if (done) {
+      this.gainCharisma(3);
+      this.events.emit('inventoryChanged', this.inventory);
+      this.events.emit('walletChanged', this.wallet);
+    }
+    this.events.emit('societyChanged', { people: [id] });
+    return true;
+  }
+
   private incident(kind: IncidentKind, victim: Person, took: number, now: number): string[] {
     const { society, timeScale, people } = this.rules;
     const witnesses = this.peopleHere(now).map((p) => p.person.id).filter((pid) => pid !== victim.id);
@@ -1017,7 +1149,14 @@ export class Game {
       const by = threat.by ? this.person(threat.by) : undefined;
       const gang = threat.gang ? people.gangs[threat.gang] : undefined;
       const grab = takeCash(this.money, threat.amount);
-      const take = grab.taken;
+      let take = grab.taken;
+      // Short of cash, they take the chips on you, whoever's name is on them, biggest first.
+      const lost: Item[] = [];
+      for (const chip of this.chips().sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))) {
+        if (take >= threat.amount) break;
+        lost.push(chip);
+        take += chip.balance ?? 0;
+      }
       const vars = { ...(by ? this.speakerFor(by, this.stanceOf(by, now), 'killing time', now).vars : {}), gang: gang?.name ?? '', take: String(take), where: this.nameOf(this.where) };
       const rng = createRng(`${this.world.seed}:threat:${threat.id}`);
       this.events.emit('fx', { effect: 'shake' });
@@ -1025,9 +1164,12 @@ export class Game {
       this.say(hit, 'error');
       if (by) this.logged(by.id, 'them', hit, now);
       this.money = grab.money;
+      for (const chip of lost) this.items.splice(this.items.indexOf(chip), 1);
+      if (lost.length) this.say(`${lost.length === 1 ? 'The credchip on you goes' : `The ${lost.length} credchips on you go`} with them.`, 'error');
       this.drainEnergy(Infinity, now);
       settleThreat(this.society, threat, society, timeScale, now);
       this.events.emit('walletChanged', this.wallet);
+      if (lost.length) this.events.emit('inventoryChanged', this.inventory);
       this.events.emit('societyChanged', { people: by ? [by.id] : [] });
     }
   }

@@ -10,8 +10,9 @@ import { CHARISMA } from '../src/data/skills';
 import { openness } from '../src/engine/dialogue';
 import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
+import { freshSociety } from '../src/engine/society';
 import type { TravelRules } from '../src/engine/travel';
-import type { GameEvents, Location, Whereabouts, World } from '../src/engine/types';
+import type { GameEvents, Item, Location, Whereabouts, World } from '../src/engine/types';
 
 // A small city on a 3×3 grid of streets:
 //
@@ -19,8 +20,9 @@ import type { GameEvents, Location, Whereabouts, World } from '../src/engine/typ
 //   [S1]       |       [S2]       (y = 50, NCART stations on Line 1)
 //             roof        dock    (y = 80; the dock has no routes, you find it on foot)
 //
-// Off the top street between the alley and the market, a gun shop you can go into and a noodle
-// bar with a menu; off the middle street, a park you can't go into. The bar is a diner.
+// Off the top street between the alley and the market, a gun shop you can go into, a noodle
+// bar with a menu, a bank and a cyberdeck shop; off the middle street, a park you can't go
+// into. The bar is a diner.
 function place(id: string, x: number, y: number, links: string[], extra: Partial<Location> = {}): Location {
   return {
     id,
@@ -49,6 +51,7 @@ const world: World = {
     { id: 'b-park', block: 'B2', district: 'test', kind: 'park', kindLabel: 'Park', category: 'public', business: null, name: 'Test Park', floors: 0, x: 30, y: 51, w: 6, h: 6 },
     { id: 'b-noodle', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Noodle bar', category: 'food', business: 'noodle-bar', name: 'Test Noodles', floors: 2, x: 36, y: 21, w: 4, h: 4 },
     { id: 'b-bank', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Bank', category: 'services', business: 'bank', name: 'EuroBank', floors: 2, x: 42, y: 21, w: 4, h: 4 },
+    { id: 'b-deck', block: 'A1', district: 'test', kind: 'shops', kindLabel: 'Cyberdeck shop', category: 'netrunning', business: 'cyberdeck-shop', name: 'Test Decks', floors: 1, x: 24, y: 21, w: 4, h: 4 },
   ],
   districts: {
     test: {
@@ -171,7 +174,7 @@ describe('Game', () => {
     expect(arrived?.payload).toMatchObject({ from: null, place: { id: 'alley' }, district: { id: 'test' } });
     expect(sorted(game.mapState.visited)).toEqual(['alley']);
     expect(sorted(game.mapState.discovered)).toEqual(['alley', 'market']);
-    expect(game.wallet).toEqual({ eddies: 5, bills: 5, coins: 0, account: 0, passUntil: 0 });
+    expect(game.wallet).toEqual({ eddies: 5, bills: 5, coins: 0, account: 0, chips: 0, passUntil: 0 });
   });
 
   describe('on foot', () => {
@@ -1031,8 +1034,8 @@ describe('Game', () => {
     });
 
     it('nets a robbery only what the wallet and the pocket will hold', () => {
-      // A wallet that holds exactly the bills carried, and pants with no room for a first coin.
-      const full: GearContent = { ...GEAR, kinds: { ...GEAR.kinds, wallet: { ...GEAR.kinds.wallet!, holds: 100 }, pants: { ...GEAR.kinds.pants!, slots: 1 } } };
+      // A wallet that holds exactly the bills carried and no chips, and pants with no room for a first coin.
+      const full: GearContent = { ...GEAR, kinds: { ...GEAR.kinds, wallet: { ...GEAR.kinds.wallet!, holds: 100, chips: 0 }, pants: { ...GEAR.kinds.pants!, slots: 1 } } };
       for (let day = 0; day < 14; day++) {
         const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
         const game = new Game(world, { ...RULES, startingEddies: 100, gear: full }, progressInside('b-noodle', 38, 20));
@@ -1119,6 +1122,144 @@ describe('Game', () => {
       expect(elsewhere.bank()).toBeNull();
       expect(elsewhere.deposit()).toBe(false);
       expect(elsewhere.withdraw(10)).toBe(false);
+    });
+
+    /** A weekday at 11:00 UTC with someone working at a storefront, the game standing inside it. */
+    function atWork(building: string, x: number, y: number, progress: Partial<Progress> = {}, rules: Partial<GameRules> = {}) {
+      for (let day = 0; day < 14; day++) {
+        const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
+        if (new Date(now).getUTCDay() % 6 === 0) continue;
+        const game = new Game(world, { ...RULES, startingEddies: 100, ...rules }, { ...progressInside(building, x, y), ...progress });
+        game.start(now);
+        const worker = game.peopleHere(now).find((p) => p.person.job.building === building);
+        if (worker) return { game, now, worker: worker.person, ...record(game) };
+      }
+      throw new Error(`nobody works at ${building}`);
+    }
+    const hot = (balance: number, n = 1): Item => ({ id: `credchip-${n}`, kind: 'credchip', name: 'CredChip', count: 1, balance, locked: true });
+    /** Standing with someone that makes them a friend as of `now`. */
+    const friendOf = (id: string, now: number) => ({
+      ...freshSociety(),
+      standings: { [id]: { met: true, rapport: 80, grudge: 0, at: now, talks: 0, lastTalkAt: 0, gifts: 0, lastGiftAt: 0, robbedAt: 0, asks: 0, refused: {} } },
+    });
+
+    it('robs a credchip too, which comes locked, into the wallet', () => {
+      const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20);
+      worker.chip = 120;
+      take();
+      expect(game.rob(worker.id, now)).toBe(true);
+      const chip = game.inventory.find((i) => i.kind === 'credchip');
+      expect(chip).toMatchObject({ name: 'CredChip', count: 1, in: 'wallet', balance: 120, locked: true });
+      const said = outputs(take()).map((o) => o.text);
+      expect(said.some((t) => /a credchip with 120 €\$ on it/.test(t))).toBe(true);
+      expect(said.some((t) => /locked to .*netrunner/.test(t))).toBe(true);
+      // Locked, it's nobody's money yet: not the header's, not a counter's.
+      expect(game.wallet.chips).toBe(0);
+      expect(game.carry().pockets.find((p) => p.id === 'wallet')).toMatchObject({ chips: 1, chipSlots: GEAR.kinds.wallet!.chips });
+      // Robbed again this week, they have nothing, chip included.
+      expect(game.rob(worker.id, now + HOUR)).toBe(true);
+      expect(game.inventory.filter((i) => i.kind === 'credchip')).toHaveLength(1);
+      // With no card slots and no pockets, the chip stays with them.
+      const { game: full, now: later, worker: other } = atWork('b-noodle', 38, 20, {}, { gear: { ...GEAR, kinds: { ...GEAR.kinds, wallet: { ...GEAR.kinds.wallet!, chips: 0 }, jacket: { ...GEAR.kinds.jacket!, slots: 0 }, pants: { ...GEAR.kinds.pants!, slots: 1 } } } });
+      other.chip = 60;
+      const { take: takeFull, outputs: outFull } = record(full);
+      expect(full.rob(other.id, later)).toBe(true);
+      expect(full.inventory).toEqual([]);
+      expect(outFull(takeFull()).some((o) => /No room on you for (his|her|their) credchip/.test(o.text))).toBe(true);
+    });
+
+    it('has a netrunner chop a hot chip for a cut, after which it spends where transfers are taken and banks', () => {
+      // Behind the counter of a cyberdeck shop is someone who can, and the player can tell as much.
+      const tech = atWork('b-deck', 26, 20);
+      expect(tech.game.canChop(tech.worker.id)).toBe(true);
+      const { now } = tech;
+      const { game, take, outputs } = atWork('b-deck', 26, 20, { items: [hot(120)], money: { bills: 0, coins: 0, account: 0 }, society: friendOf(tech.worker.id, now) });
+      expect(game.inventory[0]?.in).toBe('wallet');
+      expect(game.canBuy('x')).toBe('Not for sale here.');
+      take();
+      expect(game.chop(tech.worker.id, 'credchip-1', now)).toBe(true);
+      const said = outputs(take());
+      expect(game.inventory[0]).toMatchObject({ balance: 90, locked: false });
+      expect(game.wallet.chips).toBe(90);
+      expect(said.some((o) => o.tone === 'talk' && /30/.test(o.text) && /90/.test(o.text))).toBe(true);
+      expect(game.conversation(tech.worker.id).map((l) => l.who)).toEqual(['you', 'them']);
+      // Watching them work, the player knows their trade; and there's nothing more to chop.
+      expect(game.describe(tech.worker.id)?.facts.job).toMatch(/Test Decks/);
+      expect(game.chop(tech.worker.id, 'credchip-1', now)).toBe(false);
+      // A stranger might say no; then asking again soon is pressing, which costs rapport and gets nowhere.
+      const stranger = atWork('b-deck', 26, 20, { items: [hot(40)], money: { bills: 0, coins: 0, account: 0 } });
+      stranger.take();
+      expect(stranger.game.chop(stranger.worker.id, 'credchip-1', stranger.now)).toBe(true);
+      expect(stranger.outputs(stranger.take()).some((o) => o.tone === 'talk')).toBe(true);
+      if (stranger.game.inventory[0]?.locked) {
+        const before = stranger.game.standingWith(stranger.worker.id, stranger.now)?.standing.rapport ?? 0;
+        expect(stranger.game.chop(stranger.worker.id, 'credchip-1', stranger.now + MINUTE)).toBe(true);
+        expect(stranger.game.inventory[0]?.locked).toBe(true);
+        expect(stranger.game.standingWith(stranger.worker.id, stranger.now + MINUTE)?.standing.rapport).toBeLessThan(before);
+      } else {
+        expect(stranger.game.wallet.chips).toBe(30);
+      }
+      // Someone who is not a netrunner, as far as the player can tell, is never asked.
+      const cook = atWork('b-noodle', 38, 20, { items: [hot(40)] });
+      expect(cook.game.canChop(cook.worker.id)).toBe(false);
+      expect(cook.game.chop(cook.worker.id, 'credchip-1', cook.now)).toBe(false);
+
+      // Clean, the chip pays where a transfer is taken (the chip before the account), and not where cash is wanted.
+      const rack: GearContent = { ...GEAR, racks: { 'gun-shop': ['belt-pouch'] } };
+      const clean: Item = { ...hot(90), locked: false };
+      const shop = new Game(world, { ...RULES, startingEddies: 0, gear: rack }, { ...progressInside('b-shop', 32, 20, [clean]), money: { bills: 0, coins: 0, account: 50 } });
+      shop.start(T0);
+      const pouch = shop.menu()?.items[0];
+      if (!pouch) throw new Error('no pouch');
+      expect(shop.canBuy(pouch.id)).toBeNull();
+      expect(shop.buy(pouch.id)).toBe(true);
+      expect(shop.wallet).toMatchObject({ chips: 90 - pouch.price, account: 50, eddies: 0 });
+      const locked = new Game(world, { ...RULES, startingEddies: 0, gear: rack }, { ...progressInside('b-shop', 32, 20, [hot(90)]), money: { bills: 0, coins: 0, account: 0 } });
+      locked.start(T0);
+      expect(locked.canBuy(pouch.id)).toBe(`${pouch.name} is ${pouch.price} €$. You've got 0 €$ in cash and 0 €$ in the bank.`);
+      const street = new Game(world, { ...RULES, startingEddies: 0 }, { ...progressInside('b-noodle', 38, 20, [clean]), money: { bills: 0, coins: 0, account: 0 } });
+      street.start(T0);
+      const dish = street.menu()?.items[0];
+      if (!dish) throw new Error('no dish');
+      expect(street.canBuy(dish.id)).toBe(`${dish.name} is ${dish.price} €$. You've got 0 €$ in cash.`);
+      // Spent to nothing, a chip is tossed.
+      const exact = new Game(world, { ...RULES, startingEddies: 0, gear: rack }, { ...progressInside('b-shop', 32, 20, [{ ...hot(pouch.price), locked: false }]), money: { bills: 0, coins: 0, account: 0 } });
+      exact.start(T0);
+      const { take: takeExact, outputs: outExact } = record(exact);
+      expect(exact.buy(pouch.id)).toBe(true);
+      expect(exact.inventory.filter((i) => i.kind === 'credchip')).toEqual([]);
+      expect(outExact(takeExact()).some((o) => /empties the chip/.test(o.text))).toBe(true);
+
+      // The bank takes the chips in your name into the account, and slides the others back.
+      const teller = new Game(world, { ...RULES, startingEddies: 0 }, { ...progressInside('b-bank', 44, 20, [clean, hot(50, 2)]), money: { bills: 0, coins: 0, account: 10 } });
+      teller.start(T0);
+      const { take: takeBank, outputs: outBank } = record(teller);
+      expect(teller.bankChips()).toBe(true);
+      expect(teller.wallet).toMatchObject({ account: 100, chips: 0 });
+      expect(teller.inventory.map((i) => i.id)).toEqual(['credchip-2']);
+      expect(outBank(takeBank()).at(-1)?.text).toBe('Banked the chip: 90 €$ into the account. €$ 100 in the bank. The teller slides the other one back: not in your name.');
+      expect(teller.bankChips()).toBe(false);
+      expect(outBank(takeBank()).at(-1)?.text).toBe("That chip isn't in your name. EuroBank won't touch it.");
+      const { game: nothing } = inside('b-bank', 44, 20);
+      expect(nothing.bankChips()).toBe(false);
+      expect(inside('b-noodle', 38, 20).game.bankChips()).toBe(false);
+    });
+
+    it('loses the chips on you to whoever comes to collect, when the cash runs short', () => {
+      const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20, {}, { startingEddies: 0 });
+      worker.chip = 50;
+      expect(game.rob(worker.id, now)).toBe(true);
+      expect(game.inventory.find((i) => i.kind === 'credchip')).toMatchObject({ balance: 50, locked: true });
+      const threats = game.societySaved.threats;
+      expect(threats.length).toBeGreaterThan(0);
+      // What they come for is more than the cash on the player: the chip goes too.
+      expect(Math.max(...threats.map((t) => t.amount))).toBeGreaterThan(game.wallet.eddies);
+      take();
+      game.tick(Math.max(...threats.map((t) => t.due)) + 1);
+      const said = outputs(take()).map((o) => o.text);
+      expect(said.some((t) => /credchip on you goes with them/.test(t))).toBe(true);
+      expect(game.inventory.filter((i) => i.kind === 'credchip')).toEqual([]);
+      expect(game.wallet.eddies).toBe(0);
     });
 
     it('keeps pockets and what is in them, and forgets pockets of kinds it no longer has', () => {

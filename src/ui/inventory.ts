@@ -7,6 +7,8 @@ export interface InventoryItemView extends Item {
   use?: string;
   /** What the stack weighs, e.g. "500 g". */
   weight: string;
+  /** A word on the thing itself: for a credchip, what's on it and whether it's locked. */
+  detail?: string;
 }
 
 /** A pocket inside another: the wallet in the pants. */
@@ -17,6 +19,8 @@ export interface InnerPocketView {
   detail: string;
   weight: string;
   over: boolean;
+  /** What's in it, if anything can be: the credchips in the wallet. */
+  items?: InventoryItemView[];
 }
 
 /** A pocket the player wears and what's in it. */
@@ -80,7 +84,8 @@ export class Inventory {
   render(view: InventoryView): void {
     const { pass, total, sections } = this.els;
     pass.textContent = view.pass;
-    const count = view.pockets.reduce((sum, p) => sum + p.items.reduce((n, item) => n + item.count, 0), 0);
+    const tally = (items: InventoryItemView[] = []) => items.reduce((n, item) => n + item.count, 0);
+    const count = view.pockets.reduce((sum, p) => sum + tally(p.items) + p.inside.reduce((n, inner) => n + tally(inner.items), 0), 0);
     total.textContent = `${count} ${count === 1 ? 'item' : 'items'} · ${view.weight}`;
     // Using or dropping something redraws the list; the button that was tapped keeps focus, or, once it's gone, the close button takes it.
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -102,29 +107,35 @@ function pocket(p: PocketView): HTMLElement {
     const row = el('li', `inv-item inv-pocket${inner.over ? ' is-over' : ''}`);
     row.append(el('span', 'inv-item-name', inner.name), el('span', 'inv-item-detail', inner.detail), el('span', 'inv-item-weight', inner.weight));
     list.append(row);
+    // What's in the inner pocket sits under it, set in a little.
+    for (const item of inner.items ?? []) list.append(itemRow(item, true));
   }
-  for (const item of p.items) {
-    const row = el('li', 'inv-item');
-    row.append(el('span', 'inv-item-name', item.name));
-    if (item.count > 1) row.append(el('span', 'inv-item-count', `×${item.count}`));
-    row.append(el('span', 'inv-item-weight', item.weight));
-    if (item.use) {
-      const use = el('button', 'inv-use', item.use);
-      use.type = 'button';
-      use.dataset.id = item.id;
-      use.setAttribute('aria-label', `${item.use} ${item.name}`);
-      row.append(use);
-    }
-    const drop = el('button', 'inv-drop', 'Drop');
-    drop.type = 'button';
-    drop.dataset.id = item.id;
-    drop.setAttribute('aria-label', `Drop ${item.name}`);
-    row.append(drop);
-    list.append(row);
-  }
+  for (const item of p.items) list.append(itemRow(item, false));
   if (!p.inside.length && !p.items.length) list.append(el('li', 'inv-item is-empty', 'Empty.'));
   li.append(list);
   return li;
+}
+
+/** One thing carried: its name, how many, a word on it, what it weighs, and what can be done with it. */
+function itemRow(item: InventoryItemView, inner: boolean): HTMLElement {
+  const row = el('li', `inv-item${inner ? ' is-inner' : ''}${item.detail && /locked/.test(item.detail) ? ' is-locked' : ''}`);
+  row.append(el('span', 'inv-item-name', item.name));
+  if (item.count > 1) row.append(el('span', 'inv-item-count', `×${item.count}`));
+  if (item.detail) row.append(el('span', 'inv-item-detail', item.detail));
+  row.append(el('span', 'inv-item-weight', item.weight));
+  if (item.use) {
+    const use = el('button', 'inv-use', item.use);
+    use.type = 'button';
+    use.dataset.id = item.id;
+    use.setAttribute('aria-label', `${item.use} ${item.name}`);
+    row.append(use);
+  }
+  const drop = el('button', 'inv-drop', 'Drop');
+  drop.type = 'button';
+  drop.dataset.id = item.id;
+  drop.setAttribute('aria-label', `Drop ${item.name}${item.detail ? ` (${item.detail})` : ''}`);
+  row.append(drop);
+  return row;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {

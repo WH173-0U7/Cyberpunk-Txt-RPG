@@ -29,7 +29,7 @@ export interface LogLineView {
 }
 
 /** Which set of choices is unfolded under the conversation, if any. */
-export type Picker = 'ask' | 'give' | 'more' | null;
+export type Picker = 'ask' | 'give' | 'chop' | 'more' | null;
 
 export interface PersonCardView {
   id: string;
@@ -55,6 +55,8 @@ export interface PersonCardView {
   askAbout: Array<{ id: string; name: string }>;
   /** What the player could give them. */
   gifts: Array<{ id: string; name: string; count: number }>;
+  /** Locked credchips this person could chop, with what's on each and their cut; empty unless they're a netrunner the player can tell. */
+  chops: Array<{ id: string; label: string }>;
   /** What has passed between them, oldest first. */
   log: LogLineView[];
 }
@@ -94,6 +96,8 @@ export interface PeopleHandlers {
   onSelect(id: string | null): void;
   onAction(action: PersonAction, id: string): void;
   onGift(id: string, itemId: string): void;
+  /** The player asked a person to chop a locked credchip. */
+  onChop(id: string, chipId: string): void;
   onAsk(id: string, aboutId: string): void;
   onQuestion(id: string, fact: string): void;
   onToggleWeb(): void;
@@ -135,15 +139,16 @@ export class People {
     // Everything on the card goes through one listener: commands, the choices they unfold, names in the web.
     els.card.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
-      const button = target?.closest<HTMLElement>('[data-cmd], [data-fact], [data-about], [data-item], [data-action], [data-open]');
+      const button = target?.closest<HTMLElement>('[data-cmd], [data-fact], [data-about], [data-item], [data-chip], [data-action], [data-open]');
       if (!button) return;
-      const { cmd, fact, about, item, action, open, id } = button.dataset;
+      const { cmd, fact, about, item, chip, action, open, id } = button.dataset;
       if (cmd === 'talk' && id) handlers.onAction('talk', id);
       else if (cmd === 'web') handlers.onToggleWeb();
-      else if (cmd === 'ask' || cmd === 'give' || cmd === 'more') handlers.onPicker(cmd);
+      else if (cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'more') handlers.onPicker(cmd);
       else if (fact && id) handlers.onQuestion(id, fact);
       else if (about && id) handlers.onAsk(id, about);
       else if (item && id) handlers.onGift(id, item);
+      else if (chip && id) handlers.onChop(id, chip);
       else if (action && id && !(button as HTMLButtonElement).disabled) handlers.onAction(action as PersonAction, id);
       else if (open) handlers.onSelect(open);
     });
@@ -159,7 +164,7 @@ export class People {
     els.reputation.replaceChildren(...view.reputation.map((line) => el('span', 'people-rep-item', line)));
     els.reputation.hidden = view.reputation.length === 0;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'fact', 'about', 'item', 'action', 'open', 'id'].includes(key)) : undefined;
+    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'fact', 'about', 'item', 'chip', 'action', 'open', 'id'].includes(key)) : undefined;
     const focusedId = active?.dataset.id;
     if (view.card) {
       els.list.hidden = true;
@@ -217,6 +222,8 @@ export class People {
       if (card.askAbout.length) picker.push(el('span', 'person-gifts-label', 'About'), ...card.askAbout.map((a) => chip(a.name, { id: card.id, about: a.id }, 'person-chip')));
     } else if (card.here && card.picker === 'give') {
       picker.push(...card.gifts.map((g) => chip(g.count > 1 ? `${g.name} ×${g.count}` : g.name, { id: card.id, item: g.id }, 'person-gift')));
+    } else if (card.here && card.picker === 'chop') {
+      picker.push(...card.chops.map((c) => chip(c.label, { id: card.id, chip: c.id }, 'person-chip')));
     } else if (card.here && card.picker === 'more') {
       picker.push(chip('Insult', { id: card.id, action: 'insult' }, 'person-chip is-danger'), chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'));
     }
@@ -229,6 +236,7 @@ export class People {
           { cmd: 'talk', label: 'Talk' },
           ...(card.questions.length || card.askAbout.length ? [{ cmd: 'ask', label: 'Ask', active: card.picker === 'ask' }] : []),
           ...(card.gifts.length ? [{ cmd: 'give', label: 'Give', active: card.picker === 'give' }] : []),
+          ...(card.chops.length ? [{ cmd: 'chop', label: 'Chop', active: card.picker === 'chop' }] : []),
           { cmd: 'web', label: `Web ${card.web.length}`, active: card.webOpen },
           { cmd: 'more', label: '⋯', active: card.picker === 'more', quiet: true },
         ]

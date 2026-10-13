@@ -151,11 +151,13 @@ own.
   one line, tap to unfold), the transcript filling the rest (your lines after a `›`, theirs
   under their name, newest at the bottom), and one row of commands at the bottom: **Talk**,
   **Ask** (unfolds the questions and the people you can ask about), **Give** (what you
-  carry), **Web** (their web, in the transcript's place until you tap it again or say
-  something) and **⋯** (insult, rob). A command's choices show only while it's open. While
-  the card is open, what they say stays off the map's feed; it's on the card.
+  carry), **Chop** (a hot credchip, when you can tell they're a netrunner), **Web** (their
+  web, in the transcript's place until you tap it again or say something) and **⋯** (insult,
+  rob). A command's choices show only while it's open. While the card is open, what they
+  say stays off the map's feed; it's on the card.
 - **Crossing people**: **Insult** someone and they hold it against you (a temper shoves you
-  into the wall, which costs energy); **Rob** them and you take a share of their eddies. Every
+  into the wall, which costs energy); **Rob** them and you take a share of their eddies, and
+  their credchip if they carry one (locked to them: see **Eddies**). Every
   such thing spreads: the victim holds a grudge, so do their spouse, parents, children,
   siblings, cousins, friends, crew and coworkers (by how close they are and how loyal), and
   their people a little; anyone who saw it talks. The victim's gang thinks less of you (its
@@ -204,11 +206,22 @@ own.
   between the two: Asukaga & Finch downtown and EuroBank branches (both from the wiki) have
   a counter (**Bank** on the panel) to deposit all your cash, withdraw bills, or change
   coins for bills; the bank keeps five percent of any coins it counts. The header shows
-  your cash, and the account once there's anything in it.
+  your cash, and the account once there's anything in it. **CredChips** (the wiki's 2020
+  chips of eurodollars; a "chop" in its Streetslang) are items with a balance on them. They
+  ride in your wallet's four card slots (a pocket slot each after that), pay where transfers
+  are taken (a chip before the account), and the bank's **Chips** command takes the ones in
+  your name into the account. One taken off someone comes **locked** to them, worth nothing
+  to you or to any counter until a netrunner **chops** it: a netrunner for hire, a Voodoo
+  Boys netrunner, or anyone behind a netrunning counter will, for a quarter of what's on it,
+  if they're willing (the same openness as any favor, the greedy sooner, a friend always),
+  and once they've worked for you, you know their trade. Corpos nearly always carry a chip
+  with real money on it, the street often with less, gangers rarely. Whoever comes to
+  collect takes the chips on you, too, when your cash runs short.
 - **Inventory**: the **Inventory** button in the map's header (or **I**) opens your pockets:
   each with how many slots and how much weight are taken, what's in it with its weight and
-  its Eat, Drink and Drop buttons, the wallet with the bills in it and the coins beside it.
-  The strip counts everything and weighs it. Your cash is in the map's header too.
+  its Eat, Drink and Drop buttons, the wallet with the bills in it, the chips in it under
+  it (each with what's on it, and whether it's locked), and the coins beside it. The strip
+  counts everything and weighs it. Your cash is in the map's header too.
 - **Settings**: the gear next to it opens the settings. For now that's the save:
   **Restart this city** puts the same city back to the start, and **Erase save** deletes the
   save from this device and starts a brand new city. Both ask first, with Cancel as the

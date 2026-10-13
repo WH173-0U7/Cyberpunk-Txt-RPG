@@ -360,6 +360,7 @@ export const LINES: DialogueLines = {
     likes: ["Whatever's hot.", "Food's food."],
     hates: ['Nobody you need to know about.', 'I keep that to myself.', 'Plenty of people. Why?'],
     kin: ['Why do you want to know?', "I don't talk about people I know to people I don't.", 'Maybe. Maybe not.'],
+    chop: ['Not here. Too many eyes.', "Come back when it's quieter.", 'Maybe. Depends what else you bring me.', only("Show me you're not working for the {badges} first.", wary)],
     any: ['Pass.', 'Next question.', "I don't know you well enough for that."],
   },
 
@@ -420,9 +421,31 @@ export const LINES: DialogueLines = {
   },
 
   rob: {
-    done: ["You take {take} €$ off {given}. {He} won't forget your face.", '{given} hands it over, eyes burning. {take} €$.'],
+    done: ["You take {haul} off {given}. {He} won't forget your face.", '{given} hands it over, eyes burning. {haul}.'],
     nothing: ['{given} turns out empty pockets. "Already been done this week."', 'Nothing on {given} worth taking. {He} laughs, which is worse.'],
-    fought: ['{given} fights back. You get {take} €$ and a split lip.', 'It takes a struggle. {take} €$, and {given} marks your face for later.'],
+    fought: ['{given} fights back. You get {haul} and a split lip.', 'It takes a struggle. {haul}, and {given} marks your face for later.'],
+  },
+
+  chop: {
+    done: [
+      'Give it here. ... There. Clean as the day it was minted. {cut} {eddies} for my trouble; {left} on it, and it answers to you now.',
+      "A hot chip. Alright. Two minutes and some ICE you don't want to hear about. Done. My cut's {cut}; {left} on it for you.",
+      'Hand it over. ... Chopped. {left} on it, in no name at all. {cut} stays with me.',
+      only('Easy money. {cut} for me, {left} for you, and whoever it belonged to will never know where it went.', greedy),
+      only('Done. The Net gives it up quick enough. {left} on it, clean; {cut} stays with the crew.', ganger),
+      only('Handled, discreetly. {cut} {eddies} is the fee; {left} remains on the chip. We never spoke.', corpo),
+      only("Hold still, this one's got teeth. ... Got it. {left} on it. Mine's {cut}, and don't argue.", hot),
+      only("Kids used to pay me in {scop} for this. {cut} {eddies} now. {left}'s yours.", elder),
+    ],
+    refuse: [
+      "I don't chop. Not for you.",
+      'Hot chip? {nah}. That is how people end up flatlined.',
+      'Take it somewhere else.',
+      only("I don't know you. I don't crack chips for people I don't know.", wary),
+      only("I've got a counter and a license. I'm not losing either over a chop.", busy),
+      only("Not with the {badges} all over {district} lately.", timid),
+      only("A chop? For you? {nah}. We're not friends.", cold),
+    ],
   },
 
   revenge: {
@@ -475,5 +498,13 @@ export const LINES: DialogueLines = {
     gift: ['You hand over {item}.', '"Here. {item}. On me."', only('"Had a feeling you\'d want this. {item}."', smooth)],
     insult: ['"Nice face. Who chewed it?"', '"Your whole family\'s a waste of chrome."', '"Everyone around here says you\'re nothing. They\'re right."'],
     rob: ['You pull a blade. "Eddies. Now."', '"Hand it over. All of it."', 'You get in close. "Pockets. Slowly."'],
+    chop: [
+      only('"Chop this."', blunt),
+      only('"Crack this chip."', blunt),
+      only('"Can you crack this chip? {balance} on it."', easy),
+      only('"Got a hot chip. Can you clean it?"', easy),
+      only('"Hot chip, {balance} on it. Clean it, take a cut, and nobody asks whose it was."', smooth),
+      only('"Heard you\'re good with chips. This one\'s got {balance} on it and the wrong name."', smooth),
+    ],
   },
 };

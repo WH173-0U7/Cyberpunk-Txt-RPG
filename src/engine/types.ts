@@ -144,9 +144,10 @@ export interface Building {
 /**
  * The kinds of item in Night City, sorted the way the Cyberpunk Wiki sorts 2077's: weapons,
  * attachments and mods, cyberware, quickhacks, clothing, consumables, shards, junk and
- * crafting components.
+ * crafting components; and credchips, the wiki's 2020 chips of eurodollars, which 2077's
+ * list has no slot for.
  */
-export type ItemKind = 'weapon' | 'attachment' | 'cyberware' | 'quickhack' | 'clothing' | 'consumable' | 'shard' | 'junk' | 'component';
+export type ItemKind = 'weapon' | 'attachment' | 'cyberware' | 'quickhack' | 'clothing' | 'consumable' | 'shard' | 'credchip' | 'junk' | 'component';
 
 /** Something the player carries: what it is, and how many of it. */
 export interface Item {
@@ -156,6 +157,10 @@ export interface Item {
   count: number;
   /** The pocket it's in (src/engine/carry.ts). Saves from before pockets have none; they're put away on loading. */
   in?: string;
+  /** For a credchip: the eddies on it. */
+  balance?: number;
+  /** For a credchip: stolen and not yet chopped, so no counter and no bank will take it. */
+  locked?: boolean;
 }
 
 /** Flavor text that plays while the player is idle, optionally firing an effect. */
@@ -212,6 +217,8 @@ export interface Wallet {
   coins: number;
   /** In the bank. */
   account: number;
+  /** On credchips in your name, spendable where transfers are taken. */
+  chips: number;
   /** When the monthly NCART pass runs out, in ms since 1970 (0: never bought). */
   passUntil: number;
 }

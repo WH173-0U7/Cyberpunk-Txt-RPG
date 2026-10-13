@@ -28,8 +28,8 @@ export interface Standing {
   refused: Record<string, number>;
 }
 
-/** Something the player can want from someone: a fact about them, a topic, or their people. */
-export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor';
+/** Something the player can want from someone: a fact about them, a topic, their people, or (`chop`) their hands on a stolen credchip. */
+export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'chop';
 
 /**
  * How ready people are to tell the player things: a base by how they feel, a step per level
@@ -39,8 +39,8 @@ export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'kin' 
 export interface OpennessRules {
   stance: Record<Stance, number>;
   perLevel: number;
-  /** How much each trait moves it: chatty and warmth on everything, loyalty on their people (against), courage on who they hate (for). */
-  traits: { chatty: number; warmth: number; loyalty: number; courage: number };
+  /** How much each trait moves it: chatty and warmth on everything, loyalty on their people (against), courage on who they hate (for), greed on chopping a chip (for). */
+  traits: { chatty: number; warmth: number; loyalty: number; courage: number; greed: number };
   cost: Record<Asked, number>;
   answerAt: number;
   deflectAt: number;
@@ -168,6 +168,8 @@ export interface SocietyRules {
   };
   gift: { base: number; favorite: number };
   insult: { rapport: number };
+  /** Rapport a chop done is worth: business done together. */
+  chop: { rapport: number };
   openness: OpennessRules;
 }
 

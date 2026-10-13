@@ -7,7 +7,7 @@ import type { SkillState } from './skills';
 import type { SocietyState } from './society';
 import type { Item, ItemKind, Leg, MapState, Point, Trip, Wallet, Whereabouts, World } from './types';
 
-const ITEM_KINDS: ReadonlySet<string> = new Set<ItemKind>(['weapon', 'attachment', 'cyberware', 'quickhack', 'clothing', 'consumable', 'shard', 'junk', 'component']);
+const ITEM_KINDS: ReadonlySet<string> = new Set<ItemKind>(['weapon', 'attachment', 'cyberware', 'quickhack', 'clothing', 'consumable', 'shard', 'credchip', 'junk', 'component']);
 
 /** Where a player has got to in their city: enough to put them back exactly there. */
 export interface Progress {
@@ -156,7 +156,9 @@ function isItem(value: unknown): value is Item {
     ITEM_KINDS.has(item.kind) &&
     Number.isInteger(item.count) &&
     (item.count as number) > 0 &&
-    (item.in === undefined || typeof item.in === 'string')
+    (item.in === undefined || typeof item.in === 'string') &&
+    (item.balance === undefined || (isNumber(item.balance) && item.balance >= 0)) &&
+    (item.locked === undefined || typeof item.locked === 'boolean')
   );
 }
 

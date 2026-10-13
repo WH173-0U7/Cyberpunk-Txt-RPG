@@ -25,6 +25,7 @@ function person(id: string, extra: Partial<Person> = {}): Person {
     likes: { dish: 'taco', drink: 'nicola', hangout: null },
     hates: null,
     eddies: 40,
+    chip: 0,
     bio: '',
     ...extra,
   };

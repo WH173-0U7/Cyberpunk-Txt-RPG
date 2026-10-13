@@ -9,9 +9,10 @@ export type Cash = Pick<Money, 'bills' | 'coins'>;
  * What the player carries, and in what. Nothing floats along behind you in Night City: every
  * item takes a slot in a pocket (a jacket's, pants', a bag's), every pocket has only so many
  * slots and bears only so much weight, and eddies are cash: bills in a wallet that sits in a
- * pocket, coins loose in another, each weighing what it weighs. Buying something means
- * there's a pocket with room for it; getting paid means the wallet has room for the bills
- * and the pocket for the coins. The numbers are in `src/data/gear.ts`.
+ * pocket, coins loose in another, each weighing what it weighs; credchips ride in the
+ * wallet's card slots, and in a pocket when those are full. Buying something means there's
+ * a pocket with room for it; getting paid means the wallet has room for the bills and the
+ * pocket for the coins. The numbers are in `src/data/gear.ts`.
  */
 
 /** A kind of pocket or bag: its room, its own weight, and (for a wallet) how many eddies it holds. */
@@ -25,6 +26,8 @@ export interface PocketKind {
   grams: number;
   /** Bills it holds, in €$, for a wallet. */
   holds?: number;
+  /** Credchips it holds, for a wallet: its card slots. */
+  chips?: number;
   /** Where loose coins go: a slot of this pocket when there are any, and their weight. */
   change?: boolean;
   /** What it costs where it's sold; nothing for the pockets of the clothes on your back. */
@@ -74,6 +77,9 @@ export interface PocketLoad extends PocketState {
   /** For a wallet: the bills in it and the most it holds. */
   bills?: number;
   holds?: number;
+  /** For a wallet: the credchips in it, and its card slots. */
+  chips?: number;
+  chipSlots?: number;
   /** For the change pocket: the coins in it, in €$. */
   coins?: number;
   over: boolean;
@@ -96,6 +102,11 @@ export function stackSlots(item: Pick<Item, 'kind'>, count: number, gear: GearCo
 
 function kindOf(pocket: PocketState, gear: GearContent): PocketKind {
   return gear.kinds[pocket.kind] ?? { name: pocket.kind, slots: 0, maxGrams: 0, grams: 0 };
+}
+
+/** How many credchips are in a pocket. */
+function chipsIn(pocket: PocketState, items: Item[]): number {
+  return items.filter((i) => i.kind === 'credchip' && i.in === pocket.id).reduce((n, i) => n + i.count, 0);
 }
 
 /** What a pocket weighs all told: itself, its things, its inner pockets, and the cash in it. */
@@ -121,10 +132,11 @@ export function loadOf(pocket: PocketState, pockets: PocketState[], items: Item[
   return { slots, grams: Math.round(grams) };
 }
 
-/** Whether `count` more of something fit in a pocket, joining a stack of it already there if there is one. */
+/** Whether `count` more of something fit in a pocket, joining a stack of it already there if there is one. A wallet takes credchips in its card slots, and nothing else. */
 export function fits(pocket: PocketState, pockets: PocketState[], items: Item[], money: Cash, item: Pick<Item, 'id' | 'kind'>, count: number, gear: GearContent, dishes: Dish[]): boolean {
   const kind = kindOf(pocket, gear);
-  if (kind.holds !== undefined || kind.slots <= 0) return false;
+  if (kind.holds !== undefined) return item.kind === 'credchip' && chipsIn(pocket, items) + count <= (kind.chips ?? 0);
+  if (kind.slots <= 0) return false;
   const load = loadOf(pocket, pockets, items, money, gear, dishes);
   const stack = items.find((i) => i.id === item.id && i.in === pocket.id);
   const slotsAfter = load.slots - (stack ? stackSlots(item, stack.count, gear) : 0) + stackSlots(item, (stack?.count ?? 0) + count, gear);
@@ -132,11 +144,12 @@ export function fits(pocket: PocketState, pockets: PocketState[], items: Item[],
   return slotsAfter <= kind.slots && gramsAfter <= kind.maxGrams;
 }
 
-/** The pocket to put `count` of something in: one already holding some of it if that has room, else the first with room. Null when nothing fits. */
+/** The pocket to put `count` of something in: the wallet for a credchip while it has a card slot free; else one already holding some of it if that has room, else the first with room. Null when nothing fits. */
 export function placeFor(pockets: PocketState[], items: Item[], money: Cash, item: Pick<Item, 'id' | 'kind'>, count: number, gear: GearContent, dishes: Dish[]): string | null {
   const roomy = pockets.filter((p) => fits(p, pockets, items, money, item, count, gear, dishes));
+  const wallet = item.kind === 'credchip' ? roomy.find((p) => kindOf(p, gear).holds !== undefined) : undefined;
   const same = roomy.find((p) => items.some((i) => i.id === item.id && i.in === p.id));
-  return (same ?? roomy[0])?.id ?? null;
+  return (wallet ?? same ?? roomy[0])?.id ?? null;
 }
 
 /** How many more €$ in bills the wallet (or wallets) will hold. None without one. */
@@ -175,12 +188,14 @@ export function loads(pockets: PocketState[], items: Item[], money: Cash, gear: 
       maxGrams: kind.maxGrams,
       load,
       grams: kind.grams + load.grams,
-      // A wallet is over when it holds more bills than it should; anything else when its slots or its weight are.
-      over: kind.holds !== undefined ? money.bills > kind.holds : load.slots > kind.slots || load.grams > kind.maxGrams,
+      // A wallet is over when it holds more bills or chips than it should; anything else when its slots or its weight are.
+      over: kind.holds !== undefined ? money.bills > kind.holds || chipsIn(pocket, items) > (kind.chips ?? 0) : load.slots > kind.slots || load.grams > kind.maxGrams,
     };
     if (kind.holds !== undefined) {
       out.bills = money.bills;
       out.holds = kind.holds;
+      out.chips = chipsIn(pocket, items);
+      out.chipSlots = kind.chips ?? 0;
     }
     if (kind.change) out.coins = money.coins;
     return out;
@@ -192,4 +207,11 @@ export function newPocketId(kind: string, pockets: PocketState[]): string {
   let n = 1;
   while (pockets.some((p) => p.id === `${kind}-${n}`)) n++;
   return `${kind}-${n}`;
+}
+
+/** An id for a credchip, unlike any carried: each is its own thing, with its own balance. */
+export function newChipId(items: Item[]): string {
+  let n = 1;
+  while (items.some((i) => i.id === `credchip-${n}`)) n++;
+  return `credchip-${n}`;
 }

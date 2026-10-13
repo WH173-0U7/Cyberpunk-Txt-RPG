@@ -5,6 +5,7 @@ import { FOOD } from './data/food';
 import { GEAR } from './data/gear';
 import { MONEY } from './data/money';
 import { itemGrams } from './engine/carry';
+import { chipCut } from './engine/money';
 import { INEBRIATION } from './data/inebriation';
 import { LINES } from './data/dialogue';
 import { PEOPLE } from './data/people';
@@ -193,6 +194,7 @@ const bank = new Bank(
     onDeposit: () => atTheCounter(() => game.deposit()),
     onWithdraw: (amount) => atTheCounter(() => game.withdraw(amount)),
     onChange: () => atTheCounter(() => game.exchange()),
+    onChips: () => atTheCounter(() => game.bankChips()),
     onToggleWithdraw: () => {
       withdrawOpen = !withdrawOpen;
       showBank();
@@ -277,6 +279,12 @@ const people = new People(
       picker = null;
       webOpen = false;
       game.gift(id, itemId, Date.now());
+    },
+    onChop: (id, chipId) => {
+      lastActivity = performance.now();
+      picker = null;
+      webOpen = false;
+      game.chop(id, chipId, Date.now());
     },
     onAsk: (id, aboutId) => {
       lastActivity = performance.now();
@@ -543,7 +551,7 @@ function insideView(building: Building): PanelView {
   const menu = game.menu();
   const here = game.peopleHere(now).length;
   const barred = game.barred(now);
-  const description = barred ?? (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut.' : here ? 'People live and work in here.' : 'Nobody around right now.');
+  const description = barred ?? (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut, and a credchip in your name is banked.' : here ? 'People live and work in here.' : 'Nobody around right now.');
   return {
     mode: 'inside',
     kicker: `Inside · ${district} · Block ${building.block}`,
@@ -632,23 +640,27 @@ function showWallet(wallet: Wallet, now: number): void {
   const pass = wallet.passUntil > now;
   walletLabel.textContent = `€$ ${wallet.eddies}${wallet.account ? ` · Bank ${wallet.account}` : ''}${pass ? ' · Pass' : ''}`;
   walletLabel.classList.toggle('has-pass', pass);
-  walletLabel.title = `${wallet.bills} €$ in bills, ${wallet.coins} €$ in coins, ${wallet.account} €$ in the bank.${pass ? ` NCART monthly pass valid until ${formatDay(wallet.passUntil)}.` : ' Buy an NCART monthly pass at any station.'}`;
+  walletLabel.title = `${wallet.bills} €$ in bills, ${wallet.coins} €$ in coins, ${wallet.account} €$ in the bank${wallet.chips ? `, ${wallet.chips} €$ on chips` : ''}.${pass ? ` NCART monthly pass valid until ${formatDay(wallet.passUntil)}.` : ' Buy an NCART monthly pass at any station.'}`;
 }
 
-/** Fills the bank's counter with the account, the cash on you, and what can be done with them. */
+/** Fills the bank's counter with the account, the cash and the chips on you, and what can be done with them. */
 function showBank(): void {
   const at = game.bank();
-  const { bills, coins, account } = game.wallet;
+  const { bills, coins, account, chips } = game.wallet;
   const wallet = game.carry().pockets.find((p) => p.holds !== undefined);
+  const carried = game.inventory.filter((item) => item.kind === 'credchip');
+  const locked = carried.filter((item) => item.locked).length;
   bank.render({
     name: at?.name ?? 'Bank',
     account: `€$ ${account}`,
     bills: `€$ ${bills}${wallet ? ` of ${wallet.holds}` : ''}`,
     coins: `€$ ${coins} · ${formatGrams(coins * GEAR.gramsPerCoin)}`,
+    chips: carried.length ? `${carried.length} · €$ ${chips}${locked ? `, ${locked} locked` : ''}` : 'None',
     fee: `${Math.round((at?.fee ?? 0) * 100)}% on coins`,
     status: bankStatus,
     canDeposit: bills + coins > 0,
     canChange: coins > 0,
+    canBankChips: carried.length > locked,
     withdrawals: (at?.withdrawals ?? []).map((amount) => ({ amount, enabled: amount <= account })),
     withdrawOpen,
   });
@@ -660,6 +672,13 @@ function showInventory(): void {
   const { grams, pockets } = game.carry();
   const items = game.inventory;
   const order = Object.keys(ITEM_KINDS);
+  const byKind = (a: Item, b: Item) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.name.localeCompare(b.name);
+  const view = (item: Item) => ({
+    ...item,
+    use: useLabel(item),
+    weight: formatGrams(item.count * itemGrams(item, GEAR, FOOD.dishes)),
+    detail: item.kind === 'credchip' ? `€$ ${item.balance ?? 0}${item.locked ? ' · locked' : ''}` : undefined,
+  });
   inventory.render({
     pass: passUntil > Date.now() ? `Valid until ${formatDay(passUntil)}` : 'None',
     weight: formatGrams(grams),
@@ -673,10 +692,19 @@ function showInventory(): void {
         over: p.over,
         items: items
           .filter((item) => item.in === p.id)
-          .sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.name.localeCompare(b.name))
-          .map((item) => ({ ...item, use: useLabel(item), weight: formatGrams(item.count * itemGrams(item, GEAR, FOOD.dishes)) })),
+          .sort(byKind)
+          .map(view),
         inside: [
-          ...pockets.filter((q) => q.in === p.id).map((q) => ({ id: q.id, name: q.name, detail: q.holds !== undefined ? `€$ ${q.bills} of ${q.holds} in bills` : `${q.load.slots}/${q.slots}`, weight: formatGrams(q.grams), over: q.over })),
+          ...pockets
+            .filter((q) => q.in === p.id)
+            .map((q) => ({
+              id: q.id,
+              name: q.name,
+              detail: q.holds !== undefined ? `€$ ${q.bills} of ${q.holds} in bills${q.chips ? ` · ${q.chips}/${q.chipSlots} chips` : ''}` : `${q.load.slots}/${q.slots}`,
+              weight: formatGrams(q.grams),
+              over: q.over,
+              items: items.filter((item) => item.in === q.id).sort(byKind).map(view),
+            })),
           ...(p.coins ? [{ id: `${p.id}-coins`, name: 'Coins', detail: `€$ ${p.coins}`, weight: formatGrams(p.coins * GEAR.gramsPerCoin), over: false }] : []),
         ],
       })),
@@ -749,6 +777,7 @@ function showPeople(): void {
   if (personShown && !shown) personShown = null;
   const standing = shown ? game.standingWith(shown.id, now) : null;
   const gifts = game.inventory.filter((item) => item.kind === 'consumable' && FOOD.dishes.some((d) => d.id === item.id));
+  const hot = game.inventory.filter((item) => item.kind === 'credchip' && item.locked);
   const gangOf = (id: string | null) => (id ? PEOPLE.gangs[id]?.name : undefined);
   const charisma = game.charisma();
   const how = { seen: 'seen together', told: 'told', asked: 'asked' };
@@ -793,6 +822,8 @@ function showPeople(): void {
               .map(([fact, q]) => ({ fact, label: q.label })),
             askAbout: known.filter((p) => p.id !== shown.id && named(p)).map((p) => ({ id: p.id, name: p.name })),
             gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
+            // A hot chip can be put to a netrunner the player can tell is one; the label says what it holds and what they'd keep.
+            chops: present && game.canChop(shown.id) ? hot.map((c) => ({ id: c.id, label: `€$ ${c.balance ?? 0} chip · cut ${chipCut(c.balance ?? 0, MONEY)}` })) : [],
             log: game.conversation(shown.id).map((line) => ({ who: line.who, text: line.text })),
           }
         : null,
@@ -808,7 +839,7 @@ function buyFromShop(id: string): void {
   const why = game.canBuy(id);
   const before = game.wallet;
   const bought = !why && game.buy(id);
-  const how = bought && game.wallet.account < before.account ? 'by transfer' : 'in cash';
+  const how = bought && game.wallet.account < before.account ? 'by transfer' : bought && game.wallet.chips < before.chips ? 'by chip' : 'in cash';
   shopStatus = why ?? (bought ? `Bought ${item.name} for ${item.price} €$ ${how} · €$ ${game.wallet.eddies} on you${game.wallet.account ? `, €$ ${game.wallet.account} banked` : ''}` : '');
   showShop();
 }
