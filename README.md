@@ -151,9 +151,9 @@ own.
   one line, tap to unfold), the transcript filling the rest (your lines after a `›`, theirs
   under their name, newest at the bottom), and one row of commands at the bottom: **Talk**,
   **Ask** (unfolds the questions and the people you can ask about), **Give** (what you
-  carry), **Web** (their web, unfolded in place) and **⋯** (insult, rob). A command's
-  choices show only while it's open. While the card is open, what they say stays off the
-  map's feed; it's on the card.
+  carry), **Web** (their web, in the transcript's place until you tap it again or say
+  something) and **⋯** (insult, rob). A command's choices show only while it's open. While
+  the card is open, what they say stays off the map's feed; it's on the card.
 - **Crossing people**: **Insult** someone and they hold it against you (a temper shoves you
   into the wall, which costs energy); **Rob** them and you take a share of their eddies. Every
   such thing spreads: the victim holds a grudge, so do their spouse, parents, children,
