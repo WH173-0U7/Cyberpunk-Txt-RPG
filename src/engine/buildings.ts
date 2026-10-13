@@ -337,10 +337,11 @@ function makeName(
  */
 function pickBusiness(rng: Rng, content: BuildingContent, trade: Partial<Record<BuildingCategory, number>>, district: string): Business {
   const { businesses, categories } = content;
+  // A category's share is split among the businesses that can open here: a chain that keeps to other districts doesn't thin out this one.
+  const here = (b: Business) => !b.where || b.where.includes(district);
   const kinds = new Map<BuildingCategory, number>();
-  for (const b of businesses) kinds.set(b.category, (kinds.get(b.category) ?? 0) + 1);
-  const weight = (b: Business) =>
-    b.where && !b.where.includes(district) ? 0 : (categories[b.category].share * (trade[b.category] ?? 1)) / (kinds.get(b.category) ?? 1);
+  for (const b of businesses) if (here(b)) kinds.set(b.category, (kinds.get(b.category) ?? 0) + 1);
+  const weight = (b: Business) => (here(b) ? (categories[b.category].share * (trade[b.category] ?? 1)) / (kinds.get(b.category) ?? 1) : 0);
   const total = businesses.reduce((sum, b) => sum + weight(b), 0);
   let roll = rng.next() * total;
   for (const b of businesses) {

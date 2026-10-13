@@ -428,6 +428,18 @@ export class Game {
     return { venue, items, kind: 'gear' };
   }
 
+  /** Whether the player can pay for something on the menu here: in cash, or by transfer where the counter takes one. */
+  affords(id: string): boolean {
+    const menu = this.menu();
+    const item = menu?.items.find((i) => i.id === id);
+    return Boolean(menu && item && this.canPay(item.price, this.takesTransfers(menu)));
+  }
+
+  /** Whether the player can pay the NCART this much: in cash, or by transfer. */
+  affordsFare(amount: number): boolean {
+    return this.canPay(amount, this.rules.money.transfers.ncart);
+  }
+
   /** What buying something off a menu puts in a pocket: a dish, or a garment to wear later. */
   private protoFor(item: MenuItem): Pick<Item, 'id' | 'kind' | 'gear'> {
     return item.kind === 'clothing' ? { id: item.id, kind: 'clothing', gear: item.id } : { id: item.id, kind: 'consumable' };
@@ -544,9 +556,11 @@ export class Game {
   // ───────────── The bank ─────────────
 
   /** The bank the player is inside, if any: its name, its cut for coins, and what it hands over in one go. */
-  bank(): { name: string; fee: number; withdrawals: number[] } | null {
+  bank(now = Date.now()): { name: string; fee: number; withdrawals: number[] } | null {
     const at = this.inside;
-    return at?.business === 'bank' ? { name: at.name, fee: this.rules.money.coinFee, withdrawals: [...this.rules.money.withdrawals] } : null;
+    // A branch whose people the player has crossed keeps its counter closed to them, like any storefront.
+    if (at?.business !== 'bank' || this.barred(now)) return null;
+    return { name: at.name, fee: this.rules.money.coinFee, withdrawals: [...this.rules.money.withdrawals] };
   }
 
   /** Puts all the cash in the account, less the bank's cut for counting the coins. False with no bank or no cash. */
@@ -1185,6 +1199,11 @@ export class Game {
         chip.locked = false;
         chip.balance = balance - cut;
         this.speech(person, compose(lines.chop.done, speaker, lines, rng, { opener: false }), now);
+        // A chip the cut empties is nothing now; it goes in the gutter.
+        if (chip.balance <= 0) {
+          this.items.splice(this.items.indexOf(chip), 1);
+          this.say('Nothing left on the chip after the cut. You toss it.', 'system');
+        }
         // Watching them work is as good as being told what they do.
         learnFact(this.society, id, 'name');
         learnFact(this.society, id, 'job');
