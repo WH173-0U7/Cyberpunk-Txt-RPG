@@ -94,7 +94,8 @@ const place = new PlacePanel(
   },
   {
     onAction: (id) => act(id),
-    onClose: () => select(null),
+    // The corner button leaves the building the player is in; otherwise it drops what they picked.
+    onClose: () => (game.interior && !target ? game.leave() : select(null)),
     onGlitchText: registerGlitch,
     announce: (text) => transmissions.announce(text),
   },
@@ -594,11 +595,12 @@ function insideView(building: Building): PanelView {
       ...(menu ? [barred ? { id: 'menu' as const, label: 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []),
       ...(game.bank() ? [{ id: 'bank' as const, label: 'Bank', sub: `€$ ${game.wallet.account} banked` }] : []),
       // The player's shift here: what it pays and costs, or why not now.
-      ...(shift ? [{ id: 'work' as const, label: 'Work', sub: shift.blocked === 'done' ? 'Done today' : shift.blocked === 'closed' ? `${JOBS.hours[0]}–${JOBS.hours[1]}h` : `${shift.pay} €$ · ${shift.rung.energy} energy`, disabled: Boolean(shift.blocked) }] : []),
-      { id: 'leave', label: 'Leave', quiet: true },
+      ...(shift ? [{ id: 'work' as const, label: 'Work', sub: shift.blocked === 'done' ? 'Done today' : shift.blocked === 'closed' ? `${JOBS.hours[0]}–${JOBS.hours[1]}h` : `${shift.pay} €$, ${shift.rung.energy} energy`, disabled: Boolean(shift.blocked) }] : []),
     ],
-    closable: false,
-    announce: `Inside ${building.name}. ${description} ${here ? `${here} people here.` : ''}`,
+    // Leaving is the corner button, so the row keeps to what there is to do in here.
+    closable: true,
+    closeLabel: `Leave ${building.name}`,
+    announce: `Inside ${building.name}. ${description} ${here ? `${here} people here.` : ''} Leave with the corner button.`,
   };
 }
 

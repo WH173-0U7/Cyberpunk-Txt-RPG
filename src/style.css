@@ -2594,6 +2594,13 @@ button {
     padding-inline: 8px;
   }
 }
+/* Three to a row on a phone: the second line keeps its words by giving up its spacing. */
+@media (max-width: 400px) {
+  .action-sub {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+}
 
 
 /* Side by side with the text, the choices keep clear of the close button. */

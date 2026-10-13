@@ -24,6 +24,8 @@ export interface PanelView {
   description?: string;
   actions: PanelAction[];
   closable: boolean;
+  /** What the close button does, when it isn't going back to where you are: "Leave", inside a building. */
+  closeLabel?: string;
   /** How far through a trip, 0–1. */
   progress?: number;
   /** What a screen reader hears when the view appears. */
@@ -109,6 +111,9 @@ export class PlacePanel {
     }
     els.actions.hidden = view.actions.length === 0;
     els.close.hidden = !view.closable;
+    const closeLabel = view.closeLabel ?? 'Back to where you are';
+    els.close.setAttribute('aria-label', closeLabel);
+    els.close.title = closeLabel;
     // Redrawing the same view (the wallet changed, say) doesn't read it out again.
     if (view.announce !== this.announced) {
       this.announced = view.announce;
