@@ -4,6 +4,7 @@ import type { Money } from './money';
 import type { EnergyState } from './energy';
 import type { InebriationState } from './inebriation';
 import type { JobState } from './jobs';
+import type { LifeState } from './life';
 import type { SkillState } from './skills';
 import type { SocietyState } from './society';
 import type { Item, ItemKind, Leg, MapState, Point, Trip, Wallet, Whereabouts, World } from './types';
@@ -38,6 +39,8 @@ export interface Progress {
   charisma: SkillState | null;
   /** The player's job (null: none). */
   job: JobState | null;
+  /** The people's own days so far (null: none lived yet). */
+  life: LifeState | null;
 }
 
 /** What a save takes from a game in progress (a `Game` has all of it). */
@@ -54,6 +57,7 @@ export interface SaveSource {
   readonly societySaved: SocietyState;
   readonly charismaSaved: SkillState;
   readonly jobSaved: JobState | null;
+  readonly lifeSaved: LifeState;
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -89,6 +93,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     society: game.societySaved,
     charisma: { ...game.charismaSaved },
     job: game.jobSaved ? { ...game.jobSaved } : null,
+    life: game.lifeSaved,
     savedAt: now,
   };
 }
@@ -133,6 +138,8 @@ export function readSave(raw: unknown): SaveData | null {
     charisma: isSkill(save.charisma) ? save.charisma : null,
     // And before there was work, the player had none.
     job: isJob(save.job) ? save.job : null,
+    // And before the people had days of their own, none had passed.
+    life: isLife(save.life) ? save.life : null,
     savedAt: save.savedAt,
   };
 }
@@ -145,12 +152,12 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, life } = save;
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null, life };
 }
 
 function isItem(value: unknown): value is Item {
@@ -201,6 +208,13 @@ function knownOf(known: SocietyState['known'] | undefined): SocietyState['known'
   const out: SocietyState['known'] = {};
   for (const [id, k] of Object.entries(known ?? {})) out[id] = { ...k, facts: Array.isArray(k.facts) ? k.facts : [], log: Array.isArray(k.log) ? k.log : [] };
   return out;
+}
+
+function isLife(value: unknown): value is LifeState {
+  const l = value as Record<string, unknown> | null;
+  if (typeof l !== 'object' || l === null) return false;
+  const record = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v);
+  return Number.isInteger(l.day) && Number.isInteger(l.nextId) && Array.isArray(l.events) && record(l.eddies) && record(l.hurt) && record(l.hates) && Array.isArray(l.made) && Array.isArray(l.broken);
 }
 
 function isJob(value: unknown): value is JobState {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHARISMA } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
+import { LIFE } from '../src/data/life';
 import { CITY } from '../src/data/city';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
@@ -33,6 +34,7 @@ const RULES: GameRules = {
   lines: LINES,
   charisma: CHARISMA,
   jobs: JOBS,
+  life: LIFE,
   gear: GEAR,
   money: MONEY,
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
@@ -70,6 +72,11 @@ function check(game: Game, about: string): void {
   expect(again.gearSaved, `${about}: pockets after a save`).toEqual(pockets);
   expect(again.wallet, `${about}: wallet after a save`).toEqual(game.wallet);
   expect(again.jobSaved, `${about}: job after a save`).toEqual(game.jobSaved);
+  expect(again.lifeSaved, `${about}: the people's days after a save`).toEqual(game.lifeSaved);
+  // The people come back the same (their ties as a set: a friendship made again after a falling out sits elsewhere in the list).
+  const tiesOf = (ties: Array<{ from: string; to: string; kind: string }>) => [...ties].map((t) => `${t.from}|${t.to}|${t.kind}`).sort();
+  expect(again.population.people, `${about}: the people after a save`).toEqual(game.population.people);
+  expect(tiesOf(again.population.ties), `${about}: the ties after a save`).toEqual(tiesOf(game.population.ties));
   // A job is always at a storefront that hires, on a rung of its ladder.
   const job = game.jobSaved;
   if (job) {
@@ -104,6 +111,7 @@ describe('playing badly', () => {
         society: null,
         charisma: null,
         job: null,
+        life: null,
       };
       let now = Date.UTC(2077, 9, 12, 11, 0);
       for (let step = 0; step < 60; step++) {

@@ -7,6 +7,7 @@ import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuI
 import { answer, compose, deflect, describeStranger, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, moodOf, openness, openTopics, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
 import { bossAt, bossOf, canPromote, ladderFor, nextRung, rungOf, shiftOpen, shiftPay, type JobRules, type JobState, type JobStatus, type Rung } from './jobs';
+import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { generatePeople, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type PeopleContent, type Person, type Population, type Spot, type Tie } from './people';
 import { createRng } from './rng';
 import { freshSkill, gainXp, skillStatus, type SkillRules, type SkillState, type SkillStatus } from './skills';
@@ -104,15 +105,19 @@ export interface GameRules extends TravelRules {
   money: MoneyRules;
   /** Where the player can work, and how far up. */
   jobs: JobRules;
+  /** The people's own days: what happens between them, and what they're seen doing together. */
+  life: LifeRules;
   /** The time of day people's days run on. The phone's local time if not said (tests say). */
   clock?: (now: number) => Clock;
 }
 
-/** Someone where the player is, and how they feel about the player. */
+/** Someone where the player is, how they feel about the player, and who they're with. */
 export interface Presence {
   person: Person;
   doing: string;
   stance: Stance;
+  /** Who they're with here and what the two are at, if anyone. */
+  scene: Scene | null;
 }
 
 /** A mask the player has on: the garment's kind, the word for it ("gas mask"), and its name. */
@@ -181,6 +186,9 @@ export class Game {
   private charismaState: SkillState;
   /** The player's job, if they have one. */
   private job: JobState | null;
+  /** The people's own days so far, and what everyone started with in eddies, for earning it back. */
+  private life: LifeState;
+  private readonly baseEddies: ReadonlyMap<string, number>;
   /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
   private readonly home: { building: string; bed: boolean } | null = null;
   private lastAmbient: AmbientLine | null = null;
@@ -204,6 +212,10 @@ export class Game {
     this.energyState = progress?.energy ? { ...progress.energy } : freshEnergy(rules.energy);
     this.drunkState = progress?.inebriation ? { ...progress.inebriation } : freshInebriation();
     this.population = generatePeople(world, rules.people, rules.food.dishes);
+    this.baseEddies = new Map(this.population.people.map((p) => [p.id, p.eddies]));
+    // The days the people have had since the city was made are put back onto them.
+    this.life = progress?.life ? { ...freshLife(), ...structuredClone(progress.life) } : freshLife();
+    applyLife(this.population, this.life);
     this.society = progress?.society ? { ...freshSociety(), ...structuredClone(progress.society) } : freshSociety();
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
     // A job at a place this city doesn't have, or that doesn't hire anymore, is no job.
@@ -931,15 +943,62 @@ export class Game {
     return location ? { kind: 'location', id: location.id } : null;
   }
 
-  /** Everyone where the player is right now. */
+  /** Everyone where the player is right now, and who they're with. */
   peopleHere(now: number): Presence[] {
     const spot = this.spot;
     if (!spot) return [];
-    return peopleAt(this.population, this.world, spot, this.clockAt(now), this.rules.food.dishes).map(({ person, doing }) => ({
+    const clock = this.clockAt(now);
+    const present = peopleAt(this.population, this.world, spot, clock, this.rules.food.dishes);
+    const scenes = scenesAt(present.map((p) => p.person), this.population, spot, clock, this.world, this.rules.people.turf, (gang) => this.rules.people.gangs[gang]?.rivals ?? [], this.rules.life, this.world.seed);
+    return present.map(({ person, doing }) => ({
       person,
       doing,
       stance: this.stanceOf(person, now),
+      scene: scenes.get(person.id) ?? null,
     }));
+  }
+
+  // ───────────── The people's own days ─────────────
+
+  /** The people's own days so far, for saving. */
+  get lifeSaved(): LifeState {
+    return structuredClone(this.life);
+  }
+
+  /** Lives the people through the days since the last one lived, if any have passed. */
+  private live(now: number): void {
+    const today = this.clockAt(now).day;
+    if (this.life.day >= today) return;
+    const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed);
+    if (happened.length) this.events.emit('societyChanged', { people: [] });
+  }
+
+  /** What someone would bring up about what happened between people lately, as the variables their lines are filled by; nothing when there's no news. */
+  private newsVars(person: Person, now: number): Record<string, string> {
+    const news = newsFor(person, this.population, this.life, this.rules.life, this.clockAt(now).day);
+    if (!news) return {};
+    const { event, role, other, tie, won } = news;
+    const days = this.clockAt(now).day - event.day;
+    const ago = days <= 0 ? 'today' : days === 1 ? 'last night' : days === 2 ? 'two nights back' : days < 7 ? 'a few days back' : 'last week';
+    const pronouns = pronounsOf(other);
+    const where = event.where ? (event.where.kind === 'building' ? this.world.buildings.find((b) => b.id === event.where?.id)?.name : this.world.locations[event.where.id]?.name) : undefined;
+    return {
+      news: 'yes',
+      [`news${event.kind.charAt(0).toUpperCase()}${event.kind.slice(1)}`]: 'yes',
+      // What the speaker was to it: `newsMine`, `newsKin`, `newsOurs` (their gang's doing) or `newsHeard`; `newsGang` is the gang's name.
+      [{ me: 'newsMine', kin: 'newsKin', gang: 'newsOurs', heard: 'newsHeard' }[role]]: 'yes',
+      newsWho: other.given,
+      newsGang: event.gang ? (this.rules.people.gangs[event.gang]?.name ?? '') : '',
+      newsWord: tie ? kinWord(person, tie.kind, other) : '',
+      newsAgo: ago,
+      newsTook: String(event.took),
+      newsWhere: where ?? '',
+      newsHe: pronouns.he,
+      newsHim: pronouns.him,
+      newsHis: pronouns.his,
+      newsWon: won ? 'yes' : '',
+      newsHurt: event.kind === 'fight' && event.who[1] === other.id ? 'yes' : '',
+    };
   }
 
   person(id: string): Person | undefined {
@@ -1156,6 +1215,8 @@ export class Game {
     const untold = family.filter((t) => !linkOf(this.society, id, t.to)?.kind);
     const kin = untold.length ? rng.pick(untold) : family.length ? rng.pick(family) : undefined;
     const speaker = this.speakerFor(person, stance, doing, now, kin);
+    const news = newsFor(person, this.population, this.life, this.rules.life, this.clockAt(now).day);
+    speaker.vars = { ...speaker.vars, ...this.newsVars(person, now) };
     this.logged(id, 'you', line(lines.you.talk, speaker, rng), now);
     if (speaker.mood === 'asleep' || stance === 'hostile') {
       this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
@@ -1193,6 +1254,12 @@ export class Game {
       learnLink(this.society, id, kin.to, kin.kind, 'told', now);
       learnOf(this.society, kin.to, 'told');
       learned.push(kin.to);
+    }
+    // Told of what happened to someone, the player has their name; told it was a relative, the tie too.
+    if (topic === 'news' && news) {
+      learnOf(this.society, news.other.id, 'told');
+      if (news.tie) learnLink(this.society, id, news.other.id, news.tie.kind, 'told', now);
+      learned.push(news.other.id);
     }
     const gain = Math.round(society.talk.base * (0.6 + person.traits.warmth * 0.8) * (stance === 'cold' ? 0.4 : 1) * this.charisma().bonus);
     changeStanding(this.society, id, { met: true, rapport: gain, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
@@ -1625,6 +1692,7 @@ export class Game {
 
   /** Greets the player (or welcomes them back) and puts them where they are. A trip that ended while they were away lands now. */
   start(now: number): void {
+    this.live(now);
     this.say(this.resumed ? this.world.welcomeBack : this.world.welcome);
     if (!this.resumed) this.settle(this.where);
     this.emitArrived(null);
@@ -1696,6 +1764,7 @@ export class Game {
 
   /** Moves the clock on: sobers up, reveals what's been walked past, and lands the player once the trip is over. */
   tick(now: number, away = false): void {
+    this.live(now);
     this.soberUp(now);
     this.settleThreats(now);
     this.recognize(now);

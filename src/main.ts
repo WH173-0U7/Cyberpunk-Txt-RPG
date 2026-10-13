@@ -11,10 +11,11 @@ import { LINES } from './data/dialogue';
 import { PEOPLE } from './data/people';
 import { CHARISMA } from './data/skills';
 import { JOBS } from './data/jobs';
+import { LIFE } from './data/life';
 import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
-import { Game, streetSpot } from './engine/game';
+import { Game, type Presence, streetSpot } from './engine/game';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu, Quality } from './engine/food';
 import { kinWord } from './engine/dialogue';
@@ -882,14 +883,14 @@ function showPeople(): void {
     // The standing lines belong to the list; a card is about one person.
     // What's on the player that people here can see; the rest of their standing is the status drop-down's.
     reputation: shown || !mask ? [] : [`Masked · they see a ${mask.word}, not a face`],
-    rows: here.map(({ person, doing, stance }) => {
+    rows: here.map(({ person, doing, stance, scene }) => {
       const about = game.describe(person.id);
       return {
         id: person.id,
         name: about?.name ?? person.name,
         // The gang shows on sight; the job only once known (a gang member's job is the gang).
         sub: [gangOf(person.gang) ? `${gangOf(person.gang)} colors` : undefined, person.gang ? undefined : about?.facts.job].filter(Boolean).join(' · '),
-        doing,
+        doing: withCompany(doing, scene),
         stance,
         stanceLabel: STANCE_LABEL[stance],
       };
@@ -902,7 +903,7 @@ function showPeople(): void {
             name: described.name,
             stance: standing.stance,
             stanceLabel: STANCE_LABEL[standing.stance],
-            kicker: [gangOf(shown.gang) ? `${gangOf(shown.gang)} colors` : undefined, present ? present.doing : 'Not here'].filter(Boolean).join(' · '),
+            kicker: [gangOf(shown.gang) ? `${gangOf(shown.gang)} colors` : undefined, present ? withCompany(present.doing, present.scene) : 'Not here'].filter(Boolean).join(' · '),
             facts: described.lines.length ? described.lines.join(' · ') : described.named ? 'That\'s all you know.' : 'Nothing known yet. Talk, watch, ask.',
             factsOpen,
             here: Boolean(present),
@@ -922,6 +923,14 @@ function showPeople(): void {
           }
         : null,
   });
+}
+
+/** What someone is doing, and with whom, as the player can tell them: "eating Wontons · arguing with a woman in Mox colors". */
+function withCompany(doing: string, scene: Presence['scene']): string {
+  if (!scene) return doing;
+  const other = game.describe(scene.with);
+  const name = other ? (other.named ? other.name : other.name.replace(/^(An?) /, (m) => m.toLowerCase())) : 'someone';
+  return `${doing} · ${scene.phrase} ${name}`;
 }
 
 /** Buys off the menu, and says how it went under the menu's header. */
@@ -1092,7 +1101,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE }, progress);
   wire(game);
   map.setWorld(world);
   try {

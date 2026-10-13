@@ -21,8 +21,8 @@ export type Mood = 'busy' | 'easy' | 'eating' | 'drinking' | 'court' | 'home' | 
 export type History = 'first' | 'recent' | 'regular' | 'long';
 /** The player's way with words, in three sizes. */
 export type Eloquence = 'blunt' | 'easy' | 'smooth';
-/** What a chat can turn to. */
-export type Topic = 'job' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor';
+/** What a chat can turn to; `news` is what happened between people lately (life.ts). */
+export type Topic = 'job' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news';
 /** What the player can ask someone about themselves. */
 export type Question = Exclude<Fact, 'nature' | 'drinks'>;
 export type Reply = 'answer' | 'deflect' | 'refuse';
@@ -244,7 +244,7 @@ export function replyTo(score: number, rules: OpennessRules, rng: Rng): Reply {
   return rng.chance((score - rules.deflectAt) / (rules.answerAt - rules.deflectAt)) ? 'answer' : 'deflect';
 }
 
-const TOPICS: Topic[] = ['district', 'life', 'here', 'job', 'likes', 'hates', 'kin', 'rumor'];
+const TOPICS: Topic[] = ['district', 'life', 'here', 'job', 'likes', 'hates', 'kin', 'rumor', 'news'];
 
 /** What someone will bring up on their own: the topics they're open about, as of this chat. */
 export function openTopics(speaker: Speaker, level: number, rules: OpennessRules, rng: Rng, reveal: boolean): Topic[] {
@@ -255,14 +255,15 @@ export function openTopics(speaker: Speaker, level: number, rules: OpennessRules
     if (topic === 'hates' && !vars.hate) continue;
     if (topic === 'here' && !vars.here) continue;
     if (topic === 'rumor' && !['gangGood', 'gangBad', 'districtGood', 'districtBad'].some((key) => vars[key])) continue;
+    if (topic === 'news' && !vars.news) continue;
     if (replyTo(openness(topic, speaker.stance, level, person.traits, rules, Boolean(vars.mask)), rules, rng) === 'answer') open.push(topic);
   }
   return open;
 }
 
-/** Something about their life, on one of the topics on the table (their people twice as likely), or a brush-off when there's nothing they'll say. */
+/** Something about their life, on one of the topics on the table (their people, and what happened lately, twice as likely), or a brush-off when there's nothing they'll say. */
 export function smallTalk(speaker: Speaker, topics: Topic[], lines: DialogueLines, rng: Rng): { said: string; topic: Topic | null } {
-  const pool = topics.flatMap((t) => (t === 'kin' ? [t, t] : [t]));
+  const pool = topics.flatMap((t) => (t === 'kin' || t === 'news' ? [t, t] : [t]));
   const topic = pool.length ? rng.pick(pool) : null;
   const said = topic ? compose(lines.topics[topic], speaker, lines, rng, { opener: false }) : '';
   return said ? { said, topic } : { said: line(lines.brushOff, speaker, rng), topic: null };
