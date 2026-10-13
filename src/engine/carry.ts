@@ -44,6 +44,8 @@ export interface PocketKind {
   /** What it costs where it's sold; nothing for the pockets of the clothes on your back. */
   price?: number;
   note?: string;
+  /** For a garment that hides the face (a gas mask, a ballistic mask, a balaclava, a menpō): the word for it. Glasses and goggles don't. */
+  mask?: string;
 }
 
 /** A pocket the player has: which kind it is, and where it sits (worn, or in another pocket). */
@@ -90,6 +92,8 @@ export interface PocketLoad extends PocketState {
   style?: Style;
   quality?: Quality;
   note?: string;
+  /** For a garment that hides the face: the word for it. */
+  mask?: string;
   slots: number;
   maxGrams: number;
   /** Slots and grams taken by what's inside (and inner pockets, each a slot). */
@@ -228,6 +232,7 @@ export function loads(pockets: PocketState[], items: Item[], money: Cash, gear: 
       ...(kind.style ? { style: kind.style } : {}),
       ...(kind.quality ? { quality: kind.quality } : {}),
       ...(kind.note ? { note: kind.note } : {}),
+      ...(kind.mask ? { mask: kind.mask } : {}),
       slots: kind.slots,
       maxGrams: kind.maxGrams,
       load,

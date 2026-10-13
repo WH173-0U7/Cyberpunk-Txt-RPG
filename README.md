@@ -168,6 +168,17 @@ own.
   day and reputations recover two, on the game's clock. The **People** overlay lists every
   reputation that stands at anything. (Violence, once there is combat, goes through the same
   machinery: assault and murder are already kinds of incident, with heavier consequences.)
+- **Masks**: a gas mask, a ballistic mask, a balaclava or a menpō (all real 2077 pieces, on
+  the thrift rack, at Saeko's and in the clothing stores) hides your face, and anything you
+  do to someone from behind it is nobody's doing: no grudge, no word around the district, no
+  one coming to collect. They remember the mask, though. The victim, or anyone who saw it,
+  who sees that same mask on you again somewhere else or later puts it together, and all of
+  it lands on you then as if they'd seen your face at the time. Take the mask off before
+  anyone who was there sees it again and you're clear: a bare face is a stranger's. It
+  costs: no counter serves a mask (not a kitchen, not a rack, not a bank; the panel says so
+  until it comes off), strangers give a mask their name now and then and little else, and
+  anyone in a gang reads a mask on their turf as a threat and goes cold. The **People**
+  overlay's strip says when you're masked.
 - **Eating and drinking**: in the inventory, every dish has an **Eat** or **Drink** button.
   Food and soft drinks do nothing yet. Alcohol goes to your head: every drink has its units
   (a beer about one, a shot of Moonshine three), they add up, and the body clears a unit an
@@ -211,7 +222,7 @@ own.
   you stand if there is none; whatever was in its pockets, the wallet included, moves to
   pockets with room first, or the swap is off. A hat or face wear can also just come off
   (**Take off** on its row) into a pocket with room; the rest of what you wear gets swapped,
-  never shed.
+  never shed. A garment that hides your face says so in the inventory (see **Masks** above).
 - **Eddies**: cash and the account. Cash is **bills** in a wallet in your pants (it holds a
   thousand; a note weighs next to nothing) and **coins** loose in the pocket beside it (a
   slot of their own, and six grams to the eddie, so a pocketful of change is a heavy one).

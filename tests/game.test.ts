@@ -1398,6 +1398,113 @@ describe('Game', () => {
       const moved = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), items: game.inventory.map((i) => ({ ...i, in: 'gone' })), gear: game.gearSaved });
       expect(moved.inventory.map((i) => i.in)).toEqual(['jacket']);
     });
+
+    describe('masks', () => {
+      const gasMask = { id: 'old-plastic-gas-mask-1', kind: 'old-plastic-gas-mask', in: null };
+      const inMask = [...GEAR.start, gasMask];
+
+      it('robs from behind a mask without anyone knowing whose doing it was, until the victim sees the mask again', () => {
+        const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20, { gear: inMask });
+        expect(game.masked()).toEqual({ kind: 'old-plastic-gas-mask', word: 'gas mask', name: 'Old plastic gas mask' });
+        const others = game.peopleHere(now).filter((p) => p.person.id !== worker.id);
+        take();
+        expect(game.rob(worker.id, now)).toBe(true);
+        const said = outputs(take()).map((o) => o.text);
+        expect(said.some((t) => /gas mask/.test(t))).toBe(true);
+        expect(said.some((t) => /forget your face|remembers your face|Word will get around/.test(t))).toBe(false);
+        expect(said.some((t) => /Nobody saw your face|all they saw was a gas mask/.test(t))).toBe(true);
+        // Robbed is robbed; but nobody holds it against the player: not the victim, not the witnesses, not the house.
+        expect(game.standingWith(worker.id, now)?.standing).toMatchObject({ grudge: 0, met: false, robbedAt: now });
+        for (const o of others) expect(game.standingWith(o.person.id, now)?.standing.grudge, o.person.name).toBe(0);
+        expect(game.reputation(now)).toEqual([]);
+        expect(game.societySaved.threats).toEqual([]);
+        expect(game.societySaved.incidents).toHaveLength(1);
+        expect(game.societySaved.incidents[0]).toMatchObject({ kind: 'robbery', victim: worker.id, mask: 'old-plastic-gas-mask', pinned: false });
+        // The counter serves no mask, which is not the same as a ban.
+        expect(game.barred(now)).toMatch(/mask/i);
+        expect(game.barred(now)).not.toMatch(/won't serve you|closes the moment/);
+        expect(game.canBuy(game.menu()?.items[0]?.id ?? '', now)).toMatch(/mask/i);
+        // Still here an hour on, in the same mask, and the victim puts it together: all of it lands now.
+        take();
+        game.tick(now + HOUR);
+        expect(game.peopleHere(now + HOUR).some((p) => p.person.id === worker.id)).toBe(true);
+        const pinned = outputs(take());
+        expect(pinned.some((o) => o.tone === 'error' && /gas mask/.test(o.text))).toBe(true);
+        expect(pinned.some((o) => /on you now/.test(o.text))).toBe(true);
+        expect(game.standingWith(worker.id, now + HOUR)?.standing.grudge).toBe(SOCIETY.severity.robbery);
+        expect(game.standingWith(worker.id, now + HOUR)?.stance).toBe('hostile');
+        expect(game.reputation(now + HOUR).find((r) => r.key === 'business:b-noodle')?.value).toBeLessThanOrEqual(SOCIETY.rep.banAt);
+        expect(game.barred(now + HOUR)).toMatch(/won't serve you|closes the moment/);
+        expect(game.societySaved.incidents[0]?.pinned).toBe(true);
+        // Pinned once: looking again brings nothing.
+        take();
+        game.tick(now + 2 * HOUR);
+        expect(outputs(take())).toEqual([]);
+      });
+
+      it("keeps a masked robbery nobody's when the mask comes off before anyone sees it again, and pins it the moment it goes back on", () => {
+        const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20, { gear: inMask });
+        expect(game.rob(worker.id, now)).toBe(true);
+        expect(game.takeOff('old-plastic-gas-mask-1')).toBe(true);
+        expect(game.masked()).toBeNull();
+        expect(outputs(take()).at(-1)?.text).toMatch(/Your face is your own again/);
+        // Bare-faced in front of the victim an hour on: nothing. They never saw a face.
+        game.tick(now + HOUR);
+        expect(outputs(take())).toEqual([]);
+        expect(game.standingWith(worker.id, now + HOUR)?.standing.grudge).toBe(0);
+        expect(game.barred(now + HOUR)).toBeNull();
+        expect(game.talk(worker.id, now + HOUR)).toBe(true);
+        expect(game.standingWith(worker.id, now + HOUR)?.stance).not.toBe('hostile');
+        // The mask back on in front of them, and it clicks.
+        take();
+        expect(game.wear('old-plastic-gas-mask', now + HOUR)).toBe(true);
+        const said = outputs(take());
+        expect(said.some((o) => /nobody knows your face/.test(o.text))).toBe(true);
+        expect(said.some((o) => /on you now/.test(o.text))).toBe(true);
+        expect(game.standingWith(worker.id, now + HOUR)?.standing.grudge).toBe(SOCIETY.severity.robbery);
+        expect(game.societySaved.incidents[0]?.pinned).toBe(true);
+      });
+
+      it('makes an insult from behind a mask nobody\'s either, and the people colder to a mask', () => {
+        const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20, { gear: inMask });
+        const bare = new Game(world, { ...RULES, startingEddies: 100 }, progressInside('b-noodle', 38, 20));
+        bare.start(now);
+        take();
+        expect(game.insult(worker.id, now)).toBe(true);
+        expect(outputs(take()).length).toBeGreaterThan(0);
+        expect(game.standingWith(worker.id, now)?.standing).toMatchObject({ grudge: 0, rapport: 0 });
+        expect(game.societySaved.incidents[0]).toMatchObject({ kind: 'insult', pinned: false });
+        // A mask gets less out of people: the same stranger, asked the same thing, with the mask on and off.
+        const open = (g: Game, asked: Parameters<typeof openness>[0]) => openness(asked, g.standingWith(worker.id, now)?.stance ?? 'neutral', 1, worker.traits, SOCIETY.openness, Boolean(g.masked()));
+        expect(open(game, 'job')).toBe(open(bare, 'job') - SOCIETY.openness.mask);
+      });
+
+      it('serves no mask at any counter, the bank and a stall included, until it comes off', () => {
+        const bank = new Game(world, RULES, { ...progressInside('b-bank', 44, 20), gear: inMask, money: { bills: 50, coins: 0, account: 100 } });
+        bank.start(T0);
+        expect(bank.bank(T0)).toBeNull();
+        expect(bank.barred(T0)).toMatch(/mask/i);
+        expect(bank.deposit()).toBe(false);
+        expect(bank.takeOff('old-plastic-gas-mask-1')).toBe(true);
+        expect(bank.bank(T0)).toMatchObject({ name: 'EuroBank' });
+        expect(bank.barred(T0)).toBeNull();
+        expect(bank.deposit()).toBe(true);
+        // A diner's kitchen out at a place is a counter too.
+        const stall = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), where: at('bar'), inside: null, gear: inMask, money: { bills: 50, coins: 0, account: 0 } });
+        stall.start(T0);
+        const dish = stall.menu()?.items[0]?.id ?? '';
+        expect(dish).not.toBe('');
+        expect(stall.barred(T0)).toMatch(/mask/i);
+        expect(stall.canBuy(dish, T0)).toMatch(/mask/i);
+        expect(stall.affords(dish)).toBe(true);
+        expect(stall.takeOff('old-plastic-gas-mask-1')).toBe(true);
+        expect(stall.canBuy(dish, T0)).toBeNull();
+        // Nowhere with a counter, a mask is nobody's business.
+        const street = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), where: at('alley'), inside: null, gear: inMask });
+        street.start(T0);
+        expect(street.barred(T0)).toBeNull();
+      });
+    });
   });
 
   describe('energy', () => {

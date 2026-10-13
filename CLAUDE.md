@@ -76,7 +76,9 @@ clothing are the items so far:
   `Game.wear(itemId)` swaps it in: the garment it replaces goes in a pocket with room (or is
   left behind), after what was in its pockets, the wallet included, has found room, else the
   swap is off; `Game.takeOff(pocketId)` sheds a hat or face wear into a pocket with room,
-  and refuses the slots `GEAR.start` covers (those get swapped, never shed). A rack (`Game.menu()` at a store) sells garments as `clothing` menu items at
+  and refuses the slots `GEAR.start` covers (those get swapped, never shed). A garment with
+  `mask` (the word for it: gas mask, ballistic mask, balaclava, menpō) hides the face;
+  `Game.masked()` is the one worn, and what it does is under People below. A rack (`Game.menu()` at a store) sells garments as `clothing` menu items at
   their own price, with the slot, style and brand as `detail`, and bags by the store's tier
   (`GEAR.quality`, else drawn like an eatery's). Stores are businesses in `src/data/city.ts`
   (the wiki's chains and named stores keep to their districts) with roles in
@@ -161,9 +163,20 @@ it needs no generator bump. The pieces:
   lines), so a pool that can come up empty for some speaker fails there.
 - Whether someone answers is `openness` (engine) with the numbers in `SOCIETY.openness`:
   stance, charisma level and traits against the cost of what's asked (`Asked`: a fact, a
-  topic, or `chop`, a favor). A no is written on their `Standing.refused`; asking again
-  within the talk cooldown is pressing and costs rapport. Anything new the player can want
-  from someone gets a cost there.
+  topic, or `chop`, a favor), less `openness.mask` while the player is masked. A no is
+  written on their `Standing.refused`; asking again within the talk cooldown is pressing and
+  costs rapport. Anything new the player can want from someone gets a cost there.
+- A mask (`Game.masked()`) changes three things, all through what's already there. An
+  incident done masked is written with its `mask` (the garment kind), `pinned: false` and
+  `where` (the scene: spot, hour and mask, from `Game`'s private `scene()`), and
+  `applyIncident` runs no cascade for it; `Game`'s private `recognize(now)` (from `tick`,
+  `enter`, `look` and `wear`, once per scene) has the victim or a witness who is here, at
+  another scene, see the mask and `pinIncident` it, which runs the cascade then. `rob` and
+  `insult` keep their own standing changes to the bare face (the victim's `robbedAt` is set
+  either way). `barred(now)` refuses a mask at any counter (a kitchen, a rack, a bank: the
+  `masked.barred` lines), and `attitude` takes `masked` for `SOCIETY.mask.turf` against the
+  player with anyone in a gang. The speaker's `vars.mask` is the word for it, so lines fit
+  with `needs`/`lacks: ['mask']` (`masked.recognized`, the greetings, the robbery lines).
 - Gangs are canon (wiki): keep their turf, looks and rivalries true to it. Names are made
   up in each community's style and must never be a real character's (`tests/people.test.ts`
   checks a few).

@@ -185,6 +185,13 @@ describe('dialogue', () => {
     expect(openness('kin', 'neutral', 1, { ...plain, loyalty: 0.9 }, rules)).toBeLessThan(openness('kin', 'neutral', 1, plain, rules));
     expect(openness('hates', 'neutral', 1, { ...plain, courage: 0.9 }, rules)).toBeGreaterThan(openness('hates', 'neutral', 1, plain, rules));
     expect(openness('chop', 'neutral', 1, { ...plain, greed: 0.9 }, rules)).toBeGreaterThan(openness('chop', 'neutral', 1, plain, rules));
+    // A mask on the player costs with everyone: a stranger in one gets a name out of people now and then and their work never; a friend still tells most things.
+    expect(openness('name', 'neutral', 1, plain, rules, true)).toBeCloseTo(openness('name', 'neutral', 1, plain, rules) - rules.mask, 5);
+    expect(replyTo(openness('job', 'neutral', 1, plain, rules, true), rules, createRng('a'))).toBe('refuse');
+    expect(replyTo(openness('job', 'friend', 1, plain, rules, true), rules, createRng('a'))).toBe('answer');
+    expect(replyTo(openness('home', 'friend', 1, plain, rules, true), rules, createRng('a'))).not.toBe('answer');
+    const inMask = speakerOf(person('m'), {}, { mask: 'gas mask' });
+    expect(new Set(Array.from({ length: 40 }, (_, i) => openTopics(inMask, 1, rules, createRng(`m${i}`), true)).flat())).not.toContain('job');
     // A stranger chops a hot chip a little less readily than they talk about their work; a friend without a second thought.
     expect(openness('chop', 'neutral', 1, plain, rules)).toBeLessThan(openness('job', 'neutral', 1, plain, rules));
     expect(openness('chop', 'neutral', 1, plain, rules)).toBeGreaterThan(rules.deflectAt);
@@ -275,6 +282,7 @@ describe('dialogue', () => {
           balance: '120',
           cut: '30',
           left: '90',
+          mask: rng.chance(0.3) ? 'gas mask' : '',
         };
         const speaker: Speaker = {
           person: p,
@@ -307,6 +315,16 @@ describe('dialogue', () => {
         }
         check(compose(LINES.chop.done, speaker, LINES, rng), `${about} chop done`);
         check(deflect(speaker, 'chop', LINES, rng), `${about} deflect chop`);
+        // With a mask on the player, and without: the pools that care either way, and the ones only a mask brings up.
+        for (const mask of ['balaclava', '']) {
+          const masked: Speaker = { ...speaker, vars: { ...vars, mask, work: 'The Afterlife' } };
+          for (const pool of [LINES.greeting, LINES.rob.done, LINES.rob.fought, ...(mask ? [LINES.masked.barred, LINES.masked.recognized] : [])]) {
+            const said = line(pool, masked, rng);
+            check(said, `${about} ${mask ? 'masked' : 'bare'} pool`);
+            if (mask) expect(said, `${about} masked pool`).not.toMatch(/your face|friendly face|new face/i);
+          }
+          lines += 3;
+        }
         for (const eloquence of eloquences) {
           for (const pool of [LINES.you.talk, LINES.you.askAbout, LINES.you.gift, LINES.you.insult, LINES.you.rob, LINES.you.chop]) check(line(pool, { ...speaker, eloquence }, rng), `${about} you ${eloquence}`);
         }

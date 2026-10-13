@@ -42,6 +42,8 @@ export interface OpennessRules {
   /** How much each trait moves it: chatty and warmth on everything, loyalty on their people (against), courage on who they hate (for), greed on chopping a chip (for). */
   traits: { chatty: number; warmth: number; loyalty: number; courage: number; greed: number };
   cost: Record<Asked, number>;
+  /** What a mask on the player costs with everyone: people don't open up to a face they can't see. */
+  mask: number;
   answerAt: number;
   deflectAt: number;
   /** Rapport lost for asking again soon after a no. */
@@ -63,6 +65,16 @@ export interface Incident {
   district: string;
   /** Eddies taken, for a robbery. */
   took: number;
+  /** The mask the player had on doing it (a garment kind), if any. */
+  mask?: string;
+  /**
+   * Whether people know it was the player. Only something done in a mask starts out not pinned
+   * on them; it is once someone who was there sees the mask again (`pinIncident`). Missing
+   * means pinned.
+   */
+  pinned?: boolean;
+  /** Where and when a masked one was done, as the game keys a scene: the same scene can't be seeing the mask again. */
+  where?: string;
 }
 
 /** Someone coming to settle a score, when it's due. */
@@ -170,6 +182,8 @@ export interface SocietyRules {
   insult: { rapport: number };
   /** Rapport a chop done is worth: business done together. */
   chop: { rapport: number };
+  /** A mask on the player, as a gang reads it: this much attitude against them, with anyone in a gang. */
+  mask: { turf: number };
   openness: OpennessRules;
 }
 
@@ -322,10 +336,11 @@ export function circlesOf(person: Person): string[] {
   return keys;
 }
 
-/** How a person feels about the player, all told: their own dealings, their circles' reputation, their nature. */
-export function attitude(person: Person, state: SocietyState, rules: SocietyRules, timeScale: number, now: number): number {
+/** How a person feels about the player, all told: their own dealings, their circles' reputation, their nature; and, for anyone in a gang, a mask on the player reads as a threat. */
+export function attitude(person: Person, state: SocietyState, rules: SocietyRules, timeScale: number, now: number, masked = false): number {
   const s = standingOf(state, person.id, rules, timeScale, now);
   let score = s.rapport - s.grudge + (person.traits.warmth - 0.5) * 12;
+  if (masked && person.gang) score -= rules.mask.turf;
   score += repOf(state, `district:${person.district}`, rules, timeScale, now) * 0.25;
   if (person.gang) score += repOf(state, `gang:${person.gang}`, rules, timeScale, now) * 0.6;
   if (person.job.building) score += repOf(state, `business:${person.job.building}`, rules, timeScale, now) * 0.4;
@@ -351,31 +366,55 @@ export interface Fallout {
   threats: Threat[];
 }
 
+/** What the cascade of an incident needs to know of the city. */
+export interface IncidentLinks {
+  /** The chain a person's workplace belongs to, if any. */
+  chainOf: (person: Person) => string | null;
+  /** The gangs that fight a gang. */
+  rivalsOf: (gang: string) => string[];
+}
+
+/** Whether people know an incident was the player's. */
+export function isPinned(incident: Incident): boolean {
+  return incident.pinned !== false;
+}
+
 /**
  * Something done to someone. The victim holds it against the player; so do their family,
  * friends, crew and coworkers, by how close they are and how loyal they are, and their ties
  * in turn a little; witnesses too, and the people witnesses talk to. The victim's gang,
  * workplace and neighborhood think less of the player (the gang's rivals a little more).
  * Then whoever has the grudge and the nerve for it comes to settle up, and a gang that has
- * had enough comes looking.
+ * had enough comes looking. Done from behind a mask, none of that: nobody knows whose doing
+ * it was, until someone who was there sees the mask again (`pinIncident`).
  */
-export function applyIncident(
-  state: SocietyState,
-  population: Population,
-  incident: Omit<Incident, 'id'>,
-  rules: SocietyRules,
-  timeScale: number,
-  now: number,
-  rng: Rng,
-  links: {
-    /** The chain a person's workplace belongs to, if any. */
-    chainOf: (person: Person) => string | null;
-    /** The gangs that fight a gang. */
-    rivalsOf: (gang: string) => string[];
-  },
-): Fallout {
+export function applyIncident(state: SocietyState, population: Population, incident: Omit<Incident, 'id'>, rules: SocietyRules, timeScale: number, now: number, rng: Rng, links: IncidentLinks): Fallout {
   const id = state.nextId++;
-  state.incidents.push({ ...incident, id });
+  const written: Incident = { ...incident, id, ...(incident.mask ? { pinned: false } : {}) };
+  state.incidents.push(written);
+  if (!isPinned(written)) return { affected: [], rep: {}, threats: [] };
+  return cascade(state, population, written, rules, timeScale, now, rng, links);
+}
+
+/**
+ * Pins a masked incident on the player: someone who was there has seen the mask again, and
+ * all of it lands now, as if they'd seen the face at the time. Null if there's no such
+ * incident, or it's pinned already.
+ */
+export function pinIncident(state: SocietyState, population: Population, id: number, rules: SocietyRules, timeScale: number, now: number, rng: Rng, links: IncidentLinks): Fallout | null {
+  const incident = state.incidents.find((i) => i.id === id);
+  if (!incident || isPinned(incident)) return null;
+  incident.pinned = true;
+  return cascade(state, population, incident, rules, timeScale, now, rng, links);
+}
+
+/** What was done in a mask that nobody has pinned on the player yet. */
+export function unpinnedIncidents(state: SocietyState, mask: string): Incident[] {
+  return state.incidents.filter((i) => !isPinned(i) && i.mask === mask);
+}
+
+function cascade(state: SocietyState, population: Population, incident: Incident, rules: SocietyRules, timeScale: number, now: number, rng: Rng, links: IncidentLinks): Fallout {
+  const { id } = incident;
   const severity = rules.severity[incident.kind];
   const victim = population.people.find((p) => p.id === incident.victim);
   if (!victim) return { affected: [], rep: {}, threats: [] };

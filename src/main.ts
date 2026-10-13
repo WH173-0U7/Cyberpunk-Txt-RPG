@@ -328,6 +328,8 @@ let game: Game;
 /** What the player has picked to go to, if anything. */
 let target: Target | null = null;
 let lastActivity = performance.now();
+/** The mask the player had on at the last look, by kind: the panel's counter changes its mind when it changes. */
+let lastMask: string | null = null;
 
 // ───────────── Picking and going ─────────────
 
@@ -517,11 +519,12 @@ function hereView(now: number): PanelView {
   if (location) {
     const menu = game.menu();
     const here = game.peopleHere(now).length;
+    const barred = menu ? game.barred(now) : null;
     return {
       mode: 'here',
       kicker: `You are here · ${dname} · ${location.kindLabel}`,
       description: location.description,
-      actions: [peopleAction(here), ...(menu ? [menuAction(menu)] : [])],
+      actions: [peopleAction(here), ...(menu ? [barred ? { id: 'menu' as const, label: 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : [])],
       closable: false,
       announce: `${location.name}. ${stripMarkup(location.description)}${menu ? ' There is a menu.' : ''} ${here ? `${here} people here.` : 'Nobody here.'}`,
     };
@@ -705,7 +708,7 @@ function showInventory(): void {
     use: useLabel(item),
     wear: item.kind === 'clothing' && Boolean(item.gear),
     weight: formatGrams(item.count * itemGrams(item, GEAR, FOOD.dishes)),
-    detail: item.kind === 'credchip' ? `€$ ${item.balance ?? 0}${item.locked ? ' · locked' : ''}` : item.kind === 'clothing' && item.gear ? tier(GEAR.kinds[item.gear]) || undefined : undefined,
+    detail: item.kind === 'credchip' ? `€$ ${item.balance ?? 0}${item.locked ? ' · locked' : ''}` : item.kind === 'clothing' && item.gear ? [tier(GEAR.kinds[item.gear]), GEAR.kinds[item.gear]?.mask ? 'Hides your face' : ''].filter(Boolean).join(' · ') || undefined : undefined,
   });
   // What a new player comes dressed in stays on (it gets swapped); anything else worn, a hat or face wear, can come off.
   const required = new Set(GEAR.start.map((p) => GEAR.kinds[p.kind]?.slot));
@@ -715,7 +718,7 @@ function showInventory(): void {
     return {
       id: p.id,
       name: p.name,
-      sub: tier(p),
+      sub: [tier(p), p.mask ? 'Hides your face' : ''].filter(Boolean).join(' · '),
       // Just the slots on the row; the kilos are on the pocket's own page.
       detail: wallet ? `€$ ${p.bills} of ${p.holds}${p.chips ? ` · ${p.chips}/${p.chipSlots} chips` : ''}` : p.slots ? `${p.load.slots}/${p.slots} slots` : 'No pockets',
       weight: formatGrams(p.grams),
@@ -842,6 +845,7 @@ function showPeople(): void {
   const hot = game.inventory.filter((item) => item.kind === 'credchip' && item.locked);
   const gangOf = (id: string | null) => (id ? PEOPLE.gangs[id]?.name : undefined);
   const charisma = game.charisma();
+  const mask = game.masked();
   const how = { seen: 'seen together', told: 'told', asked: 'asked' };
   const nameOf = (id: string, fallback: string) => game.describe(id)?.name ?? fallback;
   const described = shown ? game.describe(shown.id) : null;
@@ -849,7 +853,7 @@ function showPeople(): void {
   people.render({
     count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
     // The standing lines belong to the list; a card is about one person.
-    reputation: shown ? [] : [`Charisma Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP`, ...reputation],
+    reputation: shown ? [] : [...(mask ? [`Masked · they see a ${mask.word}, not a face`] : []), `Charisma Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP`, ...reputation],
     rows: here.map(({ person, doing, stance }) => {
       const about = game.describe(person.id);
       return {
@@ -1019,6 +1023,12 @@ function wire(g: Game): void {
     if (inventory.overlay.isOpen) showInventory();
     if (shop.overlay.isOpen) showShop();
     if (people.overlay.isOpen) showPeople();
+    // A mask on or off changes what the counter here will do, so the panel looks again.
+    const mask = g.masked()?.kind ?? null;
+    if (mask !== lastMask) {
+      lastMask = mask;
+      if (!target && !g.currentTrip) refresh();
+    }
     queueSave();
   });
 
