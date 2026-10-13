@@ -213,6 +213,7 @@ const people = new People(
     },
     onQuestion: (id, fact) => {
       lastActivity = performance.now();
+      webOpen = false;
       game.askFact(id, fact as Exclude<Fact, 'nature' | 'drinks'>, Date.now());
     },
     onToggleWeb: () => {
@@ -228,17 +229,20 @@ const people = new People(
       showPeople();
     },
     onAction: (action, id) => {
-      // Insulting or robbing folds the row away again.
+      // Insulting or robbing folds the row away again; anything said brings the transcript back over the web.
       if (action !== 'talk') picker = null;
+      webOpen = false;
       actOn(action, id);
     },
     onGift: (id, itemId) => {
       lastActivity = performance.now();
       picker = null;
+      webOpen = false;
       game.gift(id, itemId, Date.now());
     },
     onAsk: (id, aboutId) => {
       lastActivity = performance.now();
+      webOpen = false;
       game.ask(id, aboutId, Date.now());
     },
   },

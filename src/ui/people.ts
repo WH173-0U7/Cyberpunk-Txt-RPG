@@ -199,10 +199,12 @@ export class People {
     els.cardFacts.textContent = card.facts;
     els.cardFacts.classList.toggle('is-open', card.factsOpen);
     els.cardFacts.setAttribute('aria-expanded', String(card.factsOpen));
+    // The web stands in for the transcript while it's open, so the card never grows and the commands stay put.
     els.cardWeb.hidden = !card.webOpen;
-    els.cardWeb.replaceChildren(card.web.length ? web(card) : el('p', 'person-web-hint', card.webHint));
+    els.cardWeb.replaceChildren(card.web.length ? web(card) : emptyWeb(card.webHint));
 
     const { cardLog } = els;
+    cardLog.hidden = card.webOpen;
     cardLog.replaceChildren(
       ...(card.log.length
         ? card.log.map((line) => {
@@ -262,6 +264,7 @@ function web(card: PersonCardView): SVGSVGElement {
   const ry = cy - 42;
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   svg.setAttribute('class', 'person-web');
   svg.setAttribute('role', 'list');
   svg.setAttribute('aria-label', `${card.name}'s web: ${card.web.map((n) => `${n.name}, ${n.label}`).join('; ')}`);
@@ -320,6 +323,13 @@ function web(card: PersonCardView): SVGSVGElement {
   me.setAttribute('class', 'person-web-center');
   svg.append(me);
   return svg;
+}
+
+/** A web with nobody in it yet: the person alone in the middle, and how to change that. */
+function emptyWeb(hint: string): HTMLElement {
+  const box = el('div', 'person-web-empty');
+  box.append(el('span', 'person-web-empty-ring'), el('p', 'person-web-hint', hint));
+  return box;
 }
 
 function chip(label: string, data: Record<string, string>, className = 'person-chip'): HTMLButtonElement {
