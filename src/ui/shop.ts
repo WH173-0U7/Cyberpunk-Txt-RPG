@@ -4,7 +4,7 @@ export interface ShopItemView {
   id: string;
   name: string;
   note: string;
-  kind: 'food' | 'drink' | 'alcohol';
+  kind: 'food' | 'drink' | 'alcohol' | 'gear';
   price: number;
   affordable: boolean;
   /** How many the player already carries. */
@@ -28,11 +28,12 @@ export interface ShopElements extends OverlayElements {
   list: HTMLElement;
 }
 
-const KIND_LABEL: Record<ShopItemView['kind'], string> = { food: 'Food', drink: 'Drink', alcohol: 'Alcohol' };
+const KIND_LABEL: Record<ShopItemView['kind'], string> = { food: 'Food', drink: 'Drink', alcohol: 'Alcohol', gear: 'Gear' };
 
 /**
- * An eatery's menu, over the map. It shows whatever view it's given; the game decides what's
- * for sale and what buying does. Opened from the panel, so focus goes back there on close.
+ * An eatery's menu, or a store's rack, over the map. It shows whatever view it's given; the
+ * game decides what's for sale and what buying does. Opened from the panel, so focus goes
+ * back there on close.
  */
 export class Shop {
   readonly overlay: MapOverlay;

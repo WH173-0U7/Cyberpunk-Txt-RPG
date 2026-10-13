@@ -1,7 +1,8 @@
 import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
-import { menuFor, type FoodContent, type Menu } from './food';
+import { loads, newPocketId, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState } from './carry';
+import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Venue } from './food';
 import { answer, compose, deflect, describeStranger, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, moodOf, openness, openTopics, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
 import { generatePeople, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type PeopleContent, type Person, type Population, type Spot, type Tie } from './people';
@@ -92,6 +93,8 @@ export interface GameRules extends TravelRules {
   society: SocietyRules;
   lines: DialogueLines;
   charisma: SkillRules;
+  /** What things weigh and what they're carried in. */
+  gear: GearContent;
   /** The time of day people's days run on. The phone's local time if not said (tests say). */
   clock?: (now: number) => Clock;
 }
@@ -145,8 +148,10 @@ export class Game {
   private readonly visited = new Set<string>();
   private readonly discovered = new Set<string>();
   private readonly explored = new Set<number>();
-  /** What the player carries: food and drink from eateries, so far. */
+  /** What the player carries: food and drink from eateries, so far. Each thing is in a pocket. */
   private readonly items: Item[];
+  /** The pockets to carry things in: the clothes' own, the wallet, and any bag bought. */
+  private readonly pockets: PocketState[];
   private eddies: number;
   private passUntil: number;
   private energyState: EnergyState;
@@ -185,7 +190,11 @@ export class Game {
     for (const id of Object.keys(this.society.known)) if (!known.has(id)) delete this.society.known[id];
     for (const key of Object.keys(this.society.links)) if (!key.split('|').every((id) => known.has(id))) delete this.society.links[key];
     this.society.threats = this.society.threats.filter((t) => !t.by || known.has(t.by));
+    // Pockets of kinds the game no longer has are gone, and with none left the player wears the usual; anything not in a pocket is put away.
+    const pockets = (progress?.gear ?? []).filter((p) => p.kind in rules.gear.kinds).map((p) => ({ ...p }));
+    this.pockets = pockets.length ? pockets : rules.gear.start.map((p) => ({ ...p }));
     this.items = (progress?.items ?? []).map((item) => ({ ...item }));
+    this.stow();
     this.resumed = Boolean(progress);
     const indoors = progress?.inside ? world.buildings.find((b) => b.id === progress.inside) : undefined;
     if (indoors && !this.trip && this.where.building === indoors.id && canEnter(indoors)) this.inside = indoors;
@@ -273,33 +282,103 @@ export class Game {
     return this.items.map((item) => ({ ...item }));
   }
 
-  /** What's for sale where the player is: inside an eatery, or at a place that serves food. Null elsewhere. */
-  menu(): Menu | null {
-    const at = this.inside ?? this.location;
-    return at ? menuFor(this.world, at, this.rules.food) : null;
+  /** The pockets the player has, for saving. */
+  get gearSaved(): PocketState[] {
+    return this.pockets.map((p) => ({ ...p }));
   }
 
-  /** Buys something off the menu here, into the inventory. False if it isn't on the menu or the eddies aren't there. */
+  /** Every pocket and what it holds, worked out, and the weight of all of it. */
+  carry(): { grams: number; pockets: PocketLoad[] } {
+    const { gear, food } = this.rules;
+    return { grams: totalGrams(this.pockets, this.items, this.eddies, gear, food.dishes), pockets: loads(this.pockets, this.items, this.eddies, gear, food.dishes) };
+  }
+
+  /** The pocket with room for one of something, if any. */
+  private pocketFor(item: Pick<Item, 'id' | 'kind'>): string | null {
+    return placeFor(this.pockets, this.items, this.eddies, item, 1, this.rules.gear, this.rules.food.dishes);
+  }
+
+  /** Puts away anything not in a pocket the player has: where it fits, or, failing that, the first pocket, overfull. */
+  private stow(): void {
+    const ids = new Set(this.pockets.map((p) => p.id));
+    const fallback = this.pockets.find((p) => p.in === null && !this.rules.gear.kinds[p.kind]?.holds) ?? this.pockets[0];
+    for (const item of this.items) {
+      if (item.in && ids.has(item.in)) continue;
+      const others = this.items.filter((i) => i !== item);
+      item.in = placeFor(this.pockets, others, this.eddies, item, item.count, this.rules.gear, this.rules.food.dishes) ?? fallback?.id;
+    }
+  }
+
+  /** What's for sale where the player is: an eatery's menu, a store's rack of bags, or nothing. */
+  menu(): Menu | null {
+    const at = this.inside ?? this.location;
+    if (!at) return null;
+    return menuFor(this.world, at, this.rules.food) ?? (this.inside ? this.rack(this.inside) : null);
+  }
+
+  /** A store's rack of bags and belts, priced by how good a store it is. */
+  private rack(building: Building): Menu | null {
+    const ids = building.business ? this.rules.gear.racks[building.business] : undefined;
+    if (!ids?.length) return null;
+    const quality = drawQuality(this.world, building);
+    const venue: Venue = { id: building.id, name: building.name, district: building.district, kindLabel: building.kindLabel, quality, chain: false };
+    const items: MenuItem[] = ids.flatMap((id) => {
+      const kind = this.rules.gear.kinds[id];
+      return kind?.price ? [{ id, name: kind.name, note: kind.note ?? '', kind: 'gear' as const, price: priceFor(kind.price, quality, this.rules.food) }] : [];
+    });
+    return { venue, items, kind: 'gear' };
+  }
+
+  /** Why the player can't buy something here, or null if they can: it isn't for sale, they're barred, short of eddies, or out of room. */
+  canBuy(id: string, now = Date.now()): string | null {
+    const item = this.menu()?.items.find((i) => i.id === id);
+    if (!item) return 'Not for sale here.';
+    const barred = this.barred(now);
+    if (barred) return barred;
+    if (item.price > this.eddies) return `${item.name} is ${item.price} €$. You've got ${this.eddies} €$.`;
+    if (item.kind !== 'gear' && !this.pocketFor({ id: item.id, kind: 'consumable' })) return `No room for ${item.name}: your pockets are full. Eat something, or drop something.`;
+    return null;
+  }
+
+  /** Buys something off the menu here: a dish into a pocket with room, or a bag to wear. False, and why, if it can't be. */
   buy(id: string, now = Date.now()): boolean {
     const item = this.menu()?.items.find((i) => i.id === id);
     if (!item) return false;
-    const barred = this.barred(now);
-    if (barred) {
-      this.say(barred, 'error');
-      return false;
-    }
-    if (item.price > this.eddies) {
-      this.say(`${item.name} is ${item.price} €$. You've got ${this.eddies} €$.`, 'error');
+    const why = this.canBuy(id, now);
+    if (why) {
+      this.say(why, 'error');
       return false;
     }
     this.eddies -= item.price;
-    const owned = this.items.find((i) => i.id === item.id);
-    if (owned) owned.count++;
-    else this.items.push({ id: item.id, kind: 'consumable', name: item.name, count: 1 });
-    this.say(`Bought ${item.name} for ${item.price} €$.`, 'system');
+    if (item.kind === 'gear') {
+      this.pockets.push({ id: newPocketId(item.id, this.pockets), kind: item.id, in: null });
+      this.say(`Bought a ${item.name.toLowerCase()} for ${item.price} €$. More room.`, 'system');
+    } else {
+      const pocket = this.pocketFor({ id: item.id, kind: 'consumable' }) ?? undefined;
+      const owned = this.items.find((i) => i.id === item.id && i.in === pocket);
+      if (owned) owned.count++;
+      else this.items.push({ id: item.id, kind: 'consumable', name: item.name, count: 1, in: pocket });
+      this.say(`Bought ${item.name} for ${item.price} €$.`, 'system');
+    }
     this.events.emit('walletChanged', this.wallet);
     this.events.emit('inventoryChanged', this.inventory);
     return true;
+  }
+
+  /** Drops one of something carried, for good: room for something else. False if there's none. */
+  drop(id: string): boolean {
+    const item = this.items.find((i) => i.id === id);
+    if (!item) return false;
+    this.takeOne(item);
+    this.say(`You drop the ${item.name}.`);
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  /** One fewer of a stack; none left, and it's gone. */
+  private takeOne(item: Item): void {
+    item.count--;
+    if (item.count <= 0) this.items.splice(this.items.indexOf(item), 1);
   }
 
   /**
@@ -310,8 +389,7 @@ export class Game {
     const item = this.items.find((i) => i.id === id && i.kind === 'consumable');
     const dish = item ? this.rules.food.dishes.find((d) => d.id === id) : undefined;
     if (!item || !dish) return false;
-    item.count--;
-    if (item.count <= 0) this.items.splice(this.items.indexOf(item), 1);
+    this.takeOne(item);
     if (dish.kind === 'alcohol') this.drink(dish.name, dish.alcohol ?? 0, now);
     else this.say(`You ${dish.kind === 'food' ? 'eat' : 'drink'} the ${dish.name}.`);
     this.events.emit('inventoryChanged', this.inventory);
@@ -723,8 +801,7 @@ export class Game {
       this.events.emit('societyChanged', { people: [id] });
       return false;
     }
-    item.count--;
-    if (item.count <= 0) this.items.splice(this.items.indexOf(item), 1);
+    this.takeOne(item);
     const standing = standingOf(this.society, id, society, timeScale, now);
     const favorite = dish.id === person.likes.dish || dish.id === person.likes.drink;
     // The second gift of the day means half as much.
@@ -776,18 +853,21 @@ export class Game {
     const rng = createRng(`${this.world.seed}:${id}:rob:${now}`);
     const emptied = standing.robbedAt && now - standing.robbedAt < (7 * 24 * HOUR) / timeScale;
     const fought = !emptied && rng.chance(person.traits.courage * 0.5);
-    const take = emptied ? 0 : Math.round(person.eddies * rng.range(0.4, 0.8) * (fought ? 0.5 : 1));
+    const wanted = emptied ? 0 : Math.round(person.eddies * rng.range(0.4, 0.8) * (fought ? 0.5 : 1));
+    // Cash is cash: only what the wallet will hold comes away.
+    const take = Math.min(wanted, walletRoom(this.pockets, this.eddies, this.rules.gear));
     const speaker = this.speakerFor(person, stance, doing, now);
     speaker.vars = { ...speaker.vars, take: String(take) };
     const fallout = this.incident('robbery', person, take, now);
     learnOf(this.society, id, 'met');
     changeStanding(this.society, id, { met: true, robbedAt: now }, society, timeScale, now);
     this.logged(id, 'you', line(lines.you.rob, speaker, rng), now);
-    const outcome = line(take ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
+    const outcome = wanted && !take ? `Your wallet is full. ${person.given} keeps ${speaker.vars.his} eddies, and remembers your face.` : line(take ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
     this.logged(id, 'them', outcome, now);
     if (take) {
       this.eddies += take;
       this.say(outcome, 'system');
+      if (wanted > take) this.say(`Your wallet won't hold the rest: ${wanted - take} €$ stays with ${person.given}.`, 'system');
       if (fought) this.drainEnergy(2, now);
       this.events.emit('walletChanged', this.wallet);
     } else {

@@ -2,6 +2,8 @@ import './style.css';
 import { CITY } from './data/city';
 import { ENERGY } from './data/energy';
 import { FOOD } from './data/food';
+import { GEAR } from './data/gear';
+import { itemGrams } from './engine/carry';
 import { INEBRIATION } from './data/inebriation';
 import { LINES } from './data/dialogue';
 import { PEOPLE } from './data/people';
@@ -128,7 +130,7 @@ const inventory = new Inventory(
     sections: $('#inventory-sections'),
   },
   () => showInventory(),
-  (id) => consume(id),
+  { onUse: (id) => consume(id), onDrop: (id) => drop(id) },
   reducedMotion,
 );
 
@@ -495,7 +497,7 @@ function insideView(building: Building): PanelView {
   const menu = game.menu();
   const here = game.peopleHere(now).length;
   const barred = game.barred(now);
-  const description = barred ?? (menu ? FOOD.blurbs[menu.venue.chain ? 'chain' : menu.venue.quality] : here ? 'People live and work in here.' : 'Nobody around right now.');
+  const description = barred ?? (menu ? menuBlurb(menu) : here ? 'People live and work in here.' : 'Nobody around right now.');
   return {
     mode: 'inside',
     kicker: `Inside · ${district} · Block ${building.block}`,
@@ -513,11 +515,20 @@ function peopleAction(count: number): PanelAction {
   return { id: 'people', label: 'People', sub: count ? `${count} here` : 'Nobody here', disabled: !count };
 }
 
-/** The menu button: how much there is to eat. The prices are on the menu. */
+/** The menu button: how much there is to eat (the prices are on the menu); a store's rack says how many things are on it. */
 function menuAction(menu: Menu): PanelAction {
+  if (menu.kind === 'gear') {
+    const n = menu.items.length;
+    return { id: 'menu', label: 'Shop', sub: n ? `${n} ${n === 1 ? 'thing' : 'things'}` : 'Nothing on the rack', disabled: !n };
+  }
   const dishes = menu.items.filter((i) => i.kind === 'food').length;
   const sub = menu.items.length ? `${dishes} ${dishes === 1 ? 'dish' : 'dishes'}` : 'Nothing on it';
   return { id: 'menu', label: 'Menu', sub, disabled: !menu.items.length };
+}
+
+/** What the panel says about the place's menu or rack. */
+function menuBlurb(menu: Menu): string {
+  return menu.kind === 'gear' ? GEAR.blurb : FOOD.blurbs[menu.venue.chain ? 'chain' : menu.venue.quality];
 }
 
 /** "Luxury", "Cheap eats"…: the kind of eatery, as players read it. */
@@ -573,19 +584,37 @@ function showWallet(wallet: Wallet, now: number): void {
   walletLabel.title = pass ? `NCART monthly pass valid until ${formatDay(wallet.passUntil)}` : 'Eurodollars. Buy an NCART monthly pass at any station.';
 }
 
-/** Fills the inventory with what the player carries, sorted by kind of item. */
+/** Fills the inventory: every pocket the player wears, how full it is, and what's in it. */
 function showInventory(): void {
   const { passUntil } = game.wallet;
+  const { grams, pockets } = game.carry();
   const items = game.inventory;
+  const order = Object.keys(ITEM_KINDS);
   inventory.render({
     pass: passUntil > Date.now() ? `Valid until ${formatDay(passUntil)}` : 'None',
-    sections: Object.entries(ITEM_KINDS).map(([kind, { label, hint }]) => ({
-      kind: kind as keyof typeof ITEM_KINDS,
-      label,
-      hint,
-      items: items.filter((item) => item.kind === kind).map((item) => ({ ...item, use: useLabel(item) })),
-    })),
+    weight: formatGrams(grams),
+    pockets: pockets
+      .filter((p) => p.in === null)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        slots: `${p.load.slots}/${p.slots}`,
+        weight: `${formatGrams(p.load.grams, true)} / ${formatGrams(p.maxGrams, true)}`,
+        over: p.over,
+        items: items
+          .filter((item) => item.in === p.id)
+          .sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.name.localeCompare(b.name))
+          .map((item) => ({ ...item, use: useLabel(item), weight: formatGrams(item.count * itemGrams(item, GEAR, FOOD.dishes)) })),
+        inside: pockets
+          .filter((q) => q.in === p.id)
+          .map((q) => ({ id: q.id, name: q.name, detail: q.holds !== undefined ? `€$ ${q.eddies} of ${q.holds}` : `${q.load.slots}/${q.slots}`, weight: formatGrams(q.grams), over: q.over })),
+      })),
   });
+}
+
+/** "250 g", "1.3 kg"; `kilos` always in kilos, for the limits. */
+function formatGrams(grams: number, kilos = false): string {
+  return grams >= 1000 || kilos ? `${(grams / 1000).toFixed(1)} kg` : `${Math.round(grams)} g`;
 }
 
 /** What using an item is called: food is eaten, the rest drunk. Nothing else can be used yet. */
@@ -598,6 +627,12 @@ function useLabel(item: Item): string | undefined {
 function consume(id: string): void {
   lastActivity = performance.now();
   game.consume(id, Date.now());
+}
+
+/** Drops something from the inventory, to make room. */
+function drop(id: string): void {
+  lastActivity = performance.now();
+  game.drop(id);
 }
 
 let shownCondition = '';
@@ -619,12 +654,14 @@ function showShop(): void {
     shop.render({ kicker: 'No menu', blurb: 'Nothing to eat here.', status: '', items: [] });
     return;
   }
-  const { venue, items } = menu;
-  const carried = new Map(game.inventory.map((item) => [item.id, item.count]));
+  const { items } = menu;
+  // Stacks of the same thing in different pockets count together.
+  const carried = new Map<string, number>();
+  for (const item of game.inventory) carried.set(item.id, (carried.get(item.id) ?? 0) + item.count);
   const barred = game.barred(Date.now());
   shop.render({
     kicker: qualityLabel(menu),
-    blurb: barred ?? FOOD.blurbs[venue.chain ? 'chain' : venue.quality],
+    blurb: barred ?? menuBlurb(menu),
     status: shopStatus,
     items: items.map((item) => ({ ...item, affordable: !barred && item.price <= eddies, carried: carried.get(item.id) ?? 0 })),
   });
@@ -696,8 +733,9 @@ function buyFromShop(id: string): void {
   lastActivity = performance.now();
   const item = game.menu()?.items.find((i) => i.id === id);
   if (!item) return;
-  const had = game.wallet.eddies;
-  shopStatus = game.buy(id) ? `Bought ${item.name} for ${item.price} €$ · €$ ${game.wallet.eddies} left` : `${item.name} is ${item.price} €$. You've got ${had} €$.`;
+  // The game says why not, if not: short of eddies, no pocket with room, barred.
+  const why = game.canBuy(id);
+  shopStatus = why ?? (game.buy(id) ? `Bought ${item.name} for ${item.price} €$ · €$ ${game.wallet.eddies} left` : '');
   showShop();
 }
 
@@ -843,7 +881,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR }, progress);
   wire(game);
   map.setWorld(world);
   seedLabel.textContent = `Seed ${world.seed.toUpperCase()}`;

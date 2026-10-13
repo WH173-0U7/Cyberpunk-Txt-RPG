@@ -1439,6 +1439,52 @@ button {
 .inv-item-count {
   color: #ffd84d;
 }
+.inv-item-weight,
+.inv-item-detail {
+  flex: none;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.inv-item-detail {
+  color: #ffd84d;
+}
+.inv-item.is-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+/* The wallet in the pants: a pocket inside a pocket */
+.inv-pocket .inv-item-name {
+  color: #fff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+.inv-section.is-over .inv-section-count,
+.inv-pocket.is-over .inv-item-detail {
+  color: var(--danger);
+}
+/* Drop: quiet, next to Eat or Drink */
+.inv-drop {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, var(--danger) 85%, #fff);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+.inv-drop:hover,
+.inv-drop:focus-visible {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  outline: none;
+}
 /* Eat, Drink…: using something right from the list */
 .inv-use {
   flex: none;
@@ -1910,6 +1956,9 @@ button {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
+}
+.shop-item.is-gear .shop-item-kind {
+  color: #ffd84d;
 }
 .shop-item-kind {
   margin-left: 8px;

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
+import type { GearContent } from '../src/engine/carry';
 import { FOOD } from '../src/data/food';
+import { GEAR } from '../src/data/gear';
 import { LINES } from '../src/data/dialogue';
 import { PEOPLE } from '../src/data/people';
 import { CHARISMA } from '../src/data/skills';
@@ -104,6 +106,7 @@ const RULES: GameRules = {
   society: SOCIETY,
   lines: LINES,
   charisma: CHARISMA,
+  gear: GEAR,
   // People's days run on UTC here, whatever machine the tests run on.
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
 };
@@ -437,6 +440,7 @@ describe('Game', () => {
         trip: null,
         inside,
         items: [],
+        gear: null,
         energy: null,
         inebriation: null,
         society: null,
@@ -500,14 +504,14 @@ describe('Game', () => {
 
       expect(game.buy(dish.id)).toBe(true);
       expect(game.wallet.eddies).toBe(50 - dish.price);
-      expect(game.inventory).toEqual([{ id: dish.id, kind: 'consumable', name: dish.name, count: 1 }]);
+      expect(game.inventory).toEqual([{ id: dish.id, kind: 'consumable', name: dish.name, count: 1, in: 'jacket' }]);
       const events = take();
       expect(events.map((e) => e.type)).toEqual(['output', 'walletChanged', 'inventoryChanged']);
       expect(outputs(events)[0]).toMatchObject({ text: `Bought ${dish.name} for ${dish.price} €$.`, tone: 'system' });
 
       expect(game.buy(dish.id)).toBe(true);
       expect(game.wallet.eddies).toBe(50 - 2 * dish.price);
-      expect(game.inventory).toEqual([{ id: dish.id, kind: 'consumable', name: dish.name, count: 2 }]);
+      expect(game.inventory).toEqual([{ id: dish.id, kind: 'consumable', name: dish.name, count: 2, in: 'jacket' }]);
     });
 
     it('needs the eddies, and only sells what is on the menu', () => {
@@ -555,6 +559,7 @@ describe('Game', () => {
       trip: null,
       inside: null,
       items,
+      gear: null,
       energy: null,
       inebriation,
       society: null,
@@ -570,7 +575,7 @@ describe('Game', () => {
       take();
 
       expect(game.consume('hawt-dawg', T0)).toBe(true);
-      expect(game.inventory).toEqual([{ ...dawg, count: 1 }, expect.objectContaining({ id: 'shard' })]);
+      expect(game.inventory).toEqual([{ ...dawg, count: 1, in: 'jacket' }, expect.objectContaining({ id: 'shard', in: 'jacket' })]);
       const events = take();
       expect(events.map((e) => e.type)).toEqual(['output', 'inventoryChanged']);
       expect(outputs(events)[0]).toEqual({ text: 'You eat the Hawt Dawg.', tone: 'narrative' });
@@ -664,6 +669,7 @@ describe('Game', () => {
       trip: null,
       inside: null,
       items,
+      gear: null,
       energy: null,
       inebriation: null,
       society: null,
@@ -925,6 +931,129 @@ describe('Game', () => {
     });
   });
 
+  describe('carrying', () => {
+    const HOUR = 60 * MINUTE;
+    const progressInside = (building: string, x: number, y: number, items: Progress['items'] = []): Progress => ({
+      where: outside(building, x, y),
+      visited: ['alley'],
+      discovered: ['alley', 'market'],
+      explored: [],
+      eddies: 100,
+      passUntil: 0,
+      trip: null,
+      inside: building,
+      items,
+      gear: null,
+      energy: null,
+      inebriation: null,
+      society: null,
+      charisma: null,
+    });
+    const inside = (building: string, x: number, y: number, rules: Partial<GameRules> = {}, items: Progress['items'] = []) => {
+      const game = new Game(world, { ...RULES, startingEddies: 100, ...rules }, progressInside(building, x, y, items));
+      game.start(T0);
+      const { take, outputs } = record(game);
+      take();
+      return { game, take, outputs };
+    };
+    /** Pockets with one slot in the jacket and one to spare in the pants (the wallet takes the other), one thing to a slot. */
+    const tiny: GearContent = {
+      ...GEAR,
+      items: { ...GEAR.items, consumable: { grams: 250, perSlot: 1 } },
+      kinds: { ...GEAR.kinds, jacket: { ...GEAR.kinds.jacket!, slots: 1 }, pants: { ...GEAR.kinds.pants!, slots: 2 } },
+    };
+
+    it('wears the usual pockets, with the wallet in the pants weighing what the eddies weigh', () => {
+      const { game } = inside('b-noodle', 38, 20);
+      expect(game.gearSaved).toEqual(GEAR.start);
+      const { grams, pockets } = game.carry();
+      expect(pockets.map((p) => p.id)).toEqual(['jacket', 'pants', 'wallet']);
+      expect(pockets[2]).toMatchObject({ eddies: 100, holds: GEAR.kinds.wallet!.holds, grams: GEAR.kinds.wallet!.grams + 100 * GEAR.gramsPerEddy, over: false });
+      expect(pockets[1]?.load).toEqual({ slots: 1, grams: GEAR.kinds.wallet!.grams + 100 * GEAR.gramsPerEddy });
+      expect(grams).toBe(GEAR.kinds.wallet!.grams + 100 * GEAR.gramsPerEddy);
+    });
+
+    it('puts what it buys where there is room, refuses when there is none, and drops things to make some', () => {
+      const { game, take, outputs } = inside('b-noodle', 38, 20, { gear: tiny });
+      const dish = game.menu()?.items.find((i) => i.kind === 'food');
+      if (!dish) throw new Error('Nothing on the menu');
+      expect(game.buy(dish.id)).toBe(true);
+      expect(game.inventory).toEqual([expect.objectContaining({ id: dish.id, count: 1, in: 'jacket' })]);
+      // The jacket's one slot is taken: the next goes in the pants, as its own stack.
+      expect(game.buy(dish.id)).toBe(true);
+      expect(game.inventory.map((i) => i.in)).toEqual(['jacket', 'pants']);
+      expect(game.carry().pockets.map((p) => `${p.load.slots}/${p.slots}`)).toEqual(['1/1', '2/2', '0/0']);
+      take();
+      // Nowhere left: no sale, no charge, and the reason.
+      const eddies = game.wallet.eddies;
+      expect(game.canBuy(dish.id)).toMatch(/No room/);
+      expect(game.buy(dish.id)).toBe(false);
+      expect(game.wallet.eddies).toBe(eddies);
+      expect(outputs(take())).toEqual([{ text: `No room for ${dish.name}: your pockets are full. Eat something, or drop something.`, tone: 'error' }]);
+      // Dropping one makes room again.
+      expect(game.drop(dish.id)).toBe(true);
+      expect(outputs(take())).toEqual([{ text: `You drop the ${dish.name}.`, tone: 'narrative' }]);
+      expect(game.inventory).toHaveLength(1);
+      expect(game.canBuy(dish.id)).toBeNull();
+      expect(game.buy(dish.id)).toBe(true);
+      expect(game.drop('nothing')).toBe(false);
+    });
+
+    it('sells bags at a store with a rack, which are more pockets', () => {
+      const rack: GearContent = { ...tiny, racks: { 'gun-shop': ['duffel-bag', 'belt-pouch'] } };
+      const { game, take, outputs } = inside('b-shop', 32, 20, { gear: rack });
+      const menu = game.menu();
+      expect(menu?.kind).toBe('gear');
+      expect(menu?.items.map((i) => i.kind)).toEqual(['gear', 'gear']);
+      const bag = menu?.items.find((i) => i.id === 'duffel-bag');
+      if (!bag) throw new Error('no bag');
+      expect(bag.price).toBeGreaterThan(0);
+      expect(game.buy('duffel-bag')).toBe(true);
+      expect(game.wallet.eddies).toBe(100 - bag.price);
+      expect(outputs(take())[0]).toMatchObject({ text: `Bought a duffel bag for ${bag.price} €$. More room.`, tone: 'system' });
+      expect(game.gearSaved).toEqual([...GEAR.start, { id: 'duffel-bag-1', kind: 'duffel-bag', in: null }]);
+      expect(game.carry().pockets.at(-1)).toMatchObject({ name: 'Duffel bag', slots: 8, load: { slots: 0, grams: 0 } });
+      // Nothing to eat at a gun shop, and a second bag gets its own id.
+      expect(game.buy('duffel-bag')).toBe(true);
+      expect(game.gearSaved.at(-1)?.id).toBe('duffel-bag-2');
+      expect(game.canBuy('taco')).toBe('Not for sale here.');
+      // Nothing on the rack at the noodle bar: its menu is food.
+      expect(inside('b-noodle', 38, 20, { gear: rack }).game.menu()?.kind).toBe('food');
+    });
+
+    it('nets a robbery only what the wallet will hold', () => {
+      const full: GearContent = { ...GEAR, kinds: { ...GEAR.kinds, wallet: { ...GEAR.kinds.wallet!, holds: 100 } } };
+      for (let day = 0; day < 14; day++) {
+        const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
+        const game = new Game(world, { ...RULES, startingEddies: 100, gear: full }, progressInside('b-noodle', 38, 20));
+        game.start(now);
+        const worker = game.peopleHere(now).find((p) => p.person.job.building === 'b-noodle' && p.person.eddies > 0);
+        if (!worker) continue;
+        const { take, outputs } = record(game);
+        expect(game.rob(worker.person.id, now)).toBe(true);
+        // A wallet full at 100 €$: nothing comes away, but it was still a robbery.
+        expect(game.wallet.eddies).toBe(100);
+        expect(outputs(take()).some((o) => /wallet is full/.test(o.text))).toBe(true);
+        expect(game.standingWith(worker.person.id, now)?.stance).toBe('hostile');
+        return;
+      }
+      throw new Error('nobody at the noodle bar');
+    });
+
+    it('keeps pockets and what is in them, and forgets pockets of kinds it no longer has', () => {
+      const { game } = inside('b-noodle', 38, 20);
+      const dish = game.menu()?.items[0];
+      if (!dish) throw new Error('Nothing on the menu');
+      game.buy(dish.id);
+      const again = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), items: game.inventory, gear: [...game.gearSaved, { id: 'old-1', kind: 'a-bag-of-holding', in: null }] });
+      expect(again.gearSaved).toEqual(GEAR.start);
+      expect(again.inventory).toEqual(game.inventory);
+      // An item in a pocket that is gone is put away where it fits.
+      const moved = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), items: game.inventory.map((i) => ({ ...i, in: 'gone' })), gear: game.gearSaved });
+      expect(moved.inventory.map((i) => i.in)).toEqual(['jacket']);
+    });
+  });
+
   describe('energy', () => {
     it('starts full, and nothing the player does yet spends it', () => {
       const { game } = setup();
@@ -968,6 +1097,7 @@ describe('Game', () => {
       trip: currentTrip,
       inside: null,
       items: [],
+      gear: null,
       energy: null,
       inebriation: null,
       society: null,
