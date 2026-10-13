@@ -543,6 +543,40 @@ export class Game {
     return true;
   }
 
+  /**
+   * Takes off something worn on the head or the face: it goes in a pocket with room, else
+   * stays on. The clothes a new player comes with (torso, legs, feet) are swapped, never
+   * shed: nobody walks Night City half-dressed.
+   */
+  takeOff(pocketId: string): boolean {
+    const { gear, food } = this.rules;
+    const pocket = this.pockets.find((p) => p.id === pocketId && p.in === null);
+    const kind = pocket ? gear.kinds[pocket.kind] : undefined;
+    if (!pocket || !kind?.slot) return false;
+    const required = new Set(gear.start.map((p) => gear.kinds[p.kind]?.slot));
+    if (required.has(kind.slot)) {
+      this.say(`The ${kind.name} stays on until you've something else to wear there.`, 'error');
+      return false;
+    }
+    if (this.items.some((i) => i.in === pocket.id) || this.pockets.some((p) => p.in === pocket.id)) {
+      this.say(`Empty the pockets of the ${kind.name} first.`, 'error');
+      return false;
+    }
+    const item: Item = { id: pocket.kind, kind: 'clothing', name: kind.name, count: 1, gear: pocket.kind };
+    const home = placeFor(this.pockets.filter((p) => p !== pocket), this.items, this.money, item, 1, gear, food.dishes);
+    if (!home) {
+      this.say(`No room in your pockets for the ${kind.name}. Make room first.`, 'error');
+      return false;
+    }
+    this.pockets.splice(this.pockets.indexOf(pocket), 1);
+    const stack = this.items.find((i) => i.id === item.id && i.kind === 'clothing' && i.in === home);
+    if (stack) stack.count++;
+    else this.items.push({ ...item, in: home });
+    this.say(`You take off the ${kind.name}.`, 'system');
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
   /** Drops one of something carried, for good: room for something else. False if there's none. */
   drop(id: string): boolean {
     const item = this.items.find((i) => i.id === id);

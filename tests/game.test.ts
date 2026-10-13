@@ -1042,6 +1042,34 @@ describe('Game', () => {
       expect(game.inventory.find((i) => i.id === 'pants')).toMatchObject({ kind: 'clothing', gear: 'pants' });
     });
 
+    it('takes off a hat or face wear into a pocket, never the clothes a player comes with', () => {
+      const cap = { id: 'worn-baseball-cap', kind: 'clothing' as const, name: GEAR.kinds['worn-baseball-cap']!.name, count: 1, gear: 'worn-baseball-cap' };
+      const { game, take, outputs } = inside('b-noodle', 38, 20, {}, [cap]);
+      expect(game.wear('worn-baseball-cap')).toBe(true);
+      expect(outfit(game.gearSaved, GEAR).worn.head?.id).toBe('worn-baseball-cap-1');
+      expect(game.inventory.some((i) => i.id === 'worn-baseball-cap')).toBe(false);
+      take();
+      // Off it comes, back into a pocket.
+      expect(game.takeOff('worn-baseball-cap-1')).toBe(true);
+      expect(outputs(take()).at(-1)).toEqual({ text: `You take off the ${cap.name}.`, tone: 'system' });
+      expect(outfit(game.gearSaved, GEAR).worn.head).toBeUndefined();
+      expect(game.inventory.find((i) => i.id === 'worn-baseball-cap')).toMatchObject({ kind: 'clothing', gear: 'worn-baseball-cap', count: 1 });
+      expect(game.gearSaved.some((p) => p.id === game.inventory.find((i) => i.id === 'worn-baseball-cap')?.in)).toBe(true);
+      // The jacket, the pants, the tank and the shoes stay on; the wallet and nothing aren't garments.
+      expect(game.takeOff('jacket')).toBe(false);
+      expect(outputs(take()).at(-1)).toEqual({ text: `The ${GEAR.kinds.jacket!.name} stays on until you've something else to wear there.`, tone: 'error' });
+      for (const id of ['tank', 'pants', 'high-tops', 'wallet', 'nothing']) expect(game.takeOff(id), id).toBe(false);
+      expect(outfit(game.gearSaved, GEAR).worn.outer?.id).toBe('jacket');
+      // With no pocket for it, it stays on.
+      const packed: GearContent = { ...GEAR, items: { ...GEAR.items, consumable: { grams: 250, perSlot: 1 } }, kinds: { ...GEAR.kinds, jacket: { ...GEAR.kinds.jacket!, slots: 1 }, pants: { ...GEAR.kinds.pants!, slots: 2 } } };
+      const full = new Game(world, { ...RULES, gear: packed }, { ...progressInside('b-noodle', 38, 20, [{ id: 'taco', kind: 'consumable', name: 'Taco', count: 1, in: 'jacket' }, { id: 'burrito-xxl', kind: 'consumable', name: 'Burrito XXL', count: 1, in: 'pants' }]), gear: [...GEAR.start, { id: 'worn-baseball-cap-1', kind: 'worn-baseball-cap', in: null }] });
+      full.start(T0);
+      const { take: takeFull, outputs: outFull } = record(full);
+      expect(full.takeOff('worn-baseball-cap-1')).toBe(false);
+      expect(outFull(takeFull()).at(-1)).toEqual({ text: `No room in your pockets for the ${cap.name}. Make room first.`, tone: 'error' });
+      expect(outfit(full.gearSaved, GEAR).worn.head?.id).toBe('worn-baseball-cap-1');
+    });
+
     it("won't swap a garment whose pockets have nowhere to empty into, and leaves behind one it can't carry", () => {
       // Five slots in the jacket, one thing to a slot: four tacos and a vest to put on, which has two slots; the pants are full.
       const packed: GearContent = { ...GEAR, items: { ...GEAR.items, consumable: { grams: 250, perSlot: 1 } }, kinds: { ...GEAR.kinds, jacket: { ...GEAR.kinds.jacket!, slots: 5 }, pants: { ...GEAR.kinds.pants!, slots: 1 } } };

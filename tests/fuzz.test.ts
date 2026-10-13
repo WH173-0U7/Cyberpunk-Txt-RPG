@@ -109,9 +109,12 @@ describe('playing badly', () => {
           if (menu && roll < 0.35) {
             const item = rng.pick(menu.items);
             if (item && !game.canBuy(item.id, now)) game.buy(item.id, now);
-          } else if (roll < 0.5) {
+          } else if (roll < 0.47) {
             const clothes = game.inventory.filter((i) => i.kind === 'clothing');
             if (clothes.length) game.wear(rng.pick(clothes)!.id);
+          } else if (roll < 0.5) {
+            const worn = game.gearSaved.filter((p) => p.in === null);
+            game.takeOff(rng.pick(worn)!.id);
           } else if (roll < 0.58) {
             const carried = game.inventory;
             if (carried.length) game.drop(rng.pick(carried)!.id);

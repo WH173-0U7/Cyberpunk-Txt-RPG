@@ -150,6 +150,10 @@ const inventory = new Inventory(
     onUse: (id) => consume(id),
     onDrop: (id) => drop(id),
     onWear: (id) => wear(id),
+    onTakeOff: (id) => {
+      lastActivity = performance.now();
+      game.takeOff(id);
+    },
   },
   reducedMotion,
 );
@@ -703,6 +707,8 @@ function showInventory(): void {
     weight: formatGrams(item.count * itemGrams(item, GEAR, FOOD.dishes)),
     detail: item.kind === 'credchip' ? `€$ ${item.balance ?? 0}${item.locked ? ' · locked' : ''}` : item.kind === 'clothing' && item.gear ? tier(GEAR.kinds[item.gear]) || undefined : undefined,
   });
+  // What a new player comes dressed in stays on (it gets swapped); anything else worn, a hat or face wear, can come off.
+  const required = new Set(GEAR.start.map((p) => GEAR.kinds[p.kind]?.slot));
   const row = (p: PocketLoad): PocketRowView => {
     const wallet = p.holds !== undefined;
     const holding = items.some((i) => i.in === p.id) || pockets.some((q) => q.in === p.id);
@@ -715,6 +721,7 @@ function showInventory(): void {
       weight: formatGrams(p.grams),
       over: p.over,
       opens: wallet || p.slots > 0 || holding,
+      removable: p.in === null && Boolean(p.slot) && !required.has(p.slot),
     };
   };
   // What the player is looking into, if it's still there; else back out to themselves.

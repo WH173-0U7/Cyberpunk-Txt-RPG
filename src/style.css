@@ -1521,7 +1521,13 @@ button {
   background: color-mix(in srgb, #ffd84d 28%, transparent);
   outline: none;
 }
-/* Wear is the primary's color, so it reads apart from Eat and Drink */
+/* Wear (and Take off, on the outfit page) is the primary's color, so it reads apart from Eat and Drink */
+.inv-doff {
+  align-self: center;
+  margin-left: 4px;
+  padding: 4px 7px;
+  letter-spacing: 0.1em;
+}
 .inv-wear {
   border-color: var(--primary);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
