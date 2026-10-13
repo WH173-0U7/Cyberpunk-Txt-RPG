@@ -24,6 +24,7 @@ import {
   learnOf,
   linkOf,
   logLine,
+  pinIncident,
   repOf,
   settleThreat,
   standingOf,
@@ -31,6 +32,7 @@ import {
   webOf,
   type Fact,
   type IncidentKind,
+  type IncidentLinks,
   type Knowledge,
   type KnownHow,
   type LogEntry,
@@ -38,6 +40,7 @@ import {
   type SocietyState,
   type Stance,
   type Standing,
+  unpinnedIncidents,
 } from './society';
 import { districtAt } from './geography';
 import type { Progress } from './save';
@@ -109,6 +112,13 @@ export interface Presence {
   stance: Stance;
 }
 
+/** A mask the player has on: the garment's kind, the word for it ("gas mask"), and its name. */
+export interface Mask {
+  kind: string;
+  word: string;
+  name: string;
+}
+
 /** What the player stands with a person, all told, and what they know of them. */
 export interface PersonStanding {
   stance: Stance;
@@ -169,6 +179,8 @@ export class Game {
   /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
   private readonly home: { building: string; bed: boolean } | null = null;
   private lastAmbient: AmbientLine | null = null;
+  /** The scene (where, when, which mask) last looked over for someone who knows the mask; see `recognize`. */
+  private noticed = '';
   private fullyMapped = false;
   private readonly resumed: boolean;
 
@@ -489,7 +501,7 @@ export class Game {
    * pocket with room (or stays where you stand, if there is none); whatever was in its
    * pockets, the wallet included, moves to pockets with room first, or the swap is off.
    */
-  wear(itemId: string): boolean {
+  wear(itemId: string, now = Date.now()): boolean {
     const { gear, food } = this.rules;
     const item = this.items.find((i) => i.id === itemId && i.kind === 'clothing');
     const kind = item?.gear ? gear.kinds[item.gear] : undefined;
@@ -539,7 +551,9 @@ export class Game {
     this.pockets.splice(0, this.pockets.length, ...pockets);
     this.items.splice(0, this.items.length, ...items);
     this.say(`You put on the ${kind.name}.${left}`, 'system');
+    if (kind.mask) this.say(`Behind the ${kind.mask} nobody knows your face. Nobody with a counter serves one, either.`, 'system');
     this.events.emit('inventoryChanged', this.inventory);
+    this.recognize(now);
     return true;
   }
 
@@ -572,9 +586,19 @@ export class Game {
     const stack = this.items.find((i) => i.id === item.id && i.kind === 'clothing' && i.in === home);
     if (stack) stack.count++;
     else this.items.push({ ...item, in: home });
-    this.say(`You take off the ${kind.name}.`, 'system');
+    this.say(`You take off the ${kind.name}.${kind.mask ? ' Your face is your own again.' : ''}`, 'system');
     this.events.emit('inventoryChanged', this.inventory);
     return true;
+  }
+
+  /** The mask the player has on, if any: a garment worn that hides the face. */
+  masked(): Mask | null {
+    for (const p of this.pockets) {
+      if (p.in !== null) continue;
+      const kind = this.rules.gear.kinds[p.kind];
+      if (kind?.mask) return { kind: p.kind, word: kind.mask, name: kind.name };
+    }
+    return null;
   }
 
   /** Drops one of something carried, for good: room for something else. False if there's none. */
@@ -726,7 +750,7 @@ export class Game {
   }
 
   private stanceOf(person: Person, now: number): Stance {
-    return stanceOf(attitude(person, this.society, this.rules.society, this.rules.timeScale, now), this.rules.society);
+    return stanceOf(attitude(person, this.society, this.rules.society, this.rules.timeScale, now, Boolean(this.masked())), this.rules.society);
   }
 
   /** What the player stands with a person, and knows of them. */
@@ -735,7 +759,7 @@ export class Game {
     if (!person) return null;
     const { society, timeScale } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);
-    const score = attitude(person, this.society, society, timeScale, now);
+    const score = attitude(person, this.society, society, timeScale, now, Boolean(this.masked()));
     const web = webOf(this.society, id)
       .map((link) => ({ person: this.person(link.id), kind: link.kind, how: link.how }))
       .filter((link): link is PersonStanding['web'][number] => Boolean(link.person))
@@ -777,6 +801,7 @@ export class Game {
       }
     }
     if (learned.length) this.events.emit('societyChanged', { people: [...new Set(learned)] });
+    this.recognize(now);
   }
 
   /** A person as the player can tell them, and what the player knows of them. */
@@ -844,13 +869,18 @@ export class Game {
     return out.sort((a, b) => a.value - b.value);
   }
 
-  /** Why the eatery the player is at won't serve them, if it won't. */
+  /** Why the counter the player is at won't serve them, if it won't: what they did to its people, or the mask on them (no counter serves a mask: not a kitchen, not a rack, not a bank). */
   barred(now: number): string | null {
     const at = this.inside;
-    if (!at?.business) return null;
-    const { society, timeScale } = this.rules;
-    const banned = repOf(this.society, `business:${at.id}`, society, timeScale, now) <= society.rep.banAt || repOf(this.society, `chain:${at.business}`, society, timeScale, now) <= society.rep.banAt;
-    return banned ? this.pickLine(this.rules.lines.barred, `${at.id}:barred`, { work: at.name }) : null;
+    const { society, timeScale, lines } = this.rules;
+    if (at?.business) {
+      const banned = repOf(this.society, `business:${at.id}`, society, timeScale, now) <= society.rep.banAt || repOf(this.society, `chain:${at.business}`, society, timeScale, now) <= society.rep.banAt;
+      if (banned) return this.pickLine(lines.barred, `${at.id}:barred`, { work: at.name });
+    }
+    const mask = this.masked();
+    const counter = at?.business ? at : this.menu() ? this.location : null;
+    if (mask && counter) return this.pickLine(lines.masked.barred, `${counter.id}:mask`, { work: counter.name, mask: mask.word });
+    return null;
   }
 
   private isHere(id: string, now: number): Presence | undefined {
@@ -890,6 +920,7 @@ export class Game {
       gangBad: gangRep <= -10 ? 'yes' : '',
       districtGood: districtRep >= 10 ? 'yes' : '',
       districtBad: districtRep <= -10 ? 'yes' : '',
+      mask: this.masked()?.word ?? '',
     };
     return { person, voice, mood: moodOf(doing), stance, history: historyOf(standing, timeScale, now), eloquence: eloquenceOf(this.charismaState.level), vars };
   }
@@ -1010,7 +1041,7 @@ export class Game {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      const reply = replyTo(openness('kin', stance, this.charismaState.level, person.traits, society.openness), society.openness, rng);
+      const reply = replyTo(openness('kin', stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked())), society.openness, rng);
       if (reply === 'answer') {
         this.speech(person, compose(tie ? lines.ask.knows : lines.ask.unknown, speaker, lines, rng), now);
         if (tie) {
@@ -1058,7 +1089,7 @@ export class Game {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      const reply = replyTo(openness(fact, stance, this.charismaState.level, person.traits, society.openness), society.openness, rng);
+      const reply = replyTo(openness(fact, stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked())), society.openness, rng);
       if (reply === 'answer') {
         this.speech(person, answer(speaker, fact, lines, rng), now);
         news = learnFact(this.society, id, fact);
@@ -1120,7 +1151,8 @@ export class Game {
     const rng = createRng(`${this.world.seed}:${id}:insult:${now}`);
     const fallout = this.incident('insult', person, 0, now);
     learnOf(this.society, id, 'met');
-    changeStanding(this.society, id, { met: true, rapport: -society.insult.rapport }, society, timeScale, now);
+    // From behind a mask it's nobody's insult, until someone here sees the mask again (`recognize`).
+    if (!this.masked()) changeStanding(this.society, id, { met: true, rapport: -society.insult.rapport }, society, timeScale, now);
     this.logged(id, 'you', line(lines.you.insult, speaker, rng), now);
     this.speech(person, line(lines.insult.reply, speaker, rng), now);
     if (person.traits.temper > 0.55 && rng.chance(person.traits.temper)) {
@@ -1159,12 +1191,14 @@ export class Game {
     const speaker = this.speakerFor(person, stance, doing, now);
     const haul = [take ? `${take} €$` : '', chip ? `a credchip with ${chip} €$ on it` : ''].filter(Boolean).join(' and ');
     speaker.vars = { ...speaker.vars, take: String(take), haul };
+    const mask = this.masked();
     const fallout = this.incident('robbery', person, take + chip, now);
     learnOf(this.society, id, 'met');
-    changeStanding(this.society, id, { met: true, robbedAt: now }, society, timeScale, now);
+    // Robbed is robbed, mask or not: their pockets stay empty a while. Whose doing it was, they know only with the face.
+    changeStanding(this.society, id, mask ? { robbedAt: now } : { met: true, robbedAt: now }, society, timeScale, now);
     this.logged(id, 'you', line(lines.you.rob, speaker, rng), now);
     const got = take > 0 || chip > 0;
-    const outcome = (wanted || chipWanted) && !got ? `No room on you for the eddies. ${person.given} keeps ${speaker.vars.his}, and remembers your face.` : line(got ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
+    const outcome = (wanted || chipWanted) && !got ? `No room on you for the eddies. ${person.given} keeps ${speaker.vars.his}${mask ? '.' : ', and remembers your face.'}` : line(got ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
     this.logged(id, 'them', outcome, now);
     if (got) {
       this.money = { ...this.money, bills: this.money.bills + bills, coins: this.money.coins + coins };
@@ -1180,7 +1214,9 @@ export class Game {
       this.say(outcome);
     }
     const witnesses = this.peopleHere(now).filter((p) => p.person.id !== id).length;
-    if (witnesses) this.say(`${witnesses === 1 ? 'Someone' : `${witnesses} people`} saw that. Word will get around ${this.world.districts[person.district]?.name ?? 'the district'}.`, 'system');
+    const saw = witnesses === 1 ? 'Someone' : `${witnesses} people`;
+    if (mask) this.say(witnesses ? `${saw} saw that, and all they saw was a ${mask.word}. Anyone here who sees it on you again will know.` : `Nobody saw your face. ${person.given} will know the ${mask.word} if ${speaker.vars.he} sees it on you again.`, 'system');
+    else if (witnesses) this.say(`${saw} saw that. Word will get around ${this.world.districts[person.district]?.name ?? 'the district'}.`, 'system');
     const work = person.job.building ? this.world.buildings.find((b) => b.id === person.job.building) : undefined;
     if (work && repOf(this.society, `business:${work.id}`, society, timeScale, now) <= society.rep.banAt) this.say(`${work.name} won't be serving you again.`, 'system');
     this.events.emit('societyChanged', { people: fallout });
@@ -1227,7 +1263,7 @@ export class Game {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      const reply = replyTo(openness('chop', stance, this.charismaState.level, person.traits, society.openness), society.openness, rng);
+      const reply = replyTo(openness('chop', stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked())), society.openness, rng);
       if (reply === 'answer') {
         done = true;
         chip.locked = false;
@@ -1257,18 +1293,65 @@ export class Game {
   }
 
   private incident(kind: IncidentKind, victim: Person, took: number, now: number): string[] {
-    const { society, timeScale, people } = this.rules;
+    const { society, timeScale } = this.rules;
     const witnesses = this.peopleHere(now).map((p) => p.person.id).filter((pid) => pid !== victim.id);
     const rng = createRng(`${this.world.seed}:incident:${this.society.nextId}`);
-    const fallout = applyIncident(this.society, this.population, { at: now, kind, victim: victim.id, witnesses, district: victim.district, took }, society, timeScale, now, rng, {
+    const mask = this.masked();
+    const fallout = applyIncident(this.society, this.population, { at: now, kind, victim: victim.id, witnesses, district: victim.district, took, ...(mask ? { mask: mask.kind, where: this.scene(now, mask) } : {}) }, society, timeScale, now, rng, this.incidentLinks());
+    return [victim.id, ...fallout.affected.map((a) => a.id).filter((pid) => pid !== victim.id)];
+  }
+
+  /** What an incident's cascade needs to know of the city. */
+  private incidentLinks(): IncidentLinks {
+    return {
       // A chain is a business with its own fixed menu: every outlet hears about it.
       chainOf: (p) => {
         const building = p.job.building ? this.world.buildings.find((b) => b.id === p.job.building) : undefined;
         return building?.business && this.rules.food.fixed[building.business] ? building.business : null;
       },
-      rivalsOf: (gang) => people.gangs[gang]?.rivals ?? [],
-    });
-    return [victim.id, ...fallout.affected.map((a) => a.id).filter((pid) => pid !== victim.id)];
+      rivalsOf: (gang) => this.rules.people.gangs[gang]?.rivals ?? [],
+    };
+  }
+
+  /** Where the player is, the hour it is and the mask they have on, as one key: the people about change on the hour. Empty with no mask, or nowhere people can be. */
+  private scene(now: number, mask: Mask | null): string {
+    const spot = this.spot;
+    if (!mask || !spot) return '';
+    const clock = this.clockAt(now);
+    return `${spot.kind}:${spot.id}|${clock.day}:${clock.hour}|${mask.kind}`;
+  }
+
+  /**
+   * Whether anyone here knows the mask the player has on: the victim of something done in it,
+   * or a witness, sees it again somewhere else or later and puts it together, and the whole
+   * of it lands on the player now. Looked into once per scene, since where, the hour and the
+   * mask are what change who's about.
+   */
+  private recognize(now: number): void {
+    const mask = this.masked();
+    const scene = this.scene(now, mask);
+    if (scene === this.noticed) return;
+    this.noticed = scene;
+    if (!mask || !scene) return;
+    const open = unpinnedIncidents(this.society, mask.kind).filter((i) => i.where !== scene);
+    if (!open.length) return;
+    const { society, timeScale, lines } = this.rules;
+    const here = this.peopleHere(now);
+    const touched: string[] = [];
+    for (const incident of open) {
+      const spotter = here.find((p) => p.person.id === incident.victim || incident.witnesses.includes(p.person.id));
+      if (!spotter) continue;
+      const rng = createRng(`${this.world.seed}:pin:${incident.id}`);
+      const fallout = pinIncident(this.society, this.population, incident.id, society, timeScale, now, rng, this.incidentLinks());
+      if (!fallout) continue;
+      const speaker = this.speakerFor(spotter.person, spotter.stance, spotter.doing, now);
+      this.narrate(spotter.person, line(lines.masked.recognized, speaker, rng), now, 'error');
+      const victim = this.person(incident.victim)?.given ?? 'someone';
+      const what = incident.kind === 'robbery' ? `the robbery of ${victim}` : incident.kind === 'insult' ? `what you said to ${victim}` : `the ${incident.kind} of ${victim}`;
+      this.say(`That's ${what} on you now. Word will get around ${this.world.districts[incident.district]?.name ?? 'the district'}.`, 'system');
+      touched.push(spotter.person.id, incident.victim, ...fallout.affected.map((a) => a.id));
+    }
+    if (touched.length) this.events.emit('societyChanged', { people: [...new Set(touched)] });
   }
 
   /** Whoever has come to collect does, if the player isn't on a train: eddies, and the wind out of them. */
@@ -1413,6 +1496,7 @@ export class Game {
   tick(now: number, away = false): void {
     this.soberUp(now);
     this.settleThreats(now);
+    this.recognize(now);
     const trip = this.trip;
     if (!trip) return;
     const changed = this.exploreTrip(now);
@@ -1436,11 +1520,12 @@ export class Game {
   }
 
   /** Goes into the building the player is standing outside. Nothing to do in there yet. */
-  enter(): boolean {
+  enter(now = Date.now()): boolean {
     const building = this.door;
     if (!building) return false;
     this.inside = building;
     this.events.emit('interiorChanged', building);
+    this.recognize(now);
     return true;
   }
 

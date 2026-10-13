@@ -91,4 +91,22 @@ describe('the clothing', () => {
     }
     for (const name of ['Jinguji', 'Appel de Paris', 'Blossoming Sakura Clothier', 'Ded-Zed']) expect(named, name).toContain(name);
   });
+
+  it('has masks that hide the face, each with the word for it, on the thrift rack and the everyday racks', () => {
+    const masks = Object.entries(GARMENTS).filter(([, g]) => g.mask);
+    expect(masks.length).toBeGreaterThanOrEqual(6);
+    for (const [id, g] of masks) {
+      expect(['gas mask', 'ballistic mask', 'balaclava', 'menpō'], id).toContain(g.mask);
+      expect(['head', 'face'], id).toContain(g.slot);
+      expect(g.slots, id).toBe(0);
+    }
+    // Glasses, goggles and a BD wreath hide nothing.
+    for (const id of ['classic-square-glasses', 'hardened-plastic-goggles', 'armor-coated-aviators', 'sepia-vision-aviators', 'kogane-no-yume-bd-wreath']) expect(GARMENTS[id]?.mask, id).toBeUndefined();
+    // Somewhere to buy one at every tier but the top: the thrift rack, Saeko's, the plain clothing stores.
+    const sold = (store: keyof typeof STORES) => STORES[store].filter((id) => GARMENTS[id]?.mask);
+    expect(sold('thrift-shop').length).toBeGreaterThanOrEqual(2);
+    expect(sold('saekos').length).toBeGreaterThanOrEqual(1);
+    expect(sold('clothing-store').length).toBeGreaterThanOrEqual(1);
+    expect(GEAR.kinds['old-plastic-gas-mask']?.mask).toBe('gas mask');
+  });
 });

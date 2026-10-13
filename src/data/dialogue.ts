@@ -9,6 +9,8 @@ import type { DialogueLines, Fragment, When } from '../engine/dialogue';
  * `{kinName}`…), from the moment (`{here}`, `{late}`) and from the lexicon (`{choom}`).
  */
 const only = (text: string, when: When): Fragment => ({ text, when });
+/** A line that should win over the plain ones whenever it fits. */
+const loud = (text: string, when: When, weight = 6): Fragment => ({ text, when, weight });
 
 // Who they are.
 const ganger: When = { voice: ['gang'] };
@@ -43,6 +45,9 @@ const greedy: When = { traits: { greed: 'high' } };
 const brave: When = { traits: { courage: 'high' } };
 const timid: When = { traits: { courage: 'low' } };
 const loyal: When = { traits: { loyalty: 'high' } };
+// The moment: a mask on the player, or a face.
+const masked: When = { needs: ['mask'] };
+const bare: When = { lacks: ['mask'] };
 // The player's way with words.
 const blunt: When = { eloquence: ['blunt'] };
 const easy: When = { eloquence: ['easy'] };
@@ -144,7 +149,7 @@ export const LINES: DialogueLines = {
     // A stranger.
     only("{hey}. Don't know you.", both(first, neutral)),
     only('Yeah? What do you need.', both(first, neutral)),
-    only("New face. What's your sitch?", both(first, neutral)),
+    only("New face. What's your sitch?", both(first, neutral, bare)),
     only('Can I help you?', both(first, corpo, neutral)),
     only('You lost, {choom}?', both(first, ganger)),
     only("Don't think we've met.", both(first, elder)),
@@ -153,7 +158,7 @@ export const LINES: DialogueLines = {
     only('Keep your hands where I can see them.', both(first, wary)),
     only("I don't talk to strangers much.", both(first, wary)),
     only('Make it quick.', wary),
-    only('{hey}, stranger. A friendly face, for once.', both(first, warm)),
+    only('{hey}, stranger. A friendly face, for once.', both(first, warm, bare)),
     only("Haven't seen you around before. Welcome.", both(first, warm)),
     only('{choom}. Good to see you.', friend),
     // Lately.
@@ -183,6 +188,17 @@ export const LINES: DialogueLines = {
     only('Order? No? Then talk fast.', both(busy, { stance: ['neutral', 'wary'] })),
     only('You found where I live. Great.', both(home, { stance: ['neutral', 'wary'] })),
     only('Everybody, quiet. Someone wants a word.', court),
+    // A mask on the player.
+    loud('Lose the {mask} and maybe we talk.', both(masked, { stance: ['neutral', 'wary'] })),
+    loud("{hey}. Nice {mask}. Who's under it?", both(masked, neutral)),
+    loud("I don't talk to a {mask}.", both(masked, wary)),
+    loud("A {mask}. In here. Say what you want and go.", both(masked, cold)),
+    loud('{mask} on our turf? Ten seconds, {gonk}, and then you walk.', both(masked, ganger)),
+    loud('Is the {mask} a threat or a fashion statement? Either way, no.', both(masked, corpo)),
+    loud("Take that thing off. Can't hear a word through it.", both(masked, elder)),
+    loud("Whoa. {hey}. What's the {mask} for?", both(masked, young)),
+    loud("Out here a {mask} means dust or trouble. Which are you?", both(masked, nomad)),
+    loud("A {mask}, {choom}? What do you know that I don't?", both(masked, warm)),
   ],
 
   topics: {
@@ -421,9 +437,18 @@ export const LINES: DialogueLines = {
   },
 
   rob: {
-    done: ["You take {haul} off {given}. {He} won't forget your face.", '{given} hands it over, eyes burning. {haul}.'],
+    done: [
+      only("You take {haul} off {given}. {He} won't forget your face.", bare),
+      '{given} hands it over, eyes burning. {haul}.',
+      only('{given} hands it over, eyes on the {mask}. {haul}, and no face to remember.', masked),
+      only('You take {haul} off {given}. All {he} gets of you is the {mask}.', masked),
+    ],
     nothing: ['{given} turns out empty pockets. "Already been done this week."', 'Nothing on {given} worth taking. {He} laughs, which is worse.'],
-    fought: ['{given} fights back. You get {haul} and a split lip.', 'It takes a struggle. {haul}, and {given} marks your face for later.'],
+    fought: [
+      '{given} fights back. You get {haul} and a split lip.',
+      only('It takes a struggle. {haul}, and {given} marks your face for later.', bare),
+      only('It takes a struggle. {haul}, and {given} gets a hand on the {mask} but not under it.', masked),
+    ],
   },
 
   chop: {
@@ -454,6 +479,19 @@ export const LINES: DialogueLines = {
   },
 
   barred: ["{work} won't serve you. Not after what you did to their people.", 'The counter at {work} closes the moment they see your face.'],
+
+  masked: {
+    barred: ["{work} serves faces, not masks. Take the {mask} off, then we'll talk.", 'The counter at {work}: "Mask off, or out."', 'Nobody at {work} is serving a {mask}. House rule, and the house has a shotgun.'],
+    recognized: [
+      '{given} takes one look at the {mask} and goes still. {He} knows that {mask}.',
+      '{given}: "That {mask}. I know that {mask}." Everyone turns to look at you.',
+      '{given} stares at the {mask}, then at your hands, and it clicks.',
+      only('{given} says one word to the other {gang} and the room goes quiet. {He} knows the {mask}.', both(ganger, { needs: ['gang'] })),
+      only("{given} doesn't say a word. {He} just looks at the {mask} and reaches for the holo.", corpo),
+      only('"That {mask}." {given} spits. "You\'ve got some nerve wearing it back in here."', hot),
+      only('{given} points at the {mask}, hand shaking. "Him. Her. Them. That one."', timid),
+    ],
+  },
 
   questions: {
     name: {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SOCIETY } from '../src/data/society';
 import { INVERSE, type Person, type Population, type Tie, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
-import { applyIncident, attitude, changeRep, changeStanding, dueThreats, freshSociety, knowledgeOf, knownPeople, knowsOf, learnFact, learnLink, learnOf, linkOf, LOG_CAP, logLine, repOf, settleThreat, standingOf, stanceOf, webOf, type SocietyRules } from '../src/engine/society';
+import { applyIncident, attitude, changeRep, changeStanding, dueThreats, freshSociety, isPinned, knowledgeOf, knownPeople, knowsOf, learnFact, learnLink, learnOf, linkOf, LOG_CAP, logLine, pinIncident, repOf, settleThreat, standingOf, stanceOf, unpinnedIncidents, webOf, type SocietyRules } from '../src/engine/society';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -189,5 +189,48 @@ describe('society', () => {
     // Changes are written down on faded values.
     changeStanding(state, 'rosa', { grudge: 5 }, RULES, 1, T0 + 10 * DAY);
     expect(standingOf(state, 'rosa', RULES, 1, T0 + 10 * DAY).grudge).toBe(25);
+  });
+
+  it("writes down what was done in a mask as nobody's, until someone who was there sees the mask again", () => {
+    const state = freshSociety();
+    const rng = createRng('mask');
+    const scene = 'building:b-grill|39366:20|old-plastic-gas-mask';
+    const masked = applyIncident(state, pop, { at: T0, kind: 'robbery', victim: 'rosa', witnesses: ['witness'], district: 'heywood', took: 30, mask: 'old-plastic-gas-mask', where: scene }, RULES, 1, T0, rng, links);
+    expect(masked).toEqual({ affected: [], rep: {}, threats: [] });
+    expect(state.incidents[0]).toMatchObject({ id: 1, kind: 'robbery', mask: 'old-plastic-gas-mask', pinned: false, where: scene });
+    expect(isPinned(state.incidents[0]!)).toBe(false);
+    expect(unpinnedIncidents(state, 'old-plastic-gas-mask').map((i) => i.id)).toEqual([1]);
+    expect(unpinnedIncidents(state, 'nami-balaclava')).toEqual([]);
+    // Nobody holds it against the player: not the victim, not her husband, not the witness; not the house, not the neighborhood.
+    for (const id of ['rosa', 'mateo', 'witness']) expect(standingOf(state, id, RULES, 1, T0).grudge, id).toBe(0);
+    expect(repOf(state, 'business:b-grill', RULES, 1, T0)).toBe(0);
+    expect(repOf(state, 'district:heywood', RULES, 1, T0)).toBe(0);
+    expect(state.threats).toEqual([]);
+    // Seen again: all of it lands, as if they'd seen the face at the time.
+    const later = T0 + 5 * HOUR;
+    const fallout = pinIncident(state, pop, 1, RULES, 1, later, rng, links);
+    expect(fallout?.affected[0]).toEqual({ id: 'rosa', grudge: 55 });
+    expect(standingOf(state, 'mateo', RULES, 1, later).grudge).toBe(Math.round(55 * 0.95));
+    expect(standingOf(state, 'witness', RULES, 1, later).grudge).toBe(Math.round(55 * 0.3));
+    expect(repOf(state, 'business:b-grill', RULES, 1, later)).toBe(-33);
+    expect(isPinned(state.incidents[0]!)).toBe(true);
+    expect(unpinnedIncidents(state, 'old-plastic-gas-mask')).toEqual([]);
+    // Pinned once; and nothing to pin that isn't there.
+    expect(pinIncident(state, pop, 1, RULES, 1, later, rng, links)).toBeNull();
+    expect(pinIncident(state, pop, 99, RULES, 1, later, rng, links)).toBeNull();
+    // Bare-faced, it's pinned as it happens; so is anything from a save before masks.
+    const bare = applyIncident(state, pop, { at: later, kind: 'insult', victim: 'rosa', witnesses: [], district: 'heywood', took: 0 }, RULES, 1, later, rng, links);
+    expect(bare.affected[0]?.id).toBe('rosa');
+    expect(isPinned(state.incidents[1]!)).toBe(true);
+    expect(isPinned({ id: 9, at: T0, kind: 'robbery', victim: 'rosa', witnesses: [], district: 'heywood', took: 10 })).toBe(true);
+  });
+
+  it('reads a mask as a threat, if it is a gang doing the reading', () => {
+    const state = freshSociety();
+    const mateo = person('mateo', { gang: 'valentinos' });
+    expect(attitude(mateo, state, RULES, 1, T0, true)).toBe(attitude(mateo, state, RULES, 1, T0) - RULES.mask.turf);
+    expect(stanceOf(attitude(mateo, state, RULES, 1, T0), RULES)).toBe('neutral');
+    expect(stanceOf(attitude(mateo, state, RULES, 1, T0, true), RULES)).toBe('cold');
+    expect(attitude(person('rosa'), state, RULES, 1, T0, true)).toBe(attitude(person('rosa'), state, RULES, 1, T0));
   });
 });

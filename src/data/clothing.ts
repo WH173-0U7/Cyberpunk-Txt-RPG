@@ -14,8 +14,11 @@ import type { PocketKind, Slot, Style } from '../engine/carry';
  * neokitsch), the Stylishly chain in the middle-class neighborhoods, Saeko's boardwalk store
  * in Japantown, the Ded-Zed store in Northside, the thrift-quality racks of Kabuki and the
  * used clothes of the Badlands, and the streetwear stands of Arroyo and West Wind Estate;
- * each sells what the wiki shows its vendor selling. The pockets, weights, prices and notes
- * are ours: a coat has deep pockets, a tank top none, pants take the loose change.
+ * each sells what the wiki shows its vendor selling (the Dogtown stands' ballistic masks go to
+ * the plain clothing stores). The pockets, weights, prices and notes are ours: a coat has deep
+ * pockets, a tank top none, pants take the loose change. A garment that hides the face (a gas
+ * mask, a ballistic mask, a balaclava, a menpō) says so with `mask`, the word for it; what a
+ * mask does for the player is the game's business.
  */
 export const SLOTS: Record<Slot, string> = { head: 'Head', face: 'Face', outer: 'Outer torso', inner: 'Inner torso', legs: 'Legs', feet: 'Feet' };
 export const STYLES: Record<Style, string> = { entropism: 'Entropism', kitsch: 'Kitsch', neomilitarism: 'Neomilitarism', neokitsch: 'Neokitsch' };
@@ -99,7 +102,8 @@ export const GARMENTS: Record<string, PocketKind> = {
   'yoru-no-samurai-kicks': garment('Yoru no Samurai kicks with carbon-fiber layering', 'feet', 'kitsch', 'everyday', 700, 90, 'Night-samurai kicks, carbon fiber in the uppers.'),
   'kang-tao-field-cap': garment('Kang Tao field cap with holodisplay', 'head', 'neomilitarism', 'everyday', 110, 85, 'A Kang Tao field cap with a holodisplay in the brim.', undefined, 'Kang Tao'),
   'sepia-vision-aviators': garment('Elegant Sepia Vision aviators with reinforced lenses', 'face', 'neokitsch', 'everyday', 40, 75, 'Sepia lenses that make the city look like an old photo of itself.'),
-  'menpo-with-durable-lining': garment('Menpō with durable lining', 'face', 'kitsch', 'everyday', 250, 60, 'A samurai half-mask the Tyger Claws made fashionable. This one is only a mask.'),
+  'menpo-with-durable-lining': { ...garment('Menpō with durable lining', 'face', 'kitsch', 'everyday', 250, 60, 'A samurai half-mask the Tyger Claws made fashionable. This one is only a mask, and it hides the half of you people remember.'), mask: 'menpō' },
+  'jigoku-no-oni-menpo': { ...garment('Jigoku no Oni reinforced-composite menpō', 'face', 'neokitsch', 'everyday', 280, 140, "A black menpō, reinforced: a hell-demon's grin over your own, and nobody sees the one under it."), mask: 'menpō' },
   'molto-vivace-rocker-coat': garment('Molto Vivace nanoweave rocker coat', 'outer', 'kitsch', 'everyday', 1700, 180, 'A long rocker coat in nanoweave, for standing at the back of a gig.', POCKETS.coat),
 
   // ── Stylishly: the middle of the road, in Little China, Wellsprings and Rancho Coronado.
@@ -143,7 +147,9 @@ export const GARMENTS: Record<string, PocketKind> = {
   'faded-cirqt-steel-toes': garment('Faded CIRQT laceless steel-toes', 'feet', 'entropism', 'poverty', 1200, 20, 'Laceless steel-toes, faded to no color.'),
   'worn-baseball-cap': garment('Worn baseball cap', 'head', 'entropism', 'poverty', 90, 5, 'A baseball cap with the brim worn soft.'),
   'worn-brimmed-hat-with-gauge': garment('Worn brimmed hat with gauge', 'head', 'entropism', 'poverty', 200, 8, 'A nomad hat with a radiation gauge clipped to the brim. The gauge still works.'),
-  'old-plastic-gas-mask': garment('Old plastic gas mask', 'face', 'entropism', 'poverty', 300, 10, 'A plastic gas mask with a filter that expired years ago.'),
+  'old-plastic-gas-mask': { ...garment('Old plastic gas mask', 'face', 'entropism', 'poverty', 300, 10, 'A plastic gas mask with a filter that expired years ago. Nobody sees a face behind it, which is most of what it is good for.'), mask: 'gas mask' },
+  'nami-balaclava': { ...garment('Nami balaclava with polyamide-insulated lining', 'head', 'entropism', 'poverty', 80, 9, 'A blue balaclava, insulated. Two holes for the eyes and nothing else of you shows.'), mask: 'balaclava' },
+  'saekos-darkernet-balaclava': { ...garment("Saeko's DarkerNET tactical balaclava with nanotubing", 'head', 'neomilitarism', 'everyday', 90, 45, 'Black with red seams, made to go with a netrunner suit. It shows your eyes and nothing else.', undefined, "Saeko's"), mask: 'balaclava' },
   'hardened-plastic-goggles': garment('Hardened plastic goggles', 'face', 'entropism', 'poverty', 80, 7, 'Goggles of hardened plastic, scratched.'),
   'psycho-biker-pants': garment('PSYCHO tac-fiber biker pants', 'legs', 'kitsch', 'poverty', 800, 18, 'Biker pants with PSYCHO down one leg.', POCKETS.pants),
   'light-electro-shorts': garment('Light ELECTRO extra-lined shorts', 'legs', 'kitsch', 'poverty', 350, 10, 'Shorts with ELECTRO on them and an extra lining.', POCKETS.shorts),
@@ -167,6 +173,8 @@ export const GARMENTS: Record<string, PocketKind> = {
   'cotton-long-sleeve': garment('Cotton long-sleeve', 'inner', 'kitsch', 'everyday', 250, 18, 'A cotton long-sleeve. Actual cotton, says the tag.'),
   'syn-cotton-t-shirt': garment('Durable hardened syn-cotton T-shirt', 'inner', 'kitsch', 'everyday', 200, 15, 'A syn-cotton T-shirt, hardened, which is a strange thing for a T-shirt to be.'),
   'classic-square-glasses': garment('Classic square glasses with UV filter', 'face', 'kitsch', 'everyday', 30, 25, 'Square glasses with a UV filter and no prescription.'),
+  'darra-polytechnic-tactical-balaclava': { ...garment('Darra-Polytechnic tactical balaclava', 'head', 'neomilitarism', 'everyday', 90, 35, 'Green with yellow accents, from the gun maker. It covers everything but the eyes.', undefined, 'Darra Polytechnic'), mask: 'balaclava' },
+  'solid-polycarbonate-ballistic-mask': { ...garment('Solid polycarbonate ballistic mask', 'face', 'entropism', 'everyday', 350, 60, 'A dark grey ballistic mask, solid polycarbonate. Nobody sees a face behind it.'), mask: 'ballistic mask' },
 };
 
 /** What each store sells, by business id: each vendor's stock on the wiki, in our tiers. Bags come from `GEAR.racks` too. */
@@ -174,11 +182,11 @@ export const STORES = {
   jinguji: ['arasaka-corporate-blazer', 'marbre-dore-suit-jacket', 'gatto-nero-evening-jacket', 'yunami-formal-jacket', 'caret-cassico-blazer', 'synthetic-corporate-jacket', 'gin-no-hoshi-shirt-and-vest', 'arasaka-aramid-vest', 'demon-rhapsody-pencil-dress', 'reinforced-dress-shirt', 'classic-corporate-pants', 'royal-gray-dress-pants', 'arasaka-cap-with-camera', 'arasaka-side-cap', 'corporate-pumps'],
   avante: ['noble-white-evening-jacket', 'koumori-trench-coat', 'fairy-frost-trench-coat', 'lady-in-white-pencil-dress', 'powder-pink-blazer', 'office-shirt-and-vest', 'golden-mean-formal-skirt', 'classy-bordeaux-pants', 'bai-long-formal-pants', 'simple-office-pants', 'kogane-no-yume-bd-wreath', 'designer-fleets'],
   boutique: ['synsilk-blazer', 'light-synfiber-evening-jacket', 'phoenix-formal-dress', 'luxury-half-zip', 'elegant-unitard', 'imperial-marble-formal-pants', 'golden-hive-designer-pants', 'classic-evening-pumps', 'classic-trilby', 'armor-coated-aviators'],
-  saekos: ['white-hive-jacket', 'aramid-coated-deltajock-jacket', 'molto-vivace-rocker-coat', 'saekos-breastplate', 'saekos-tight-tank', 'tamashi-utility-pants', 'golden-pocket-hotpants', 'light-speed-biker-boots', 'yoru-no-samurai-kicks', 'kang-tao-field-cap', 'sepia-vision-aviators', 'menpo-with-durable-lining'],
+  saekos: ['white-hive-jacket', 'aramid-coated-deltajock-jacket', 'molto-vivace-rocker-coat', 'saekos-breastplate', 'saekos-tight-tank', 'tamashi-utility-pants', 'golden-pocket-hotpants', 'light-speed-biker-boots', 'yoru-no-samurai-kicks', 'kang-tao-field-cap', 'sepia-vision-aviators', 'menpo-with-durable-lining', 'jigoku-no-oni-menpo'],
   stylishly: ['zebriger-led-jacket', 'mikan-flight-jacket', 'composite-biker-jacket', 'duolayer-nylon-vest', 'anhelo-blanco-fringe-vest', 'violet-nebula-turtleneck', 'dark-sapphire-rocker-pants', 'golden-scale-windbreaker-pants', 'glamor-spirit-street-shoes', 'icon-america-fleets', 'western-star-cowboy-boots', 'western-shorties', 'heavy-duty-biker-boots', 'leather-flat-cap', 'emerald-speed-beanie', 'gunslinger-cowboy-hat', 'darra-polytechnic-cap'],
   'ded-zed': ['pink-rage-deltajock-jacket', 'at-ak-rally-bolero', 'arasaka-combat-turtleneck', 'uniware-platform-boots', 'darra-polytechnic-sneakers', 'icon-america-kicks', 'heat-resistant-military-boots', 'used-leather-combat-boots', 'hardened-leather-flat-cap', 'cotton-motorcycle-cap', 'reinforced-baseball-cap'],
-  'clothing-store': ['spunky-monkey-aramid-coat', 'dusty-rocker-jacket', 'natsunoshio-tracksuit', 'cotton-long-sleeve', 'syn-cotton-t-shirt', 'at-ak-utility-pants', 'maxiwear-windbreaker-pants', 'cut3-brainzz-sneakers', 'green-graffiti-athletic-shoes', 'spunky-monkey-kicks', 'reinforced-biker-boots', 'composite-punk-exo-jacks', 'braindance-cap', 'sturdy-plaid-flat-cap', 'classic-square-glasses'],
-  'thrift-shop': ['worn-punk-coat', 'old-spotted-trench-coat', 'used-flight-jacket', 'jacket', 'secondhand-knotted-tank', 'faded-uniware-knotted-tank', 'worn-compression-t-shirt', 'tank', 'pants', 'psycho-biker-pants', 'light-electro-shorts', 'high-tops', 'frayed-athletic-shoes', 'threadbare-sneakers', 'faded-cirqt-steel-toes', 'worn-baseball-cap', 'worn-brimmed-hat-with-gauge', 'old-plastic-gas-mask', 'hardened-plastic-goggles'],
+  'clothing-store': ['spunky-monkey-aramid-coat', 'dusty-rocker-jacket', 'natsunoshio-tracksuit', 'cotton-long-sleeve', 'syn-cotton-t-shirt', 'at-ak-utility-pants', 'maxiwear-windbreaker-pants', 'cut3-brainzz-sneakers', 'green-graffiti-athletic-shoes', 'spunky-monkey-kicks', 'reinforced-biker-boots', 'composite-punk-exo-jacks', 'braindance-cap', 'sturdy-plaid-flat-cap', 'classic-square-glasses', 'darra-polytechnic-tactical-balaclava', 'solid-polycarbonate-ballistic-mask'],
+  'thrift-shop': ['worn-punk-coat', 'old-spotted-trench-coat', 'used-flight-jacket', 'jacket', 'secondhand-knotted-tank', 'faded-uniware-knotted-tank', 'worn-compression-t-shirt', 'tank', 'pants', 'psycho-biker-pants', 'light-electro-shorts', 'high-tops', 'frayed-athletic-shoes', 'threadbare-sneakers', 'faded-cirqt-steel-toes', 'worn-baseball-cap', 'worn-brimmed-hat-with-gauge', 'old-plastic-gas-mask', 'hardened-plastic-goggles', 'nami-balaclava', 'saekos-darkernet-balaclava'],
 } satisfies Record<string, string[]>;
 
 /** How each clothing store prices and presents itself; stores not listed draw a quality from their district like an eatery. */
