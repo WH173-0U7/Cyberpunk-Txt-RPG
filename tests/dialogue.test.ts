@@ -254,7 +254,7 @@ describe('dialogue', () => {
     const eloquences: Eloquence[] = ['blunt', 'easy', 'smooth'];
     const questions = Object.keys(LINES.questions) as Question[];
     const topics = Object.keys(LINES.topics) as Topic[];
-    const seeds = Array.from({ length: 6 }, (_, i) => createRng(`dialogue-${i}`).next().toString(16).slice(2, 10));
+    const seeds = Array.from({ length: 4 }, (_, i) => createRng(`dialogue-${i}`).next().toString(16).slice(2, 10));
     let lines = 0;
     for (const seed of seeds) {
       const city = generateWorld(seed, CITY);

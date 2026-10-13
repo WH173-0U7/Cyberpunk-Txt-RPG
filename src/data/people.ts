@@ -211,6 +211,22 @@ export const PEOPLE: PeopleContent = {
       factory: ['line worker', 'foreman', 'welder', 'forklift driver', 'quality inspector'],
       warehouse: ['night watchman', 'forklift driver', 'dispatcher', 'loader'],
     },
+    extra: {
+      food: ['busboy', 'dishwasher', 'line cook', 'server', 'delivery runner'],
+      nightlife: ['barback', 'coat check', 'works the door', 'dancer'],
+      commodity: ['stock clerk', 'cashier'],
+      clothing: ['sales associate', 'stock clerk', "tailor's apprentice"],
+      firearms: ['range hand', 'counter clerk'],
+      melee: ['apprentice', 'counter clerk'],
+      cyberware: ["ripperdoc's assistant", 'receptionist'],
+      netrunning: ['deck tech', 'runner'],
+      medical: ['nurse', 'orderly'],
+      vehicles: ['grease monkey', 'parts runner'],
+      entertainment: ['floor attendant', 'cashier'],
+      services: ['clerk', 'security guard'],
+      lodging: ['housekeeper', 'day clerk'],
+      default: ['helps out'],
+    },
     freelance: [
       'fixer\'s runner',
       'street vendor',
@@ -231,6 +247,8 @@ export const PEOPLE: PeopleContent = {
     ],
   },
   residents: [6, 9],
+  // The second draw: a second pair of hands at most storefronts, a resident or so per home (three more in a megabuilding, one in a tall block), and the gangs again.
+  more: { staff: 0.6, perHome: [0, 1], tall: 1, megabuilding: 3, gangs: 1 },
   // Credchips (the wiki's 2020 chips of eurodollars): corpos nearly always carry one with real money on it; the street often, with less; gangers deal in cash.
   chips: { corpo: { chance: 0.8, range: [80, 500] }, gang: { chance: 0.2, range: [20, 120] }, street: { chance: 0.45, range: [15, 150] } },
   hangouts: ['bar', 'club', 'noodle', 'diner', 'restaurant', 'market', 'pachinko', 'boardwalk', 'plaza', 'rooftop', 'street', 'dollhouse', 'docks', 'shrine', 'park', 'mall', 'hotel', 'nomad_camp', 'gas_station', 'junkyard', 'food', 'nightlife', 'entertainment'],

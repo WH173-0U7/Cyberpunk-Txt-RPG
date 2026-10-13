@@ -888,8 +888,8 @@ function showPeople(): void {
       return {
         id: person.id,
         name: about?.name ?? person.name,
-        // The gang shows on sight; the job only once known (a gang member's job is the gang).
-        sub: [gangOf(person.gang) ? `${gangOf(person.gang)} colors` : undefined, person.gang ? undefined : about?.facts.job].filter(Boolean).join(' · '),
+        // The gang shows on sight (a stranger's look says it already); the job only once known (a gang member's job is the gang).
+        sub: [gangOf(person.gang) && about?.named ? `${gangOf(person.gang)} colors` : undefined, person.gang ? undefined : about?.facts.job].filter(Boolean).join(' · '),
         doing: withCompany(doing, scene),
         stance,
         stanceLabel: STANCE_LABEL[stance],
@@ -903,7 +903,7 @@ function showPeople(): void {
             name: described.name,
             stance: standing.stance,
             stanceLabel: STANCE_LABEL[standing.stance],
-            kicker: [gangOf(shown.gang) ? `${gangOf(shown.gang)} colors` : undefined, present ? withCompany(present.doing, present.scene) : 'Not here'].filter(Boolean).join(' · '),
+            kicker: [gangOf(shown.gang) && described.named ? `${gangOf(shown.gang)} colors` : undefined, present ? withCompany(present.doing, present.scene) : 'Not here'].filter(Boolean).join(' · '),
             facts: described.lines.length ? described.lines.join(' · ') : described.named ? 'That\'s all you know.' : 'Nothing known yet. Talk, watch, ask.',
             factsOpen,
             here: Boolean(present),
@@ -930,7 +930,8 @@ function withCompany(doing: string, scene: Presence['scene']): string {
   if (!scene) return doing;
   const other = game.describe(scene.with);
   const name = other ? (other.named ? other.name : other.name.replace(/^(An?) /, (m) => m.toLowerCase())) : 'someone';
-  return `${doing} · ${scene.phrase} ${name}`;
+  // "holding court · holding court with": the scene says it once.
+  return scene.phrase.startsWith(doing) ? `${scene.phrase} ${name}` : `${doing} · ${scene.phrase} ${name}`;
 }
 
 /** Buys off the menu, and says how it went under the menu's header. */
