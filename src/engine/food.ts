@@ -38,6 +38,8 @@ export interface Dish {
   favored?: string[];
   /** Units of alcohol in one, for drinks that have any (src/engine/inebriation.ts). */
   alcohol?: number;
+  /** What one weighs, in grams, when it isn't the usual for its kind (src/data/gear.ts). */
+  grams?: number;
 }
 
 /** What a kind of eatery serves, and how big its menu is. */
@@ -78,17 +80,22 @@ export interface Venue {
   chain: boolean;
 }
 
+/** What's for sale: something to eat or drink, or a bag to carry things in. */
+export type MenuKind = Dish['kind'] | 'gear';
+
 export interface MenuItem {
   id: string;
   name: string;
   note: string;
-  kind: Dish['kind'];
+  kind: MenuKind;
   price: number;
 }
 
 export interface Menu {
   venue: Venue;
   items: MenuItem[];
+  /** An eatery's menu, or a store's rack of gear. */
+  kind: 'food' | 'gear';
 }
 
 /** A dish that doesn't say turns up everywhere. */
@@ -112,7 +119,7 @@ export function menuFor(world: World, at: Building | Location, content: FoodCont
   const quality = fixed?.quality ?? drawQuality(world, at);
   const venue: Venue = { id: at.id, name: at.name, district: at.district, kindLabel: at.kindLabel, quality, chain };
   const items = fixed ? fixedItems(fixed, content) : kitchen ? kitchenItems(world, at, kitchen, quality, content) : [];
-  return { venue, items };
+  return { venue, items, kind: 'food' };
 }
 
 /** A fixed menu, priced by its quality unless it names its own prices. */
@@ -141,8 +148,8 @@ function kitchenItems(world: World, at: Building | Location, kitchen: Kitchen, q
   return [...foods, ...drinks].map((d) => item(d, priceAt(d, quality, content)));
 }
 
-/** How good a place is, from how its district eats. The same every time for the same place. */
-function drawQuality(world: World, at: Building | Location): Quality {
+/** How good a place is, from how its district eats (and shops). The same every time for the same place. */
+export function drawQuality(world: World, at: Building | Location): Quality {
   const weights = world.districts[at.district]?.dining ?? {};
   const entries = (Object.entries(weights) as Array<[Quality, number]>).filter(([, w]) => w > 0);
   if (!entries.length) return 'everyday';
@@ -156,7 +163,12 @@ function drawQuality(world: World, at: Building | Location): Quality {
 }
 
 function priceAt(dish: Dish, quality: Quality, content: FoodContent): number {
-  return Math.max(1, Math.round(dish.price * content.priceBy[quality]));
+  return priceFor(dish.price, quality, content);
+}
+
+/** An everyday price at a place of some quality. */
+export function priceFor(price: number, quality: Quality, content: FoodContent): number {
+  return Math.max(1, Math.round(price * content.priceBy[quality]));
 }
 
 function item(dish: Dish, price: number): MenuItem {

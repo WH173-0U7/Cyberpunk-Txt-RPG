@@ -46,16 +46,31 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 
 ## The inventory
 
-The inventory overlay is in place; food and drink are the only items so far:
+Everything the player owns is in a pocket; food and drink are the only items so far:
 
 - An `Item` has a `kind` (`ItemKind`: weapon, attachment, cyberware, quickhack, clothing,
-  consumable, shard, junk, component, after the wiki's 2077 item types), a name and a count.
-  `Game.inventory` is what the player carries; it's saved as `items`. Giving and taking items
-  goes in `Game`: `Game.buy(id)` (off a menu) and `Game.consume(id, now)` (eat or drink one).
-- `src/data/items.ts` names each kind and says what goes in it; the overlay lists them in
-  that order, but only the kinds the player carries (no empty placeholders). Real items take their names and details from the wiki and the TCG (above).
-- `src/ui/inventory.ts` shows an Eat/Drink button on anything that can be used (`use` on the
-  item view); what using something does is `Game`'s business.
+  consumable, shard, junk, component, after the wiki's 2077 item types), a name, a count and
+  the pocket it's `in`. `Game.inventory` is what the player carries, saved as `items`;
+  `Game.gearSaved` is their pockets, saved as `gear`. Giving and taking items goes in
+  `Game`: `Game.buy(id)` (off a menu or a rack), `Game.consume(id, now)` (eat or drink one),
+  `Game.drop(id)`. Anything new that hands the player an item goes through `pocketFor`
+  (room, or none) and sets `in`; old saves with items in no pocket are put away by `stow`.
+- `src/engine/carry.ts` is the arithmetic: what a thing weighs (`itemGrams`: by its kind,
+  or a dish's own `grams`), how many share a slot (`stackSlots`), a pocket's load (its
+  stacks, the pockets inside it a slot each, the eddies in a wallet as weight), `fits`,
+  `placeFor` (a pocket already holding some of it first), `walletRoom`. `src/data/gear.ts`
+  has the numbers: the pockets of the clothes, the wallet (`holds` eddies, a gram each), the
+  bags and what stores rack them. Nothing is canon here: the wiki's 2077 clothing has no
+  bags, so the gear is generic and named for what it is.
+- A store with a rack (`GEAR.racks`, by business id) gets a `Menu` of kind `gear` from
+  `Game.menu()`, priced by the store's quality like food; buying gear adds a pocket (worn,
+  `in: null`). `Game.canBuy(id)` says why not (barred, short, no room) so the shop can.
+- `src/data/items.ts` names each kind and says what goes in it (the order items are listed
+  in within a pocket). Real items take their names and details from the wiki and the TCG.
+- `src/ui/inventory.ts` lists the worn pockets with their loads, the pockets inside them
+  (the wallet) as a row, and each item with its weight, an Eat/Drink button when it can be
+  used (`use`) and Drop; what using something does is `Game`'s business. Weight has no
+  effect on the player yet; `Game.carry()` has the total for when it does.
 
 ## People
 
@@ -153,7 +168,8 @@ Eateries sell food, into the inventory (eating it comes later):
   our own notes and prices; `kitchens` are per business id and place kind; `fixed` menus are
   per chain business id or landmark name. Chains and named eateries are landmarks with a
   `business` in `src/data/city.ts`.
-- `src/ui/shop.ts` is the menu overlay (a `MapOverlay` opened from the panel's **Menu**).
+- `src/ui/shop.ts` is the menu overlay (a `MapOverlay` opened from the panel's **Menu**, or
+  **Shop** at a store with a rack of gear).
 
 ## The panel under the map
 

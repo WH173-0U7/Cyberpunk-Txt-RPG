@@ -1,4 +1,5 @@
 import { CELLS } from './game';
+import type { PocketState } from './carry';
 import type { EnergyState } from './energy';
 import type { InebriationState } from './inebriation';
 import type { SkillState } from './skills';
@@ -21,6 +22,8 @@ export interface Progress {
   inside: string | null;
   /** What the player carries. */
   items: Item[];
+  /** The pockets they carry it in (null: a save from before pockets; the player wears the usual). */
+  gear: PocketState[] | null;
   /** The player's energy, as last written down (null: a new player's). */
   energy: EnergyState | null;
   /** The drink in the player, as last written down (null: sober). */
@@ -38,6 +41,7 @@ export interface SaveSource {
   readonly currentTrip: Trip | null;
   readonly interior: { id: string } | null;
   readonly inventory: readonly Item[];
+  readonly gearSaved: readonly PocketState[];
   readonly energySaved: EnergyState;
   readonly inebriationSaved: InebriationState;
   readonly societySaved: SocietyState;
@@ -70,6 +74,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     trip: game.currentTrip,
     inside: game.interior?.id ?? null,
     items: game.inventory.map((item) => ({ ...item })),
+    gear: game.gearSaved.map((pocket) => ({ ...pocket })),
     energy: { ...game.energySaved },
     inebriation: { ...game.inebriationSaved },
     society: game.societySaved,
@@ -108,6 +113,7 @@ export function readSave(raw: unknown): SaveData | null {
     inside: typeof save.inside === 'string' ? save.inside : null,
     // Nor do saves from before the inventory: the player carried nothing. Anything unreadable is dropped.
     items: Array.isArray(save.items) ? save.items.filter(isItem) : [],
+    gear: Array.isArray(save.gear) ? save.gear.filter(isPocket) : null,
     // And saves from before energy start the player off fresh, and before drink, sober.
     energy: isEnergy(save.energy) ? save.energy : null,
     inebriation: isInebriation(save.inebriation) ? save.inebriation : null,
@@ -126,11 +132,11 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, energy, inebriation, society, charisma } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, energy, inebriation, society, charisma } = save;
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, energy, inebriation, society, charisma };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, energy, inebriation, society, charisma };
 }
 
 function isItem(value: unknown): value is Item {
@@ -143,8 +149,14 @@ function isItem(value: unknown): value is Item {
     typeof item.kind === 'string' &&
     ITEM_KINDS.has(item.kind) &&
     Number.isInteger(item.count) &&
-    (item.count as number) > 0
+    (item.count as number) > 0 &&
+    (item.in === undefined || typeof item.in === 'string')
   );
+}
+
+function isPocket(value: unknown): value is PocketState {
+  const p = value as Record<string, unknown> | null;
+  return typeof p === 'object' && p !== null && typeof p.id === 'string' && typeof p.kind === 'string' && (p.in === null || typeof p.in === 'string');
 }
 
 function isEnergy(value: unknown): value is EnergyState {

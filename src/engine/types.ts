@@ -154,6 +154,8 @@ export interface Item {
   kind: ItemKind;
   name: string;
   count: number;
+  /** The pocket it's in (src/engine/carry.ts). Saves from before pockets have none; they're put away on loading. */
+  in?: string;
 }
 
 /** Flavor text that plays while the player is idle, optionally firing an effect. */

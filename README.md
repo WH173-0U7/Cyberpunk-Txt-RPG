@@ -184,12 +184,20 @@ own.
   under it, so they get the whole lower screen. Each has one strip for a header (what it
   is, a count, **×**); the place you're at stays on the sign above, so nothing is said
   twice. **×** or **Esc** closes one, and the panel comes back.
-- **Inventory**: the **Inventory** button in the map's header (or **I**) opens what you
-  carry: your NCART pass, then your items, sorted by the kinds of item in Night City
-  (weapons, attachments & mods, cyberware, quickhacks, clothing, consumables, shards, junk,
-  components). A kind only shows once you carry something of it: food and drink you've
-  bought are under consumables, with their Eat and Drink buttons, and the rest comes with
-  shops and loot. Your eddies are in the map's header.
+- **Carrying things**: nothing floats along behind you. Everything you own is in a pocket:
+  your jacket's (four slots, two kilos), your pants' (three slots, a kilo and a half), and
+  any bag you buy. Every item takes a slot (small things share one, two to a slot) and
+  weighs something (a taco 250 g, a bottle of sake 650 g); a pocket holds only so many slots
+  and so much weight. Buying something means a pocket with room for it, or the counter says
+  so: eat something, or **Drop** it. Your eddies are cash, in a **wallet** in your pants:
+  they weigh a gram apiece, and the wallet holds a thousand, so a robbery only nets what it
+  will hold. General stores, thrift shops and clothing stores sell bags (**Shop** on the
+  panel): a belt pouch, a messenger bag, a duffel bag, a backpack, each more slots and
+  kilos.
+- **Inventory**: the **Inventory** button in the map's header (or **I**) opens your pockets:
+  each with how many slots and how much weight are taken, what's in it with its weight and
+  its Eat, Drink and Drop buttons, and the wallet with the eddies in it. The strip counts
+  everything and weighs it. Your eddies are in the map's header too.
 - **Settings**: the gear next to it opens the settings. For now that's the save:
   **Restart this city** puts the same city back to the start, and **Erase save** deletes the
   save from this device and starts a brand new city. Both ask first, with Cancel as the

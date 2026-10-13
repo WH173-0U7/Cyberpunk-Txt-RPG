@@ -12,8 +12,8 @@ const DISHES: Dish[] = [
   { id: 'rammmmen', name: 'RaMMMMen', note: 'Kabayan Foods instant ramen, heavy on the MSG.', kind: 'food', price: 4, on: ['noodles', 'street'], favored: ['watson', 'westbrook'] },
   { id: 'wontons', name: 'Wontons', note: "Little China's specialty, in broth or fried.", kind: 'food', price: 2, on: ['noodles', 'dumplings', 'street', 'market'], favored: ['watson'] },
   { id: 'galician-pierogi', name: 'Galician Pierogi', note: 'Dumplings by the plate, Galician style.', kind: 'food', price: 4, on: ['dumplings', 'fine'] },
-  { id: 'yikes-tofu-bar', name: 'Yikes! Tofu Bar', note: 'An All Foods tofu bar. Calories, not flavor.', kind: 'food', price: 2, on: ['noodles', 'snack', 'street'], favored: ['westbrook'], where: ['everyday', 'poverty'] },
-  { id: 'soy-paste', name: 'Soy Paste', note: 'Nutrients in a tube. Quicker than chewing.', kind: 'food', price: 1, on: ['street', 'snack'], favored: ['pacifica'], where: ['everyday', 'poverty'] },
+  { id: 'yikes-tofu-bar', name: 'Yikes! Tofu Bar', note: 'An All Foods tofu bar. Calories, not flavor.', kind: 'food', price: 2, on: ['noodles', 'snack', 'street'], favored: ['westbrook'], where: ['everyday', 'poverty'], grams: 90 },
+  { id: 'soy-paste', name: 'Soy Paste', note: 'Nutrients in a tube. Quicker than chewing.', kind: 'food', price: 1, on: ['street', 'snack'], favored: ['pacifica'], where: ['everyday', 'poverty'], grams: 120 },
 
   // ── Scopdogs and grill ──
   { id: 'hawt-dawg', name: 'Hawt Dawg', note: 'A scopdog in a soft steamed bun.', kind: 'food', price: 2, on: ['street', 'grill', 'diner', 'market'], favored: ['santo_domingo', 'watson'], where: ['everyday', 'poverty'] },
@@ -24,13 +24,13 @@ const DISHES: Dish[] = [
   { id: 'all-foods-meat-delight', name: 'All Foods Meat Delight', note: 'Synthetic meat that tastes nearly like the real thing.', kind: 'food', price: 3, on: ['grill', 'diner'], where: ['everyday', 'poverty'] },
   { id: 'all-foods-veggie-delight', name: 'All Foods Veggie Delight', note: 'The vegan plate from the same factory.', kind: 'food', price: 3, on: ['grill', 'diner'], where: ['everyday', 'poverty'] },
   { id: 'slaughterhouse-prime', name: 'Slaughterhouse Prime', note: 'A Slaughterhouse syn-meat patty, heavy on the derivatives.', kind: 'food', price: 4, on: ['grill'], favored: ['santo_domingo'] },
-  { id: 'slaughterhouse-jerky', name: 'Slaughterhouse Jerky', note: 'Dried syn-meat strips.', kind: 'food', price: 3, on: ['grill', 'snack'], where: ['everyday', 'poverty'] },
+  { id: 'slaughterhouse-jerky', name: 'Slaughterhouse Jerky', note: 'Dried syn-meat strips.', kind: 'food', price: 3, on: ['grill', 'snack'], where: ['everyday', 'poverty'], grams: 80 },
   { id: 'slaughterhouse-veggie', name: 'Slaughterhouse Veggie', note: 'The grudging vegetarian option.', kind: 'food', price: 3, on: ['grill'], where: ['everyday', 'poverty'] },
 
   // ── Mexican ──
   { id: 'taco', name: 'Taco', note: 'A street taco: tortilla, syn-meat, salsa.', kind: 'food', price: 2, on: ['street'], favored: ['heywood'] },
   { id: 'loaded-tamale', name: 'Loaded Tamale', note: 'A tamale stuffed to bursting.', kind: 'food', price: 3, on: ['street'], favored: ['heywood'] },
-  { id: 'burrito-xxl', name: 'Burrito XXL', note: "All Foods' oversized burrito.", kind: 'food', price: 4, on: ['street', 'market'], favored: ['heywood'], where: ['everyday', 'poverty'] },
+  { id: 'burrito-xxl', name: 'Burrito XXL', note: "All Foods' oversized burrito.", kind: 'food', price: 4, on: ['street', 'market'], favored: ['heywood'], where: ['everyday', 'poverty'], grams: 600 },
   { id: 'burrito-xxl-rosado', name: 'Burrito XXL Rosado', note: 'The pink one.', kind: 'food', price: 4, on: ['street'], favored: ['heywood'], where: ['everyday', 'poverty'] },
   { id: 'burrito-xxl-turquesa', name: 'Burrito XXL Turquesa', note: 'The turquoise one, a cut above.', kind: 'food', price: 7, on: ['street'], where: ['everyday', 'luxury'] },
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CITY } from '../src/data/city';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
+import { GEAR } from '../src/data/gear';
 import { INEBRIATION } from '../src/data/inebriation';
 import { LINES } from '../src/data/dialogue';
 import { PEOPLE } from '../src/data/people';
@@ -16,7 +17,7 @@ import type { World } from '../src/engine/types';
 
 const world = generateWorld('7f3a29c1', CITY);
 const T0 = Date.UTC(2077, 9, 12, 20, 0);
-const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA };
+const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR };
 
 /** Plays a few moves on foot to places next door, letting each trip finish. Returns the game and the time. */
 function played(steps: number): { game: Game; now: number } {
@@ -81,7 +82,16 @@ describe('saving', () => {
     const progress = read && resume(world, read);
     if (!progress) throw new Error('no progress');
     const resumed = new Game(world, rules, progress);
-    expect(resumed.inventory).toEqual([shard]);
+    // The shard said no pocket: it's put away in the jacket.
+    expect(resumed.inventory).toEqual([{ ...shard, in: 'jacket' }]);
+    expect(read?.gear).toEqual(GEAR.start);
+    // A save from before pockets has none: the player wears the usual.
+    const { items: _i, gear: _g, ...older } = saveOf(game, now);
+    const olderRead = readSave(JSON.parse(JSON.stringify(older)));
+    expect(olderRead?.gear).toBeNull();
+    const olderProgress = olderRead && resume(world, olderRead);
+    if (!olderProgress) throw new Error('no progress');
+    expect(new Game(world, rules, olderProgress).gearSaved).toEqual(GEAR.start);
     // Copies: changing what the UI was handed doesn't change what the player carries.
     const handed = resumed.inventory;
     handed[0]!.count = 99;
