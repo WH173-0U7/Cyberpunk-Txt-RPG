@@ -10,6 +10,7 @@ import { INEBRIATION } from './data/inebriation';
 import { LINES } from './data/dialogue';
 import { PEOPLE } from './data/people';
 import { CHARISMA } from './data/skills';
+import { JOBS } from './data/jobs';
 import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
@@ -87,12 +88,14 @@ const place = new PlacePanel(
       menu: $<HTMLButtonElement>('#act-menu'),
       people: $<HTMLButtonElement>('#act-people'),
       bank: $<HTMLButtonElement>('#act-bank'),
+      work: $<HTMLButtonElement>('#act-work'),
     },
     close: $<HTMLButtonElement>('#place-close'),
   },
   {
     onAction: (id) => act(id),
-    onClose: () => select(null),
+    // The corner button leaves the building the player is in; otherwise it drops what they picked.
+    onClose: () => (game.interior && !target ? game.leave() : select(null)),
     onGlitchText: registerGlitch,
     announce: (text) => transmissions.announce(text),
   },
@@ -394,7 +397,7 @@ function act(id: ActionId): void {
     bankStatus = '';
     withdrawOpen = false;
     bank.overlay.show($('#act-bank'));
-  }
+  } else if (id === 'work') game.work(now);
 }
 
 /** Something done to someone in the people overlay. */
@@ -404,6 +407,8 @@ function actOn(action: PersonAction, id: string): void {
   if (action === 'talk') game.talk(id, now);
   else if (action === 'insult') game.insult(id, now);
   else if (action === 'rob') game.rob(id, now);
+  else if (action === 'hire') game.askForWork(id, now);
+  else if (action === 'quit') game.quit(now);
 }
 
 // ───────────── The panel ─────────────
@@ -576,6 +581,8 @@ function insideView(building: Building): PanelView {
   const menu = game.menu();
   const here = game.peopleHere(now).length;
   const barred = game.barred(now);
+  const job = game.jobStatus(now);
+  const shift = job?.here ? job : null;
   const description = barred ?? (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut, and a credchip in your name is banked.' : here ? 'People live and work in here.' : 'Nobody around right now.');
   return {
     mode: 'inside',
@@ -587,10 +594,13 @@ function insideView(building: Building): PanelView {
       peopleAction(here),
       ...(menu ? [barred ? { id: 'menu' as const, label: 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []),
       ...(game.bank() ? [{ id: 'bank' as const, label: 'Bank', sub: `€$ ${game.wallet.account} banked` }] : []),
-      { id: 'leave', label: 'Leave', quiet: true },
+      // The player's shift here: what it pays and costs, or why not now.
+      ...(shift ? [{ id: 'work' as const, label: 'Work', sub: shift.blocked === 'done' ? 'Done today' : shift.blocked === 'closed' ? `${JOBS.hours[0]}–${JOBS.hours[1]}h` : `${shift.pay} €$, ${shift.rung.energy} energy`, disabled: Boolean(shift.blocked) }] : []),
     ],
-    closable: false,
-    announce: `Inside ${building.name}. ${description} ${here ? `${here} people here.` : ''}`,
+    // Leaving is the corner button, so the row keeps to what there is to do in here.
+    closable: true,
+    closeLabel: `Leave ${building.name}`,
+    announce: `Inside ${building.name}. ${description} ${here ? `${here} people here.` : ''} Leave with the corner button.`,
   };
 }
 
@@ -846,6 +856,7 @@ function showPeople(): void {
   const gangOf = (id: string | null) => (id ? PEOPLE.gangs[id]?.name : undefined);
   const charisma = game.charisma();
   const mask = game.masked();
+  const job = game.jobStatus(now);
   const how = { seen: 'seen together', told: 'told', asked: 'asked' };
   const nameOf = (id: string, fallback: string) => game.describe(id)?.name ?? fallback;
   const described = shown ? game.describe(shown.id) : null;
@@ -853,7 +864,7 @@ function showPeople(): void {
   people.render({
     count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
     // The standing lines belong to the list; a card is about one person.
-    reputation: shown ? [] : [...(mask ? [`Masked · they see a ${mask.word}, not a face`] : []), `Charisma Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP`, ...reputation],
+    reputation: shown ? [] : [...(mask ? [`Masked · they see a ${mask.word}, not a face`] : []), ...(job ? [`${job.rung.title} at ${job.building.name} · ${job.shifts} ${job.shifts === 1 ? 'shift' : 'shifts'}`] : []), `Charisma Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP`, ...reputation],
     rows: here.map(({ person, doing, stance }) => {
       const about = game.describe(person.id);
       return {
@@ -889,6 +900,7 @@ function showPeople(): void {
             gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
             // A hot chip can be put to a netrunner the player can tell is one; the label says what it holds and what they'd keep.
             chops: present && game.canChop(shown.id) ? hot.map((c) => ({ id: c.id, label: `€$ ${c.balance ?? 0} chip · cut ${chipCut(c.balance ?? 0, MONEY)}` })) : [],
+            work: present ? game.workWith(shown.id) : null,
             log: game.conversation(shown.id).map((line) => ({ who: line.who, text: line.text })),
           }
         : null,
@@ -1039,6 +1051,12 @@ function wire(g: Game): void {
     queueSave();
   });
 
+  g.events.on('jobChanged', () => {
+    if (people.overlay.isOpen) showPeople();
+    if (!target && !g.currentTrip) refresh();
+    queueSave();
+  });
+
   g.events.on('charismaChanged', () => {
     if (people.overlay.isOpen) showPeople();
     queueSave();
@@ -1057,7 +1075,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS }, progress);
   wire(game);
   map.setWorld(world);
   seedLabel.textContent = `Seed ${world.seed.toUpperCase()}`;

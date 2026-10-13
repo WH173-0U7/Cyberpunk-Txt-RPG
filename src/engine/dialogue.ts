@@ -88,6 +88,8 @@ export interface DialogueLines {
   rob: { done: Line[]; nothing: Line[]; fought: Line[] };
   /** A netrunner asked to chop a stolen credchip (`{balance}` on it, `{cut}` theirs, `{left}` after): they do, or they won't. */
   chop: { done: Line[]; refuse: Line[] };
+  /** A boss asked for work (`{title}` the bottom rung, `{work}` the place, `{pay}` a shift): taken on, turned down, or not in a mask; a word after a shift; moved up (`{title}` the new rung); told the player quits. */
+  work: { hire: Line[]; refuse: Line[]; masked: Line[]; shift: Line[]; promote: Line[]; quit: Line[] };
   revenge: { person: Line[]; gang: Line[] };
   /** A storefront that won't serve the player. */
   barred: Line[];
@@ -96,7 +98,7 @@ export interface DialogueLines {
   /** The player's questions: a short label for the button, and how they put it, by eloquence. */
   questions: Record<Question, { label: string; lines: Line[] }>;
   /** The player's own lines, for the record, by eloquence. */
-  you: { talk: Line[]; askAbout: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[] };
+  you: { talk: Line[]; askAbout: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[]; work: Line[]; quit: Line[] };
 }
 
 /** Everything a line can be picked and filled by; `vars.mask` is the word for the mask the player has on, or nothing. */

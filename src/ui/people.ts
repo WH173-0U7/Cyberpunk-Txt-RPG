@@ -11,7 +11,7 @@ export interface PersonRowView {
   stanceLabel: string;
 }
 
-export type PersonAction = 'talk' | 'insult' | 'rob';
+export type PersonAction = 'talk' | 'insult' | 'rob' | 'hire' | 'quit';
 
 /** Someone the player knows a person to be connected to. */
 export interface WebNodeView {
@@ -29,7 +29,7 @@ export interface LogLineView {
 }
 
 /** Which set of choices is unfolded under the conversation, if any. */
-export type Picker = 'ask' | 'give' | 'chop' | 'more' | null;
+export type Picker = 'ask' | 'give' | 'chop' | 'work' | 'more' | null;
 
 export interface PersonCardView {
   id: string;
@@ -57,6 +57,8 @@ export interface PersonCardView {
   gifts: Array<{ id: string; name: string; count: number }>;
   /** Locked credchips this person could chop, with what's on each and their cut; empty unless they're a netrunner the player can tell. */
   chops: Array<{ id: string; label: string }>;
+  /** What there is to do about work with them: ask them for a job (they run a place that hires), quit the one they gave the player, or nothing. */
+  work: 'hire' | 'quit' | null;
   /** What has passed between them, oldest first. */
   log: LogLineView[];
 }
@@ -141,7 +143,7 @@ export class People {
       const { cmd, fact, about, item, chip, action, open, id } = button.dataset;
       if (cmd === 'talk' && id) handlers.onAction('talk', id);
       else if (cmd === 'web') handlers.onToggleWeb();
-      else if (cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'more') handlers.onPicker(cmd);
+      else if (cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'more') handlers.onPicker(cmd);
       else if (fact && id) handlers.onQuestion(id, fact);
       else if (about && id) handlers.onAsk(id, about);
       else if (item && id) handlers.onGift(id, item);
@@ -214,6 +216,8 @@ export class People {
       picker.push(...card.gifts.map((g) => chip(g.count > 1 ? `${g.name} ×${g.count}` : g.name, { id: card.id, item: g.id }, 'person-gift')));
     } else if (card.here && card.picker === 'chop') {
       picker.push(...card.chops.map((c) => chip(c.label, { id: card.id, chip: c.id }, 'person-chip')));
+    } else if (card.here && card.picker === 'work' && card.work) {
+      picker.push(card.work === 'hire' ? chip('Ask for work', { id: card.id, action: 'hire' }, 'person-chip') : chip('Quit', { id: card.id, action: 'quit' }, 'person-chip is-danger'));
     } else if (card.here && card.picker === 'more') {
       picker.push(chip('Insult', { id: card.id, action: 'insult' }, 'person-chip is-danger'), chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'));
     }
@@ -227,6 +231,7 @@ export class People {
           ...(card.questions.length || card.askAbout.length ? [{ cmd: 'ask', label: 'Ask', active: card.picker === 'ask' }] : []),
           ...(card.gifts.length ? [{ cmd: 'give', label: 'Give', active: card.picker === 'give' }] : []),
           ...(card.chops.length ? [{ cmd: 'chop', label: 'Chop', active: card.picker === 'chop' }] : []),
+          ...(card.work ? [{ cmd: 'work', label: 'Work', active: card.picker === 'work' }] : []),
           { cmd: 'web', label: `Web ${card.web.length}`, active: card.webOpen },
           { cmd: 'more', label: '⋯', active: card.picker === 'more', quiet: true },
         ]

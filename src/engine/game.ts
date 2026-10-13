@@ -3,9 +3,10 @@ import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergySt
 import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState } from './carry';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
-import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Venue } from './food';
+import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
 import { answer, compose, deflect, describeStranger, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, moodOf, openness, openTopics, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
+import { bossAt, bossOf, canPromote, ladderFor, nextRung, rungOf, shiftOpen, shiftPay, type JobRules, type JobState, type JobStatus, type Rung } from './jobs';
 import { generatePeople, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type PeopleContent, type Person, type Population, type Spot, type Tie } from './people';
 import { createRng } from './rng';
 import { freshSkill, gainXp, skillStatus, type SkillRules, type SkillState, type SkillStatus } from './skills';
@@ -101,6 +102,8 @@ export interface GameRules extends TravelRules {
   gear: GearContent;
   /** How eddies change hands: cash, change, transfers, the bank's cut. */
   money: MoneyRules;
+  /** Where the player can work, and how far up. */
+  jobs: JobRules;
   /** The time of day people's days run on. The phone's local time if not said (tests say). */
   clock?: (now: number) => Clock;
 }
@@ -176,6 +179,8 @@ export class Game {
   readonly population: Population;
   private society: SocietyState;
   private charismaState: SkillState;
+  /** The player's job, if they have one. */
+  private job: JobState | null;
   /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
   private readonly home: { building: string; bed: boolean } | null = null;
   private lastAmbient: AmbientLine | null = null;
@@ -201,6 +206,9 @@ export class Game {
     this.population = generatePeople(world, rules.people, rules.food.dishes);
     this.society = progress?.society ? { ...freshSociety(), ...structuredClone(progress.society) } : freshSociety();
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
+    // A job at a place this city doesn't have, or that doesn't hire anymore, is no job.
+    const workplace = progress?.job ? world.buildings.find((b) => b.id === progress.job?.building) : undefined;
+    this.job = progress?.job && workplace && ladderFor(workplace, rules.jobs) ? { ...progress.job } : null;
     // People this city doesn't have (the generator changed) are forgotten.
     const known = new Set(this.population.people.map((p) => p.id));
     for (const id of Object.keys(this.society.standings)) if (!known.has(id)) delete this.society.standings[id];
@@ -721,6 +729,195 @@ export class Game {
     this.events.emit('inebriationChanged', status);
   }
 
+  // ───────────── Work ─────────────
+
+  /** The player's job, for saving. */
+  get jobSaved(): JobState | null {
+    return this.job ? { ...this.job } : null;
+  }
+
+  /** The player's job as it stands now: where, for whom, which rung, what a shift pays, and whether one can start. Null without one. */
+  jobStatus(now: number): JobStatus | null {
+    const job = this.job;
+    if (!job) return null;
+    const building = this.world.buildings.find((b) => b.id === job.building);
+    const ladder = building ? ladderFor(building, this.rules.jobs) : null;
+    if (!building || !ladder) return null;
+    const rung = rungOf(job, ladder);
+    const clock = this.clockAt(now);
+    const here = this.inside?.id === building.id;
+    const blocked = !here ? 'away' : job.lastShiftDay === clock.day ? 'done' : !shiftOpen(clock.hour, this.rules.jobs) ? 'closed' : null;
+    return { building, boss: bossOf(building, this.population), rung, next: nextRung(job, ladder), trust: job.trust, shifts: job.shifts, pay: shiftPay(rung, this.tierOf(building), this.rules.jobs), here, blocked };
+  }
+
+  /** The tier a storefront runs at: its menu's, its rack's, or drawn the way its district eats. */
+  private tierOf(building: Building): Quality {
+    const { food, gear } = this.rules;
+    return menuFor(this.world, building, food)?.venue.quality ?? (building.business ? gear.quality[building.business] : undefined) ?? drawQuality(this.world, building);
+  }
+
+  /** What there is to do about work with someone: ask them for a job (they run a place that hires), quit the job they gave the player, or nothing. */
+  workWith(id: string): 'hire' | 'quit' | null {
+    const person = this.person(id);
+    const runs = person ? bossAt(person, this.world, this.population, this.rules.jobs) : null;
+    if (!runs) return null;
+    return this.job?.building === runs.id ? 'quit' : 'hire';
+  }
+
+  /** The hours shifts run, as people say them. */
+  private shiftHours(): string {
+    const [from, to] = this.rules.jobs.hours;
+    const h = (n: number) => `${((n + 11) % 12) + 1}${n < 12 ? 'am' : 'pm'}`;
+    return `${h(from)} to ${h(to)}`;
+  }
+
+  /**
+   * Asks someone here for work. They have to run a place that hires; whether they take the
+   * player on is their openness to it (how they feel about them, the player's way with words),
+   * and never with a mask on the player, nor while the player has a job elsewhere. Taken on,
+   * the player starts at the bottom of that place's ladder.
+   */
+  askForWork(id: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    const runs = here ? bossAt(here.person, this.world, this.population, this.rules.jobs) : null;
+    if (!here || !runs || this.job?.building === runs.id) return false;
+    if (this.job) {
+      this.say(`You've got work at ${this.world.buildings.find((b) => b.id === this.job?.building)?.name ?? 'another place'}. Quit that first.`, 'error');
+      return false;
+    }
+    const { person, stance, doing } = here;
+    const { society, timeScale, lines, jobs } = this.rules;
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const bottom = (ladderFor(runs, jobs) as Rung[])[0] as Rung;
+    const pay = shiftPay(bottom, this.tierOf(runs), jobs);
+    const speaker = this.speakerFor(person, stance, doing, now);
+    speaker.vars = { ...speaker.vars, title: bottom.title.toLowerCase(), work: runs.name, pay: String(pay) };
+    const rng = createRng(`${this.world.seed}:${id}:hire:${standing.asks}`);
+    learnOf(this.society, id, 'met');
+    this.logged(id, 'you', line(lines.you.work, speaker, rng), now);
+    const refused = { ...standing.refused };
+    let pressed = false;
+    let hired = false;
+    if (speaker.mood === 'asleep' || stance === 'hostile') {
+      this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
+    } else if (this.masked()) {
+      this.speech(person, line(lines.work.masked, speaker, rng), now);
+    } else if (this.pressing(standing, 'hire', now)) {
+      pressed = true;
+      this.speech(person, line(lines.pressed, speaker, rng), now);
+    } else {
+      const reply = replyTo(openness('hire', stance, this.charismaState.level, person.traits, society.openness), society.openness, rng);
+      if (reply === 'answer') {
+        hired = true;
+        this.job = { building: runs.id, rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 };
+        this.speech(person, compose(lines.work.hire, speaker, lines, rng, { opener: false }), now);
+        // The boss has a name and a job now, as far as the player's concerned.
+        learnFact(this.society, id, 'name');
+        learnFact(this.society, id, 'job');
+        this.say(`You work at ${runs.name} now: ${bottom.title.toLowerCase()}, ${pay} €$ a shift, ${this.shiftHours()}. Come in and Work.`, 'system');
+      } else {
+        this.speech(person, reply === 'deflect' ? deflect(speaker, 'hire', lines, rng) : line(lines.work.refuse, speaker, rng), now);
+        refused.hire = now;
+      }
+    }
+    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport: pressed ? -society.openness.press : hired ? 2 : 0 }, society, timeScale, now);
+    if (hired) {
+      this.gainCharisma(3);
+      this.events.emit('jobChanged', this.jobStatus(now));
+    }
+    this.events.emit('societyChanged', { people: [id] });
+    return true;
+  }
+
+  /**
+   * Works a shift: at the workplace, in working hours, one a day, for the rung's energy. The
+   * pay goes to the account; the shift is trust, and regard with the boss, and standing with
+   * the place; the boss, if about, says something, and moves the player up once there's
+   * trust enough and they've warmed to them.
+   */
+  work(now: number): boolean {
+    if (this.checkFired(now)) return false;
+    const status = this.jobStatus(now);
+    if (!status) return false;
+    const { society, timeScale, lines, jobs } = this.rules;
+    const { building, boss, rung, pay } = status;
+    const mask = this.masked();
+    if (status.blocked === 'away') this.say(`Your shift is at ${building.name}.`, 'error');
+    else if (status.blocked === 'done') this.say("You've done your shift today. Back tomorrow.", 'error');
+    else if (status.blocked === 'closed') this.say(`Shifts run ${this.shiftHours()}. Come back then.`, 'error');
+    else if (mask) this.say(`Nobody works a shift in a ${mask.word}. Take it off.`, 'error');
+    if (status.blocked || mask) return false;
+    if (!this.spendEnergy(rung.energy, now)) return false;
+    const job = this.job as JobState;
+    job.shifts += 1;
+    job.trust += jobs.trustPerShift;
+    job.lastShiftDay = this.clockAt(now).day;
+    this.money = { ...this.money, account: this.money.account + pay };
+    this.say(`A shift ${rung.doing} at ${building.name}: ${pay} €$ to your account.`, 'system');
+    changeRep(this.society, `business:${building.id}`, jobs.rep, society, timeScale, now);
+    if (boss) {
+      learnOf(this.society, boss.id, 'met');
+      changeStanding(this.society, boss.id, { met: true, rapport: jobs.rapport }, society, timeScale, now);
+      const about = this.isHere(boss.id, now);
+      if (about) {
+        const stance = this.stanceOf(boss, now);
+        const speaker = this.speakerFor(boss, stance, about.doing, now);
+        const rng = createRng(`${this.world.seed}:shift:${building.id}:${job.shifts}`);
+        const ladder = ladderFor(building, jobs) as Rung[];
+        if (canPromote(job, ladder, stance, jobs)) {
+          job.rung += 1;
+          const up = rungOf(job, ladder);
+          const raise = shiftPay(up, this.tierOf(building), jobs);
+          speaker.vars = { ...speaker.vars, title: up.title.toLowerCase(), work: building.name, pay: String(raise) };
+          this.speech(boss, compose(lines.work.promote, speaker, lines, rng, { opener: false }), now);
+          this.say(`You're moved up: ${up.title.toLowerCase()} at ${building.name}, ${raise} €$ a shift.`, 'system');
+        } else if (rng.chance(0.5)) {
+          speaker.vars = { ...speaker.vars, title: rung.title.toLowerCase(), work: building.name, pay: String(pay) };
+          this.speech(boss, line(lines.work.shift, speaker, rng), now);
+        }
+      }
+    }
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('jobChanged', this.jobStatus(now));
+    this.events.emit('societyChanged', { people: boss ? [boss.id] : [] });
+    return true;
+  }
+
+  /** Quits the job. If the boss is about, they hear it from the player. */
+  quit(now: number): boolean {
+    const status = this.jobStatus(now);
+    if (!status) return false;
+    const { lines } = this.rules;
+    const { boss, building, rung } = status;
+    const about = boss ? this.isHere(boss.id, now) : undefined;
+    if (boss && about) {
+      const speaker = this.speakerFor(boss, about.stance, about.doing, now);
+      speaker.vars = { ...speaker.vars, work: building.name, title: rung.title.toLowerCase() };
+      const rng = createRng(`${this.world.seed}:quit:${building.id}:${status.shifts}`);
+      this.logged(boss.id, 'you', line(lines.you.quit, speaker, rng), now);
+      this.speech(boss, line(lines.work.quit, speaker, rng), now);
+    }
+    this.job = null;
+    this.say(`You don't work at ${building.name} anymore.`, 'system');
+    this.events.emit('jobChanged', null);
+    if (boss) this.events.emit('societyChanged', { people: [boss.id] });
+    return true;
+  }
+
+  /** Lets the player go from a job at a place that has had enough of them (a storefront that won't serve them won't keep them either). True if it did. */
+  private checkFired(now: number): boolean {
+    const job = this.job;
+    if (!job) return false;
+    const { society, timeScale } = this.rules;
+    const building = this.world.buildings.find((b) => b.id === job.building);
+    const banned = !building || repOf(this.society, `business:${job.building}`, society, timeScale, now) <= society.rep.banAt || (building.business ? repOf(this.society, `chain:${building.business}`, society, timeScale, now) <= society.rep.banAt : false);
+    if (!banned) return false;
+    this.job = null;
+    this.say(`${building?.name ?? 'The place'} is done with you: after what you did to its people, nobody there wants you on a shift.`, 'error');
+    this.events.emit('jobChanged', null);
+    return true;
+  }
+
   // ───────────── People ─────────────
 
   private clockAt(now: number): Clock {
@@ -1159,6 +1356,7 @@ export class Game {
       this.narrate(person, line(lines.insult.shove, speaker, rng), now, 'error');
       this.drainEnergy(1, now);
     }
+    this.checkFired(now);
     this.events.emit('societyChanged', { people: fallout });
     return true;
   }
@@ -1219,6 +1417,7 @@ export class Game {
     else if (witnesses) this.say(`${saw} saw that. Word will get around ${this.world.districts[person.district]?.name ?? 'the district'}.`, 'system');
     const work = person.job.building ? this.world.buildings.find((b) => b.id === person.job.building) : undefined;
     if (work && repOf(this.society, `business:${work.id}`, society, timeScale, now) <= society.rep.banAt) this.say(`${work.name} won't be serving you again.`, 'system');
+    this.checkFired(now);
     this.events.emit('societyChanged', { people: fallout });
     return true;
   }
@@ -1351,7 +1550,10 @@ export class Game {
       this.say(`That's ${what} on you now. Word will get around ${this.world.districts[incident.district]?.name ?? 'the district'}.`, 'system');
       touched.push(spotter.person.id, incident.victim, ...fallout.affected.map((a) => a.id));
     }
-    if (touched.length) this.events.emit('societyChanged', { people: [...new Set(touched)] });
+    if (touched.length) {
+      this.checkFired(now);
+      this.events.emit('societyChanged', { people: [...new Set(touched)] });
+    }
   }
 
   /** Whoever has come to collect does, if the player isn't on a train: eddies, and the wind out of them. */

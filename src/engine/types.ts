@@ -1,6 +1,7 @@
 import type { EnergyStatus } from './energy';
 import type { InebriationStatus } from './inebriation';
 import type { SkillStatus } from './skills';
+import type { JobStatus } from './jobs';
 import type { Quality } from './food';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
@@ -288,5 +289,7 @@ export type GameEvents = {
   societyChanged: { people: string[] };
   /** Charisma earned experience or a level. */
   charismaChanged: SkillStatus;
+  /** The player got a job, worked a shift, moved up, quit or was let go (null: no job now). */
+  jobChanged: JobStatus | null;
   fx: { effect: FxName };
 };

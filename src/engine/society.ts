@@ -28,8 +28,8 @@ export interface Standing {
   refused: Record<string, number>;
 }
 
-/** Something the player can want from someone: a fact about them, a topic, their people, or (`chop`) their hands on a stolen credchip. */
-export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'chop';
+/** Something the player can want from someone: a fact about them, a topic, their people, (`chop`) their hands on a stolen credchip, or (`hire`) a job at the place they run. */
+export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'chop' | 'hire';
 
 /**
  * How ready people are to tell the player things: a base by how they feel, a step per level

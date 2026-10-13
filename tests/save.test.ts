@@ -8,6 +8,7 @@ import { INEBRIATION } from '../src/data/inebriation';
 import { LINES } from '../src/data/dialogue';
 import { PEOPLE } from '../src/data/people';
 import { CHARISMA } from '../src/data/skills';
+import { JOBS } from '../src/data/jobs';
 import { SOCIETY } from '../src/data/society';
 import { TRAVEL } from '../src/data/travel';
 import { Game } from '../src/engine/game';
@@ -18,7 +19,7 @@ import type { World } from '../src/engine/types';
 
 const world = generateWorld('7f3a29c1', CITY);
 const T0 = Date.UTC(2077, 9, 12, 20, 0);
-const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY };
+const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS };
 
 /** Plays a few moves on foot to places next door, letting each trip finish. Returns the game and the time. */
 function played(steps: number): { game: Game; now: number } {
@@ -156,6 +157,20 @@ describe('saving', () => {
     expect(readSave({ ...saved, inebriation: { units: 'two', updatedAt: now } })?.inebriation).toBeNull();
     const fresh = new Game(world, rules, resume(world, readSave(JSON.parse(JSON.stringify(old))) ?? saved) ?? undefined);
     expect(fresh.inebriation(now)).toEqual({ units: 0, stage: null, severity: 0, soberAt: null });
+  });
+
+  it('carries the job, and drops one at a building the city does not have', () => {
+    const { game, now } = played(1);
+    const job = { building: world.buildings[0]?.id ?? 'b', rung: 1, trust: 6, shifts: 6, lastShiftDay: 39366 };
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), job })));
+    expect(read?.job).toEqual(job);
+    expect(read && resume(world, read)?.job).toEqual(job);
+    const gone = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), job: { ...job, building: 'b-nowhere' } })));
+    expect(gone?.job?.building).toBe('b-nowhere');
+    expect(gone && resume(world, gone)?.job).toBeNull();
+    expect(readSave({ ...saveOf(game, now), job: { building: 'b', rung: -1 } })?.job).toBeNull();
+    expect(readSave({ ...saveOf(game, now), job: 'dishes' })?.job).toBeNull();
+    expect(saveOf(game, now).job).toBeNull();
   });
 
   it('carries charisma and what the player knows of people, and starts fresh without them', () => {

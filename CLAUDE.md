@@ -186,6 +186,36 @@ it needs no generator bump. The pieces:
   new things to do with a person behind a command, not as another row. Lines a person says
   use the `talk` tone, which the feed skips while the card is open.
 
+## Work
+
+Eateries and clothing stores hire; the player climbs a ladder of rungs at one place at a time:
+
+- `src/engine/jobs.ts` is the engine: `bossOf(building, population)` (the worker whose role
+  says they run it, else the first one; every storefront has exactly one), `bossAt(person)`
+  (the hiring storefront they run, if any), `ladderFor(building)` (by category, from
+  `JOBS.ladders`), `rungOf`/`nextRung`/`canPromote` (trust against the next rung's `at`, and
+  the boss's stance in `promoteAt`), `shiftOpen(hour)` and `shiftPay(rung, quality)`. The
+  numbers (rungs, pay, energy, hours, tiers, trust and rapport per shift) are in
+  `src/data/jobs.ts`; a new kind of place that hires is another ladder there, keyed by
+  building category.
+- `Game` keeps the job (`JobState`: building, rung, trust, shifts, the clock day of the last
+  shift; saved as `job`, dropped when the building is gone or no longer hires).
+  `Game.jobStatus(now)` is where it stands (rung, next rung, pay, `here`, `blocked`: away,
+  done today, or closed); `Game.workWith(id)` says what a person's card offers (`hire` for a
+  boss, `quit` for the player's own boss); `Game.askForWork(id, now)` is an ask like any
+  other (`openness` with the `hire` cost, pressing, the mask's own refusal, no second job);
+  `Game.work(now)` is a shift (energy through `spendEnergy`, pay to the account, trust,
+  `JOBS.rapport` with the boss and `JOBS.rep` with the place, the boss's line if they're
+  about, and the promotion when `canPromote`); `Game.quit(now)`; a private `checkFired(now)`
+  lets the player go once the place bars them (called after a robbery or an insult lands).
+  Everything it says comes from `LINES.work` and `LINES.you.work`/`quit`, with `{title}`,
+  `{work}` and `{pay}` in the speaker's vars; the event is `jobChanged`.
+- The UI: a boss's card gets a **Work** command (`Picker` `work`: an `Ask for work` or `Quit`
+  chip, actions `hire`/`quit`); the panel inside the workplace gets a **Work** action
+  (`ActionId` `work`) whose subtitle is the pay and energy, or why not now; the People
+  overlay's strip names the job. People's troubles to help with are not here yet: when they
+  are, they hang off the same card, behind a command.
+
 ## Inebriation
 
 Drinking alcohol makes the player drunk; nothing else happens yet:

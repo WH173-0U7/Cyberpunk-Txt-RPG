@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARISMA } from '../src/data/skills';
+import { JOBS } from '../src/data/jobs';
 import { CITY } from '../src/data/city';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
@@ -31,6 +32,7 @@ const RULES: GameRules = {
   society: SOCIETY,
   lines: LINES,
   charisma: CHARISMA,
+  jobs: JOBS,
   gear: GEAR,
   money: MONEY,
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
@@ -67,6 +69,14 @@ function check(game: Game, about: string): void {
   expect(again.inventory, `${about}: items after a save`).toEqual(items);
   expect(again.gearSaved, `${about}: pockets after a save`).toEqual(pockets);
   expect(again.wallet, `${about}: wallet after a save`).toEqual(game.wallet);
+  expect(again.jobSaved, `${about}: job after a save`).toEqual(game.jobSaved);
+  // A job is always at a storefront that hires, on a rung of its ladder.
+  const job = game.jobSaved;
+  if (job) {
+    const at = game.world.buildings.find((b) => b.id === job.building);
+    expect(at && JOBS.ladders[at.category]?.[job.rung], `${about}: job at ${job.building} rung ${job.rung}`).toBeTruthy();
+    expect(job.trust, `${about}: trust`).toBeGreaterThanOrEqual(job.shifts * 0);
+  }
 }
 
 describe('playing badly', () => {
@@ -93,6 +103,7 @@ describe('playing badly', () => {
         inebriation: null,
         society: null,
         charisma: null,
+        job: null,
       };
       let now = Date.UTC(2077, 9, 12, 11, 0);
       for (let step = 0; step < 60; step++) {
@@ -124,12 +135,16 @@ describe('playing badly', () => {
           } else if (roll < 0.8 && people.length) {
             const who = rng.pick(people)!.person.id;
             const what = rng.next();
-            if (what < 0.4) game.talk(who, now);
-            else if (what < 0.7) game.rob(who, now);
+            if (what < 0.3) game.talk(who, now);
+            else if (what < 0.55) game.rob(who, now);
+            else if (what < 0.75 && game.workWith(who) === 'hire') game.askForWork(who, now);
+            else if (what < 0.8 && game.workWith(who) === 'quit') game.quit(now);
             else if (game.canChop(who)) {
               const hot = game.inventory.find((i) => i.kind === 'credchip' && i.locked);
               if (hot) game.chop(who, hot.id, now);
             } else game.insult(who, now);
+          } else if (roll < 0.86 && game.jobStatus(now)?.here) {
+            game.work(now);
           } else if (game.bank()) {
             const what = rng.next();
             if (what < 0.3) game.deposit();

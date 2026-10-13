@@ -3,6 +3,7 @@ import type { PocketState } from './carry';
 import type { Money } from './money';
 import type { EnergyState } from './energy';
 import type { InebriationState } from './inebriation';
+import type { JobState } from './jobs';
 import type { SkillState } from './skills';
 import type { SocietyState } from './society';
 import type { Item, ItemKind, Leg, MapState, Point, Trip, Wallet, Whereabouts, World } from './types';
@@ -35,6 +36,8 @@ export interface Progress {
   society: SocietyState | null;
   /** Charisma, as last written down (null: a new player's). */
   charisma: SkillState | null;
+  /** The player's job (null: none). */
+  job: JobState | null;
 }
 
 /** What a save takes from a game in progress (a `Game` has all of it). */
@@ -50,6 +53,7 @@ export interface SaveSource {
   readonly inebriationSaved: InebriationState;
   readonly societySaved: SocietyState;
   readonly charismaSaved: SkillState;
+  readonly jobSaved: JobState | null;
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -84,6 +88,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     inebriation: { ...game.inebriationSaved },
     society: game.societySaved,
     charisma: { ...game.charismaSaved },
+    job: game.jobSaved ? { ...game.jobSaved } : null,
     savedAt: now,
   };
 }
@@ -126,6 +131,8 @@ export function readSave(raw: unknown): SaveData | null {
     // And before there were people to deal with, nobody knew the player (and before they could be known of, no one was).
     society: isSociety(save.society) ? { ...save.society, known: knownOf(save.society.known), links: save.society.links ?? {} } : null,
     charisma: isSkill(save.charisma) ? save.charisma : null,
+    // And before there was work, the player had none.
+    job: isJob(save.job) ? save.job : null,
     savedAt: save.savedAt,
   };
 }
@@ -138,11 +145,12 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job } = save;
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma };
+  // A job at a building this city doesn't have is no job.
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null };
 }
 
 function isItem(value: unknown): value is Item {
@@ -193,6 +201,11 @@ function knownOf(known: SocietyState['known'] | undefined): SocietyState['known'
   const out: SocietyState['known'] = {};
   for (const [id, k] of Object.entries(known ?? {})) out[id] = { ...k, facts: Array.isArray(k.facts) ? k.facts : [], log: Array.isArray(k.log) ? k.log : [] };
   return out;
+}
+
+function isJob(value: unknown): value is JobState {
+  const j = value as Record<string, unknown> | null;
+  return typeof j === 'object' && j !== null && typeof j.building === 'string' && Number.isInteger(j.rung) && (j.rung as number) >= 0 && isNumber(j.trust) && j.trust >= 0 && Number.isInteger(j.shifts) && (j.shifts as number) >= 0 && Number.isInteger(j.lastShiftDay);
 }
 
 function isSkill(value: unknown): value is SkillState {
