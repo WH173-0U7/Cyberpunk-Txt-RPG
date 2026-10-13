@@ -204,7 +204,8 @@ function pocketRow(p: PocketRowView | null, label?: string): HTMLElement {
   const text = el('span', 'inv-open-text');
   text.append(el('span', 'inv-item-name', p.name));
   if (p.sub) text.append(el('span', 'inv-item-sub', p.sub));
-  body.append(text, el('span', 'inv-item-detail', p.detail), el('span', 'inv-item-weight', p.weight));
+  // A row with Take off on it skips its detail (a hat has no pockets to speak of) so the name keeps its room.
+  body.append(text, ...(p.removable ? [] : [el('span', 'inv-item-detail', p.detail)]), el('span', 'inv-item-weight', p.weight));
   if (p.opens) body.append(el('span', 'inv-chevron', '›'));
   li.append(body);
   if (p.removable) {
