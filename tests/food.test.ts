@@ -10,7 +10,9 @@ const QUALITIES: Quality[] = ['luxury', 'everyday', 'poverty'];
 const seeds = Array.from({ length: 200 }, (_, i) => createRng(`food-${i}`).next().toString(16).slice(2, 10));
 const worlds = seeds.map((seed) => generateWorld(seed, CITY));
 const dishById = new Map(FOOD.dishes.map((d) => [d.id, d]));
-const chains = new Set(CITY.buildings.businesses.filter((b) => b.chain).map((b) => b.id));
+// The food chains; a bank is a chain too, with nothing to eat.
+const chains = new Set(CITY.buildings.businesses.filter((b) => b.chain && b.category === 'food').map((b) => b.id));
+const eatery = (business: string | null | undefined) => CITY.buildings.businesses.find((b) => b.id === business)?.category === 'food';
 
 /** Every menu in a city, with where it is. */
 function menus(world: World): Array<{ at: Building | Location; menu: Menu }> {
@@ -51,7 +53,7 @@ describe('the food', () => {
     // Every chain and every real eatery in the city has its menu.
     for (const id of chains) expect(FOOD.fixed[id], id).toBeDefined();
     for (const landmark of CITY.buildings.landmarks ?? []) {
-      if (!landmark.business) continue;
+      if (!landmark.business || !eatery(landmark.business)) continue;
       expect(FOOD.fixed[landmark.name] ?? FOOD.fixed[landmark.business], landmark.name).toBeDefined();
     }
   });
@@ -144,7 +146,7 @@ describe('the food', () => {
     const found = new Set<string>();
     for (const world of worlds) {
       for (const b of world.buildings) {
-        const landmark = (CITY.buildings.landmarks ?? []).find((l) => l.name === b.name && l.business);
+        const landmark = (CITY.buildings.landmarks ?? []).find((l) => l.name === b.name && eatery(l.business));
         if (!landmark) continue;
         found.add(b.name);
         const menu = menuFor(world, b, FOOD);
@@ -154,6 +156,6 @@ describe('the food', () => {
         expect(menu?.items.map((i) => i.id), b.name).toEqual(fixed?.dishes.map((d) => (typeof d === 'string' ? d : d.id)));
       }
     }
-    for (const landmark of CITY.buildings.landmarks ?? []) if (landmark.business) expect(found, landmark.name).toContain(landmark.name);
+    for (const landmark of CITY.buildings.landmarks ?? []) if (eatery(landmark.business)) expect(found, landmark.name).toContain(landmark.name);
   });
 });

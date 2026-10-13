@@ -3,6 +3,7 @@ import { CITY } from './data/city';
 import { ENERGY } from './data/energy';
 import { FOOD } from './data/food';
 import { GEAR } from './data/gear';
+import { MONEY } from './data/money';
 import { itemGrams } from './engine/carry';
 import { INEBRIATION } from './data/inebriation';
 import { LINES } from './data/dialogue';
@@ -30,6 +31,7 @@ import { ITEM_KINDS } from './data/items';
 import { formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
 import { Hud } from './ui/hud';
 import { EnergyMeter } from './ui/energy';
+import { Bank } from './ui/bank';
 import { Inventory } from './ui/inventory';
 import { MapOverlay } from './ui/overlay';
 import { stripMarkup } from './ui/markup';
@@ -83,6 +85,7 @@ const place = new PlacePanel(
       leave: $<HTMLButtonElement>('#act-leave'),
       menu: $<HTMLButtonElement>('#act-menu'),
       people: $<HTMLButtonElement>('#act-people'),
+      bank: $<HTMLButtonElement>('#act-bank'),
     },
     close: $<HTMLButtonElement>('#place-close'),
   },
@@ -174,6 +177,44 @@ const shop = new Shop(
 );
 /** What last happened at the counter, shown under the menu's header until it closes. */
 let shopStatus = '';
+
+const bank = new Bank(
+  {
+    root: $('#bank'),
+    close: $<HTMLButtonElement>('#bank-close'),
+    name: $('#bank-name'),
+    figures: $('#bank-figures'),
+    status: $('#bank-status'),
+    picker: $('#bank-picker'),
+    commands: $('#bank-commands'),
+  },
+  () => showBank(),
+  {
+    onDeposit: () => atTheCounter(() => game.deposit()),
+    onWithdraw: (amount) => atTheCounter(() => game.withdraw(amount)),
+    onChange: () => atTheCounter(() => game.exchange()),
+    onToggleWithdraw: () => {
+      withdrawOpen = !withdrawOpen;
+      showBank();
+    },
+  },
+  reducedMotion,
+);
+/** What the counter last said, and whether the sums to withdraw are unfolded. */
+let bankStatus = '';
+let withdrawOpen = false;
+
+/** Does something at the bank's counter; whatever the game says about it becomes the counter's line. */
+function atTheCounter(act: () => boolean): void {
+  lastActivity = performance.now();
+  const said: string[] = [];
+  const off = game.events.on('output', ({ text }) => said.push(text));
+  act();
+  off();
+  bankStatus = said.at(-1) ?? '';
+  withdrawOpen = false;
+  showBank();
+}
 
 const people = new People(
   {
@@ -318,6 +359,10 @@ function act(id: ActionId): void {
   } else if (id === 'people') {
     personShown = null;
     people.overlay.show($('#act-people'));
+  } else if (id === 'bank' && game.bank()) {
+    bankStatus = '';
+    withdrawOpen = false;
+    bank.overlay.show($('#act-bank'));
   }
 }
 
@@ -336,8 +381,9 @@ function actOn(action: PersonAction, id: string): void {
 function refresh(): void {
   const now = Date.now();
   const trip = game.currentTrip;
-  // The menu and the people are for where the player is; they go when they leave.
+  // The menu, the counter and the people are for where the player is; they go when they leave.
   if (shop.overlay.isOpen && !game.menu()) shop.overlay.close();
+  if (bank.overlay.isOpen && !game.bank()) bank.overlay.close();
   if (people.overlay.isOpen && !game.interior && !game.location) people.overlay.close();
   if (target) {
     const to = destinationOf(target);
@@ -497,14 +543,19 @@ function insideView(building: Building): PanelView {
   const menu = game.menu();
   const here = game.peopleHere(now).length;
   const barred = game.barred(now);
-  const description = barred ?? (menu ? menuBlurb(menu) : here ? 'People live and work in here.' : 'Nobody around right now.');
+  const description = barred ?? (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut.' : here ? 'People live and work in here.' : 'Nobody around right now.');
   return {
     mode: 'inside',
     kicker: `Inside · ${district} · Block ${building.block}`,
     title: building.name,
     meta: [menu ? qualityLabel(menu) : categoryOf(building).label, building.kindLabel, heightOf(building)].filter(Boolean).join(' · '),
     description,
-    actions: [peopleAction(here), ...(menu ? [barred ? { id: 'menu' as const, label: 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []), { id: 'leave', label: 'Leave', quiet: true }],
+    actions: [
+      peopleAction(here),
+      ...(menu ? [barred ? { id: 'menu' as const, label: 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []),
+      ...(game.bank() ? [{ id: 'bank' as const, label: 'Bank', sub: `€$ ${game.wallet.account} banked` }] : []),
+      { id: 'leave', label: 'Leave', quiet: true },
+    ],
     closable: false,
     announce: `Inside ${building.name}. ${description} ${here ? `${here} people here.` : ''}`,
   };
@@ -579,9 +630,28 @@ function tripView(trip: Trip, now: number): PanelView {
 
 function showWallet(wallet: Wallet, now: number): void {
   const pass = wallet.passUntil > now;
-  walletLabel.textContent = `€$ ${wallet.eddies}${pass ? ' · Pass' : ''}`;
+  walletLabel.textContent = `€$ ${wallet.eddies}${wallet.account ? ` · Bank ${wallet.account}` : ''}${pass ? ' · Pass' : ''}`;
   walletLabel.classList.toggle('has-pass', pass);
-  walletLabel.title = pass ? `NCART monthly pass valid until ${formatDay(wallet.passUntil)}` : 'Eurodollars. Buy an NCART monthly pass at any station.';
+  walletLabel.title = `${wallet.bills} €$ in bills, ${wallet.coins} €$ in coins, ${wallet.account} €$ in the bank.${pass ? ` NCART monthly pass valid until ${formatDay(wallet.passUntil)}.` : ' Buy an NCART monthly pass at any station.'}`;
+}
+
+/** Fills the bank's counter with the account, the cash on you, and what can be done with them. */
+function showBank(): void {
+  const at = game.bank();
+  const { bills, coins, account } = game.wallet;
+  const wallet = game.carry().pockets.find((p) => p.holds !== undefined);
+  bank.render({
+    name: at?.name ?? 'Bank',
+    account: `€$ ${account}`,
+    bills: `€$ ${bills}${wallet ? ` of ${wallet.holds}` : ''}`,
+    coins: `€$ ${coins} · ${formatGrams(coins * GEAR.gramsPerCoin)}`,
+    fee: `${Math.round((at?.fee ?? 0) * 100)}% on coins`,
+    status: bankStatus,
+    canDeposit: bills + coins > 0,
+    canChange: coins > 0,
+    withdrawals: (at?.withdrawals ?? []).map((amount) => ({ amount, enabled: amount <= account })),
+    withdrawOpen,
+  });
 }
 
 /** Fills the inventory: every pocket the player wears, how full it is, and what's in it. */
@@ -605,9 +675,10 @@ function showInventory(): void {
           .filter((item) => item.in === p.id)
           .sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.name.localeCompare(b.name))
           .map((item) => ({ ...item, use: useLabel(item), weight: formatGrams(item.count * itemGrams(item, GEAR, FOOD.dishes)) })),
-        inside: pockets
-          .filter((q) => q.in === p.id)
-          .map((q) => ({ id: q.id, name: q.name, detail: q.holds !== undefined ? `€$ ${q.eddies} of ${q.holds}` : `${q.load.slots}/${q.slots}`, weight: formatGrams(q.grams), over: q.over })),
+        inside: [
+          ...pockets.filter((q) => q.in === p.id).map((q) => ({ id: q.id, name: q.name, detail: q.holds !== undefined ? `€$ ${q.bills} of ${q.holds} in bills` : `${q.load.slots}/${q.slots}`, weight: formatGrams(q.grams), over: q.over })),
+          ...(p.coins ? [{ id: `${p.id}-coins`, name: 'Coins', detail: `€$ ${p.coins}`, weight: formatGrams(p.coins * GEAR.gramsPerCoin), over: false }] : []),
+        ],
       })),
   });
 }
@@ -735,7 +806,10 @@ function buyFromShop(id: string): void {
   if (!item) return;
   // The game says why not, if not: short of eddies, no pocket with room, barred.
   const why = game.canBuy(id);
-  shopStatus = why ?? (game.buy(id) ? `Bought ${item.name} for ${item.price} €$ · €$ ${game.wallet.eddies} left` : '');
+  const before = game.wallet;
+  const bought = !why && game.buy(id);
+  const how = bought && game.wallet.account < before.account ? 'by transfer' : 'in cash';
+  shopStatus = why ?? (bought ? `Bought ${item.name} for ${item.price} €$ ${how} · €$ ${game.wallet.eddies} on you${game.wallet.account ? `, €$ ${game.wallet.account} banked` : ''}` : '');
   showShop();
 }
 
@@ -746,7 +820,7 @@ function showSettings(): void {
   settings.render({
     seed: game.world.seed.toUpperCase(),
     // A no-break space keeps the eddies sign with its number.
-    progress: `Right now you've mapped ${mapped} of ${places} places and have €$\u00a0${game.wallet.eddies}.`,
+    progress: `Right now you've mapped ${mapped} of ${places} places and have €$\u00a0${game.wallet.eddies} on you${game.wallet.account ? ` and €$\u00a0${game.wallet.account} in the bank` : ''}.`,
   });
 }
 
@@ -881,7 +955,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY }, progress);
   wire(game);
   map.setWorld(world);
   seedLabel.textContent = `Seed ${world.seed.toUpperCase()}`;

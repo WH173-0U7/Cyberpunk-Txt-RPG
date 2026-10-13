@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
-import { fits, itemGrams, loadOf, loads, newPocketId, placeFor, pocketGrams, stackSlots, totalGrams, walletRoom, type GearContent, type PocketState } from '../src/engine/carry';
+import { changeRoom, fits, itemGrams, loadOf, loads, newPocketId, placeFor, pocketGrams, stackSlots, totalGrams, walletRoom, type GearContent, type PocketState } from '../src/engine/carry';
 import type { Item } from '../src/engine/types';
 
 const dishes = FOOD.dishes;
@@ -27,49 +27,68 @@ describe('carrying things', () => {
     expect(stackSlots({ kind: 'weapon' }, 2, GEAR)).toBe(2);
   });
 
-  it('counts the wallet as a slot of the pants, and the eddies in it as weight', () => {
-    const eddies = 320;
-    expect(loadOf(worn[1] as PocketState, worn, [], eddies, GEAR, dishes)).toEqual({ slots: 1, grams: GEAR.kinds.wallet!.grams + eddies * GEAR.gramsPerEddy });
-    expect(pocketGrams(worn[2] as PocketState, worn, [], eddies, GEAR, dishes)).toBe(GEAR.kinds.wallet!.grams + eddies);
-    expect(loadOf(worn[0] as PocketState, worn, [taco(3), sake(1)], eddies, GEAR, dishes)).toEqual({ slots: 3, grams: 3 * GEAR.dish.food + GEAR.dish.alcohol });
-    expect(totalGrams(worn, [taco(3), sake(1)], eddies, GEAR, dishes)).toBe(3 * GEAR.dish.food + GEAR.dish.alcohol + GEAR.kinds.wallet!.grams + eddies);
-    const all = loads(worn, [taco(3)], eddies, GEAR, dishes);
+  it('counts the wallet as a slot of the pants, the bills in it as weight, and the coins as a slot and weight of their own', () => {
+    const money = { bills: 320, coins: 0 };
+    const walletGrams = GEAR.kinds.wallet!.grams + 320 * GEAR.gramsPerBill;
+    expect(loadOf(worn[1] as PocketState, worn, [], money, GEAR, dishes)).toEqual({ slots: 1, grams: Math.round(walletGrams) });
+    expect(pocketGrams(worn[2] as PocketState, worn, [], money, GEAR, dishes)).toBe(Math.round(walletGrams));
+    expect(loadOf(worn[0] as PocketState, worn, [taco(3), sake(1)], money, GEAR, dishes)).toEqual({ slots: 3, grams: 3 * GEAR.dish.food + GEAR.dish.alcohol });
+    expect(totalGrams(worn, [taco(3), sake(1)], money, GEAR, dishes)).toBe(3 * GEAR.dish.food + GEAR.dish.alcohol + Math.round(walletGrams));
+    const all = loads(worn, [taco(3)], money, GEAR, dishes);
     expect(all.map((p) => p.id)).toEqual(['jacket', 'pants', 'wallet']);
-    expect(all[2]).toMatchObject({ eddies, holds: GEAR.kinds.wallet!.holds, over: false, grams: GEAR.kinds.wallet!.grams + eddies });
-    expect(loads(worn, [], 5000, GEAR, dishes)[2]?.over).toBe(true);
+    expect(all[2]).toMatchObject({ bills: 320, holds: GEAR.kinds.wallet!.holds, over: false, grams: Math.round(walletGrams) });
+    expect(loads(worn, [], { bills: 5000, coins: 0 }, GEAR, dishes)[2]?.over).toBe(true);
+    // Coins: a slot of the pants when there are any, and heavy.
+    const change = { bills: 0, coins: 30 };
+    expect(loadOf(worn[1] as PocketState, worn, [], change, GEAR, dishes)).toEqual({ slots: 2, grams: GEAR.kinds.wallet!.grams + 30 * GEAR.gramsPerCoin });
+    expect(loads(worn, [], change, GEAR, dishes)[1]).toMatchObject({ coins: 30 });
+    expect(loads(worn, [], change, GEAR, dishes)[0]?.coins).toBeUndefined();
+  });
+
+  it('knows how many more coins the change pocket will bear', () => {
+    const none = { bills: 0, coins: 0 };
+    // An empty pants pocket: the weight limit, less the wallet.
+    expect(changeRoom(worn, [], none, GEAR, dishes)).toBe(Math.floor((GEAR.kinds.pants!.maxGrams - GEAR.kinds.wallet!.grams) / GEAR.gramsPerCoin));
+    // Pants full of things and no coins yet: no slot for them.
+    const stuffed = [taco(1, 'pants'), sake(1, 'pants')];
+    expect(changeRoom(worn, stuffed, none, GEAR, dishes)).toBe(0);
+    // Some coins already there keep their slot; only the weight limits more.
+    expect(changeRoom(worn, stuffed, { bills: 0, coins: 10 }, GEAR, dishes)).toBeGreaterThan(0);
+    expect(changeRoom(worn.slice(0, 1), [], none, GEAR, dishes)).toBe(0);
   });
 
   it('puts things where they fit: with their own kind first, then the first pocket with room, or nowhere', () => {
     const items = [taco(1)];
-    expect(placeFor(worn, items, 50, taco(1), 1, GEAR, dishes)).toBe('jacket');
+    const fifty = { bills: 50, coins: 0 };
+    expect(placeFor(worn, items, fifty, taco(1), 1, GEAR, dishes)).toBe('jacket');
     // A jacket with its four slots full: the pants take it.
     const full = [taco(2), sake(1), sake(1, 'jacket'), { id: 'nicola', kind: 'consumable', name: 'Nicola', count: 2, in: 'jacket' } as Item];
-    expect(loadOf(worn[0] as PocketState, worn, full, 50, GEAR, dishes).slots).toBe(4);
-    expect(fits(worn[0] as PocketState, worn, full, 50, taco(1), 1, GEAR, dishes)).toBe(false);
-    expect(placeFor(worn, full, 50, taco(1), 1, GEAR, dishes)).toBe('pants');
+    expect(loadOf(worn[0] as PocketState, worn, full, fifty, GEAR, dishes).slots).toBe(4);
+    expect(fits(worn[0] as PocketState, worn, full, fifty, taco(1), 1, GEAR, dishes)).toBe(false);
+    expect(placeFor(worn, full, fifty, taco(1), 1, GEAR, dishes)).toBe('pants');
     // Too heavy for the pants, even with slots to spare: nowhere.
     const heavy = [...full, sake(2, 'pants')];
-    expect(placeFor(worn, heavy, 50, sake(1), 1, GEAR, dishes)).toBeNull();
+    expect(placeFor(worn, heavy, fifty, sake(1), 1, GEAR, dishes)).toBeNull();
     // The wallet holds eddies, never things.
-    expect(fits(worn[2] as PocketState, worn, [], 0, taco(1), 1, GEAR, dishes)).toBe(false);
+    expect(fits(worn[2] as PocketState, worn, [], { bills: 0, coins: 0 }, taco(1), 1, GEAR, dishes)).toBe(false);
     // A bag makes room again.
     const withBag = [...worn, { id: 'duffel-bag-1', kind: 'duffel-bag', in: null }];
-    expect(placeFor(withBag, heavy, 50, sake(1), 1, GEAR, dishes)).toBe('duffel-bag-1');
+    expect(placeFor(withBag, heavy, fifty, sake(1), 1, GEAR, dishes)).toBe('duffel-bag-1');
     expect(newPocketId('duffel-bag', withBag)).toBe('duffel-bag-2');
   });
 
-  it('knows how many more eddies the wallet will hold, and none without one', () => {
+  it('knows how many more bills the wallet will hold, and none without one', () => {
     const holds = GEAR.kinds.wallet!.holds ?? 0;
-    expect(walletRoom(worn, 0, GEAR)).toBe(holds);
-    expect(walletRoom(worn, holds - 10, GEAR)).toBe(10);
-    expect(walletRoom(worn, holds + 500, GEAR)).toBe(0);
-    expect(walletRoom(worn.slice(0, 2), 0, GEAR)).toBe(0);
+    expect(walletRoom(worn, { bills: 0, coins: 0 }, GEAR)).toBe(holds);
+    expect(walletRoom(worn, { bills: holds - 10, coins: 400 }, GEAR)).toBe(10);
+    expect(walletRoom(worn, { bills: holds + 500, coins: 0 }, GEAR)).toBe(0);
+    expect(walletRoom(worn.slice(0, 2), { bills: 0, coins: 0 }, GEAR)).toBe(0);
   });
 
   it('copes with pockets of a kind the rules do not have', () => {
     const odd: PocketState[] = [{ id: 'x', kind: 'nothing', in: null }];
     const rules: GearContent = { ...GEAR, kinds: {} };
-    expect(loadOf(odd[0] as PocketState, odd, [taco(1, 'x')], 0, rules, dishes)).toEqual({ slots: 1, grams: GEAR.dish.food });
-    expect(placeFor(odd, [], 0, taco(1), 1, rules, dishes)).toBeNull();
+    expect(loadOf(odd[0] as PocketState, odd, [taco(1, 'x')], { bills: 0, coins: 0 }, rules, dishes)).toEqual({ slots: 1, grams: GEAR.dish.food });
+    expect(placeFor(odd, [], { bills: 0, coins: 0 }, taco(1), 1, rules, dishes)).toBeNull();
   });
 });

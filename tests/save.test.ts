@@ -3,6 +3,7 @@ import { CITY } from '../src/data/city';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
+import { MONEY } from '../src/data/money';
 import { INEBRIATION } from '../src/data/inebriation';
 import { LINES } from '../src/data/dialogue';
 import { PEOPLE } from '../src/data/people';
@@ -17,7 +18,7 @@ import type { World } from '../src/engine/types';
 
 const world = generateWorld('7f3a29c1', CITY);
 const T0 = Date.UTC(2077, 9, 12, 20, 0);
-const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR };
+const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY };
 
 /** Plays a few moves on foot to places next door, letting each trip finish. Returns the game and the time. */
 function played(steps: number): { game: Game; now: number } {
@@ -96,6 +97,25 @@ describe('saving', () => {
     const handed = resumed.inventory;
     handed[0]!.count = 99;
     expect(resumed.inventory[0]?.count).toBe(1);
+  });
+
+  it('carries cash and the account, and reads an old save\'s eddies as bills', () => {
+    const { game, now } = played(1);
+    const money = { bills: 30, coins: 7, account: 120 };
+    const saved = { ...saveOf(game, now), money };
+    const read = readSave(JSON.parse(JSON.stringify(saved)));
+    expect(read?.money).toEqual(money);
+    const progress = read && resume(world, read);
+    if (!progress) throw new Error('no progress');
+    expect(new Game(world, rules, progress).wallet).toMatchObject({ ...money, eddies: 37 });
+    // A save from before: one number, all of it bills, none in the bank.
+    const { money: _m, ...old } = saveOf(game, now);
+    const oldRead = readSave(JSON.parse(JSON.stringify({ ...old, eddies: 42 })));
+    expect(oldRead?.money).toBeNull();
+    const oldProgress = oldRead && resume(world, oldRead);
+    if (!oldProgress) throw new Error('no progress');
+    expect(new Game(world, rules, oldProgress).wallet).toMatchObject({ bills: 42, coins: 0, account: 0, eddies: 42 });
+    expect(readSave({ ...saved, money: { bills: -1, coins: 0, account: 0 } })?.money).toBeNull();
   });
 
   it('carries energy, and starts it fresh for saves from before it or that make no sense', () => {

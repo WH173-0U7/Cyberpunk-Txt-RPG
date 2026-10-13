@@ -57,11 +57,25 @@ Everything the player owns is in a pocket; food and drink are the only items so 
   (room, or none) and sets `in`; old saves with items in no pocket are put away by `stow`.
 - `src/engine/carry.ts` is the arithmetic: what a thing weighs (`itemGrams`: by its kind,
   or a dish's own `grams`), how many share a slot (`stackSlots`), a pocket's load (its
-  stacks, the pockets inside it a slot each, the eddies in a wallet as weight), `fits`,
-  `placeFor` (a pocket already holding some of it first), `walletRoom`. `src/data/gear.ts`
-  has the numbers: the pockets of the clothes, the wallet (`holds` eddies, a gram each), the
-  bags and what stores rack them. Nothing is canon here: the wiki's 2077 clothing has no
-  bags, so the gear is generic and named for what it is.
+  stacks, the pockets inside it a slot each, the bills in a wallet and the coins in the
+  change pocket as weight, the coins a slot too), `fits`, `placeFor` (a pocket already
+  holding some of it first), `walletRoom` (bills) and `changeRoom` (coins). `src/data/gear.ts`
+  has the numbers: the pockets of the clothes, the wallet (`holds` bills), which pocket takes
+  the `change`, grams per €$ in bills and in coins, the bags and what stores rack them.
+  Nothing is canon here: the wiki's 2077 clothing has no bags, so the gear is generic and
+  named for what it is.
+- Eddies are `Money` (`src/engine/money.ts`): `bills` and `coins` on hand, and the
+  `account`; `Game.wallet` has all three and `eddies` (the cash). Every payment goes
+  through `Game`'s private `pay(price, transfers)`: a transfer from the account where the
+  counter takes one (`MONEY.transfers`: chains, luxury places, racks of gear, the NCART)
+  and the account covers it, else cash through `payCash` (coins first, notes of `noteMin`
+  and up, change back in coins as far as `changeRoom` allows). Anything that pays the
+  player cash goes through `walletRoom`/`changeRoom` (see `rob`); anything that takes it,
+  `takeCash` (bills first). A bank is a building whose business is `bank` (the `EuroBank`
+  chain and the Asukaga & Finch landmark in `src/data/city.ts`, both canon names):
+  `Game.bank()`, `deposit()`, `withdraw(amount)`, `exchange()`, with the numbers in
+  `src/data/money.ts`; `src/ui/bank.ts` is its counter. Saved as `money` (old saves' `eddies`
+  become bills).
 - A store with a rack (`GEAR.racks`, by business id) gets a `Menu` of kind `gear` from
   `Game.menu()`, priced by the store's quality like food; buying gear adds a pocket (worn,
   `in: null`). `Game.canBuy(id)` says why not (barred, short, no room) so the shop can.
