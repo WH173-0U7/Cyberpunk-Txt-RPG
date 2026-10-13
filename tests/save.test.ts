@@ -74,17 +74,19 @@ describe('saving', () => {
     const { game, now } = played(1);
     expect(game.inventory).toEqual([]);
     const shard = { id: 'shard-1', kind: 'shard', name: 'Old Shard', count: 1 };
-    const saved = { ...saveOf(game, now), items: [shard, { id: 'x', kind: 'spaceship', name: 'Nope', count: 1 }, { ...shard, count: 0 }, 'junk'] };
+    // A credchip keeps what's on it and whether it's locked; one that makes no sense is dropped with the rest.
+    const chip = { id: 'credchip-1', kind: 'credchip', name: 'CredChip', count: 1, in: 'wallet', balance: 120, locked: true };
+    const saved = { ...saveOf(game, now), items: [shard, { id: 'x', kind: 'spaceship', name: 'Nope', count: 1 }, { ...shard, count: 0 }, 'junk', chip, { ...chip, id: 'credchip-2', balance: -5 }, { ...chip, id: 'credchip-3', locked: 'yes' }] };
     const read = readSave(JSON.parse(JSON.stringify(saved)));
-    expect(read?.items).toEqual([shard]);
+    expect(read?.items).toEqual([shard, chip]);
     const { items: _, ...old } = saveOf(game, now);
     expect(readSave(JSON.parse(JSON.stringify(old)))?.items).toEqual([]);
 
     const progress = read && resume(world, read);
     if (!progress) throw new Error('no progress');
     const resumed = new Game(world, rules, progress);
-    // The shard said no pocket: it's put away in the jacket.
-    expect(resumed.inventory).toEqual([{ ...shard, in: 'jacket' }]);
+    // The shard said no pocket: it's put away in the jacket. The chip stays in the wallet.
+    expect(resumed.inventory).toEqual([{ ...shard, in: 'jacket' }, chip]);
     expect(read?.gear).toEqual(GEAR.start);
     // A save from before pockets has none: the player wears the usual.
     const { items: _i, gear: _g, ...older } = saveOf(game, now);

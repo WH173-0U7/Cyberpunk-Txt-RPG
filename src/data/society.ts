@@ -15,7 +15,8 @@ import type { SocietyRules } from '../engine/society';
  * gives a point and a half for free, a friend three. So around level 3 strangers start to
  * give their age, around level 5 who they hate and, now and then, where they live; a warm
  * person tells you most things, a friend everything. Asking again within the talk cooldown
- * after a no costs two rapport.
+ * after a no costs two rapport. A netrunner chops a stolen credchip about as readily as a
+ * stranger talks about their work, the greedy more so.
  */
 export const SOCIETY: SocietyRules = {
   closeness: { spouse: 1, parent: 0.9, child: 0.9, sibling: 0.8, cousin: 0.5, uncle: 0.5, nephew: 0.5, kin: 0.4, friend: 0.5, crew: 0.45, coworker: 0.3 },
@@ -29,11 +30,12 @@ export const SOCIETY: SocietyRules = {
   talk: { base: 4, cooldownMinutes: 90, revealAt: 20 },
   gift: { base: 6, favorite: 12 },
   insult: { rapport: 8 },
+  chop: { rapport: 2 },
   openness: {
     stance: { hostile: -9, cold: -2.5, wary: -1.2, neutral: 0, warm: 1.5, friend: 3 },
     perLevel: 0.5,
-    traits: { chatty: 1.2, warmth: 0.8, loyalty: 1, courage: 1 },
-    cost: { name: -1, job: 0, likes: 0, age: 1, hates: 1.2, home: 2, kin: 1.6, district: -1, life: -1, here: -1, rumor: -1 },
+    traits: { chatty: 1.2, warmth: 0.8, loyalty: 1, courage: 1, greed: 1 },
+    cost: { name: -1, job: 0, likes: 0, age: 1, hates: 1.2, home: 2, kin: 1.6, district: -1, life: -1, here: -1, rumor: -1, chop: 0.4 },
     answerAt: 1,
     deflectAt: -1,
     press: 2,

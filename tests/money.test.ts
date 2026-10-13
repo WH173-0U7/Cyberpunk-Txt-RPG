@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MONEY } from '../src/data/money';
-import { cash, changeCoins, coinFee, deposit, freshMoney, payCash, splitLoot, takeCash, withdraw } from '../src/engine/money';
+import { cash, changeCoins, chipCut, coinFee, deposit, freshMoney, payCash, splitLoot, takeCash, withdraw } from '../src/engine/money';
 
 describe('money', () => {
   it('pays coins first, then bills in notes, with the difference back in coins', () => {
@@ -43,5 +43,14 @@ describe('money', () => {
     expect(withdraw({ bills: 0, coins: 0, account: 48 }, 0)).toBeNull();
     expect(changeCoins({ bills: 10, coins: 40, account: 0 }, MONEY)).toEqual({ money: { bills: 48, coins: 0, account: 0 }, fee: 2 });
     expect(changeCoins({ bills: 10, coins: 0, account: 0 }, MONEY)).toBeNull();
+  });
+
+  it('gives a netrunner a quarter of a chopped chip, and never nothing', () => {
+    expect(chipCut(0, MONEY)).toBe(0);
+    expect(chipCut(1, MONEY)).toBe(1);
+    expect(chipCut(2, MONEY)).toBe(1);
+    expect(chipCut(10, MONEY)).toBe(3);
+    expect(chipCut(120, MONEY)).toBe(30);
+    expect(chipCut(121, MONEY)).toBe(30);
   });
 });

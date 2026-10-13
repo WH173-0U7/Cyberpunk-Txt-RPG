@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
-import { changeRoom, fits, itemGrams, loadOf, loads, newPocketId, placeFor, pocketGrams, stackSlots, totalGrams, walletRoom, type GearContent, type PocketState } from '../src/engine/carry';
+import { changeRoom, fits, itemGrams, loadOf, loads, newChipId, newPocketId, placeFor, pocketGrams, stackSlots, totalGrams, walletRoom, type GearContent, type PocketState } from '../src/engine/carry';
 import type { Item } from '../src/engine/types';
 
 const dishes = FOOD.dishes;
@@ -69,12 +69,32 @@ describe('carrying things', () => {
     // Too heavy for the pants, even with slots to spare: nowhere.
     const heavy = [...full, sake(2, 'pants')];
     expect(placeFor(worn, heavy, fifty, sake(1), 1, GEAR, dishes)).toBeNull();
-    // The wallet holds eddies, never things.
+    // The wallet holds eddies and credchips, never things.
     expect(fits(worn[2] as PocketState, worn, [], { bills: 0, coins: 0 }, taco(1), 1, GEAR, dishes)).toBe(false);
     // A bag makes room again.
     const withBag = [...worn, { id: 'duffel-bag-1', kind: 'duffel-bag', in: null }];
     expect(placeFor(withBag, heavy, fifty, sake(1), 1, GEAR, dishes)).toBe('duffel-bag-1');
     expect(newPocketId('duffel-bag', withBag)).toBe('duffel-bag-2');
+  });
+
+  it('keeps credchips in the wallet while it has card slots, then in a pocket', () => {
+    const chip = (n: number, where = 'wallet'): Item => ({ id: `credchip-${n}`, kind: 'credchip', name: 'CredChip', count: 1, in: where, balance: 10 * n, locked: n % 2 === 0 });
+    const none = { bills: 0, coins: 0 };
+    expect(fits(worn[2] as PocketState, worn, [], none, chip(1), 1, GEAR, dishes)).toBe(true);
+    expect(placeFor(worn, [], none, chip(1), 1, GEAR, dishes)).toBe('wallet');
+    // Four card slots; the fifth chip goes in a pocket, a slot of its own.
+    const four = [chip(1), chip(2), chip(3), chip(4)];
+    expect(fits(worn[2] as PocketState, worn, four, none, chip(5), 1, GEAR, dishes)).toBe(false);
+    expect(placeFor(worn, four, none, chip(5), 1, GEAR, dishes)).toBe('jacket');
+    expect(loadOf(worn[0] as PocketState, worn, [...four, chip(5, 'jacket')], none, GEAR, dishes)).toEqual({ slots: 1, grams: GEAR.items.credchip.grams });
+    // They weigh a little, and the wallet says how many it holds.
+    expect(loadOf(worn[2] as PocketState, worn, four, none, GEAR, dishes).grams).toBe(4 * GEAR.items.credchip.grams);
+    expect(loads(worn, four, none, GEAR, dishes)[2]).toMatchObject({ chips: 4, chipSlots: GEAR.kinds.wallet!.chips, over: false });
+    expect(loads(worn, [...four, chip(5)], none, GEAR, dishes)[2]?.over).toBe(true);
+    expect(loads(worn, four, none, GEAR, dishes)[0]?.chips).toBeUndefined();
+    // Each chip is its own thing, with its own id.
+    expect(newChipId(four)).toBe('credchip-5');
+    expect(newChipId([])).toBe('credchip-1');
   });
 
   it('knows how many more bills the wallet will hold, and none without one', () => {

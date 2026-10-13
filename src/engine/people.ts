@@ -47,6 +47,8 @@ export interface PeopleContent {
   };
   /** Residents per district on top of the people its storefronts employ. */
   residents: [number, number];
+  /** Who carries a credchip, and with how much on it: the odds and the range, for corpos, gangers and the street. */
+  chips: Record<'corpo' | 'gang' | 'street', { chance: number; range: [number, number] }>;
   /** Kinds of place people go to in the evening. */
   hangouts: string[];
   /** One line each, picked by a person's strongest trait. */
@@ -83,6 +85,8 @@ export interface Person {
   hates: string | null;
   /** Eddies on them, for anyone who takes them. */
   eddies: number;
+  /** Eddies on their credchip, for anyone who takes it and gets it chopped (0: they carry none). */
+  chip: number;
   bio: string;
 }
 
@@ -177,6 +181,7 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
         likes: { dish: pickDish(rng, dishes, district.id, 'food'), drink: pickDish(rng, dishes, district.id, gang ? 'alcohol' : 'drink'), hangout: null },
         hates: null,
         eddies: 0,
+        chip: 0,
         bio: '',
       };
       people.push(person);
@@ -245,6 +250,10 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
       }
       const corpo = person.job.building ? world.buildings.find((b) => b.id === person.job.building)?.kind === 'tower' : false;
       person.eddies = Math.round((corpo ? rng.int(60, 220) : gang ? rng.int(20, 90) : rng.int(8, 60)) * (0.7 + person.traits.greed * 0.6));
+      // Their credchip, if they carry one: drawn on its own stream, so the city's people stay who they were.
+      const purse = content.chips[corpo ? 'corpo' : gang ? 'gang' : 'street'];
+      const chipRng = createRng(`${world.seed}:chip:${person.id}`);
+      person.chip = chipRng.chance(purse.chance) ? chipRng.int(purse.range[0], purse.range[1]) : 0;
     }
     byDistrict.set(district.id, locals);
   }
@@ -276,6 +285,13 @@ export function tiesOf(population: Population, id: string): Tie[] {
 
 export function personById(population: Population, id: string): Person | undefined {
   return population.people.find((p) => p.id === id);
+}
+
+/** Whether someone can crack a stolen credchip: a netrunner by trade, or anyone behind a netrunning counter. */
+export function isNetrunner(person: Person, world: World): boolean {
+  if (/netrunner|deck tech|quickhack/i.test(person.job.role)) return true;
+  const work = person.job.building ? world.buildings.find((b) => b.id === person.job.building) : undefined;
+  return work?.category === 'netrunning';
 }
 
 /** Where a person is at a moment, and what they're doing there. Null when they're out on the streets somewhere. */

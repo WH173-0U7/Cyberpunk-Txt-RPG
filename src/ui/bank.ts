@@ -8,12 +8,16 @@ export interface BankView {
   /** "€$ 45 of 1,000", "€$ 7 · 42 g". */
   bills: string;
   coins: string;
+  /** The credchips on you: "2 · €$ 340, 1 locked", or "None". */
+  chips: string;
   /** What the bank keeps for counting coins, e.g. "5% on coins". */
   fee: string;
   /** What last happened at the counter. */
   status: string;
   canDeposit: boolean;
   canChange: boolean;
+  /** Whether there's a chip in the player's name to bank. */
+  canBankChips: boolean;
   /** Sums the counter hands over, and whether each can be had. */
   withdrawals: Array<{ amount: number; enabled: boolean }>;
   withdrawOpen: boolean;
@@ -31,13 +35,14 @@ export interface BankHandlers {
   onDeposit(): void;
   onWithdraw(amount: number): void;
   onChange(): void;
+  onChips(): void;
   onToggleWithdraw(): void;
 }
 
 /**
- * A bank's counter, over the map: the account, the cash on you, and three things to do with
- * them. It shows whatever view it's given; the game decides what each does. Opened from the
- * panel inside a bank.
+ * A bank's counter, over the map: the account, the cash and the chips on you, and four things
+ * to do with them. It shows whatever view it's given; the game decides what each does. Opened
+ * from the panel inside a bank.
  */
 export class Bank {
   readonly overlay: MapOverlay;
@@ -55,6 +60,7 @@ export class Bank {
       const { cmd, amount } = button.dataset;
       if (cmd === 'deposit') handlers.onDeposit();
       else if (cmd === 'change') handlers.onChange();
+      else if (cmd === 'chips') handlers.onChips();
       else if (cmd === 'withdraw') handlers.onToggleWithdraw();
       else if (amount) handlers.onWithdraw(Number(amount));
     };
@@ -65,7 +71,7 @@ export class Bank {
   render(view: BankView): void {
     const { els } = this;
     els.name.textContent = view.name;
-    els.figures.replaceChildren(figure('Account', view.account, 'is-account'), figure('Bills', view.bills), figure('Coins', view.coins), figure('Fee', view.fee, 'is-fee'));
+    els.figures.replaceChildren(figure('Account', view.account, 'is-account'), figure('Bills', view.bills), figure('Coins', view.coins), figure('Chips', view.chips), figure('Fee', view.fee, 'is-fee'));
     els.status.textContent = view.status;
     const active = document.activeElement instanceof HTMLElement ? (document.activeElement.dataset.cmd ?? document.activeElement.dataset.amount) : undefined;
     els.picker.hidden = !view.withdrawOpen;
@@ -82,6 +88,7 @@ export class Bank {
       { cmd: 'deposit', label: 'Deposit', enabled: view.canDeposit },
       { cmd: 'withdraw', label: 'Withdraw', enabled: view.withdrawals.some((w) => w.enabled) || view.withdrawOpen, active: view.withdrawOpen },
       { cmd: 'change', label: 'Change', enabled: view.canChange },
+      { cmd: 'chips', label: 'Chips', enabled: view.canBankChips },
     ];
     els.commands.replaceChildren(
       ...commands.map((c) => {
@@ -89,7 +96,7 @@ export class Bank {
         button.type = 'button';
         button.dataset.cmd = c.cmd;
         button.disabled = !c.enabled;
-        button.title = c.cmd === 'deposit' ? 'All your cash into the account' : c.cmd === 'withdraw' ? 'Bills out of the account' : 'Coins for bills, less the cut';
+        button.title = c.cmd === 'deposit' ? 'All your cash into the account' : c.cmd === 'withdraw' ? 'Bills out of the account' : c.cmd === 'chips' ? 'The chips in your name into the account' : 'Coins for bills, less the cut';
         if (c.active !== undefined) button.setAttribute('aria-pressed', String(c.active));
         return button;
       }),

@@ -1465,6 +1465,15 @@ button {
   text-transform: uppercase;
   font-size: 11px;
 }
+/* What's in it (the chips in the wallet) sits under it, set in a little */
+.inv-item.is-inner {
+  padding-left: 12px;
+  border-left: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+}
+/* A chip that isn't in your name yet */
+.inv-item.is-locked .inv-item-detail {
+  color: var(--danger);
+}
 .inv-section.is-over .inv-section-count,
 .inv-pocket.is-over .inv-item-detail {
   color: var(--danger);
@@ -1564,6 +1573,12 @@ button {
 }
 .bank-body .person-commands {
   margin-top: auto;
+}
+/* Four commands share the counter's row: tighter type so Withdraw fits at phone width */
+.bank-body .person-cmd {
+  padding: 6px 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
 }
 .person-cmd:disabled,
 .person-chip:disabled {

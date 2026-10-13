@@ -3,7 +3,9 @@
  * wiki: hologram-marked bills, €$100 notes strapped by the hundred; the coins are the 2020
  * ones carried forward): it weighs something, it can be taken off you, and street counters
  * want it. The account is the holo's side of money: weightless, safe, and what chains,
- * corpo places and the NCART take. Banks move eddies between the two. The numbers are in
+ * corpo places and the NCART take. Banks move eddies between the two. Credchips (the wiki's
+ * 2020 chips of eurodollars, "chops" on the street) are items with a balance: taken off
+ * someone they come locked, and a netrunner chops them for a cut. The numbers are in
  * `src/data/money.ts`.
  */
 export interface Money {
@@ -24,8 +26,10 @@ export interface MoneyRules {
   coinFee: number;
   /** What a bank hands over in one go. */
   withdrawals: number[];
-  /** Who takes a transfer from the account instead of cash. */
+  /** Who takes a transfer from the account (or a credchip) instead of cash. */
   transfers: { chain: boolean; luxury: boolean; gear: boolean; ncart: boolean };
+  /** A netrunner's cut for chopping a stolen credchip (0.25: a quarter of what's on it). */
+  chopCut: number;
 }
 
 export function freshMoney(bills: number): Money {
@@ -89,4 +93,9 @@ export function changeCoins(money: Money, rules: MoneyRules): { money: Money; fe
 /** The bank's cut for counting coins: the share, to the nearest eddie (a handful of change counts for free). */
 export function coinFee(coins: number, rules: MoneyRules): number {
   return coins > 0 ? Math.min(coins, Math.round(coins * rules.coinFee)) : 0;
+}
+
+/** A netrunner's cut for chopping a credchip with `balance` on it: the share, to the nearest eddie, and never nothing. */
+export function chipCut(balance: number, rules: MoneyRules): number {
+  return balance > 0 ? Math.min(balance, Math.max(1, Math.round(balance * rules.chopCut))) : 0;
 }

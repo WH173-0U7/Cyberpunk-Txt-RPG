@@ -3,7 +3,7 @@ import { CITY } from '../src/data/city';
 import { FOOD } from '../src/data/food';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
-import { generatePeople, INVERSE, peopleAt, tiesOf, whereIs, type Population, type TieKind } from '../src/engine/people';
+import { generatePeople, INVERSE, isNetrunner, peopleAt, tiesOf, whereIs, type Population, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 
@@ -44,6 +44,7 @@ describe('the people', () => {
         expect(p.age).toBeGreaterThanOrEqual(18);
         expect(p.bio.length).toBeGreaterThan(10);
         expect(p.eddies).toBeGreaterThan(0);
+        expect(p.chip).toBeGreaterThanOrEqual(0);
         if (p.home) expect(world.buildings.find((b) => b.id === p.home)).toMatchObject({ district: p.district, category: 'residential' });
         if (p.job.building) expect(world.buildings.find((b) => b.id === p.job.building)?.district, p.name).toBe(p.district);
         if (p.gang) expect((PEOPLE.turf[p.district] ?? []).map(([g]) => g), p.name).toContain(p.gang);
@@ -55,6 +56,33 @@ describe('the people', () => {
       expect(new Set(names).size, world.seed).toBe(names.length);
       expect(new Set(people.map((p) => p.id)).size, world.seed).toBe(names.length);
     }
+  });
+
+  it('puts a credchip on some of them, corpos most of all, and knows who can chop one', () => {
+    const all = cities.flatMap(({ world, population }) => population.people.map((p) => ({ p, world })));
+    const corpo = ({ p, world }: (typeof all)[number]) => Boolean(p.job.building && world.buildings.find((b) => b.id === p.job.building)?.kind === 'tower');
+    const corpos = all.filter(corpo);
+    const gangers = all.filter(({ p }) => p.gang);
+    const street = all.filter((x) => !corpo(x) && !x.p.gang);
+    const share = (people: typeof all) => people.filter(({ p }) => p.chip > 0).length / people.length;
+    expect(corpos.length).toBeGreaterThan(50);
+    expect(share(corpos)).toBeGreaterThan(share(street));
+    expect(share(street)).toBeGreaterThan(share(gangers));
+    expect(share(gangers)).toBeGreaterThan(0);
+    for (const [who, group] of [['corpo', corpos], ['gang', gangers], ['street', street]] as const) {
+      const { range } = PEOPLE.chips[who];
+      for (const { p } of group) if (p.chip) expect(p.chip, p.name).toBeGreaterThanOrEqual(range[0]);
+      for (const { p } of group) expect(p.chip, p.name).toBeLessThanOrEqual(range[1]);
+    }
+    // A netrunner for hire, a Voodoo Boys netrunner and anyone behind a netrunning counter can chop a chip; a cook can't.
+    const choppers = all.filter(({ p, world }) => isNetrunner(p, world));
+    expect(choppers.length).toBeGreaterThan(20);
+    expect(choppers.some(({ p }) => p.job.role === 'netrunner for hire')).toBe(true);
+    expect(choppers.some(({ p, world }) => world.buildings.find((b) => b.id === p.job.building)?.category === 'netrunning')).toBe(true);
+    expect(choppers.some(({ p }) => p.gang === 'voodoo_boys' && p.job.role === 'netrunner')).toBe(true);
+    expect(choppers.some(({ p }) => /cook|bartender|teller/.test(p.job.role))).toBe(false);
+    // Every city has someone to take a hot chip to.
+    for (const { world, population } of cities) expect(population.people.some((p) => isNetrunner(p, world)), world.seed).toBe(true);
   });
 
   it('tie people together both ways: family who share a name, friends, crews and coworkers', () => {

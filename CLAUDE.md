@@ -49,8 +49,8 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 Everything the player owns is in a pocket; food and drink are the only items so far:
 
 - An `Item` has a `kind` (`ItemKind`: weapon, attachment, cyberware, quickhack, clothing,
-  consumable, shard, junk, component, after the wiki's 2077 item types), a name, a count and
-  the pocket it's `in`. `Game.inventory` is what the player carries, saved as `items`;
+  consumable, shard, credchip, junk, component, after the wiki's 2077 item types plus the
+  2020 credchip), a name, a count and the pocket it's `in`. `Game.inventory` is what the player carries, saved as `items`;
   `Game.gearSaved` is their pockets, saved as `gear`. Giving and taking items goes in
   `Game`: `Game.buy(id)` (off a menu or a rack), `Game.consume(id, now)` (eat or drink one),
   `Game.drop(id)`. Anything new that hands the player an item goes through `pocketFor`
@@ -76,6 +76,18 @@ Everything the player owns is in a pocket; food and drink are the only items so 
   `Game.bank()`, `deposit()`, `withdraw(amount)`, `exchange()`, with the numbers in
   `src/data/money.ts`; `src/ui/bank.ts` is its counter. Saved as `money` (old saves' `eddies`
   become bills).
+- Credchips (the wiki's 2020 chips of eurodollars) are items of kind `credchip`, each its own
+  (`newChipId`) with a `balance` and, taken off someone, `locked`. The wallet's `chips` card
+  slots take them first (`placeFor`), a pocket slot each after that. Where transfers are
+  taken, `pay` spends a clean chip before the account; `Game.bankChips()` banks the clean
+  ones; `rob` hands over the victim's `Person.chip` (drawn on its own RNG stream in
+  `generatePeople`, odds and ranges in `PEOPLE.chips`), and collectors take the chips on the
+  player when cash runs short. A locked chip is cleared by `Game.chop(personId, chipId, now)`:
+  the person must be a netrunner (`isNetrunner` in `src/engine/people.ts`: by role, or
+  working a `netrunning` storefront) the player can tell is one (`Game.canChop`: job known,
+  or at work behind that counter here); whether they will is `openness` with the `chop` cost,
+  their cut `MONEY.chopCut`, their lines `LINES.chop`. `Game.wallet.chips` is the eddies on
+  clean chips.
 - A store with a rack (`GEAR.racks`, by business id) gets a `Menu` of kind `gear` from
   `Game.menu()`, priced by the store's quality like food; buying gear adds a pocket (worn,
   `in: null`). `Game.canBuy(id)` says why not (barred, short, no room) so the shop can.
@@ -128,9 +140,10 @@ it needs no generator bump. The pieces:
   `tests/dialogue.test.ts` sweeps whole cities for holes (`{...}` left unfilled, empty
   lines), so a pool that can come up empty for some speaker fails there.
 - Whether someone answers is `openness` (engine) with the numbers in `SOCIETY.openness`:
-  stance, charisma level and traits against the cost of what's asked (`Asked`). A no is
-  written on their `Standing.refused`; asking again within the talk cooldown is pressing
-  and costs rapport. Anything new the player can want from someone gets a cost there.
+  stance, charisma level and traits against the cost of what's asked (`Asked`: a fact, a
+  topic, or `chop`, a favor). A no is written on their `Standing.refused`; asking again
+  within the talk cooldown is pressing and costs rapport. Anything new the player can want
+  from someone gets a cost there.
 - Gangs are canon (wiki): keep their turf, looks and rivalries true to it. Names are made
   up in each community's style and must never be a real character's (`tests/people.test.ts`
   checks a few).

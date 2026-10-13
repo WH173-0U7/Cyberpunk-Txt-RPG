@@ -55,6 +55,7 @@ function person(id: string, extra: Partial<Person> = {}): Person {
     likes: { dish: 'taco', drink: 'nicola', hangout: null },
     hates: null,
     eddies: 40,
+    chip: 0,
     bio: '',
     ...extra,
   };
@@ -178,11 +179,16 @@ describe('dialogue', () => {
       expect(openness(asked, 'neutral', 3, plain, rules)).toBeGreaterThan(openness(asked, 'neutral', 1, plain, rules));
       expect(openness(asked, 'warm', 1, plain, rules)).toBeGreaterThan(openness(asked, 'neutral', 1, plain, rules));
     }
-    // Their nature: the talkative and the warm say more; the loyal say less of their people; the brave more of their enemies.
+    // Their nature: the talkative and the warm say more; the loyal say less of their people; the brave more of their enemies; the greedy chop a chip sooner.
     const chatty = { ...plain, chatty: 0.9, warmth: 0.9 };
     expect(openness('age', 'neutral', 1, chatty, rules)).toBeGreaterThan(openness('age', 'neutral', 1, plain, rules));
     expect(openness('kin', 'neutral', 1, { ...plain, loyalty: 0.9 }, rules)).toBeLessThan(openness('kin', 'neutral', 1, plain, rules));
     expect(openness('hates', 'neutral', 1, { ...plain, courage: 0.9 }, rules)).toBeGreaterThan(openness('hates', 'neutral', 1, plain, rules));
+    expect(openness('chop', 'neutral', 1, { ...plain, greed: 0.9 }, rules)).toBeGreaterThan(openness('chop', 'neutral', 1, plain, rules));
+    // A stranger chops a hot chip a little less readily than they talk about their work; a friend without a second thought.
+    expect(openness('chop', 'neutral', 1, plain, rules)).toBeLessThan(openness('job', 'neutral', 1, plain, rules));
+    expect(openness('chop', 'neutral', 1, plain, rules)).toBeGreaterThan(rules.deflectAt);
+    expect(replyTo(openness('chop', 'friend', 1, plain, rules), rules, createRng('a'))).toBe('answer');
     // In between, the odds rise with the score; at the edges they're certain.
     const answers = (score: number) => Array.from({ length: 200 }, (_, i) => replyTo(score, rules, createRng(`r${i}`))).filter((r) => r === 'answer').length;
     expect(answers(-1)).toBe(0);
@@ -265,6 +271,10 @@ describe('dialogue', () => {
           word: rng.chance(0.5) ? 'cousin' : '',
           item: 'Taco',
           take: '12',
+          haul: '12 €$ and a credchip with 80 €$ on it',
+          balance: '120',
+          cut: '30',
+          left: '90',
         };
         const speaker: Speaker = {
           person: p,
@@ -292,11 +302,13 @@ describe('dialogue', () => {
           for (const eloquence of eloquences) check(line(LINES.questions[q].lines, { ...speaker, eloquence }, rng), `${about} question ${q} ${eloquence}`);
           lines += 4;
         }
-        for (const pool of [LINES.brushOff, LINES.grudge, LINES.hostile, LINES.asleep, LINES.talkedOut, LINES.refuse, LINES.pressed, LINES.ask.knows, LINES.ask.unknown, LINES.ask.repeat, LINES.gift.thanks, LINES.gift.favorite, LINES.gift.refuse, LINES.insult.reply, LINES.insult.shove, LINES.rob.done, LINES.rob.nothing, LINES.rob.fought, LINES.barred]) {
+        for (const pool of [LINES.brushOff, LINES.grudge, LINES.hostile, LINES.asleep, LINES.talkedOut, LINES.refuse, LINES.pressed, LINES.ask.knows, LINES.ask.unknown, LINES.ask.repeat, LINES.gift.thanks, LINES.gift.favorite, LINES.gift.refuse, LINES.insult.reply, LINES.insult.shove, LINES.rob.done, LINES.rob.nothing, LINES.rob.fought, LINES.chop.done, LINES.chop.refuse, LINES.barred]) {
           check(line(pool, speaker, rng), `${about} pool`);
         }
+        check(compose(LINES.chop.done, speaker, LINES, rng), `${about} chop done`);
+        check(deflect(speaker, 'chop', LINES, rng), `${about} deflect chop`);
         for (const eloquence of eloquences) {
-          for (const pool of [LINES.you.talk, LINES.you.askAbout, LINES.you.gift, LINES.you.insult, LINES.you.rob]) check(line(pool, { ...speaker, eloquence }, rng), `${about} you ${eloquence}`);
+          for (const pool of [LINES.you.talk, LINES.you.askAbout, LINES.you.gift, LINES.you.insult, LINES.you.rob, LINES.you.chop]) check(line(pool, { ...speaker, eloquence }, rng), `${about} you ${eloquence}`);
         }
         lines += 30;
       }

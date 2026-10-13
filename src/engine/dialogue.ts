@@ -86,13 +86,15 @@ export interface DialogueLines {
   gift: { thanks: Line[]; favorite: Line[]; refuse: Line[] };
   insult: { reply: Line[]; shove: Line[] };
   rob: { done: Line[]; nothing: Line[]; fought: Line[] };
+  /** A netrunner asked to chop a stolen credchip (`{balance}` on it, `{cut}` theirs, `{left}` after): they do, or they won't. */
+  chop: { done: Line[]; refuse: Line[] };
   revenge: { person: Line[]; gang: Line[] };
   /** A storefront that won't serve the player. */
   barred: Line[];
   /** The player's questions: a short label for the button, and how they put it, by eloquence. */
   questions: Record<Question, { label: string; lines: Line[] }>;
   /** The player's own lines, for the record, by eloquence. */
-  you: { talk: Line[]; askAbout: Line[]; gift: Line[]; insult: Line[]; rob: Line[] };
+  you: { talk: Line[]; askAbout: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[] };
 }
 
 /** Everything a line can be picked and filled by. */
@@ -215,16 +217,17 @@ export function compose(pool: Line[], speaker: Speaker, lines: DialogueLines, rn
 // ───────────── Openness ─────────────
 
 /**
- * How ready someone is to tell the player a thing: how they feel about them, the player's
- * charisma, how talkative and warm they are, less what the thing asks of them (their name is
- * nothing; where they sleep is a lot; their people, the more loyal they are; who they hate,
- * the less nerve they have).
+ * How ready someone is to tell the player a thing (or, for `chop`, to do it): how they feel
+ * about them, the player's charisma, how talkative and warm they are, less what the thing
+ * asks of them (their name is nothing; where they sleep is a lot; their people, the more
+ * loyal they are; who they hate, the less nerve they have; a hot chip, the less greedy).
  */
 export function openness(asked: Asked, stance: Stance, level: number, traits: Traits, rules: OpennessRules): number {
   let score = rules.stance[stance] + (level - 1) * rules.perLevel - rules.cost[asked];
   score += (traits.chatty - 0.5) * rules.traits.chatty + (traits.warmth - 0.5) * rules.traits.warmth;
   if (asked === 'kin') score -= (traits.loyalty - 0.5) * rules.traits.loyalty;
   if (asked === 'hates') score += (traits.courage - 0.5) * rules.traits.courage;
+  if (asked === 'chop') score += (traits.greed - 0.5) * rules.traits.greed;
   return Math.round(score * 100) / 100;
 }
 
