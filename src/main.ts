@@ -4,7 +4,7 @@ import { ENERGY } from './data/energy';
 import { FOOD } from './data/food';
 import { GEAR } from './data/gear';
 import { MONEY } from './data/money';
-import { itemGrams } from './engine/carry';
+import { itemGrams, outfit, type PocketLoad, type Slot } from './engine/carry';
 import { chipCut } from './engine/money';
 import { INEBRIATION } from './data/inebriation';
 import { LINES } from './data/dialogue';
@@ -15,7 +15,7 @@ import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
 import { Game, streetSpot } from './engine/game';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
-import type { Menu } from './engine/food';
+import type { Menu, Quality } from './engine/food';
 import { kinWord } from './engine/dialogue';
 import type { Fact } from './engine/society';
 import type { InebriationStatus } from './engine/inebriation';
@@ -33,7 +33,7 @@ import { formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/
 import { Hud } from './ui/hud';
 import { EnergyMeter } from './ui/energy';
 import { Bank } from './ui/bank';
-import { Inventory } from './ui/inventory';
+import { Inventory, type InventoryItemView, type InventoryView, type PocketRowView } from './ui/inventory';
 import { MapOverlay } from './ui/overlay';
 import { stripMarkup } from './ui/markup';
 import { CityMap, type Target } from './ui/map';
@@ -133,10 +133,28 @@ const inventory = new Inventory(
     total: $('#inventory-total'),
     sections: $('#inventory-sections'),
   },
-  () => showInventory(),
-  { onUse: (id) => consume(id), onDrop: (id) => drop(id) },
+  () => {
+    // It opens on the player head to toe.
+    inventoryPath = [];
+    showInventory();
+  },
+  {
+    onOpen: (id) => {
+      inventoryPath.push(id);
+      showInventory();
+    },
+    onBack: () => {
+      inventoryPath.pop();
+      showInventory();
+    },
+    onUse: (id) => consume(id),
+    onDrop: (id) => drop(id),
+    onWear: (id) => wear(id),
+  },
   reducedMotion,
 );
+/** Which pocket the inventory is looking into, by the pockets opened in turn; none for the outfit. */
+let inventoryPath: string[] = [];
 
 const settings = new Settings(
   {
@@ -235,7 +253,6 @@ const people = new People(
     cardLog: $('#person-log'),
     cardPicker: $('#person-picker'),
     cardCommands: $('#person-commands'),
-    known: $('#people-known'),
     back: $<HTMLButtonElement>('#person-back'),
   },
   () => {
@@ -587,11 +604,13 @@ function menuAction(menu: Menu): PanelAction {
 
 /** What the panel says about the place's menu or rack. */
 function menuBlurb(menu: Menu): string {
-  return menu.kind === 'gear' ? GEAR.blurb : FOOD.blurbs[menu.venue.chain ? 'chain' : menu.venue.quality];
+  if (menu.kind === 'gear') return menu.items.some((i) => i.kind === 'clothing') ? GEAR.blurbs[menu.venue.quality] : GEAR.blurbs.bags;
+  return FOOD.blurbs[menu.venue.chain ? 'chain' : menu.venue.quality];
 }
 
 /** "Luxury", "Cheap eats"…: the kind of eatery, as players read it. */
 function qualityLabel(menu: Menu): string {
+  if (menu.kind === 'gear') return GEAR.labels[menu.venue.quality];
   return FOOD.labels[menu.venue.chain ? 'chain' : menu.venue.quality];
 }
 
@@ -666,50 +685,79 @@ function showBank(): void {
   });
 }
 
-/** Fills the inventory: every pocket the player wears, how full it is, and what's in it. */
+/** Fills the inventory: the player head to toe, or the inside of the pocket they're looking into, and what's in it. */
 function showInventory(): void {
   const { passUntil } = game.wallet;
   const { grams, pockets } = game.carry();
   const items = game.inventory;
   const order = Object.keys(ITEM_KINDS);
   const byKind = (a: Item, b: Item) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.name.localeCompare(b.name);
-  const view = (item: Item) => ({
-    ...item,
+  const tier = (p: { brand?: string; style?: PocketLoad['style']; quality?: Quality } | undefined) => (p ? [p.brand, p.style ? GEAR.styleLabels[p.style] : '', p.quality ? GEAR.labels[p.quality] : ''].filter(Boolean).join(' · ') : '');
+  const view = (item: Item): InventoryItemView => ({
+    id: item.id,
+    name: item.name,
+    count: item.count,
     use: useLabel(item),
+    wear: item.kind === 'clothing' && Boolean(item.gear),
     weight: formatGrams(item.count * itemGrams(item, GEAR, FOOD.dishes)),
-    detail: item.kind === 'credchip' ? `€$ ${item.balance ?? 0}${item.locked ? ' · locked' : ''}` : undefined,
+    detail: item.kind === 'credchip' ? `€$ ${item.balance ?? 0}${item.locked ? ' · locked' : ''}` : item.kind === 'clothing' && item.gear ? tier(GEAR.kinds[item.gear]) || undefined : undefined,
   });
+  const row = (p: PocketLoad): PocketRowView => {
+    const wallet = p.holds !== undefined;
+    const holding = items.some((i) => i.in === p.id) || pockets.some((q) => q.in === p.id);
+    return {
+      id: p.id,
+      name: p.name,
+      sub: tier(p),
+      // Just the slots on the row; the kilos are on the pocket's own page.
+      detail: wallet ? `€$ ${p.bills} of ${p.holds}${p.chips ? ` · ${p.chips}/${p.chipSlots} chips` : ''}` : p.slots ? `${p.load.slots}/${p.slots} slots` : 'No pockets',
+      weight: formatGrams(p.grams),
+      over: p.over,
+      opens: wallet || p.slots > 0 || holding,
+    };
+  };
+  // What the player is looking into, if it's still there; else back out to themselves.
+  while (inventoryPath.length && !pockets.some((p) => p.id === inventoryPath.at(-1))) inventoryPath.pop();
+  const open = inventoryPath.length ? pockets.find((p) => p.id === inventoryPath.at(-1)) : undefined;
+  let page: InventoryView['page'];
+  if (!open) {
+    const { worn, bags } = outfit(pockets, GEAR);
+    const load = (id: string | undefined) => (id ? pockets.find((p) => p.id === id) : undefined);
+    page = {
+      kind: 'outfit',
+      slots: (Object.keys(GEAR.slotLabels) as Slot[]).map((slot) => {
+        const garment = load(worn[slot]?.id);
+        return { label: GEAR.slotLabels[slot], garment: garment ? row(garment) : null };
+      }),
+      bags: bags.map((b) => load(b.id)).filter((b): b is PocketLoad => Boolean(b)).map(row),
+    };
+  } else {
+    const parent = open.in ? pockets.find((p) => p.id === open.in) : undefined;
+    const figures: PocketPageFigures = [];
+    if (open.holds !== undefined) figures.push({ label: 'Bills', value: `€$ ${open.bills} of ${open.holds}` });
+    if (open.coins) figures.push({ label: 'Coins', value: `€$ ${open.coins} · ${formatGrams(open.coins * GEAR.gramsPerCoin)}` });
+    page = {
+      kind: 'pocket',
+      id: open.id,
+      name: open.name,
+      sub: tier(open),
+      note: open.note ?? '',
+      load: open.holds !== undefined ? `${open.chips ?? 0}/${open.chipSlots ?? 0} card slots · ${formatGrams(open.grams)} all told` : open.slots ? `${open.load.slots}/${open.slots} slots · ${formatGrams(open.load.grams, true)} / ${formatGrams(open.maxGrams, true)}` : 'No pockets',
+      over: open.over,
+      back: parent ? parent.name : 'On you',
+      items: items.filter((i) => i.in === open.id).sort(byKind).map(view),
+      inside: pockets.filter((q) => q.in === open.id).map(row),
+      figures,
+    };
+  }
   inventory.render({
     pass: passUntil > Date.now() ? `Valid until ${formatDay(passUntil)}` : 'None',
     weight: formatGrams(grams),
-    pockets: pockets
-      .filter((p) => p.in === null)
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        slots: `${p.load.slots}/${p.slots}`,
-        weight: `${formatGrams(p.load.grams, true)} / ${formatGrams(p.maxGrams, true)}`,
-        over: p.over,
-        items: items
-          .filter((item) => item.in === p.id)
-          .sort(byKind)
-          .map(view),
-        inside: [
-          ...pockets
-            .filter((q) => q.in === p.id)
-            .map((q) => ({
-              id: q.id,
-              name: q.name,
-              detail: q.holds !== undefined ? `€$ ${q.bills} of ${q.holds} in bills${q.chips ? ` · ${q.chips}/${q.chipSlots} chips` : ''}` : `${q.load.slots}/${q.slots}`,
-              weight: formatGrams(q.grams),
-              over: q.over,
-              items: items.filter((item) => item.in === q.id).sort(byKind).map(view),
-            })),
-          ...(p.coins ? [{ id: `${p.id}-coins`, name: 'Coins', detail: `€$ ${p.coins}`, weight: formatGrams(p.coins * GEAR.gramsPerCoin), over: false }] : []),
-        ],
-      })),
+    count: items.reduce((n, item) => n + item.count, 0),
+    page,
   });
 }
+type PocketPageFigures = Array<{ label: string; value: string }>;
 
 /** "250 g", "1.3 kg"; `kilos` always in kilos, for the limits. */
 function formatGrams(grams: number, kilos = false): string {
@@ -732,6 +780,12 @@ function consume(id: string): void {
 function drop(id: string): void {
   lastActivity = performance.now();
   game.drop(id);
+}
+
+/** Puts on a garment from the inventory. */
+function wear(id: string): void {
+  lastActivity = performance.now();
+  game.wear(id);
 }
 
 let shownCondition = '';
@@ -801,7 +855,6 @@ function showPeople(): void {
       };
     }),
     empty: 'Nobody here right now. People keep hours: workers by day, regulars in the evening, residents at night.',
-    known: known.filter((p) => !here.some((h) => h.person.id === p.id)).map((p) => ({ id: p.id, name: nameOf(p.id, p.name) })),
     card:
       shown && standing && described
         ? {

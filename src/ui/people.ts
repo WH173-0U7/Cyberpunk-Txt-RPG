@@ -68,8 +68,6 @@ export interface PeopleView {
   rows: PersonRowView[];
   /** Shown instead of the list when nobody is here. */
   empty: string;
-  /** Everyone the player knows of, to look up. */
-  known: Array<{ id: string; name: string }>;
   card: PersonCardView | null;
 }
 
@@ -78,7 +76,6 @@ export interface PeopleElements extends OverlayElements {
   reputation: HTMLElement;
   list: HTMLElement;
   empty: HTMLElement;
-  known: HTMLElement;
   card: HTMLElement;
   cardName: HTMLElement;
   cardStance: HTMLElement;
@@ -152,10 +149,6 @@ export class People {
       else if (action && id && !(button as HTMLButtonElement).disabled) handlers.onAction(action as PersonAction, id);
       else if (open) handlers.onSelect(open);
     });
-    els.known.addEventListener('click', (e) => {
-      const button = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-open]') : null;
-      if (button?.dataset.open) handlers.onSelect(button.dataset.open);
-    });
   }
 
   render(view: PeopleView): void {
@@ -169,7 +162,6 @@ export class People {
     if (view.card) {
       els.list.hidden = true;
       els.empty.hidden = true;
-      els.known.hidden = true;
       els.card.hidden = false;
       this.renderCard(view.card);
     } else {
@@ -178,8 +170,6 @@ export class People {
       els.empty.hidden = view.rows.length > 0;
       els.empty.textContent = view.empty;
       els.list.replaceChildren(...view.rows.map(row));
-      els.known.hidden = view.known.length === 0;
-      els.known.replaceChildren(el('span', 'person-gifts-label', `You know of ${view.known.length}`), ...view.known.map((k) => chip(k.name, { open: k.id })));
     }
     // Whatever was tapped keeps focus through the redraw.
     if (focused) {

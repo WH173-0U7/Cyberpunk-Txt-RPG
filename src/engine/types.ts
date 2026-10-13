@@ -161,6 +161,8 @@ export interface Item {
   balance?: number;
   /** For a credchip: stolen and not yet chopped, so no counter and no bank will take it. */
   locked?: boolean;
+  /** For clothing carried rather than worn: which garment it is (a kind in `GEAR.kinds`). */
+  gear?: string;
 }
 
 /** Flavor text that plays while the player is idle, optionally firing an effect. */

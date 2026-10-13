@@ -46,7 +46,8 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 
 ## The inventory
 
-Everything the player owns is in a pocket; food and drink are the only items so far:
+Everything the player owns is in a pocket of something worn; food, drink, credchips and
+clothing are the items so far:
 
 - An `Item` has a `kind` (`ItemKind`: weapon, attachment, cyberware, quickhack, clothing,
   consumable, shard, credchip, junk, component, after the wiki's 2077 item types plus the
@@ -56,14 +57,29 @@ Everything the player owns is in a pocket; food and drink are the only items so 
   `Game.drop(id)`. Anything new that hands the player an item goes through `pocketFor`
   (room, or none) and sets `in`; old saves with items in no pocket are put away by `stow`.
 - `src/engine/carry.ts` is the arithmetic: what a thing weighs (`itemGrams`: by its kind,
-  or a dish's own `grams`), how many share a slot (`stackSlots`), a pocket's load (its
-  stacks, the pockets inside it a slot each, the bills in a wallet and the coins in the
-  change pocket as weight, the coins a slot too), `fits`, `placeFor` (a pocket already
-  holding some of it first), `walletRoom` (bills) and `changeRoom` (coins). `src/data/gear.ts`
-  has the numbers: the pockets of the clothes, the wallet (`holds` bills), which pocket takes
-  the `change`, grams per €$ in bills and in coins, the bags and what stores rack them.
-  Nothing is canon here: the wiki's 2077 clothing has no bags, so the gear is generic and
-  named for what it is.
+  a dish's own `grams`, a garment's own), how many share a slot (`stackSlots`), a pocket's
+  load (its stacks, the pockets inside it a slot each, the bills in a wallet and the coins
+  in the change pocket as weight, the coins a slot too), `fits`, `placeFor` (a pocket
+  already holding some of it first), `walletRoom` (bills), `changeRoom` (coins) and
+  `outfit` (what's worn in each slot, and the bags). `src/data/gear.ts` has the numbers:
+  the wallet (`holds` bills, `chips` card slots), grams per €$ in bills and in coins, the
+  bags and what stores rack them; the garments come from `src/data/clothing.ts`.
+- A garment is a `PocketKind` with a `slot` (the wiki's six: head, face, outer, inner, legs,
+  feet), a `style` (its four), a `quality` tier and maybe a `brand`; its pockets are its
+  `slots`/`maxGrams`, none for a tank top, and `change` marks the pants. `GARMENTS` are
+  real 2077 clothing from the wiki, named as the wiki names them, with our pockets, weights,
+  prices and notes; `STORES` is each store's stock (by business id: what the wiki shows its
+  vendor selling) and `STORE_QUALITY` its tier. The player's clothes are worn pockets
+  (`PocketState` with `in: null`), one per slot; `GEAR.start` is the outfit a new player
+  wears, and `Game`'s constructor dresses an older save in whatever slot it has nothing on.
+  Clothing carried is an `Item` of kind `clothing` with `gear` naming the garment;
+  `Game.wear(itemId)` swaps it in: the garment it replaces goes in a pocket with room (or is
+  left behind), after what was in its pockets, the wallet included, has found room, else the
+  swap is off. A rack (`Game.menu()` at a store) sells garments as `clothing` menu items at
+  their own price, with the slot, style and brand as `detail`, and bags by the store's tier
+  (`GEAR.quality`, else drawn like an eatery's). Stores are businesses in `src/data/city.ts`
+  (the wiki's chains and named stores keep to their districts) with roles in
+  `src/data/people.ts`.
 - Eddies are `Money` (`src/engine/money.ts`): `bills` and `coins` on hand, and the
   `account`; `Game.wallet` has all three and `eddies` (the cash). Every payment goes
   through `Game`'s private `pay(price, transfers)`: a transfer from the account where the
@@ -93,10 +109,12 @@ Everything the player owns is in a pocket; food and drink are the only items so 
   `in: null`). `Game.canBuy(id)` says why not (barred, short, no room) so the shop can.
 - `src/data/items.ts` names each kind and says what goes in it (the order items are listed
   in within a pocket). Real items take their names and details from the wiki and the TCG.
-- `src/ui/inventory.ts` lists the worn pockets with their loads, the pockets inside them
-  (the wallet) as a row, and each item with its weight, an Eat/Drink button when it can be
-  used (`use`) and Drop; what using something does is `Game`'s business. Weight has no
-  effect on the player yet; `Game.carry()` has the total for when it does.
+- `src/ui/inventory.ts` shows a page at a time: the outfit (a row per slot, then the bags),
+  or inside one pocket (its pockets' load, the items in it with Eat/Drink/Wear/Drop, the
+  pockets inside it as rows that open, and figures for the bills and the coins). `main.ts`
+  keeps the path of pockets opened; what using or wearing something does is `Game`'s
+  business. Weight has no effect on the player yet; `Game.carry()` has the total for when it
+  does.
 
 ## People
 

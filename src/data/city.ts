@@ -661,6 +661,12 @@ const BUILDINGS: BuildingContent = {
   landmarks: [
     { district: 'city_center', kind: 'tower', name: 'Arasaka Tower' },
     { district: 'city_center', kind: 'shops', name: 'Asukaga & Finch Bank', business: 'bank' },
+    // Jinguji's flagship is on Senate Avenue downtown; Appel de Paris is Avante's store at The View on Corpo Plaza.
+    { district: 'city_center', kind: 'shops', name: 'Jinguji', business: 'jinguji' },
+    { district: 'city_center', kind: 'shops', name: 'Appel de Paris', business: 'avante' },
+    // Saeko's store on the Japantown boardwalk, and the Ded-Zed store on Richmond Street in Northside.
+    { district: 'westbrook', kind: 'shops', name: 'Blossoming Sakura Clothier', business: 'saekos' },
+    { district: 'watson', kind: 'shops', name: 'Ded-Zed', business: 'ded-zed' },
     { district: 'city_center', kind: 'shops', name: 'Pickles!', business: 'fast-food' },
     { district: 'watson', kind: 'shops', name: 'Corpo Snack', business: 'food-stall' },
     { district: 'westbrook', kind: 'shops', name: 'Au Cabanon', business: 'restaurant' },
@@ -703,6 +709,13 @@ const BUILDINGS: BuildingContent = {
     { id: 'clothing-store', sign: 'Clothing Store', label: 'Clothing store', category: 'clothing' },
     { id: 'boutique', sign: 'Boutique', label: 'Boutique', category: 'clothing' },
     { id: 'thrift-shop', sign: 'Thrift Shop', label: 'Thrift shop', category: 'clothing' },
+    // The wiki's clothing stores: Jinguji and Avante keep to the money (luxury neokitsch), Stylishly
+    // to the middle-class neighborhoods, Saeko's to Japantown, Ded-Zed to Northside.
+    { id: 'jinguji', sign: 'Jinguji', label: 'Luxury clothier', category: 'clothing', chain: true, where: ['city_center'] },
+    { id: 'avante', sign: 'Avante', label: 'Designer store', category: 'clothing', chain: true, where: ['city_center', 'westbrook'] },
+    { id: 'stylishly', sign: 'Stylishly', label: 'Clothing store', category: 'clothing', chain: true, where: ['watson', 'heywood', 'santo_domingo'] },
+    { id: 'saekos', sign: "Saeko's", label: 'Clothier', category: 'clothing', chain: true, where: ['westbrook'] },
+    { id: 'ded-zed', sign: 'Ded-Zed', label: 'Clothing store', category: 'clothing', chain: true, where: ['watson'] },
     { id: 'pharmacy', sign: 'Pharmacy', label: 'Pharmacy', category: 'medical' },
     { id: 'street-clinic', sign: 'Clinic', label: 'Street clinic', category: 'medical' },
     { id: 'garage', sign: 'Garage', label: 'Garage', category: 'vehicles' },

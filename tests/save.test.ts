@@ -76,17 +76,19 @@ describe('saving', () => {
     const shard = { id: 'shard-1', kind: 'shard', name: 'Old Shard', count: 1 };
     // A credchip keeps what's on it and whether it's locked; one that makes no sense is dropped with the rest.
     const chip = { id: 'credchip-1', kind: 'credchip', name: 'CredChip', count: 1, in: 'wallet', balance: 120, locked: true };
-    const saved = { ...saveOf(game, now), items: [shard, { id: 'x', kind: 'spaceship', name: 'Nope', count: 1 }, { ...shard, count: 0 }, 'junk', chip, { ...chip, id: 'credchip-2', balance: -5 }, { ...chip, id: 'credchip-3', locked: 'yes' }] };
+    // Clothing carried says which garment it is.
+    const coat = { id: 'worn-punk-coat', kind: 'clothing', name: 'Worn PUNK coat', count: 1, gear: 'worn-punk-coat', in: 'jacket' };
+    const saved = { ...saveOf(game, now), items: [shard, { id: 'x', kind: 'spaceship', name: 'Nope', count: 1 }, { ...shard, count: 0 }, 'junk', chip, { ...chip, id: 'credchip-2', balance: -5 }, { ...chip, id: 'credchip-3', locked: 'yes' }, coat, { ...coat, gear: 7 }] };
     const read = readSave(JSON.parse(JSON.stringify(saved)));
-    expect(read?.items).toEqual([shard, chip]);
+    expect(read?.items).toEqual([shard, chip, coat]);
     const { items: _, ...old } = saveOf(game, now);
     expect(readSave(JSON.parse(JSON.stringify(old)))?.items).toEqual([]);
 
     const progress = read && resume(world, read);
     if (!progress) throw new Error('no progress');
     const resumed = new Game(world, rules, progress);
-    // The shard said no pocket: it's put away in the jacket. The chip stays in the wallet.
-    expect(resumed.inventory).toEqual([{ ...shard, in: 'jacket' }, chip]);
+    // The shard said no pocket: it's put away in the jacket. The chip stays in the wallet, the coat where it was.
+    expect(resumed.inventory).toEqual([{ ...shard, in: 'jacket' }, chip, coat]);
     expect(read?.gear).toEqual(GEAR.start);
     // A save from before pockets has none: the player wears the usual.
     const { items: _i, gear: _g, ...older } = saveOf(game, now);
