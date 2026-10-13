@@ -25,11 +25,12 @@
           <span class="energy-label" aria-hidden="true">Energy</span>
           <span class="energy-bar" aria-hidden="true"><span id="energy-fill" class="energy-fill"></span></span>
           <span id="energy-value" class="energy-value" aria-hidden="true"></span>
-          <span class="energy-foot" aria-hidden="true">
-            <span id="energy-detail" class="energy-detail"></span>
-            <span id="condition" class="condition"></span>
-          </span>
         </div>
+        <button id="status-toggle" class="status-toggle" type="button" aria-expanded="false" aria-controls="status" title="Status">
+          <span id="status-summary" class="status-summary"></span>
+          <span class="status-chevron" aria-hidden="true"></span>
+        </button>
+        <dl id="status" class="status" hidden></dl>
       </header>
 
       <section id="map" class="map panel" aria-label="City map">
@@ -43,8 +44,7 @@
           </button>
           <span class="map-title">City grid</span>
           <span id="wallet" class="wallet"></span>
-          <span id="map-progress" class="map-stat"></span>
-          <span id="save-status" class="save-status">Saved</span>
+          <span id="save-status" class="save-status" title="Your progress saves on this device as you go."></span>
         </div>
         <div id="map-stage" class="map-stage">
           <canvas id="map-city" class="map-city" aria-hidden="true"></canvas>
@@ -75,7 +75,6 @@
             <button id="inventory-close" class="icon-btn overlay-close" type="button" aria-label="Close inventory" title="Close (Esc)"></button>
           </div>
           <div class="overlay-body">
-            <p class="inventory-pass">NCART pass <span id="inventory-pass"></span></p>
             <ul id="inventory-sections" class="inventory-sections"></ul>
           </div>
         </div>
@@ -189,7 +188,7 @@
           <button id="place-close" class="icon-btn place-close" type="button" aria-label="Back to where you are" hidden></button>
         </div>
         <div class="map-foot">
-          <span id="map-seed"></span>
+          <span id="map-progress" class="map-stat"></span>
           <span id="map-coords"></span>
         </div>
       </section>

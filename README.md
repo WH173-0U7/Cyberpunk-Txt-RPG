@@ -49,7 +49,7 @@ own.
   fog lights up and thins like smoke, thin wisps first and thick ones last, with swirling
   edges, while puffs of smoke roll away from it. Walking flickers the edge of the fog with
   scanlines, and wherever an arrival uncovers new ground the map glitches open in torn
-  strips first. The header counts how much you've mapped.
+  strips first. The map's foot counts how much you've mapped.
 - **Buildings**: every block is filled with its own buildings, zoned by district: corporate
   towers downtown, apartment blocks and storefronts in Watson, factories and warehouses in
   Santo Domingo, derelicts in Pacifica, shacks and containers out in the Badlands, plus parks,
@@ -125,8 +125,8 @@ own.
   cold and the hostile nothing. The talkative and the warm open up sooner; the loyal keep
   their people to themselves; the brave name their enemies. Your own lines change with it
   too: at level 1 you ask "How old are you?", later "How old are you, anyway?", later still
-  something smoother. Asking again soon after a no is pressing, and costs you rapport. It
-  shows in the People overlay's strip.
+  something smoother. Asking again soon after a no is pressing, and costs you rapport. Your
+  level and experience are in the status drop-down under the energy bar.
 - **What you know of people**: only what you've found out. Until you've been introduced,
   someone is "A young woman in Valentinos colors" or "An older man": what's plain to see
   (their gang's colors, what they're doing) and nothing more. Talking to them gets you
@@ -165,8 +165,8 @@ own.
   their neighborhood cools. Whoever has the grudge and the nerve comes to collect, hours or a
   day later, wherever you are: they take eddies back with interest and leave you with no
   energy; a gang that's had enough of you comes hunting the same way. Grudges fade a point a
-  day and reputations recover two, on the game's clock. The **People** overlay lists every
-  reputation that stands at anything. (Violence, once there is combat, goes through the same
+  day and reputations recover two, on the game's clock. The status drop-down under the
+  energy bar lists every reputation that stands at anything. (Violence, once there is combat, goes through the same
   machinery: assault and murder are already kinds of incident, with heavier consequences.)
 - **Work**: every eatery and clothing store has a boss, the one who runs it (the cook at a
   one-cook noodle bar, whoever runs the counter or the shop otherwise). Find them and their
@@ -181,8 +181,9 @@ own.
   you, they move you up on the spot, with better pay: prep, then the counter, then the line
   at an eatery; the shop floor, the register, then fitting at a store. **Quit** is on the
   boss's card. A place that won't serve you (you robbed or insulted its people) won't keep
-  you either. The **People** overlay's strip says where you work and how many shifts you've
-  put in. (People's own troubles, and helping with them, come later, once there's combat and
+  you either. The line under the energy bar names your rung, and the status drop-down says
+  where you work, how many shifts you've put in and what the next rung takes. (People's own
+  troubles, and helping with them, come later, once there's combat and
   more to do with a person.)
 - **Masks**: a gas mask, a ballistic mask, a balaclava or a menpō (all real 2077 pieces, on
   the thrift rack, at Saeko's and in the clothing stores) hides your face, and anything you
@@ -200,8 +201,8 @@ own.
   (a beer about one, a shot of Moonshine three), they add up, and the body clears a unit an
   hour on the game's clock (a unit a minute at the testing speed), even while the game is
   closed. From one unit you're **Tipsy**, from three **Drunk**, from five **Wasted**, from
-  eight **Blackout drunk**; the line under the energy bar says which and when you'll be
-  sober. The only effect so far is that the whole terminal blurs and sways with it (blurs
+  eight **Blackout drunk**; the line under the energy bar says which, and the status
+  drop-down when you'll be sober. The only effect so far is that the whole terminal blurs and sways with it (blurs
   only, with "reduce motion" on), worse the more you've had.
 - **Energy**: the bar under the sign. Energy is what doing things will cost, and it refills
   on the clock, a point every 6 minutes (faster at the testing speed), even while the game is
@@ -250,8 +251,8 @@ own.
   mostly bills and some coins, each only as far as there's room. **Banks** move eddies
   between the two: Asukaga & Finch downtown and EuroBank branches (both from the wiki) have
   a counter (**Bank** on the panel) to deposit all your cash, withdraw bills, or change
-  coins for bills; the bank keeps five percent of any coins it counts. The header shows
-  your cash, and the account once there's anything in it. **CredChips** (the wiki's 2020
+  coins for bills; the bank keeps five percent of any coins it counts. The map's head shows
+  your cash; the account is in the status drop-down and at the bank. **CredChips** (the wiki's 2020
   chips of eurodollars; a "chop" in its Streetslang) are items with a balance on them. They
   ride in your wallet's four card slots (a pocket slot each after that), pay where transfers
   are taken (a chip before the account), and the bank's **Chips** command takes the ones in
@@ -296,8 +297,15 @@ own.
 - **Panel**: where you are and what it's like, what you've picked and how long getting there
   takes each way, or the trip you're on with a countdown.
 - **Transmissions**: the city's chatter types across the top of the map, then fades.
-- **Saving**: progress saves automatically on your device after every move (the header says
-  **Saved**, or **Not saved** if the browser won't allow it, e.g. in a private window). Come
+- **Status**: the sign says where you are and the address above it the district; under
+  the energy bar one line says your energy level, when the next point comes, and anything
+  the matter (drunk, masked, on a shift somewhere). Tap it and a drop-down unfolds the rest:
+  energy and charisma experience, your cash, the bank and your chips, the NCART pass, your
+  job, your condition, your mask, every reputation that stands at anything, and how much of
+  the city you've mapped. Nothing else repeats it.
+- **Saving**: progress saves automatically on your device after every move (the light in the
+  map's head stays on; it says **Not saved** if the browser won't allow it, e.g. in a private
+  window). Come
   back later and you pick up in the same city, at the same place, with the same map, wallet
   and pass, and any trip still underway.
 

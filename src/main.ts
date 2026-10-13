@@ -33,6 +33,7 @@ import { ITEM_KINDS } from './data/items';
 import { formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
 import { Hud } from './ui/hud';
 import { EnergyMeter } from './ui/energy';
+import { StatusPanel, type StatusRow } from './ui/status';
 import { Bank } from './ui/bank';
 import { Inventory, type InventoryItemView, type InventoryView, type PocketRowView } from './ui/inventory';
 import { MapOverlay } from './ui/overlay';
@@ -61,10 +62,8 @@ const glitchText = new GlitchText(reducedMotion);
 const registerGlitch = (el: HTMLElement, text: string) => glitchText.register(el, text);
 const hud = new Hud({ sign: $('#hud-sign'), path: $('#hud-path'), weather: $('#hud-weather'), clock: $('#hud-clock') });
 const mapStage = $('#map-stage');
-const seedLabel = $('#map-seed');
 const saveStatus = $('#save-status');
 const walletLabel = $('#wallet');
-const conditionLabel = $('#condition');
 
 const transmissions = new Transmissions({ root: $('#transmissions'), announcer: $('#announcer') }, registerGlitch, reducedMotion);
 
@@ -132,7 +131,6 @@ const inventory = new Inventory(
     root: $('#inventory'),
     toggle: $<HTMLButtonElement>('#inventory-toggle'),
     close: $<HTMLButtonElement>('#inventory-close'),
-    pass: $('#inventory-pass'),
     total: $('#inventory-total'),
     sections: $('#inventory-sections'),
   },
@@ -325,7 +323,8 @@ let webOpen = false;
 let factsOpen = false;
 let picker: Picker = null;
 
-const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill'), value: $('#energy-value'), detail: $('#energy-detail') });
+const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill'), value: $('#energy-value') });
+const statusPanel = new StatusPanel({ toggle: $<HTMLButtonElement>('#status-toggle'), summary: $('#status-summary'), list: $('#status') });
 
 let game: Game;
 /** What the player has picked to go to, if anything. */
@@ -541,7 +540,6 @@ function hereView(now: number): PanelView {
     return {
       mode: 'here',
       kicker: `You are here · ${dname} · NCART`,
-      title: name,
       meta: active ? `Monthly pass valid until ${formatDay(game.wallet.passUntil)}` : undefined,
       description: `NCART, run by Night Corp. ${lines}. A ride costs ${fare} €$, or nothing with a monthly pass.`,
       actions: [
@@ -562,7 +560,6 @@ function hereView(now: number): PanelView {
   return {
     mode: 'here',
     kicker: `You are here · ${dname}${building ? ` · Block ${building.block}` : ''}`,
-    title: name,
     description: building ? `${categoryOf(building).label} · ${[building.kindLabel, heightOf(building)].filter(Boolean).join(', ')}. ${mood}` : mood,
     actions: door ? [{ id: 'enter', label: 'Go inside', sub: door.kindLabel }] : [],
     closable: false,
@@ -587,8 +584,7 @@ function insideView(building: Building): PanelView {
   return {
     mode: 'inside',
     kicker: `Inside · ${district} · Block ${building.block}`,
-    title: building.name,
-    meta: [menu ? qualityLabel(menu) : categoryOf(building).label, building.kindLabel, heightOf(building)].filter(Boolean).join(' · '),
+    meta: [menu ? '' : categoryOf(building).label, building.kindLabel, heightOf(building)].filter(Boolean).join(' · '),
     description,
     actions: [
       peopleAction(here),
@@ -673,9 +669,10 @@ function tripView(trip: Trip, now: number): PanelView {
   };
 }
 
+/** The eddies on you, in the map's head; the bank and the chips are in the status drop-down. */
 function showWallet(wallet: Wallet, now: number): void {
   const pass = wallet.passUntil > now;
-  walletLabel.textContent = `€$ ${wallet.eddies}${wallet.account ? ` · Bank ${wallet.account}` : ''}${pass ? ' · Pass' : ''}`;
+  walletLabel.textContent = `€$ ${wallet.eddies}${pass ? ' · Pass' : ''}`;
   walletLabel.classList.toggle('has-pass', pass);
   walletLabel.title = `${wallet.bills} €$ in bills, ${wallet.coins} €$ in coins, ${wallet.account} €$ in the bank${wallet.chips ? `, ${wallet.chips} €$ on chips` : ''}.${pass ? ` NCART monthly pass valid until ${formatDay(wallet.passUntil)}.` : ' Buy an NCART monthly pass at any station.'}`;
 }
@@ -705,7 +702,6 @@ function showBank(): void {
 
 /** Fills the inventory: the player head to toe, or the inside of the pocket they're looking into, and what's in it. */
 function showInventory(): void {
-  const { passUntil } = game.wallet;
   const { grams, pockets } = game.carry();
   const items = game.inventory;
   const order = Object.keys(ITEM_KINDS);
@@ -772,7 +768,6 @@ function showInventory(): void {
     };
   }
   inventory.render({
-    pass: passUntil > Date.now() ? `Valid until ${formatDay(passUntil)}` : 'None',
     weight: formatGrams(grams),
     count: items.reduce((n, item) => n + item.count, 0),
     page,
@@ -809,15 +804,39 @@ function wear(id: string): void {
   game.wear(id);
 }
 
-let shownCondition = '';
-/** Under the energy bar: how drunk the player is and when it wears off; and the screen to match. */
-function showCondition(status: InebriationStatus, now: number): void {
-  const text = status.stage ? `${status.stage.label} · sober in ${formatCountdown((status.soberAt ?? now) - now)}` : '';
-  if (text !== shownCondition) {
-    shownCondition = text;
-    conditionLabel.textContent = text;
-  }
+/** How drunk the player is, on the screen; the words are the status drop-down's. */
+function showCondition(status: InebriationStatus): void {
   screen.setInebriation(status.severity);
+}
+
+/**
+ * The status drop-down: the line under the energy bar says the energy level, when the next
+ * point comes, and anything the matter (drunk, masked, on a shift somewhere); unfolded, the
+ * rest: experience, charisma, eddies and the bank, the pass, the job, every reputation, the map.
+ */
+function showStatus(now: number): void {
+  const energy = game.energy(now);
+  const charisma = game.charisma();
+  const wallet = game.wallet;
+  const drunk = game.inebriation(now);
+  const mask = game.masked();
+  const job = game.jobStatus(now);
+  const pass = wallet.passUntil > now;
+  const refill = energy.nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(energy.nextPointAt - now)}`;
+  const condition = drunk.stage ? `${drunk.stage.label} · sober in ${formatCountdown((drunk.soberAt ?? now) - now)}` : '';
+  const summary = [`Lv ${energy.level} · ${refill}`, drunk.stage?.label, mask ? 'Masked' : '', job ? job.rung.title : ''].filter(Boolean).join(' · ');
+  const rows: StatusRow[] = [
+    { label: 'Energy', value: `Lv ${energy.level} · ${energy.xp}/${energy.xpToNext} XP · ${refill}` },
+    { label: 'Charisma', value: `Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP` },
+    { label: 'Eddies', value: `€$ ${wallet.eddies} on you${wallet.account ? ` · €$ ${wallet.account} banked` : ''}${wallet.chips ? ` · €$ ${wallet.chips} on chips` : ''}` },
+    { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
+    { label: 'Work', value: job ? `${job.rung.title} at ${job.building.name} · ${job.shifts} ${job.shifts === 1 ? 'shift' : 'shifts'}${job.next ? ` · trust ${job.trust}, ${job.next.title.toLowerCase()} at ${job.next.at}` : ' · top of the ladder'}` : 'No job' },
+    ...(condition ? [{ label: 'Condition', value: condition, tone: 'warn' as const }] : []),
+    ...(mask ? [{ label: 'Mask', value: `${mask.name} · nobody knows your face`, tone: 'warn' as const }] : []),
+    ...game.reputation(now).map((r) => ({ label: r.label, value: `${r.value > 0 ? '+' : '−'}${Math.abs(r.value)}`, tone: (r.value < 0 ? 'bad' : 'good') as 'bad' | 'good' })),
+    { label: 'Mapped', value: `${game.mapState.visited.size} of ${Object.keys(game.world.locations).length} places` },
+  ];
+  statusPanel.render(summary, rows);
 }
 
 /** Fills the menu with what's for sale where the player is, and whether they can afford it. */
@@ -845,7 +864,6 @@ function showShop(): void {
 function showPeople(): void {
   const now = Date.now();
   const here = game.peopleHere(now);
-  const reputation = game.reputation(now).map((r) => `${r.label} ${r.value > 0 ? '+' : '−'}${Math.abs(r.value)}`);
   const known = game.knownPeople();
   const present = personShown ? here.find((p) => p.person.id === personShown) : undefined;
   const shown = present?.person ?? (personShown ? known.find((p) => p.id === personShown) : undefined);
@@ -854,9 +872,7 @@ function showPeople(): void {
   const gifts = game.inventory.filter((item) => item.kind === 'consumable' && FOOD.dishes.some((d) => d.id === item.id));
   const hot = game.inventory.filter((item) => item.kind === 'credchip' && item.locked);
   const gangOf = (id: string | null) => (id ? PEOPLE.gangs[id]?.name : undefined);
-  const charisma = game.charisma();
   const mask = game.masked();
-  const job = game.jobStatus(now);
   const how = { seen: 'seen together', told: 'told', asked: 'asked' };
   const nameOf = (id: string, fallback: string) => game.describe(id)?.name ?? fallback;
   const described = shown ? game.describe(shown.id) : null;
@@ -864,7 +880,8 @@ function showPeople(): void {
   people.render({
     count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
     // The standing lines belong to the list; a card is about one person.
-    reputation: shown ? [] : [...(mask ? [`Masked · they see a ${mask.word}, not a face`] : []), ...(job ? [`${job.rung.title} at ${job.building.name} · ${job.shifts} ${job.shifts === 1 ? 'shift' : 'shifts'}`] : []), `Charisma Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP`, ...reputation],
+    // What's on the player that people here can see; the rest of their standing is the status drop-down's.
+    reputation: shown || !mask ? [] : [`Masked · they see a ${mask.word}, not a face`],
     rows: here.map(({ person, doing, stance }) => {
       const about = game.describe(person.id);
       return {
@@ -951,7 +968,7 @@ function queueSave(): void {
   queueMicrotask(() => {
     savePending = false;
     const saved = saveSlot.write(createSave(game.world.seed, game, GENERATOR_VERSION));
-    saveStatus.textContent = saved ? 'Saved' : 'Not saved';
+    saveStatus.textContent = saved ? '' : 'Not saved';
     saveStatus.classList.toggle('is-failed', !saved);
     saveStatus.title = saved
       ? 'Your progress saves on this device as you go.'
@@ -1063,7 +1080,7 @@ function wire(g: Game): void {
   });
 
   g.events.on('inebriationChanged', (status) => {
-    showCondition(status, Date.now());
+    showCondition(status);
     queueSave();
   });
 
@@ -1078,7 +1095,6 @@ function begin(world: World, progress?: Progress, notice?: string): void {
   game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS }, progress);
   wire(game);
   map.setWorld(world);
-  seedLabel.textContent = `Seed ${world.seed.toUpperCase()}`;
   try {
     // Show the seed in the address, so a new player can be sent to the same city.
     history.replaceState(null, '', `#${world.seed}`);
@@ -1134,7 +1150,8 @@ function tick(): void {
   if (trip && !target) place.update(tripProgress(trip, now).done, tripMeta(trip, now));
   showWallet(game.wallet, now);
   energyMeter.update(game.energy(now), now);
-  showCondition(game.inebriation(now), now);
+  showCondition(game.inebriation(now));
+  showStatus(now);
 }
 
 // Escape drops the current pick; + and - zoom.
