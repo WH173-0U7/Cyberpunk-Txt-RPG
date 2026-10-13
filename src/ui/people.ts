@@ -60,8 +60,6 @@ export interface PersonCardView {
 }
 
 export interface PeopleView {
-  title: string;
-  kicker: string;
   count: string;
   /** "Charisma Lv 2 · 7/91 XP", "Valentinos −28"… */
   reputation: string[];
@@ -74,8 +72,6 @@ export interface PeopleView {
 }
 
 export interface PeopleElements extends OverlayElements {
-  title: HTMLElement;
-  kicker: HTMLElement;
   count: HTMLElement;
   reputation: HTMLElement;
   list: HTMLElement;
@@ -159,8 +155,6 @@ export class People {
 
   render(view: PeopleView): void {
     const { els } = this;
-    els.title.textContent = view.title;
-    els.kicker.textContent = view.kicker;
     els.count.textContent = view.count;
     els.reputation.replaceChildren(...view.reputation.map((line) => el('span', 'people-rep-item', line)));
     els.reputation.hidden = view.reputation.length === 0;

@@ -73,8 +73,8 @@ own.
   in the other buildings yet. **Leave** steps back out, and walking off somewhere goes out
   the door first. Being inside is saved.
 - **Eating out**: inside anything that sells food (noodle bars, grills, food stalls, dumpling
-  houses, diners, restaurants, fast food) and at places that serve it, **Menu** covers the map
-  with what's on. Every dish and drink is a real Night City one, from RaMMMMen and Hawt Dawgs
+  houses, diners, restaurants, fast food) and at places that serve it, **Menu** opens what's
+  on. Every dish and drink is a real Night City one, from RaMMMMen and Hawt Dawgs
   to Got Escargot? and Chateau Delen 2012, and each kind of kitchen serves its own kind of
   food. How good the place is depends on where it is: City Center eats luxury, Pacifica eats
   cheap, and the rest sit in between, so the same noodle bar is a different place in
@@ -180,14 +180,17 @@ own.
   experience, running right down to empty earns a bonus, and the energy level (and the max)
   goes up very slowly; level 2 alone takes 600 points spent. A home with a bed will raise
   the max too. Nothing spends energy yet; it's ready for jobs, training and the rest.
-- **Inventory**: the **Inventory** button in the map's header (or **I**) covers the map with
-  what you carry: your eddies and NCART pass, then your items, sorted by the kinds of item
-  in Night City (weapons, attachments & mods, cyberware, quickhacks, clothing, consumables,
-  shards, junk, components). A kind only shows once you carry something of it: food and
-  drink you've bought are under consumables, with their Eat and Drink buttons, and the rest
-  comes with shops and loot. **×** or **Esc** closes it. The panel under the map keeps
-  working while it's open.
-- **Settings**: the gear next to it covers the map with settings. For now that's the save:
+- **Overlays**: the inventory, settings, people and menus open over the map and the panel
+  under it, so they get the whole lower screen. Each has one strip for a header (what it
+  is, a count, **×**); the place you're at stays on the sign above, so nothing is said
+  twice. **×** or **Esc** closes one, and the panel comes back.
+- **Inventory**: the **Inventory** button in the map's header (or **I**) opens what you
+  carry: your NCART pass, then your items, sorted by the kinds of item in Night City
+  (weapons, attachments & mods, cyberware, quickhacks, clothing, consumables, shards, junk,
+  components). A kind only shows once you carry something of it: food and drink you've
+  bought are under consumables, with their Eat and Drink buttons, and the rest comes with
+  shops and loot. Your eddies are in the map's header.
+- **Settings**: the gear next to it opens the settings. For now that's the save:
   **Restart this city** puts the same city back to the start, and **Erase save** deletes the
   save from this device and starts a brand new city. Both ask first, with Cancel as the
   default.

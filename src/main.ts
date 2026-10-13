@@ -123,7 +123,6 @@ const inventory = new Inventory(
     root: $('#inventory'),
     toggle: $<HTMLButtonElement>('#inventory-toggle'),
     close: $<HTMLButtonElement>('#inventory-close'),
-    eddies: $('#inventory-eddies'),
     pass: $('#inventory-pass'),
     total: $('#inventory-total'),
     sections: $('#inventory-sections'),
@@ -162,10 +161,8 @@ const shop = new Shop(
   {
     root: $('#shop'),
     close: $<HTMLButtonElement>('#shop-close'),
-    title: $('#shop-title'),
     kicker: $('#shop-kicker'),
     blurb: $('#shop-blurb'),
-    eddies: $('#shop-eddies'),
     status: $('#shop-status'),
     list: $('#shop-list'),
   },
@@ -180,8 +177,6 @@ const people = new People(
   {
     root: $('#people'),
     close: $<HTMLButtonElement>('#people-close'),
-    title: $('#people-title'),
-    kicker: $('#people-kicker'),
     count: $('#people-count'),
     reputation: $('#people-rep'),
     list: $('#people-list'),
@@ -518,11 +513,10 @@ function peopleAction(count: number): PanelAction {
   return { id: 'people', label: 'People', sub: count ? `${count} here` : 'Nobody here', disabled: !count };
 }
 
-/** The menu button: how much there is to eat, and what the cheapest thing costs. */
+/** The menu button: how much there is to eat. The prices are on the menu. */
 function menuAction(menu: Menu): PanelAction {
   const dishes = menu.items.filter((i) => i.kind === 'food').length;
-  const from = Math.min(...menu.items.map((i) => i.price));
-  const sub = menu.items.length ? `${dishes} ${dishes === 1 ? 'dish' : 'dishes'} · from ${from} €$` : 'Nothing on it';
+  const sub = menu.items.length ? `${dishes} ${dishes === 1 ? 'dish' : 'dishes'}` : 'Nothing on it';
   return { id: 'menu', label: 'Menu', sub, disabled: !menu.items.length };
 }
 
@@ -581,10 +575,9 @@ function showWallet(wallet: Wallet, now: number): void {
 
 /** Fills the inventory with what the player carries, sorted by kind of item. */
 function showInventory(): void {
-  const { eddies, passUntil } = game.wallet;
+  const { passUntil } = game.wallet;
   const items = game.inventory;
   inventory.render({
-    eddies: `€$ ${eddies}`,
     pass: passUntil > Date.now() ? `Valid until ${formatDay(passUntil)}` : 'None',
     sections: Object.entries(ITEM_KINDS).map(([kind, { label, hint }]) => ({
       kind: kind as keyof typeof ITEM_KINDS,
@@ -623,17 +616,15 @@ function showShop(): void {
   const menu = game.menu();
   const { eddies } = game.wallet;
   if (!menu) {
-    shop.render({ title: game.nameOf(game.whereabouts), kicker: 'No menu', blurb: 'Nothing to eat here.', eddies: `€$ ${eddies}`, status: '', items: [] });
+    shop.render({ kicker: 'No menu', blurb: 'Nothing to eat here.', status: '', items: [] });
     return;
   }
   const { venue, items } = menu;
   const carried = new Map(game.inventory.map((item) => [item.id, item.count]));
   const barred = game.barred(Date.now());
   shop.render({
-    title: venue.name,
-    kicker: `${qualityLabel(menu)} · ${venue.kindLabel} · ${game.world.districts[venue.district]?.name ?? 'Night City'}`,
+    kicker: qualityLabel(menu),
     blurb: barred ?? FOOD.blurbs[venue.chain ? 'chain' : venue.quality],
-    eddies: `€$ ${eddies}`,
     status: shopStatus,
     items: items.map((item) => ({ ...item, affordable: !barred && item.price <= eddies, carried: carried.get(item.id) ?? 0 })),
   });
@@ -643,8 +634,6 @@ function showShop(): void {
 function showPeople(): void {
   const now = Date.now();
   const here = game.peopleHere(now);
-  const at = game.interior ?? game.location;
-  const district = at ? (game.world.districts[at.district]?.name ?? 'Night City') : 'Night City';
   const reputation = game.reputation(now).map((r) => `${r.label} ${r.value > 0 ? '+' : '−'}${Math.abs(r.value)}`);
   const known = game.knownPeople();
   const present = personShown ? here.find((p) => p.person.id === personShown) : undefined;
@@ -659,8 +648,6 @@ function showPeople(): void {
   const described = shown ? game.describe(shown.id) : null;
   const named = (p: { id: string }) => game.describe(p.id)?.named ?? false;
   people.render({
-    title: at?.name ?? 'Here',
-    kicker: `${district} · ${at && 'floors' in at ? at.kindLabel : (at?.kindLabel ?? 'The street')}`,
     count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
     // The standing lines belong to the list; a card is about one person.
     reputation: shown ? [] : [`Charisma Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP`, ...reputation],

@@ -454,6 +454,19 @@ button {
   grid-template-rows: auto minmax(240px, 1fr) auto auto;
   min-height: 0;
 }
+/* Rows by name, so an overlay can lie over the stage and the panel without pushing either down. */
+.map-head {
+  grid-row: 1;
+  grid-column: 1;
+}
+.place {
+  grid-row: 3;
+  grid-column: 1;
+}
+.map-foot {
+  grid-row: 4;
+  grid-column: 1;
+}
 
 .map-head,
 .map-foot {
@@ -1099,12 +1112,13 @@ button {
 
 .action {
   display: grid;
+  flex: 1 1 0;
   align-content: center;
   justify-items: center;
   gap: 2px;
-  min-width: 112px;
-  min-height: 44px;
-  padding: 6px 14px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 6px 10px;
   border: 1px solid var(--secondary);
   background: color-mix(in srgb, var(--secondary) 22%, transparent);
   color: #fff;
@@ -1119,6 +1133,13 @@ button {
   transition:
     background 0.15s,
     transform 0.1s;
+}
+.action-label,
+.action-sub {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .action-sub {
   color: color-mix(in srgb, #fff 78%, var(--secondary));
@@ -1223,7 +1244,8 @@ button {
 .overlay {
   position: relative;
   z-index: 10;
-  grid-row: 2;
+  /* Over the map and the panel under it: the panel repeats what the sign says, and an open overlay is what the player is doing. */
+  grid-row: 2 / 4;
   grid-column: 1;
   display: flex;
   flex-direction: column;
@@ -1259,49 +1281,34 @@ button {
     linear-gradient(var(--c), var(--c)) bottom right / 2px 14px no-repeat;
 }
 
-.overlay-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.overlay-kicker {
-  margin: 0;
-  color: var(--muted);
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-.overlay-title {
-  margin: 2px 0 0;
-  color: #ffd84d;
-  font-family: var(--font-display);
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  text-shadow: 0 0 12px color-mix(in srgb, #ffd84d 55%, transparent);
-}
-.overlay-close {
-  width: 36px;
-  height: 36px;
-  margin: -6px -6px 0 0;
-}
-
+/* One strip is the whole header: what this is, a count, and the close; the place is on the sign above. */
 .overlay-strip {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 5px 0;
-  border-block: 1px solid color-mix(in srgb, #ffd84d 25%, transparent);
+  min-height: 34px;
+  padding: 0 0 4px;
+  border-bottom: 1px solid color-mix(in srgb, #ffd84d 25%, transparent);
   color: color-mix(in srgb, #ffd84d 70%, var(--muted));
   font-size: 10px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
 }
-.overlay-strip > :last-child {
+.overlay-label {
+  color: #ffd84d;
+  text-shadow: 0 0 8px color-mix(in srgb, #ffd84d 45%, transparent);
+}
+.overlay-detail {
   margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+.overlay-close {
+  width: 36px;
+  height: 36px;
+  margin: -4px -8px -4px 0;
 }
 .overlay-barcode {
   width: 64px;
@@ -1329,6 +1336,18 @@ button {
   scrollbar-color: color-mix(in srgb, #ffd84d 40%, transparent) transparent;
 }
 
+.inventory-pass {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.inventory-pass span {
+  color: #ffd84d;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
 .inventory-wallet {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1741,7 +1760,7 @@ button {
 .person-picker {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   padding: 8px 10px;
   border: 1px solid color-mix(in srgb, #ffd84d 30%, transparent);
@@ -1755,12 +1774,13 @@ button {
 }
 .person-chip,
 .person-gift {
-  padding: 5px 10px;
+  min-height: 36px;
+  padding: 6px 13px;
   border: 1px solid color-mix(in srgb, var(--primary) 50%, transparent);
   background: color-mix(in srgb, var(--primary) 8%, transparent);
   color: var(--text);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
 }
@@ -1797,7 +1817,7 @@ button {
 .person-cmd {
   flex: 1 1 0;
   min-width: 0;
-  min-height: 38px;
+  min-height: 42px;
   padding: 6px 8px;
   border: 1px solid var(--secondary);
   background: color-mix(in srgb, var(--secondary) 18%, transparent);
