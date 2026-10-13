@@ -57,7 +57,6 @@ export interface PocketPageView {
 
 /** Everything the inventory shows. */
 export interface InventoryView {
-  pass: string;
   /** All of it, e.g. "1.3 kg". */
   weight: string;
   count: number;
@@ -65,7 +64,6 @@ export interface InventoryView {
 }
 
 export interface InventoryElements extends OverlayElements {
-  pass: HTMLElement;
   total: HTMLElement;
   sections: HTMLElement;
 }
@@ -115,8 +113,7 @@ export class Inventory {
   }
 
   render(view: InventoryView): void {
-    const { pass, total, sections } = this.els;
-    pass.textContent = view.pass;
+    const { total, sections } = this.els;
     total.textContent = `${view.count} ${view.count === 1 ? 'item' : 'items'} · ${view.weight}`;
     // Whatever was tapped keeps focus through the redraw: a button on an item, or, once it's gone, the close button;
     // a row that opened hands focus to Back, and Back to the first row.

@@ -237,33 +237,93 @@ button {
   letter-spacing: 0.08em;
   text-align: right;
 }
-.energy-foot {
-  display: flex;
-  grid-column: 1 / -1;
-  gap: 12px;
-  justify-content: space-between;
-  min-width: 0;
-  height: 13px;
-  font-size: 10px;
-  line-height: 13px;
-  letter-spacing: 0.14em;
-  white-space: nowrap;
-}
-.energy-detail {
-  color: var(--muted);
-}
-/* What's wrong with the player: drunk, for now */
-.condition {
-  overflow: hidden;
-  color: #ff6ad5;
-  text-overflow: ellipsis;
-  text-shadow: 0 0 8px rgba(255, 106, 213, 0.6);
-}
-.condition:empty {
-  display: none;
-}
 .energy.is-empty .energy-value {
   color: var(--danger);
+}
+
+/* ── Status: one line under the energy bar, and everything else about the player behind it ── */
+.status-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 24px;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.status-summary {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-chevron {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: -3px 2px 0;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+.status-toggle:hover,
+.status-toggle:focus-visible,
+.status-toggle.is-open {
+  color: color-mix(in srgb, var(--primary) 80%, #fff);
+}
+.status-toggle.is-open .status-chevron {
+  margin-top: 3px;
+  transform: rotate(225deg);
+}
+.status {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 2px 0 0;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  font-size: 11px;
+  line-height: 1.4;
+  clip-path: var(--notch);
+}
+.status-row {
+  display: contents;
+}
+.status-row dt {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.55;
+}
+.status-row dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.status-row.is-bad dd {
+  color: var(--danger);
+}
+.status-row.is-good dd {
+  color: var(--primary);
+}
+.status-row.is-warn dd {
+  color: #ff6ad5;
+  text-shadow: 0 0 8px rgba(255, 106, 213, 0.6);
 }
 
 .sign {
@@ -576,6 +636,7 @@ button {
 
 .save-status {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 7px;
   color: var(--secondary);
@@ -2336,6 +2397,22 @@ button {
   .overlay {
     padding: 12px 12px 10px;
   }
+  /* The strip's barcode is decoration; on a narrow phone its room goes to the count. */
+  .overlay-barcode {
+    display: none;
+  }
+  /* A row that opens stacks on a narrow phone: the name on top, its figures under it, so a long name keeps its words together. */
+  .inv-open {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .inv-open .inv-open-text {
+    flex: 1 1 100%;
+  }
+  .inv-open > .inv-item-detail,
+  .inv-open > .inv-item-weight:first-of-type {
+    margin-left: auto;
+  }
   .inventory-sections {
     grid-template-columns: 1fr;
   }
@@ -2594,11 +2671,15 @@ button {
     padding-inline: 8px;
   }
 }
-/* Three to a row on a phone: the second line keeps its words by giving up its spacing. */
+/* Three to a row on a phone: the second line keeps its words by giving up its spacing, and a shift's pay and energy take two lines before they lose a letter. */
 @media (max-width: 400px) {
   .action-sub {
     font-size: 10px;
     letter-spacing: 0;
+  }
+  .action.is-work .action-sub {
+    white-space: normal;
+    line-height: 1.2;
   }
 }
 
@@ -2624,6 +2705,10 @@ button {
   }
   .sign {
     font-size: 24px;
+  }
+  .status-toggle {
+    min-height: 20px;
+    padding: 0;
   }
   .place-desc {
     font-size: 14px;

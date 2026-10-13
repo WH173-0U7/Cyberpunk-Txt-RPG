@@ -5,16 +5,15 @@ export interface EnergyElements {
   root: HTMLElement;
   fill: HTMLElement;
   value: HTMLElement;
-  detail: HTMLElement;
 }
 
 /** Above this many points the bar is marked off in fives instead of one segment per point. */
 const MAX_SEGMENTS = 40;
 
 /**
- * The energy bar under the sign: how much there is, how much there could be, the energy level
- * and how far it is to the next, and when the next point comes back. It only touches the page
- * when something it shows has changed, so it can be updated on every tick of the clock.
+ * The energy bar under the sign: how much there is and how much there could be. The level, the
+ * experience and when the next point comes back are the status drop-down's. It only touches
+ * the page when something it shows has changed, so it can be updated on every tick of the clock.
  */
 export class EnergyMeter {
   private shown = '';
@@ -24,8 +23,7 @@ export class EnergyMeter {
   update(status: EnergyStatus, now: number): void {
     const { current, max, level, xp, xpToNext, nextPointAt } = status;
     const refill = nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(nextPointAt - now)}`;
-    const detail = `Lv ${level} · XP ${xp}/${xpToNext} · ${refill}`;
-    const key = `${current}/${max}|${detail}`;
+    const key = `${current}/${max}|${level}|${xp}|${refill}`;
     if (key === this.shown) return;
     this.shown = key;
 
@@ -34,7 +32,6 @@ export class EnergyMeter {
     root.style.setProperty('--segments', String(max <= MAX_SEGMENTS ? max : Math.ceil(max / 5)));
     root.classList.toggle('is-empty', current === 0);
     value.textContent = `${current}/${max}`;
-    this.els.detail.textContent = detail;
     root.setAttribute('aria-valuenow', String(current));
     root.setAttribute('aria-valuemax', String(max));
     root.setAttribute('aria-valuetext', `${current} of ${max} energy. Level ${level}, ${xp} of ${xpToNext} experience. ${refill}.`);

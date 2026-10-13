@@ -212,9 +212,9 @@ Eateries and clothing stores hire; the player climbs a ladder of rungs at one pl
   `{work}` and `{pay}` in the speaker's vars; the event is `jobChanged`.
 - The UI: a boss's card gets a **Work** command (`Picker` `work`: an `Ask for work` or `Quit`
   chip, actions `hire`/`quit`); the panel inside the workplace gets a **Work** action
-  (`ActionId` `work`) whose subtitle is the pay and energy, or why not now; the People
-  overlay's strip names the job. People's troubles to help with are not here yet: when they
-  are, they hang off the same card, behind a command.
+  (`ActionId` `work`) whose subtitle is the pay and energy, or why not now; the status
+  drop-down names the job. People's troubles to help with are not here yet: when they are,
+  they hang off the same card, behind a command.
 
 ## Inebriation
 
@@ -261,11 +261,26 @@ Eateries sell food, into the inventory (eating it comes later):
 - `src/ui/shop.ts` is the menu overlay (a `MapOverlay` opened from the panel's **Menu**, or
   **Shop** at a store with a rack of gear).
 
+## The header and the status drop-down
+
+The sign (`src/ui/hud.ts`) says where the player is and shrinks its letters to fit a long
+name; the address above it says only the district. Nothing else on the screen repeats the
+name: the panel under the map has no title inside a building or at a place (the target view
+keeps its own). One line under the energy bar (`src/ui/status.ts`, filled by `showStatus` in
+`main.ts` on every tick) says the energy level, when the next point comes, and anything the
+matter (drunk, masked, the job's rung); tapping it unfolds everything else about the player:
+experience, charisma, eddies and the bank, the pass, the job, the condition, the mask, every
+reputation, the map count. Anything new the player should know about themselves goes in
+there as a row, not on the header, the map's head (the cash and the save light only) or the
+People overlay's strip (only what people here can see: the mask).
+
 ## The panel under the map
 
 `.place` has one fixed height per layout (`src/style.css`), so the map stage never resizes
 as its text changes or types out: anything longer scrolls inside `.place-text`. Keep it that
 way when adding to the panel; the map re-renders (and re-clamps its camera) on every resize.
+Inside a building, leaving is the panel's corner button (`closable` with a `closeLabel`), so
+the action row keeps to three buttons at most and their words fit a phone.
 
 ## Overlays
 
