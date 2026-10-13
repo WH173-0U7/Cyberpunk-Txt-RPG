@@ -48,6 +48,8 @@ const loyal: When = { traits: { loyalty: 'high' } };
 // The moment: a mask on the player, or a face.
 const masked: When = { needs: ['mask'] };
 const bare: When = { lacks: ['mask'] };
+// What happened between people lately, and what the speaker was to it (life.ts): theirs, a relative's, their gang's doing, or heard of.
+const news = (kind: string, role: string, ...more: When[]): When => both({ needs: [`news${kind}`, `news${role}`] }, ...more);
 // The player's way with words.
 const blunt: When = { eloquence: ['blunt'] };
 const easy: When = { eloquence: ['easy'] };
@@ -260,6 +262,41 @@ export const LINES: DialogueLines = {
       only("Quarterly reviews. Don't ask.", corpo),
       only("Quiet week. I don't trust a quiet week.", ganger),
       only('Fuel is up again. Everything that moves runs on {eddies}.', nomad),
+    ],
+    news: [
+      // A gang leaned on a storefront.
+      only("{newsGang} came by {newsAgo} for their cut. {newsTook} {eddies}. What do you do.", news('Shakedown', 'Mine')),
+      only("Paid {newsGang} {newsAgo}. Again. One day I won't.", news('Shakedown', 'Mine')),
+      only('My {newsWord} {newsWho} got leaned on by {newsGang} {newsAgo}. Paid up, like everyone does.', news('Shakedown', 'Kin')),
+      only("{newsGang} squeezed my {newsWord} {newsWho} {newsAgo}. {NewsHe} won't say how much.", news('Shakedown', 'Kin')),
+      only("Stopped by {newsWho}'s place {newsAgo}. {NewsHe} knows how it works.", news('Shakedown', 'Ours')),
+      only("{newsWho} paid up {newsAgo}. Everyone pays. That's the arrangement.", news('Shakedown', 'Ours')),
+      only('Heard {newsGang} were squeezing {newsWho} {newsAgo}. Nobody said anything. Nobody ever does.', news('Shakedown', 'Heard')),
+      only('{newsGang} were round {newsWho} {newsAgo}, collecting. You learn not to look.', news('Shakedown', 'Heard')),
+      // Someone got jumped.
+      only('Got jumped by {newsGang} {newsAgo}. {newsTook} {eddies}, gone.', news('Robbery', 'Mine')),
+      only("{newsGang} caught me {newsAgo}. Took {newsTook} {eddies} and my evening.", news('Robbery', 'Mine')),
+      only("{newsGang} jumped my {newsWord} {newsWho} {newsAgo}. {NewsHe}'s alright. Angry.", news('Robbery', 'Kin')),
+      only('My {newsWord} {newsWho} got robbed {newsAgo}. {newsGang}. Who else.', news('Robbery', 'Kin')),
+      only('{newsWho} had {newsTook} {eddies} on {newsHim} {newsAgo}. Had.', news('Robbery', 'Ours')),
+      only("Found {newsWho} with {newsTook} {eddies} {newsAgo}. Tax.", news('Robbery', 'Ours')),
+      only('{newsWho} got jumped {newsAgo}. {newsGang}, people say.', news('Robbery', 'Heard')),
+      only('Someone got done over {newsAgo}. {newsWho}, I heard. {newsGang} colors.', news('Robbery', 'Heard')),
+      // A fight.
+      only("Had words with {newsWho} {newsAgo}. {NewsHe} came off worst.", news('Fight', 'Mine', { needs: ['newsWon'] })),
+      only('Got into it with {newsWho} {newsAgo}. Lost. Don\'t ask.', news('Fight', 'Mine', { lacks: ['newsWon'] })),
+      only("My {newsWord} {newsWho} got into a fight {newsAgo}. Laid up at home now.", news('Fight', 'Kin', { needs: ['newsHurt'] })),
+      only('My {newsWord} {newsWho} put someone on the floor {newsAgo}. Runs in the family.', news('Fight', 'Kin', { lacks: ['newsHurt'] })),
+      only('{newsWho} wanted a go at us {newsAgo}. {NewsHe} got one.', news('Fight', 'Ours')),
+      only('Fight {newsAgo}. {newsWho} came off worst, and {newsHe} started it.', news('Fight', 'Heard')),
+      only("{newsWho}'s laid up. Picked a fight {newsAgo} and lost it.", news('Fight', 'Heard')),
+      // Friends made and lost.
+      only('Been drinking with {newsWho} lately. Good people.', news('Friends', 'Mine')),
+      only("{newsWho} and me got talking {newsAgo}. {NewsHe}'s alright.", news('Friends', 'Mine')),
+      only('My {newsWord} {newsWho} found a new friend {newsAgo}. Good for {newsHim}.', news('Friends', 'Kin')),
+      only("Me and {newsWho} are done. Don't ask.", news('Fallout', 'Mine')),
+      only('{newsWho} and I had words {newsAgo}. That\'s that.', news('Fallout', 'Mine')),
+      only("My {newsWord} {newsWho} fell out with someone {newsAgo}. Won't say who.", news('Fallout', 'Kin')),
     ],
     here: [
       only('{here}. Not the worst place in {district}.', { needs: ['here'], lacks: ['atWork', 'atHome'] }),

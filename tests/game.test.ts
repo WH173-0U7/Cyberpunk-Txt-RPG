@@ -8,8 +8,10 @@ import { LINES } from '../src/data/dialogue';
 import { PEOPLE } from '../src/data/people';
 import { CHARISMA } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
+import { LIFE } from '../src/data/life';
 import { openness } from '../src/engine/dialogue';
 import { bossOf } from '../src/engine/jobs';
+import { newsFor } from '../src/engine/life';
 import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
 import { freshSociety } from '../src/engine/society';
@@ -114,6 +116,7 @@ const RULES: GameRules = {
   lines: LINES,
   charisma: CHARISMA,
   jobs: JOBS,
+  life: LIFE,
   gear: GEAR,
   money: MONEY,
   // People's days run on UTC here, whatever machine the tests run on.
@@ -456,6 +459,7 @@ describe('Game', () => {
         society: null,
         charisma: null,
         job: null,
+        life: null,
       });
       const { game, take } = setup({}, progress('b-shop', outside('b-shop', 32, 20)));
       expect(game.interior?.id).toBe('b-shop');
@@ -577,6 +581,7 @@ describe('Game', () => {
       society: null,
       charisma: null,
       job: null,
+      life: null,
     });
     const lager = { id: 'broseph-lager', kind: 'consumable', name: 'Broseph Lager', count: 1 } as const;
     const moonshine = { id: 'moonshine', kind: 'consumable', name: 'Moonshine', count: 2 } as const;
@@ -689,6 +694,7 @@ describe('Game', () => {
       society: null,
       charisma: null,
       job: null,
+      life: null,
     });
 
     it('makes a population for the city, with the noodle bar staffed by day and nobody about on the street', () => {
@@ -965,6 +971,7 @@ describe('Game', () => {
       society: null,
       charisma: null,
       job: null,
+      life: null,
     });
     const inside = (building: string, x: number, y: number, rules: Partial<GameRules> = {}, items: Progress['items'] = []) => {
       const game = new Game(world, { ...RULES, startingEddies: 100, ...rules }, progressInside(building, x, y, items));
@@ -1617,6 +1624,30 @@ describe('Game', () => {
         expect(hired.game.work(hired.now)).toBe(false);
       });
 
+      it("lives the people's days on the clock, keeps them through a save, and hears the news from them", () => {
+        const { game, now } = withBoss('b-noodle', 38, 20);
+        const today = Math.floor(now / (24 * HOUR));
+        expect(game.lifeSaved.day).toBe(today);
+        // Yesterday and today were lived through on starting; the days since, on the next tick.
+        const saved = game.lifeSaved;
+        const later = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), life: saved });
+        later.start(now + 3 * 24 * HOUR);
+        expect(later.lifeSaved.day).toBe(today + 3);
+        expect(later.lifeSaved.events.every((e) => e.day > today + 3 - LIFE.keepDays)).toBe(true);
+        // Put back from a save, the people are as they were left.
+        const again = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), life: game.lifeSaved });
+        expect(again.population.people).toEqual(game.population.people);
+        expect(again.lifeSaved).toEqual(game.lifeSaved);
+        // Everyone here is with someone or not, and the news, when there is any, names someone real.
+        for (const p of game.peopleHere(now)) {
+          if (p.scene) expect(game.person(p.scene.with), p.person.name).toBeDefined();
+        }
+        const told = game.population.people.map((p) => newsFor(p, game.population, game.lifeSaved, LIFE, today)).filter((n) => n !== null);
+        for (const n of told) expect(game.person(n.other.id)).toBeDefined();
+        // The test city has no gangs, so its days are quiet: friendships, and fallings out.
+        for (const e of game.lifeSaved.events) expect(['friends', 'fallout']).toContain(e.kind);
+      });
+
       it('keeps shifts to working hours and the workplace, and keeps the job through a save', () => {
         const { game, now, boss } = withBoss('b-noodle', 38, 20);
         expect(game.askForWork(boss.id, now)).toBe(true);
@@ -1687,6 +1718,7 @@ describe('Game', () => {
       society: null,
       charisma: null,
       job: null,
+      life: null,
     };
 
     const { game, take, outputs } = setup({}, progress);

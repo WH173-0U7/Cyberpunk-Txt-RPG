@@ -177,6 +177,26 @@ it needs no generator bump. The pieces:
   `masked.barred` lines), and `attitude` takes `masked` for `SOCIETY.mask.turf` against the
   player with anyone in a gang. The speaker's `vars.mask` is the word for it, so lines fit
   with `needs`/`lacks: ['mask']` (`masked.recognized`, the greetings, the robbery lines).
+- The people have days of their own (`src/engine/life.ts`, numbers in `src/data/life.ts`):
+  `liveUntil` lives each clock day since the last one lived (at most `catchUpDays`), rolling
+  a few `LifeEvent`s per district from the seed and the day (a `shakedown`, a `robbery`, a
+  `fight`, `friends` made, a `fallout`) and changing the people as it goes: eddies (earned
+  back by `recover` a day toward what they started with), `hates`, ties made and broken,
+  and `Person.hurtUntil` (laid up at home in `whereIs`). The changes are the `LifeState`
+  saved as `life`; `applyLife` puts them back onto a population made fresh for the seed, so
+  `generatePeople` stays pure and a save brings the same people back. `Game` lives the days
+  in `start` and `tick` (`live`), emitting `societyChanged` when anything happened.
+  `newsFor(person)` is what someone would bring up (the freshest thing that was theirs, a
+  relative's, their gang's doing, or their district's); `Game.talk` puts it in the speaker's
+  vars (`news`, `newsShakedown`…, `newsMine`/`newsKin`/`newsOurs`/`newsHeard`, `newsWho`,
+  `newsGang` the gang's name, `newsWord`, `newsAgo`, `newsTook`, `newsWon`, `newsHurt`) for the `news`
+  topic, whose lines in `src/data/dialogue.ts` fit by kind and role; telling it is an
+  introduction to whoever it was about. `scenesAt` pairs the people at a spot by their ties
+  (and a ganger on their turf with the help, rivals with each other) with a phrase from
+  `LIFE.scenes`, drawn for the place, the day and the three-hour block; it's `Presence.scene`,
+  and the People overlay says "eating Wontons · arguing with a woman in Mox colors". A new
+  kind of thing that can happen between people is another `LifeKind` with a chance, a roll
+  in `liveDay`, and news lines for every side it can be told from (the dialogue sweep checks).
 - Gangs are canon (wiki): keep their turf, looks and rivalries true to it. Names are made
   up in each community's style and must never be a real character's (`tests/people.test.ts`
   checks a few).

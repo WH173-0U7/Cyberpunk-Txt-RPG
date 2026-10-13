@@ -168,6 +168,22 @@ own.
   day and reputations recover two, on the game's clock. The status drop-down under the
   energy bar lists every reputation that stands at anything. (Violence, once there is combat, goes through the same
   machinery: assault and murder are already kinds of incident, with heavier consequences.)
+- **Their own lives**: the people have days without you. Every day on the clock, in every
+  district, a few things happen between them where the people for them exist: a gang leans
+  on a storefront for its cut or jumps someone on the way home (the victim loses eddies and
+  comes to hate that gang, and earns the eddies back over the week); someone with the nerve
+  picks a fight with a gang they hate, or rival crews go at it, and the loser is laid up at
+  home for days (missing from the counter and the bar); two regulars of the same place become
+  friends; a hot temper ends a friendship. It all happens the same way for a seed whenever
+  the days are lived through, up to a month at a time when you've been away, and it sticks:
+  the city you come back to has moved on. People talk about it. Chatting turns to the news
+  two times in three when there is any: what happened to them, to a relative ("my cousin
+  Rosa got jumped by Maelstrom two nights back"), what their gang did, or what they heard
+  around the district, and being told of someone is an introduction (the name, and the tie
+  when it was family). Wherever you are, the people there are with each other too: a couple
+  sharing a table or not speaking, family arguing, friends drinking, a crew holding court,
+  coworkers on a break, a ganger leaning on the help, rivals staring each other down. The
+  **People** list says who is with whom.
 - **Work**: every eatery and clothing store has a boss, the one who runs it (the cook at a
   one-cook noodle bar, whoever runs the counter or the shop otherwise). Find them and their
   card gets a **Work** command: **Ask for work**, and whether they take you on is their

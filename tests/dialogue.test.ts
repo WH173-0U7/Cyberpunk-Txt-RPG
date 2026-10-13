@@ -303,6 +303,8 @@ describe('dialogue', () => {
           if (topic === 'here' && !vars.here) continue;
           if (topic === 'kin' && !kin) continue;
           if (topic === 'hates' && !p.hates) continue;
+          // The news is checked on its own below, from every side it can be told from.
+          if (topic === 'news') continue;
           check(said, `${about} topic ${topic}`);
         }
         for (const q of questions) {
@@ -317,6 +319,17 @@ describe('dialogue', () => {
         }
         check(compose(LINES.chop.done, speaker, LINES, rng), `${about} chop done`);
         check(deflect(speaker, 'chop', LINES, rng), `${about} deflect chop`);
+        // What happened between people lately, of every kind, from every side it can be told from.
+        for (const kind of ['Shakedown', 'Robbery', 'Fight', 'Friends', 'Fallout']) {
+          for (const role of ['Mine', 'Kin', 'Ours', 'Heard']) {
+            if ((kind === 'Friends' || kind === 'Fallout') && (role === 'Ours' || role === 'Heard')) continue;
+            for (const won of ['yes', '']) {
+              const telling: Speaker = { ...speaker, vars: { ...vars, news: 'yes', [`news${kind}`]: 'yes', [`news${role}`]: 'yes', newsWho: 'Ana', newsGang: 'Valentinos', newsWord: 'cousin', newsAgo: 'last night', newsTook: '40', newsWhere: 'The Afterlife', newsHe: 'she', newsHim: 'her', newsHis: 'her', newsWon: won, newsHurt: won ? '' : 'yes' } };
+              check(compose(LINES.topics.news, telling, LINES, rng, { opener: false }), `${about} news ${kind} ${role} ${won ? 'won' : 'lost'}`);
+            }
+          }
+        }
+        lines += 32;
         // A boss, asked for work: every answer, in and out of a mask, with a place to name.
         const bossing: Speaker = { ...speaker, vars: { ...vars, work: 'El Pinche Grill' } };
         for (const pool of [LINES.work.hire, LINES.work.refuse, LINES.work.shift, LINES.work.promote, LINES.work.quit]) check(line(pool, bossing, rng), `${about} work pool`);

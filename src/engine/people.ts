@@ -88,6 +88,8 @@ export interface Person {
   /** Eddies on their credchip, for anyone who takes it and gets it chopped (0: they carry none). */
   chip: number;
   bio: string;
+  /** The clock day until which they're laid up at home, after losing a fight (see life.ts). */
+  hurtUntil?: number;
 }
 
 export type TieKind = 'spouse' | 'sibling' | 'cousin' | 'parent' | 'child' | 'uncle' | 'nephew' | 'kin' | 'friend' | 'crew' | 'coworker';
@@ -305,6 +307,8 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
   const at = (spot: Spot | null, doing: string) => (spot ? { spot, doing } : null);
   const outLate = person.gang ? 0.45 : person.traits.chatty * 0.3;
 
+  // Laid up: home all day, nursing it.
+  if (person.hurtUntil !== undefined && day <= person.hurtUntil) return at(home, hour < 6 || hour >= 23 ? 'at home, asleep' : 'at home, laid up');
   if (hour < 6) return rng.chance(outLate) && hangout ? at(hangout, hangingOut(person, world, hangout, dishes)) : at(home, 'at home, asleep');
   if (hour < 9) return rng.chance(0.5) ? at(home, 'at home') : null;
   if (hour < 18) {
