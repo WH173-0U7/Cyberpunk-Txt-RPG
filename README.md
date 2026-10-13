@@ -99,21 +99,41 @@ own.
   days off), their hangout in the evening, out on the streets in between. Inside a building
   or at a place, **People** lists who's there and what they're doing; tap one for their card.
 - **Getting on with people**: **Talk** gets a greeting that depends on how they feel about
-  you and a line about their life (their work, their district, their food, the gang they
-  can't stand), and builds rapport a little each time (not twice in an hour). Give them food
-  or drink from your inventory (their favorite counts double). The card shows where you
-  stand: Stranger, Wary, Warm, Friend, Cold, Hostile.
-- **Charisma**: how far your words go. Every chat, gift and answered question is experience;
-  each level (the first takes about fifteen chats, each after about twice the one before)
-  makes chats and gifts worth a fifth more rapport and makes wary and cold people likelier
-  to answer you. It shows in the People overlay's strip.
+  you and how well they know you (a stranger, someone who saw you yesterday, a regular, a
+  face they haven't seen in days), then something about their life, and builds rapport a
+  little each time (not twice in an hour). Give them food or drink from your inventory
+  (their favorite counts double). The card shows where you stand: Stranger, Wary, Warm,
+  Friend, Cold, Hostile.
+- **How people talk**: nobody reads off a list. Every line is put together on the spot from
+  fragments: an opener now and then (someone at the stove says "Hang on", someone three
+  drinks in says "Pull up a stool"), the thing itself, and an aside that depends on who they
+  are (the talkative run on, the greedy mention eddies, the timid ask you to keep it to
+  yourself, the loyal put their people first). Each has a voice: the street, a ganger, a
+  corpo, a nomad from the Badlands, their elders, the young, with the wiki's streetslang
+  swapped in to match (choom and choomba, gonk, preem and nova, eddies and eds, badges,
+  delta, scop and kibble). They know what's going on: where you're talking, how late it is,
+  what's being said about you in the district or in their gang. And they remember: ask what
+  they've already told you and they say so.
+- **Charisma**: how far your words go, and it decides what people will tell you. Every chat,
+  gift and answered question is experience; each level (the first takes about fifteen chats,
+  each after about twice the one before) makes chats and gifts worth a fifth more rapport
+  and opens people up a little more. With none of it, a stranger gives you their name, talks
+  about the neighborhood and their lot, tells you their work or their tastes about half the
+  time, gives a non-answer about their age and a flat no about where they live or who they
+  hate. Around level 3 strangers start giving their age; around level 5, who they hate and
+  now and then where they live. Someone warm tells you most things, a friend everything, the
+  cold and the hostile nothing. The talkative and the warm open up sooner; the loyal keep
+  their people to themselves; the brave name their enemies. Your own lines change with it
+  too: at level 1 you ask "How old are you?", later "How old are you, anyway?", later still
+  something smoother. Asking again soon after a no is pressing, and costs you rapport. It
+  shows in the People overlay's strip.
 - **What you know of people**: only what you've found out. Until you've been introduced,
   someone is "A young woman in Valentinos colors" or "An older man": what's plain to see
   (their gang's colors, what they're doing) and nothing more. Talking to them gets you
   their name, and whatever they talk about (their work, what they eat, who they hate); a
-  few chats and you have their measure. **Ask** them the rest: what they do, how old they
-  are, where they live, what they like, who they hate; they answer, or not, by how they
-  feel about you (charisma helps). Watching tells you things too: open **People** inside a
+  few chats and you have their measure. **Ask** them the rest (Name, Work, Age, Home,
+  Tastes, Enemies); they answer, give a non-answer, or refuse, by how they feel about you,
+  your charisma and what the question asks of them. Watching tells you things too: open **People** inside a
   shop and its workers are plainly its workers, at night in an apartment block its
   residents plainly live there, and someone eating is eating what they like. Their card
   lists what you know and nothing else.
@@ -274,13 +294,18 @@ Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
 - **People** are in [`src/data/people.ts`](src/data/people.ts): name pools by community and
   which communities each district draws from, the gangs (their members' look, roles and
   rivals) and each district's turf, job roles by business, category and building kind,
-  freelance work, the kinds of place people hang out at, and everything they say (`LINES`,
-  with `{given}`, `{work}`, `{gang}`, `{dish}`, `{kinName}`… filled in). The cascade's numbers
-  (closeness of each tie, severity of each incident, reputation costs, the ban threshold,
-  how fast grudges fade, when someone comes to collect) are in
-  [`src/data/society.ts`](src/data/society.ts). People never change the city, so they need
-  no generator bump; a change to how they're made only loses the player's standings with
-  people who no longer exist.
+  freelance work and the kinds of place people hang out at. Everything they say is in
+  [`src/data/dialogue.ts`](src/data/dialogue.ts): pools of fragments (openers, asides,
+  greetings, topics, answers, non-answers, refusals…) with `{given}`, `{work}`, `{gang}`,
+  `{dish}`, `{kinName}`, `{here}`… filled in and the slang (`{choom}`, `{gonk}`, `{eddies}`…)
+  swapped in by voice; a plain string fits anyone, `only(text, when)` fits the people it
+  says (by stance, voice, mood, history, traits, the player's eloquence, or which variables
+  are filled). The cascade's numbers (closeness of each tie, severity of each incident,
+  reputation costs, the ban threshold, how fast grudges fade, when someone comes to collect)
+  and openness (what each question costs, what each stance and each level of charisma is
+  worth) are in [`src/data/society.ts`](src/data/society.ts). People never change the city,
+  so they need no generator bump; a change to how they're made only loses the player's
+  standings with people who no longer exist.
 - **Food** is in [`src/data/food.ts`](src/data/food.ts): every dish names the menus it turns
   up `on` (noodles, grill, street, diner, fine, market…), which qualities of place serve it
   (`where`; everywhere if not said) and the districts where it's a staple (`favored`).
