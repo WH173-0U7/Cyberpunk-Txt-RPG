@@ -1160,6 +1160,7 @@ describe('Game', () => {
       const pouch = banked.menu()?.items[0];
       if (!pouch) throw new Error('no pouch');
       expect(banked.canBuy(pouch.id)).toBeNull();
+      expect(banked.affords(pouch.id)).toBe(true);
       expect(banked.buy(pouch.id)).toBe(true);
       expect(banked.wallet).toMatchObject({ bills: 5, coins: 0, account: 200 - pouch.price });
       const street = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside('b-noodle', 38, 20), money: { bills: 1, coins: 0, account: 200 } });
@@ -1167,10 +1168,14 @@ describe('Game', () => {
       const dish = street.menu()?.items[0];
       if (!dish) throw new Error('no dish');
       expect(street.canBuy(dish.id)).toBe(`${dish.name} is ${dish.price} €$. You've got 1 €$ in cash.`);
+      expect(street.affords(dish.id)).toBe(false);
+      expect(street.affords('nothing')).toBe(false);
       expect(street.buy(dish.id)).toBe(false);
       // The NCART takes a transfer too.
       const rider = new Game(world, { ...RULES, startingEddies: 0, fare: 3 }, { ...progressInside('b-noodle', 38, 20), where: station('s1'), inside: null, money: { bills: 0, coins: 0, account: 10 } });
       rider.start(T0);
+      expect(rider.affordsFare(3)).toBe(true);
+      expect(rider.affordsFare(30)).toBe(false);
       expect(go(rider, station('s2'), 'ncart', T0).started).toBe(true);
       expect(rider.wallet).toMatchObject({ account: 7, eddies: 0 });
     });
@@ -1197,11 +1202,16 @@ describe('Game', () => {
       depositor.start(T0);
       expect(depositor.deposit()).toBe(true);
       expect(depositor.wallet).toMatchObject({ bills: 0, coins: 0, account: 48 });
-      // No counter outside a bank.
+      // No counter outside a bank, nor for someone the branch has barred.
       const { game: elsewhere } = inside('b-noodle', 38, 20);
       expect(elsewhere.bank()).toBeNull();
       expect(elsewhere.deposit()).toBe(false);
       expect(elsewhere.withdraw(10)).toBe(false);
+      const barred = new Game(world, RULES, { ...progressInside('b-bank', 44, 20), society: { ...freshSociety(), rep: { 'business:b-bank': { value: SOCIETY.rep.banAt, at: T0 } } } });
+      barred.start(T0);
+      expect(barred.barred(T0)).toMatch(/won't serve|closes/);
+      expect(barred.bank(T0)).toBeNull();
+      expect(barred.deposit()).toBe(false);
     });
 
     /** A weekday at 11:00 UTC with someone working at a storefront, the game standing inside it. */
@@ -1266,6 +1276,12 @@ describe('Game', () => {
       // Watching them work, the player knows their trade; and there's nothing more to chop.
       expect(game.describe(tech.worker.id)?.facts.job).toMatch(/Test Decks/);
       expect(game.chop(tech.worker.id, 'credchip-1', now)).toBe(false);
+      // A chip with an eddie on it is all cut: nothing left to keep.
+      const token = atWork('b-deck', 26, 20, { items: [hot(1)], money: { bills: 0, coins: 0, account: 0 }, society: friendOf(tech.worker.id, now) });
+      token.take();
+      expect(token.game.chop(tech.worker.id, 'credchip-1', now)).toBe(true);
+      expect(token.game.inventory.filter((i) => i.kind === 'credchip')).toEqual([]);
+      expect(token.outputs(token.take()).some((o) => /Nothing left on the chip/.test(o.text))).toBe(true);
       // A stranger might say no; then asking again soon is pressing, which costs rapport and gets nowhere.
       const stranger = atWork('b-deck', 26, 20, { items: [hot(40)], money: { bills: 0, coins: 0, account: 0 } });
       stranger.take();

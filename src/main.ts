@@ -499,7 +499,8 @@ function rideAction(plan: TripPlan | null, now: number): PanelAction {
   }
   const covered = game.passActive(now);
   const fare = covered ? 'Pass' : `${plan.fare} €$`;
-  const short = !covered && game.wallet.eddies < plan.fare;
+  // The NCART takes a transfer too, so the account and a chip in your name count.
+  const short = !covered && !game.affordsFare(plan.fare);
   return { id: 'ride', label: 'NCART', sub: `${formatMinutes(plan.minutes)} · ${short ? `${fare}, short` : fare}`, disabled: short };
 }
 
@@ -536,7 +537,7 @@ function hereView(now: number): PanelView {
           id: 'pass',
           label: active ? 'Extend pass' : 'Monthly pass',
           sub: `${passPrice} €$ · ${passDays} days`,
-          disabled: game.wallet.eddies < passPrice,
+          disabled: !game.affordsFare(passPrice),
         },
       ],
       closable: false,
@@ -802,7 +803,6 @@ function showCondition(status: InebriationStatus, now: number): void {
 /** Fills the menu with what's for sale where the player is, and whether they can afford it. */
 function showShop(): void {
   const menu = game.menu();
-  const { eddies } = game.wallet;
   if (!menu) {
     shop.render({ kicker: 'No menu', blurb: 'Nothing to eat here.', status: '', items: [] });
     return;
@@ -816,7 +816,8 @@ function showShop(): void {
     kicker: qualityLabel(menu),
     blurb: barred ?? menuBlurb(menu),
     status: shopStatus,
-    items: items.map((item) => ({ ...item, affordable: !barred && item.price <= eddies, carried: carried.get(item.id) ?? 0 })),
+    // Cash, or a transfer where this counter takes one: the game knows which.
+    items: items.map((item) => ({ ...item, affordable: !barred && game.affords(item.id), carried: carried.get(item.id) ?? 0 })),
   });
 }
 

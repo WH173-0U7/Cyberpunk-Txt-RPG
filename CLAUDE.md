@@ -85,7 +85,8 @@ clothing are the items so far:
   through `Game`'s private `pay(price, transfers)`: a transfer from the account where the
   counter takes one (`MONEY.transfers`: chains, luxury places, racks of gear, the NCART)
   and the account covers it, else cash through `payCash` (coins first, notes of `noteMin`
-  and up, change back in coins as far as `changeRoom` allows). Anything that pays the
+  and up, change back in coins as far as `changeRoom` allows); `Game.affords(id)` and
+  `affordsFare(amount)` tell the UI what can be paid for, by either. Anything that pays the
   player cash goes through `walletRoom`/`changeRoom` (see `rob`); anything that takes it,
   `takeCash` (bills first). A bank is a building whose business is `bank` (the `EuroBank`
   chain and the Asukaga & Finch landmark in `src/data/city.ts`, both canon names):
