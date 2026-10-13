@@ -1674,6 +1674,16 @@ button {
 .action.is-bank:focus-visible {
   background: color-mix(in srgb, #ffd84d 28%, transparent);
 }
+/* A shift at the player's job */
+.action.is-work {
+  border-color: #ffa94d;
+  background: color-mix(in srgb, #ffa94d 14%, transparent);
+  text-shadow: 0 0 8px #ffa94d;
+}
+.action.is-work:hover,
+.action.is-work:focus-visible {
+  background: color-mix(in srgb, #ffa94d 28%, transparent);
+}
 /* The bank's counter: the figures, then what to do with them */
 .bank-body {
   display: flex;

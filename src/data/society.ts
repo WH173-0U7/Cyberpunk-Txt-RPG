@@ -16,7 +16,9 @@ import type { SocietyRules } from '../engine/society';
  * give their age, around level 5 who they hate and, now and then, where they live; a warm
  * person tells you most things, a friend everything. Asking again within the talk cooldown
  * after a no costs two rapport. A netrunner chops a stolen credchip about as readily as a
- * stranger talks about their work, the greedy more so. A mask on the player costs 1.2 with
+ * stranger talks about their work, the greedy more so; a boss takes the player on a little
+ * less readily than that (a stranger with no way with words gets a job one time in five; a
+ * warm boss nearly always). A mask on the player costs 1.2 with
  * everyone (a stranger in one gets a name out of people, sometimes, and little else; a friend
  * still tells most things), and reads as 20 points against the player to anyone in a gang: a
  * ganger who'd be a stranger is cold to a mask on their turf.
@@ -39,7 +41,7 @@ export const SOCIETY: SocietyRules = {
     stance: { hostile: -9, cold: -2.5, wary: -1.2, neutral: 0, warm: 1.5, friend: 3 },
     perLevel: 0.5,
     traits: { chatty: 1.2, warmth: 0.8, loyalty: 1, courage: 1, greed: 1 },
-    cost: { name: -1, job: 0, likes: 0, age: 1, hates: 1.2, home: 2, kin: 1.6, district: -1, life: -1, here: -1, rumor: -1, chop: 0.4 },
+    cost: { name: -1, job: 0, likes: 0, age: 1, hates: 1.2, home: 2, kin: 1.6, district: -1, life: -1, here: -1, rumor: -1, chop: 0.4, hire: 0.6 },
     mask: 1.2,
     answerAt: 1,
     deflectAt: -1,

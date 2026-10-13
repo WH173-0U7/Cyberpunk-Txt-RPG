@@ -168,6 +168,22 @@ own.
   day and reputations recover two, on the game's clock. The **People** overlay lists every
   reputation that stands at anything. (Violence, once there is combat, goes through the same
   machinery: assault and murder are already kinds of incident, with heavier consequences.)
+- **Work**: every eatery and clothing store has a boss, the one who runs it (the cook at a
+  one-cook noodle bar, whoever runs the counter or the shop otherwise). Find them and their
+  card gets a **Work** command: **Ask for work**, and whether they take you on is their
+  openness to it, like any ask (how they feel about you, your charisma; never with a mask
+  on, never while you've a job elsewhere, and a boss you've crossed says no). Taken on, you
+  start at the bottom of that kind of place's ladder: the dish pit at an eatery, the
+  stockroom at a store. Inside your workplace between nine and five by the clock the panel
+  has **Work**: one shift a day, for the rung's energy, paid into your account (a luxury
+  place pays more, a secondhand one less). Every shift is a point of trust and a little
+  rapport with the boss; once the trust is there for the next rung and the boss has warmed to
+  you, they move you up on the spot, with better pay: prep, then the counter, then the line
+  at an eatery; the shop floor, the register, then fitting at a store. **Quit** is on the
+  boss's card. A place that won't serve you (you robbed or insulted its people) won't keep
+  you either. The **People** overlay's strip says where you work and how many shifts you've
+  put in. (People's own troubles, and helping with them, come later, once there's combat and
+  more to do with a person.)
 - **Masks**: a gas mask, a ballistic mask, a balaclava or a menpō (all real 2077 pieces, on
   the thrift rack, at Saeko's and in the clothing stores) hides your face, and anything you
   do to someone from behind it is nobody's doing: no grudge, no word around the district, no

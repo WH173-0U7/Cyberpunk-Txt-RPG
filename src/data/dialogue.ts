@@ -378,6 +378,7 @@ export const LINES: DialogueLines = {
     kin: ['Why do you want to know?', "I don't talk about people I know to people I don't.", 'Maybe. Maybe not.'],
     chop: ['Not here. Too many eyes.', "Come back when it's quieter.", 'Maybe. Depends what else you bring me.', only("Show me you're not working for the {badges} first.", wary)],
     any: ['Pass.', 'Next question.', "I don't know you well enough for that."],
+    hire: ["Maybe. Come back when it's quieter.", 'Ask me on a slow day.', "I'll think about it. That's not a yes."],
   },
 
   refuse: [
@@ -473,6 +474,56 @@ export const LINES: DialogueLines = {
     ],
   },
 
+  work: {
+    hire: [
+      "Fine. You start at the bottom: {title}. {pay} {eddies} a shift, and don't be late.",
+      "You want to work? {title}. It's {pay} {eddies} a shift and nobody says thank you.",
+      only("Alright. {title}, on trial. Mess up and you're out.", hard),
+      only("We could use a hand. {title} to start; show me you can hold a mop and we'll talk.", kind),
+      only("I'll put you on {title}. Don't make me regret it.", quiet),
+      only('Standard onboarding: {title}, {pay} {eddies} per shift, probationary. Welcome aboard.', corpo),
+      only('At your age I started on {title} too. Go on, then.', elder),
+      only("{title}? Sure, why not. Beats doing it myself.", young),
+    ],
+    refuse: [
+      "I'm not hiring.",
+      "I don't know you. Come back when I do.",
+      only('You? No.', cold),
+      only("Not a chance. I've heard about you.", cold),
+      only("We're full up. Try next month.", busy),
+      only("Can't afford another pair of hands. Can barely afford mine.", hard),
+      only("Headcount's frozen. Nothing personal.", corpo),
+      only("I've had kids your age rob the till. No.", elder),
+    ],
+    masked: ['Not with that on your face.', 'Take the {mask} off and ask me again.', "I don't hire a {mask}."],
+    shift: [
+      'Not bad. Same time tomorrow.',
+      "You're still here. Good.",
+      only("Keep that up and we'll see about more.", kind),
+      only('Faster next time.', hard),
+      only('Adequate.', corpo),
+      only("Go home. You've earned it.", elder),
+      only('{preem}. Tomorrow, then.', young),
+      only("Don't let it go to your head.", quiet),
+    ],
+    promote: [
+      "You've earned it. {title} from tomorrow. {pay} {eddies} a shift.",
+      "Alright. I'm moving you up to {title}. Don't make me look stupid.",
+      only("{title}. You've put in the shifts, and I've noticed.", kind),
+      only("Fine. {title}. Pay's {pay} {eddies} now. Still don't be late.", hard),
+      only('Promotion approved: {title}, {pay} {eddies} per shift. Keep it up.', corpo),
+      only("{title}. Took me twice as long, back when.", elder),
+    ],
+    quit: [
+      "Suit yourself. Door's where it was.",
+      'Just like that? Fine.',
+      only('Thought you had more in you.', hard),
+      only('Sorry to lose you. Come by anyway.', kind),
+      only('Noted. Your access is revoked at end of day.', corpo),
+      only('Everybody leaves. Go on.', elder),
+    ],
+  },
+
   revenge: {
     person: ['{name} and two friends catch up with you at {where}. They take {take} €$ and leave you in the gutter.', '{name} has been waiting. At {where} it costs you {take} €$ and everything you had left.'],
     gang: ['{gang} colors step out of the dark at {where}. They take {take} €$ and make sure you remember.', 'The {gang} find you at {where}. It goes badly: {take} €$, and the rest of your night.'],
@@ -536,6 +587,15 @@ export const LINES: DialogueLines = {
     gift: ['You hand over {item}.', '"Here. {item}. On me."', only('"Had a feeling you\'d want this. {item}."', smooth)],
     insult: ['"Nice face. Who chewed it?"', '"Your whole family\'s a waste of chrome."', '"Everyone around here says you\'re nothing. They\'re right."'],
     rob: ['You pull a blade. "Eddies. Now."', '"Hand it over. All of it."', 'You get in close. "Pockets. Slowly."'],
+    work: [
+      only('"You hiring?"', blunt),
+      only('"Give me a job."', blunt),
+      only('"Need a hand around here?"', easy),
+      only('"Any work going? I\'ll start wherever."', easy),
+      only('"A place like this could use another pair of hands. Mine, say."', smooth),
+      only('"Put me to work. I\'ll earn my keep before you notice I\'m here."', smooth),
+    ],
+    quit: ['"I\'m done here."', '"Find someone else. I quit."', only('"It\'s been real. I\'m moving on."', smooth)],
     chop: [
       only('"Chop this."', blunt),
       only('"Crack this chip."', blunt),

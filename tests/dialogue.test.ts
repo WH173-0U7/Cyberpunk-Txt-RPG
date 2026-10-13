@@ -283,6 +283,8 @@ describe('dialogue', () => {
           cut: '30',
           left: '90',
           mask: rng.chance(0.3) ? 'gas mask' : '',
+          title: 'dish pit',
+          pay: '24',
         };
         const speaker: Speaker = {
           person: p,
@@ -315,6 +317,15 @@ describe('dialogue', () => {
         }
         check(compose(LINES.chop.done, speaker, LINES, rng), `${about} chop done`);
         check(deflect(speaker, 'chop', LINES, rng), `${about} deflect chop`);
+        // A boss, asked for work: every answer, in and out of a mask, with a place to name.
+        const bossing: Speaker = { ...speaker, vars: { ...vars, work: 'El Pinche Grill' } };
+        for (const pool of [LINES.work.hire, LINES.work.refuse, LINES.work.shift, LINES.work.promote, LINES.work.quit]) check(line(pool, bossing, rng), `${about} work pool`);
+        check(compose(LINES.work.hire, bossing, LINES, rng), `${about} hire`);
+        check(compose(LINES.work.promote, bossing, LINES, rng), `${about} promote`);
+        check(deflect(bossing, 'hire', LINES, rng), `${about} deflect hire`);
+        check(line(LINES.work.masked, { ...bossing, vars: { ...bossing.vars, mask: 'balaclava' } }, rng), `${about} work masked`);
+        for (const eloquence of eloquences) for (const pool of [LINES.you.work, LINES.you.quit]) check(line(pool, { ...bossing, eloquence }, rng), `${about} you work ${eloquence}`);
+        lines += 9;
         // With a mask on the player, and without: the pools that care either way, and the ones only a mask brings up.
         for (const mask of ['balaclava', '']) {
           const masked: Speaker = { ...speaker, vars: { ...vars, mask, work: 'The Afterlife' } };
