@@ -89,8 +89,19 @@ it needs no generator bump. The pieces:
   level); charisma is the one so far (`src/data/skills.ts`), applied in `Game.talk`,
   `gift` and `ask`. A new skill is another `SkillRules` in `src/data/skills.ts`, a state on
   `Game`, a save field and an event.
-- `src/engine/dialogue.ts` fills `LINES` templates; `varsFor` is everything a line can say
-  about a person. Keep lines in `src/data/people.ts`, our own words.
+- `src/engine/dialogue.ts` puts lines together from fragments in `src/data/dialogue.ts`
+  (our own words; slang from the wiki's Streetslang page, by voice through the `lexicon`).
+  A `Speaker` is everything a line is picked and filled by (voice, mood, stance, history,
+  the player's eloquence, `vars`); `Game.speakerFor` builds it. `compose` adds an opener and
+  an aside by how chatty someone is; `fits` is the one place conditions are checked. New
+  things people can say are new pools (or new `When` conditions), never new code paths; a
+  new variable goes in `varsFor` or `speakerFor` and is guarded with `needs`/`lacks`.
+  `tests/dialogue.test.ts` sweeps whole cities for holes (`{...}` left unfilled, empty
+  lines), so a pool that can come up empty for some speaker fails there.
+- Whether someone answers is `openness` (engine) with the numbers in `SOCIETY.openness`:
+  stance, charisma level and traits against the cost of what's asked (`Asked`). A no is
+  written on their `Standing.refused`; asking again within the talk cooldown is pressing
+  and costs rapport. Anything new the player can want from someone gets a cost there.
 - Gangs are canon (wiki): keep their turf, looks and rivalries true to it. Names are made
   up in each community's style and must never be a real character's (`tests/people.test.ts`
   checks a few).

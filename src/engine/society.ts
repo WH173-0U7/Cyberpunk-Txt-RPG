@@ -22,6 +22,30 @@ export interface Standing {
   gifts: number;
   lastGiftAt: number;
   robbedAt: number;
+  /** Questions the player has put to them. */
+  asks: number;
+  /** When they last wouldn't say, by what was asked (`age`, `home`, `about:<id>`…): asking again soon is pressing. */
+  refused: Record<string, number>;
+}
+
+/** Something the player can want from someone: a fact about them, a topic, or their people. */
+export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor';
+
+/**
+ * How ready people are to tell the player things: a base by how they feel, a step per level
+ * of charisma, their nature, less what each thing asks of them; an answer for sure from
+ * `answerAt`, a flat no below `deflectAt`, in between a chance of either or a non-answer.
+ */
+export interface OpennessRules {
+  stance: Record<Stance, number>;
+  perLevel: number;
+  /** How much each trait moves it: chatty and warmth on everything, loyalty on their people (against), courage on who they hate (for). */
+  traits: { chatty: number; warmth: number; loyalty: number; courage: number };
+  cost: Record<Asked, number>;
+  answerAt: number;
+  deflectAt: number;
+  /** Rapport lost for asking again soon after a no. */
+  press: number;
 }
 
 /** A reputation, as last written down; it recovers toward nothing since. */
@@ -144,6 +168,7 @@ export interface SocietyRules {
   };
   gift: { base: number; favorite: number };
   insult: { rapport: number };
+  openness: OpennessRules;
 }
 
 export function freshSociety(): SocietyState {
@@ -246,7 +271,7 @@ const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
 function blank(at: number): Standing {
-  return { met: false, rapport: 0, grudge: 0, at, talks: 0, lastTalkAt: 0, gifts: 0, lastGiftAt: 0, robbedAt: 0 };
+  return { met: false, rapport: 0, grudge: 0, at, talks: 0, lastTalkAt: 0, gifts: 0, lastGiftAt: 0, robbedAt: 0, asks: 0, refused: {} };
 }
 
 /** Toward zero by `perDay` for every day on the game's clock since `at`. */
@@ -258,7 +283,8 @@ function drift(value: number, at: number, perDay: number, timeScale: number, now
 /** Someone's standing with the player at `now`, grudge faded as far as it has. */
 export function standingOf(state: SocietyState, id: string, rules: SocietyRules, timeScale: number, now: number): Standing {
   const s = state.standings[id] ?? blank(now);
-  return { ...s, grudge: drift(s.grudge, s.at, rules.forgivePerDay, timeScale, now) };
+  // Saves from before questions were counted have neither.
+  return { ...s, asks: s.asks ?? 0, refused: s.refused ?? {}, grudge: drift(s.grudge, s.at, rules.forgivePerDay, timeScale, now) };
 }
 
 /** Writes a standing down at `now`, grudge faded first, then changed by `by`. */

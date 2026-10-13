@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
 import { FOOD } from '../src/data/food';
-import { LINES, PEOPLE } from '../src/data/people';
+import { LINES } from '../src/data/dialogue';
+import { PEOPLE } from '../src/data/people';
 import { CHARISMA } from '../src/data/skills';
+import { openness } from '../src/engine/dialogue';
 import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
 import type { TravelRules } from '../src/engine/travel';
@@ -741,25 +743,24 @@ describe('Game', () => {
       // Seen about, then: and with charisma high enough, a neutral person always answers.
       const stranger = game.population.people.find((p) => p.id !== worker.id && !game.population.ties.some((t) => t.from === worker.id && t.to === p.id));
       if (!stranger) throw new Error('everyone knows everyone');
+      // Seen about, then: and with charisma high enough, anyone not hostile answers.
       const told = new Game(world, { ...RULES, startingEddies: 100 }, {
         ...carryingProgress([]),
         where: outside('b-noodle', 38, 20),
         inside: 'b-noodle',
         society: { ...game.societySaved, known: { [relative.to]: { met: false, seen: true, told: false, facts: ['name'], log: [] }, [stranger.id]: { met: true, seen: false, told: false, facts: ['name'], log: [] } } },
+        charisma: { level: 12, xp: 0 },
       });
       told.start(now);
       const recorded = record(told);
       expect(told.ask(worker.id, relative.to, now)).toBe(true);
       const answer = recorded.outputs(recorded.take())[0]?.text ?? '';
-      const link = told.standingWith(worker.id, now)?.web.find((l) => l.person.id === relative.to);
-      if (link) {
-        expect(link).toMatchObject({ kind: relative.kind, how: 'asked' });
-        expect(answer).toContain(`${worker.given}: "`);
-        expect(told.standingWith(relative.to, now)?.knowledge.told).toBe(true);
-      } else {
-        // They wouldn't say.
-        expect(answer).not.toContain('"');
-      }
+      expect(answer).toContain(`${worker.given}: "`);
+      expect(told.standingWith(worker.id, now)?.web.find((l) => l.person.id === relative.to)).toMatchObject({ kind: relative.kind, how: 'asked' });
+      expect(told.standingWith(relative.to, now)?.knowledge.told).toBe(true);
+      // Asked again, they've said already.
+      expect(told.ask(worker.id, relative.to, now + MINUTE)).toBe(true);
+      expect(told.conversation(worker.id).at(-1)?.text).toMatch(/told you|last I checked/i);
       expect(told.ask(worker.id, stranger.id, now)).toBe(true);
       expect(told.standingWith(worker.id, now)?.web.some((l) => l.person.id === stranger.id)).toBe(false);
       expect(told.societySaved.links[[worker.id, stranger.id].sort().join('|')]?.kind).toBe('none');
@@ -871,12 +872,44 @@ describe('Game', () => {
         expect(known.facts.age).toBe(String(worker.age));
         expect(answer).toContain(String(worker.age));
       }
-      expect(game.conversation(worker.id).at(-2)?.text).toBe(`"${LINES.questions.age}"`);
+      // The question was put bluntly: that's all a level of charisma affords.
+      const asked = game.conversation(worker.id).at(-2);
+      expect(asked?.who).toBe('you');
+      expect(LINES.questions.age.lines.map((l) => `"${typeof l === 'string' ? l : l.text}"`)).toContain(asked?.text);
       expect(game.conversation(worker.id).at(-1)?.who).toBe('them');
       expect(game.askFact('nobody', 'age', now)).toBe(false);
       // Only someone whose name the player has can be asked about.
       const other = game.population.people.find((p) => p.id !== worker.id);
       if (other) expect(game.ask(worker.id, other.id, now)).toBe(false);
+    });
+
+    it('tells a stranger only what charisma earns: home is a no, pressing costs rapport, and a smooth talker hears it all', () => {
+      const { game, now, worker } = shiftAt();
+      const { take, outputs } = record(game);
+      // Nobody tells a stranger with no way with words where they live.
+      expect(openness('home', 'neutral', 1, worker.traits, SOCIETY.openness)).toBeLessThan(SOCIETY.openness.deflectAt);
+      expect(game.askFact(worker.id, 'home', now)).toBe(true);
+      expect(game.describe(worker.id)?.facts.home).toBeUndefined();
+      const said = outputs(take());
+      expect(said).toHaveLength(1);
+      expect(said[0]?.text.startsWith(`${worker.given}: "`)).toBe(true);
+      const standing = game.standingWith(worker.id, now)?.standing;
+      expect(standing).toMatchObject({ asks: 1, refused: { home: now } });
+      // Asking again right away is pressing: still nothing, and they think less of the player for it.
+      expect(game.askFact(worker.id, 'home', now + MINUTE)).toBe(true);
+      expect(game.describe(worker.id)?.facts.home).toBeUndefined();
+      expect(game.standingWith(worker.id, now + MINUTE)?.standing.rapport).toBe((standing?.rapport ?? 0) - SOCIETY.openness.press);
+      expect(LINES.pressed.map((l) => (typeof l === 'string' ? l : l.text))).toContain(game.conversation(worker.id).at(-1)?.text);
+      // A smooth talker puts it differently, and hears it. Asked again, they've said already, which is no practice.
+      const smooth = new Game(world, { ...RULES, startingEddies: 100 }, { ...carryingProgress([]), where: outside('b-noodle', 38, 20), inside: 'b-noodle', charisma: { level: 12, xp: 0 } });
+      smooth.start(now);
+      expect(smooth.askFact(worker.id, 'home', now)).toBe(true);
+      expect(smooth.describe(worker.id)?.facts.home).toBeDefined();
+      expect(smooth.conversation(worker.id).at(-2)?.text).toBe('"Whereabouts do you lay your head? Just so I know where to send the good word."');
+      const xp = smooth.charisma().xp;
+      expect(smooth.askFact(worker.id, 'home', now + MINUTE)).toBe(true);
+      expect(smooth.charisma().xp).toBe(xp);
+      expect(smooth.conversation(worker.id).at(-1)?.text).toMatch(/told you already|listening|again\?|short memory/i);
     });
 
     it('keeps the player\'s standing in the save, and forgets people the city no longer has', () => {

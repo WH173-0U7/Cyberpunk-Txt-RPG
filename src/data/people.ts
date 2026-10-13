@@ -1,4 +1,3 @@
-import type { DialogueLines } from '../engine/dialogue';
 import type { PeopleContent } from '../engine/people';
 
 /**
@@ -234,79 +233,5 @@ export const PEOPLE: PeopleContent = {
     greed: { high: 'Never far from a deal.', low: 'Not in it for the eddies.' },
     courage: { high: 'Doesn\'t scare.', low: 'Scares easy.' },
     chatty: { high: 'Talks to anyone.', low: 'Says little.' },
-  },
-};
-
-/** What people say. The speaker's name goes in front; `{...}` is filled in from their life. */
-export const LINES: DialogueLines = {
-  greeting: {
-    friend: ['Hey, you. Good to see a friendly face.', 'There you are. Pull up a stool.', 'Choom! Where you been?'],
-    warm: ['Hey. Nice to see you around.', 'Back again? Can\'t stay away.', 'Oh, it\'s you. Good.'],
-    neutral: ['Yeah? What do you need.', 'Hey.', 'Don\'t know you. But I\'m listening.'],
-    wary: ['Keep your hands where I can see them.', 'I don\'t talk to strangers much.', 'Make it quick.'],
-    cold: ['What do you want.', 'I\'ve heard things about you.', 'You\'ve got some nerve.'],
-    hostile: [],
-  },
-  topics: {
-    job: ['Working at {work} is a life. Not a good one.', '{work} keeps me fed. Just about.', 'A shift at {work} runs twelve hours. Then I sleep.', 'Been at {work} longer than the sign has.'],
-    freelance: ['Work? {role}, when there is any.', 'I get by. {role}, mostly.', 'Around here you take the gig you can get.'],
-    gang: ['{gang} look after {district}. Remember that.', 'See the ink? {gang}. You know what that means.', 'Mess with one {member}, you mess with all of us.', '{gang} run this block. Be nice.'],
-    kin: ['My {kinWord} {kinName} is at {kinWork}. Good people.', 'Family\'s everything. My {kinWord} {kinName} would tell you the same.', 'Got a {kinWord}, {kinName}. Don\'t go bothering {kinHim}.'],
-    dish: ['You tried the {dish}? Don\'t leave {district} without it.', 'All I want after a shift is {dish} and quiet.', 'A {drink} and some {dish}. That\'s the dream.'],
-    district: ['{district} isn\'t what it was. Nothing is.', 'Rain, neon, sirens. {district}.', 'You new to {district}? Watch yourself after dark.'],
-    hate: ['If you\'re running with {hate}, keep walking.', '{hate} have been pushing in. Someone\'s going to push back.', 'Saw {hate} colors on the corner again. Bad sign.'],
-  },
-  grudge: ['I know what you did. Don\'t think I don\'t.', 'People talk. I heard what happened.', 'Say your piece and go. I haven\'t forgotten.'],
-  refuse: ['{given} looks straight through you and says nothing.', '{given} spits at your feet. "Walk away."', '{given}: "Get out of my face before I do something about it."'],
-  talkedOut: ['{given} has said what {he} had to say.', '{given}: "We talked. I\'ve got things to do."', '{given} nods and goes back to it.'],
-  gift: {
-    thanks: ['Huh. Thanks. Didn\'t have to.', 'For me? Alright. Alright.', 'That\'s decent of you.'],
-    favorite: ['{item}! You know me.', 'No way. {item}. You\'re alright.', '{item}. Now we\'re talking.'],
-    refuse: ['{given} knocks it out of your hand. "Keep it."', '{given} doesn\'t even look at it.'],
-  },
-  insult: {
-    reply: ['{given}: "Say that again."', '{given}: "Big words for a nobody."', '{given} goes very still.'],
-    shove: ['{given} shoves you hard into the wall. The whole street sees it.', '{given}\'s fist finds your ribs before you can move.'],
-  },
-  rob: {
-    done: ['You take {take} €$ off {given}. {He} won\'t forget your face.', '{given} hands it over, eyes burning. {take} €$.'],
-    nothing: ['{given} turns out empty pockets. "Already been done this week."', 'Nothing on {given} worth taking. {He} laughs, which is worse.'],
-    fought: ['{given} fights back. You get {take} €$ and a split lip.', 'It takes a struggle. {take} €$, and {given} marks your face for later.'],
-  },
-  revenge: {
-    person: ['{name} and two friends catch up with you at {where}. They take {take} €$ and leave you in the gutter.', '{name} has been waiting. At {where} it costs you {take} €$ and everything you had left.'],
-    gang: ['{gang} colors step out of the dark at {where}. They take {take} €$ and make sure you remember.', 'The {gang} find you at {where}. It goes badly: {take} €$, and the rest of your night.'],
-  },
-  barred: ['{work} won\'t serve you. Not after what you did to their people.', 'The counter at {work} closes the moment they see your face.'],
-  ask: {
-    knows: ['{other}? {OtherHe}\'s my {word}.', 'Sure, I know {other}. My {word}.', '{other} is my {word}. Why?'],
-    unknown: ['{other}? Never heard of {otherHim}.', 'Doesn\'t ring a bell.', 'No idea who that is.'],
-    refuse: ['Why do you want to know?', '{given} looks at you a long moment and says nothing.', 'I don\'t talk about people I know to people I don\'t.'],
-  },
-  questions: {
-    name: 'What do I call you?',
-    job: 'What do you do?',
-    age: 'How old are you, anyway?',
-    home: 'Where do you live?',
-    likes: 'What do you eat when it\'s been a day?',
-    hates: 'Who do you hate around here?',
-  },
-  facts: {
-    name: ['{name}. Don\'t wear it out.', 'People call me {given}.', '{name}. And you are?'],
-    job: ['{Role}, at {work}.', 'I work at {work}. {Role}.', '{work}. I\'m the {role}.'],
-    freelance: ['{Role}, when there\'s work.', 'This and that. {Role}, lately.', 'Call it {role}.'],
-    age: ['{age}. Why?', 'Old enough. {age}.', '{age} this year, if I make it.'],
-    home: ['I\'ve got a place at {home}.', '{home}. Don\'t come by.', 'Over at {home}, with everyone else.'],
-    homeless: ['Wherever I can.', 'Nowhere you\'d find me.', 'Around. Here and there.'],
-    likes: ['{dish} and a {drink}. Every time.', 'Nothing beats {dish}.', '{dish}. And a {drink} to wash it down.'],
-    hates: ['{hate}. Don\'t get me started.', 'If I never see another {hateMember} it\'ll be too soon.', '{hate}. Ask anyone around here.'],
-    nobody: ['Nobody in particular. Everybody a little.', 'I keep my head down. No enemies, no friends.'],
-  },
-  you: {
-    talk: ['"Hey. Got a minute?"', '"How\'s it going?"', '"What\'s the word?"', '"Busy night?"'],
-    askAbout: ['"You know {other}?"', '"{other}. Ring a bell?"', '"What can you tell me about {other}?"'],
-    gift: ['You hand over {item}.', '"Here. {item}. On me."'],
-    insult: ['"Nice face. Who chewed it?"', '"Your whole family\'s a waste of chrome."', '"Everyone around here says you\'re nothing. They\'re right."'],
-    rob: ['You pull a blade. "Eddies. Now."', '"Hand it over. All of it."', 'You get in close. "Pockets. Slowly."'],
   },
 };

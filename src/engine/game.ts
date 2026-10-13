@@ -2,7 +2,7 @@ import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
 import { menuFor, type FoodContent, type Menu } from './food';
-import { describeStranger, FAMILY, fill, kinWord, talkLines, varsFor, type DialogueLines } from './dialogue';
+import { answer, compose, deflect, describeStranger, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, moodOf, openness, openTopics, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
 import { generatePeople, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type PeopleContent, type Person, type Population, type Spot, type Tie } from './people';
 import { createRng } from './rng';
@@ -480,68 +480,118 @@ export class Game {
     if (!at?.business) return null;
     const { society, timeScale } = this.rules;
     const banned = repOf(this.society, `business:${at.id}`, society, timeScale, now) <= society.rep.banAt || repOf(this.society, `chain:${at.business}`, society, timeScale, now) <= society.rep.banAt;
-    return banned ? fill(this.pickLine(this.rules.lines.barred, `${at.id}:barred`), { work: at.name }) : null;
+    return banned ? this.pickLine(this.rules.lines.barred, `${at.id}:barred`, { work: at.name }) : null;
   }
 
   private isHere(id: string, now: number): Presence | undefined {
     return this.peopleHere(now).find((p) => p.person.id === id);
   }
 
-  private pickLine(lines: string[], salt: string): string {
+  /** A line for anyone, by the state of the world rather than a speaker. */
+  private pickLine(pool: Line[], salt: string, vars: Record<string, string> = {}): string {
     const rng = createRng(`${this.world.seed}:${salt}:${this.society.nextId}:${this.society.incidents.length}`);
-    return lines.length ? rng.pick(lines) : '';
+    return pool.length ? finish(textOf(rng.pick(pool)), vars) : '';
   }
 
-  private varsFor(person: Person, kin?: Tie): Record<string, string> {
-    return varsFor(person, this.world, this.population, this.rules.people, this.rules.food.dishes, kin);
+  /**
+   * Everything a line of someone's is picked and filled by: who they are, what they're doing,
+   * how they feel about the player, how well they know them, the player's way with words,
+   * and the moment (where this is, the hour, what's said of the player around here).
+   */
+  private speakerFor(person: Person, stance: Stance, doing: string, now: number, kin?: Tie): Speaker {
+    const { society, timeScale, lines } = this.rules;
+    const standing = standingOf(this.society, person.id, society, timeScale, now);
+    const voice = voiceOf(person, this.world);
+    const spot = this.spot;
+    const here = spot ? ((spot.kind === 'building' ? this.world.buildings.find((b) => b.id === spot.id)?.name : this.world.locations[spot.id]?.name) ?? '') : '';
+    const hour = this.clockAt(now).hour;
+    const rep = (key: string) => repOf(this.society, key, society, timeScale, now);
+    const gangRep = person.gang ? rep(`gang:${person.gang}`) : 0;
+    const districtRep = rep(`district:${person.district}`);
+    const vars: Record<string, string> = {
+      ...lines.lexicon[voice],
+      ...varsFor(person, this.world, this.population, this.rules.people, this.rules.food.dishes, kin),
+      here,
+      late: hour < 5 || hour >= 23 ? 'this late' : '',
+      early: hour >= 5 && hour < 9 ? 'yes' : '',
+      atWork: spot?.kind === 'building' && person.job.building === spot.id ? 'yes' : '',
+      atHome: spot?.kind === 'building' && person.home === spot.id ? 'yes' : '',
+      gangGood: gangRep >= 10 ? 'yes' : '',
+      gangBad: gangRep <= -10 ? 'yes' : '',
+      districtGood: districtRep >= 10 ? 'yes' : '',
+      districtBad: districtRep <= -10 ? 'yes' : '',
+    };
+    return { person, voice, mood: moodOf(doing), stance, history: historyOf(standing, timeScale, now), eloquence: eloquenceOf(this.charismaState.level), vars };
   }
 
-  /** Talks to someone here. What they say depends on how they feel about the player; it warms them a little. */
+  /** A line of someone's: on the feed under their name, and on their record. */
+  private speech(person: Person, text: string, now: number): void {
+    if (!text) return;
+    this.say(`${person.given}: "${text}"`, 'talk');
+    this.logged(person.id, 'them', text, now);
+  }
+
+  /** A line about someone: on the feed as it is, and on their record. */
+  private narrate(person: Person, text: string, now: number, tone: Tone = 'talk'): void {
+    if (!text) return;
+    this.say(text, tone);
+    this.logged(person.id, 'them', text, now);
+  }
+
+  /** Whether asking someone this again, after a no, comes too soon. */
+  private pressing(standing: Standing, asked: string, now: number): boolean {
+    const at = standing.refused[asked];
+    return at !== undefined && now - at < (this.rules.society.talk.cooldownMinutes * 60_000) / this.rules.timeScale;
+  }
+
+  /** Talks to someone here. What they say depends on who they are and how they feel about the player; it warms them a little. */
   talk(id: string, now: number): boolean {
     const here = this.isHere(id, now);
     if (!here) return false;
-    const { person, stance } = here;
+    const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);
     learnOf(this.society, id, 'met');
-    const rng = createRng(`${this.world.seed}:${id}:talk:${standing.talks}`);
+    const rng = createRng(`${this.world.seed}:${id}:talk:${standing.talks}:${standing.asks}`);
     // A line about family names one relative: one the player hasn't heard of yet, if there is one.
     const family = tiesOf(this.population, id).filter((t) => FAMILY.includes(t.kind));
     const untold = family.filter((t) => !linkOf(this.society, id, t.to)?.kind);
     const kin = untold.length ? rng.pick(untold) : family.length ? rng.pick(family) : undefined;
-    const vars = this.varsFor(person, kin);
-    this.logged(id, 'you', fill(rng.pick(lines.you.talk), vars), now);
-    if (stance === 'hostile') {
-      const line = fill(rng.pick(lines.refuse), vars);
-      this.say(line, 'talk');
-      this.logged(id, 'them', line, now);
+    const speaker = this.speakerFor(person, stance, doing, now, kin);
+    this.logged(id, 'you', line(lines.you.talk, speaker, rng), now);
+    if (speaker.mood === 'asleep' || stance === 'hostile') {
+      this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
       changeStanding(this.society, id, { met: true }, society, timeScale, now);
       this.events.emit('societyChanged', { people: [id] });
       return true;
     }
     if (standing.lastTalkAt && now - standing.lastTalkAt < (society.talk.cooldownMinutes * 60_000) / timeScale) {
-      const line = fill(rng.pick(lines.talkedOut), vars);
-      this.say(line, 'talk');
-      this.logged(id, 'them', line, now);
+      this.speech(person, line(lines.talkedOut, speaker, rng), now);
       this.events.emit('societyChanged', { people: [id] });
       return true;
     }
-    const talk = talkLines({ stance, reveal: standing.rapport >= society.talk.revealAt, grudge: standing.grudge }, vars, lines, rng);
-    for (const line of talk.said) {
-      this.say(`${person.given}: "${line}"`, 'talk');
-      this.logged(id, 'them', line, now);
+    this.speech(person, line(lines.greeting, speaker, rng), now);
+    let topic: Topic | null = null;
+    if (standing.grudge >= 10 && rng.chance(0.6)) {
+      this.speech(person, line(lines.grudge, speaker, rng), now);
+    } else {
+      // They bring up what they're open about with this player: the neighborhood and their lot for a stranger, their life and their people for a friend.
+      const topics = openTopics(speaker, this.charismaState.level, society.openness, rng, standing.rapport >= society.talk.revealAt);
+      const chat = smallTalk(speaker, topics, lines, rng);
+      this.speech(person, chat.said, now);
+      topic = chat.topic;
     }
     const learned = [id];
     // Talking is an introduction; what they talk about, the player now knows; a few chats, and the player has their measure.
     learnFact(this.society, id, 'name');
-    if (talk.topic === 'job') learnFact(this.society, id, 'job');
-    if (talk.topic === 'likes') {
+    if (topic === 'job') learnFact(this.society, id, 'job');
+    if (topic === 'likes') {
       learnFact(this.society, id, 'likes');
       learnFact(this.society, id, 'drinks');
     }
-    if (talk.topic === 'hates') learnFact(this.society, id, 'hates');
+    if (topic === 'hates') learnFact(this.society, id, 'hates');
     if (standing.talks + 1 >= 3) learnFact(this.society, id, 'nature');
-    if (talk.topic === 'kin' && kin) {
+    if (topic === 'kin' && kin) {
       learnLink(this.society, id, kin.to, kin.kind, 'told', now);
       learnOf(this.society, kin.to, 'told');
       learned.push(kin.to);
@@ -557,86 +607,101 @@ export class Game {
   }
 
   /**
-   * Asks someone here about someone the player knows of. Whether they answer depends on how
-   * they feel about the player (and the player's charisma); what they say is the truth.
+   * Asks someone here about someone the player knows of. Whether they answer is their
+   * openness: how they feel about the player, the player's charisma, how loyal they are;
+   * what they say is the truth. Asked what they've said already, they say so; asked again
+   * soon after a no, they think less of the player.
    */
   ask(id: string, aboutId: string, now: number): boolean {
     const here = this.isHere(id, now);
     const other = this.person(aboutId);
     // Only someone the player can name.
     if (!here || !other || aboutId === id || !knowsOf(this.society, aboutId) || !knowledgeOf(this.society, aboutId).facts.includes('name')) return false;
-    const { person, stance } = here;
+    const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
+    const standing = standingOf(this.society, id, society, timeScale, now);
     learnOf(this.society, id, 'met');
     const otherPronouns = pronounsOf(other);
     const tie = tiesOf(this.population, id).find((t) => t.to === aboutId);
-    const vars = {
-      ...this.varsFor(person),
-      other: other.given,
-      otherHe: otherPronouns.he,
-      otherHim: otherPronouns.him,
-      OtherHe: capitalize(otherPronouns.he),
-      word: tie ? kinWord(person, tie.kind, other) : '',
-    };
-    const rng = createRng(`${this.world.seed}:${id}:ask:${aboutId}:${now}`);
-    this.logged(id, 'you', fill(rng.pick(lines.you.askAbout), vars), now);
-    if (!this.answers(stance, rng)) {
-      const line = fill(rng.pick(lines.ask.refuse), vars);
-      this.say(line, 'talk');
-      this.logged(id, 'them', line, now);
-      changeStanding(this.society, id, { met: true }, society, timeScale, now);
-      this.events.emit('societyChanged', { people: [id] });
-      return true;
-    }
-    const line = fill(rng.pick(tie ? lines.ask.knows : lines.ask.unknown), vars);
-    this.say(`${person.given}: "${line}"`, 'talk');
-    this.logged(id, 'them', line, now);
-    if (tie) {
-      learnLink(this.society, id, aboutId, tie.kind, 'asked', now);
-      learnOf(this.society, aboutId, 'told');
-      this.gainCharisma(2);
+    const speaker = this.speakerFor(person, stance, doing, now);
+    speaker.vars = { ...speaker.vars, other: other.given, otherHe: otherPronouns.he, otherHim: otherPronouns.him, word: tie ? kinWord(person, tie.kind, other) : '' };
+    const rng = createRng(`${this.world.seed}:${id}:ask:${aboutId}:${standing.asks}`);
+    this.logged(id, 'you', line(lines.you.askAbout, speaker, rng), now);
+    const key = `about:${aboutId}`;
+    const known = linkOf(this.society, id, aboutId);
+    const refused = { ...standing.refused };
+    const learned = [id];
+    let pressed = false;
+    if (speaker.mood === 'asleep' || stance === 'hostile') {
+      this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
+    } else if (known && known.kind !== null) {
+      this.speech(person, line(lines.ask.repeat, speaker, rng), now);
+    } else if (this.pressing(standing, key, now)) {
+      pressed = true;
+      this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      learnLink(this.society, id, aboutId, 'none', 'asked', now);
+      const reply = replyTo(openness('kin', stance, this.charismaState.level, person.traits, society.openness), society.openness, rng);
+      if (reply === 'answer') {
+        this.speech(person, compose(tie ? lines.ask.knows : lines.ask.unknown, speaker, lines, rng), now);
+        if (tie) {
+          learnLink(this.society, id, aboutId, tie.kind, 'asked', now);
+          learnOf(this.society, aboutId, 'told');
+          learned.push(aboutId);
+          this.gainCharisma(2);
+        } else {
+          learnLink(this.society, id, aboutId, 'none', 'asked', now);
+        }
+      } else {
+        this.speech(person, reply === 'deflect' ? deflect(speaker, 'kin', lines, rng) : line(lines.refuse, speaker, rng), now);
+        refused[key] = now;
+      }
     }
-    changeStanding(this.society, id, { met: true }, society, timeScale, now);
-    this.events.emit('societyChanged', { people: [id, aboutId] });
+    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport: pressed ? -society.openness.press : 0 }, society, timeScale, now);
+    this.events.emit('societyChanged', { people: learned });
     return true;
   }
 
-  /** Whether someone answers a question, by how they feel about the player; charisma helps the wary and the cold along. */
-  private answers(stance: Stance, rng: { chance(p: number): boolean }): boolean {
-    const odds = stance === 'hostile' ? 0 : stance === 'cold' ? 0.25 : stance === 'wary' ? 0.55 : 1;
-    return rng.chance(Math.min(1, odds + (this.charismaState.level - 1) * 0.1));
-  }
-
-  /** Asks someone here about themselves: their name, work, age, home, tastes or hates. What they say, the player then knows. */
-  askFact(id: string, fact: Exclude<Fact, 'nature' | 'drinks'>, now: number): boolean {
+  /**
+   * Asks someone here about themselves: their name, work, age, home, tastes or hates. Whether
+   * they answer is their openness (how they feel, the player's charisma, their nature, and
+   * what the question asks of them); what they say, the player then knows. A non-answer or a
+   * no is remembered: asking again soon is pressing, and costs rapport.
+   */
+  askFact(id: string, fact: Question, now: number): boolean {
     const here = this.isHere(id, now);
     if (!here) return false;
-    const { person, stance } = here;
+    const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
+    const standing = standingOf(this.society, id, society, timeScale, now);
     learnOf(this.society, id, 'met');
-    const vars = this.varsFor(person);
-    const rng = createRng(`${this.world.seed}:${id}:fact:${fact}:${now}`);
-    this.logged(id, 'you', `"${lines.questions[fact]}"`, now);
-    if (!this.answers(stance, rng)) {
-      const line = fill(rng.pick(stance === 'hostile' ? lines.refuse : lines.ask.refuse), vars);
-      this.say(line, 'talk');
-      this.logged(id, 'them', line, now);
-      changeStanding(this.society, id, { met: true }, society, timeScale, now);
-      this.events.emit('societyChanged', { people: [id] });
-      return true;
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const rng = createRng(`${this.world.seed}:${id}:fact:${fact}:${standing.asks}`);
+    this.logged(id, 'you', `"${line(lines.questions[fact].lines, speaker, rng)}"`, now);
+    const refused = { ...standing.refused };
+    let pressed = false;
+    let news = false;
+    if (speaker.mood === 'asleep' || stance === 'hostile') {
+      this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
+    } else if (knowledgeOf(this.society, id).facts.includes(fact)) {
+      this.speech(person, repeat(speaker, fact, lines, rng), now);
+    } else if (this.pressing(standing, fact, now)) {
+      pressed = true;
+      this.speech(person, line(lines.pressed, speaker, rng), now);
+    } else {
+      const reply = replyTo(openness(fact, stance, this.charismaState.level, person.traits, society.openness), society.openness, rng);
+      if (reply === 'answer') {
+        this.speech(person, answer(speaker, fact, lines, rng), now);
+        news = learnFact(this.society, id, fact);
+        // Asked what they like, they say what they eat and what they drink; answering at all is an introduction.
+        if (fact === 'likes') learnFact(this.society, id, 'drinks');
+        if (fact !== 'name') learnFact(this.society, id, 'name');
+      } else {
+        this.speech(person, reply === 'deflect' ? deflect(speaker, fact, lines, rng) : line(lines.refuse, speaker, rng), now);
+        refused[fact] = now;
+      }
     }
-    const pool = fact === 'job' && !person.job.building && !person.gang ? lines.facts.freelance : fact === 'home' && !person.home ? lines.facts.homeless : fact === 'hates' && !person.hates ? lines.facts.nobody : lines.facts[fact];
-    const line = fill(rng.pick(pool), vars);
-    this.say(`${person.given}: "${line}"`, 'talk');
-    this.logged(id, 'them', line, now);
-    const news = learnFact(this.society, id, fact);
-    // Asked what they like, they say what they eat and what they drink.
-    if (fact === 'likes') learnFact(this.society, id, 'drinks');
-    if (fact !== 'name') learnFact(this.society, id, 'name');
+    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport: pressed ? -society.openness.press : 0 }, society, timeScale, now);
     if (news) this.gainCharisma(2);
-    changeStanding(this.society, id, { met: true }, society, timeScale, now);
     this.events.emit('societyChanged', { people: [id] });
     return true;
   }
@@ -647,15 +712,14 @@ export class Game {
     const item = this.items.find((i) => i.id === itemId && i.kind === 'consumable');
     const dish = item ? this.rules.food.dishes.find((d) => d.id === itemId) : undefined;
     if (!here || !item || !dish) return false;
-    const { person, stance } = here;
+    const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
-    const vars = { ...this.varsFor(person), item: dish.name };
+    const speaker = this.speakerFor(person, stance, doing, now);
+    speaker.vars = { ...speaker.vars, item: dish.name };
     const rng = createRng(`${this.world.seed}:${id}:gift:${now}`);
     if (stance === 'hostile') {
-      const line = fill(rng.pick(lines.gift.refuse), vars);
-      this.say(line, 'talk');
-      this.logged(id, 'you', fill(rng.pick(lines.you.gift), vars), now);
-      this.logged(id, 'them', line, now);
+      this.logged(id, 'you', line(lines.you.gift, speaker, rng), now);
+      this.narrate(person, line(lines.gift.refuse, speaker, rng), now);
       this.events.emit('societyChanged', { people: [id] });
       return false;
     }
@@ -666,11 +730,9 @@ export class Game {
     // The second gift of the day means half as much.
     const recent = standing.lastGiftAt && now - standing.lastGiftAt < (24 * HOUR) / timeScale;
     const gain = Math.round((favorite ? society.gift.favorite : society.gift.base) * (recent ? 0.5 : 1) * this.charisma().bonus);
-    const thanks = fill(rng.pick(favorite ? lines.gift.favorite : lines.gift.thanks), vars);
-    this.say(`${person.given}: "${thanks}"`, 'talk');
     learnOf(this.society, id, 'met');
-    this.logged(id, 'you', fill(rng.pick(lines.you.gift), vars), now);
-    this.logged(id, 'them', thanks, now);
+    this.logged(id, 'you', line(lines.you.gift, speaker, rng), now);
+    this.speech(person, compose(favorite ? lines.gift.favorite : lines.gift.thanks, speaker, lines, rng, { opener: false }), now);
     if (favorite) learnFact(this.society, id, dish.id === person.likes.dish ? 'likes' : 'drinks');
     changeStanding(this.society, id, { met: true, rapport: gain, gifts: standing.gifts + 1, lastGiftAt: now }, society, timeScale, now);
     this.events.emit('inventoryChanged', this.inventory);
@@ -683,21 +745,17 @@ export class Game {
   insult(id: string, now: number): boolean {
     const here = this.isHere(id, now);
     if (!here) return false;
-    const { person } = here;
+    const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
-    const vars = this.varsFor(person);
+    const speaker = this.speakerFor(person, stance, doing, now);
     const rng = createRng(`${this.world.seed}:${id}:insult:${now}`);
     const fallout = this.incident('insult', person, 0, now);
     learnOf(this.society, id, 'met');
     changeStanding(this.society, id, { met: true, rapport: -society.insult.rapport }, society, timeScale, now);
-    this.logged(id, 'you', fill(rng.pick(lines.you.insult), vars), now);
-    const reply = fill(rng.pick(lines.insult.reply), vars);
-    this.say(reply, 'talk');
-    this.logged(id, 'them', reply, now);
+    this.logged(id, 'you', line(lines.you.insult, speaker, rng), now);
+    this.speech(person, line(lines.insult.reply, speaker, rng), now);
     if (person.traits.temper > 0.55 && rng.chance(person.traits.temper)) {
-      const shove = fill(rng.pick(lines.insult.shove), vars);
-      this.say(shove, 'error');
-      this.logged(id, 'them', shove, now);
+      this.narrate(person, line(lines.insult.shove, speaker, rng), now, 'error');
       this.drainEnergy(1, now);
     }
     this.events.emit('societyChanged', { people: fallout });
@@ -712,19 +770,20 @@ export class Game {
   rob(id: string, now: number): boolean {
     const here = this.isHere(id, now);
     if (!here) return false;
-    const { person } = here;
+    const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);
     const rng = createRng(`${this.world.seed}:${id}:rob:${now}`);
     const emptied = standing.robbedAt && now - standing.robbedAt < (7 * 24 * HOUR) / timeScale;
     const fought = !emptied && rng.chance(person.traits.courage * 0.5);
     const take = emptied ? 0 : Math.round(person.eddies * rng.range(0.4, 0.8) * (fought ? 0.5 : 1));
-    const vars = { ...this.varsFor(person), take: String(take) };
+    const speaker = this.speakerFor(person, stance, doing, now);
+    speaker.vars = { ...speaker.vars, take: String(take) };
     const fallout = this.incident('robbery', person, take, now);
     learnOf(this.society, id, 'met');
     changeStanding(this.society, id, { met: true, robbedAt: now }, society, timeScale, now);
-    this.logged(id, 'you', fill(rng.pick(lines.you.rob), vars), now);
-    const outcome = fill(rng.pick(take ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing), vars);
+    this.logged(id, 'you', line(lines.you.rob, speaker, rng), now);
+    const outcome = line(take ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
     this.logged(id, 'them', outcome, now);
     if (take) {
       this.eddies += take;
@@ -769,10 +828,10 @@ export class Game {
       const by = threat.by ? this.person(threat.by) : undefined;
       const gang = threat.gang ? people.gangs[threat.gang] : undefined;
       const take = Math.min(this.eddies, threat.amount);
-      const vars = { ...(by ? this.varsFor(by) : {}), gang: gang?.name ?? '', take: String(take), where: this.nameOf(this.where) };
+      const vars = { ...(by ? this.speakerFor(by, this.stanceOf(by, now), 'killing time', now).vars : {}), gang: gang?.name ?? '', take: String(take), where: this.nameOf(this.where) };
       const rng = createRng(`${this.world.seed}:threat:${threat.id}`);
       this.events.emit('fx', { effect: 'shake' });
-      const hit = fill(rng.pick(by ? lines.revenge.person : lines.revenge.gang), vars);
+      const hit = finish(textOf(rng.pick(by ? lines.revenge.person : lines.revenge.gang)), vars);
       this.say(hit, 'error');
       if (by) this.logged(by.id, 'them', hit, now);
       this.eddies -= take;

@@ -3,7 +3,8 @@ import { CITY } from './data/city';
 import { ENERGY } from './data/energy';
 import { FOOD } from './data/food';
 import { INEBRIATION } from './data/inebriation';
-import { LINES, PEOPLE } from './data/people';
+import { LINES } from './data/dialogue';
+import { PEOPLE } from './data/people';
 import { CHARISMA } from './data/skills';
 import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
@@ -688,9 +689,9 @@ function showPeople(): void {
             webOpen,
             webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Ask about people you've met, watch who they keep company with, or get them talking.`,
             picker,
-            questions: (Object.entries(LINES.questions) as Array<[Exclude<Fact, 'nature' | 'drinks'>, string]>)
+            questions: (Object.entries(LINES.questions) as Array<[Exclude<Fact, 'nature' | 'drinks'>, { label: string }]>)
               .filter(([fact]) => !standing.knowledge.facts.includes(fact))
-              .map(([fact, label]) => ({ fact, label })),
+              .map(([fact, q]) => ({ fact, label: q.label })),
             askAbout: known.filter((p) => p.id !== shown.id && named(p)).map((p) => ({ id: p.id, name: p.name })),
             gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
             log: game.conversation(shown.id).map((line) => ({ who: line.who, text: line.text })),
