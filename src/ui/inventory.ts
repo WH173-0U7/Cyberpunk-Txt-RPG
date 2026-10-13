@@ -26,6 +26,8 @@ export interface PocketRowView {
   weight: string;
   over: boolean;
   opens: boolean;
+  /** Worn on the head or the face: it can come off. */
+  removable?: boolean;
 }
 
 /** The player head to toe: a row per slot, then the bags. */
@@ -78,6 +80,8 @@ export interface InventoryHandlers {
   onDrop(id: string): void;
   /** The player tapped Wear on a garment carried. */
   onWear(id: string): void;
+  /** The player tapped Take off on something worn. */
+  onTakeOff(id: string): void;
 }
 
 /**
@@ -98,11 +102,12 @@ export class Inventory {
   ) {
     this.overlay = new MapOverlay(els, onOpen, () => {}, reducedMotion);
     els.sections.addEventListener('click', (e) => {
-      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('[data-open], [data-back], .inv-use, .inv-drop, .inv-wear') : null;
+      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('[data-open], [data-back], [data-doff], .inv-use, .inv-drop, .inv-wear') : null;
       if (!button) return;
-      const { open, back, id } = button.dataset;
+      const { open, back, doff, id } = button.dataset;
       if (open) this.handlers.onOpen(open);
       else if (back !== undefined) this.handlers.onBack();
+      else if (doff) this.handlers.onTakeOff(doff);
       else if (id && button.classList.contains('inv-drop')) this.handlers.onDrop(id);
       else if (id && button.classList.contains('inv-wear')) this.handlers.onWear(id);
       else if (id) this.handlers.onUse(id);
@@ -120,12 +125,14 @@ export class Inventory {
     const wasClass = ['inv-drop', 'inv-wear', 'inv-use'].find((c) => active?.classList.contains(c)) ?? 'inv-use';
     const wasOpen = active?.dataset.open;
     const wasBack = active?.dataset.back !== undefined;
+    const wasDoff = active?.dataset.doff;
     sections.replaceChildren(...(view.page.kind === 'outfit' ? outfitPage(view.page) : pocketPage(view.page)));
     let next: HTMLElement | null = null;
     if (wasId) next = sections.querySelector<HTMLElement>(`.${wasClass}[data-id="${wasId}"]`);
     else if (wasOpen) next = sections.querySelector<HTMLElement>('[data-back]') ?? sections.querySelector<HTMLElement>(`[data-open="${wasOpen}"]`);
     else if (wasBack) next = sections.querySelector<HTMLElement>('[data-open]') ?? sections.querySelector<HTMLElement>('[data-back]');
-    if (wasId || wasOpen || wasBack) (next ?? this.els.close).focus({ preventScroll: true });
+    else if (wasDoff) next = sections.querySelector<HTMLElement>(`[data-doff="${wasDoff}"]`) ?? sections.querySelector<HTMLElement>('[data-open]');
+    if (wasId || wasOpen || wasBack || wasDoff) (next ?? this.els.close).focus({ preventScroll: true });
   }
 }
 
@@ -200,6 +207,13 @@ function pocketRow(p: PocketRowView | null, label?: string): HTMLElement {
   body.append(text, el('span', 'inv-item-detail', p.detail), el('span', 'inv-item-weight', p.weight));
   if (p.opens) body.append(el('span', 'inv-chevron', '›'));
   li.append(body);
+  if (p.removable) {
+    const doff = el('button', 'inv-wear inv-doff', 'Take off');
+    doff.type = 'button';
+    doff.dataset.doff = p.id;
+    doff.setAttribute('aria-label', `Take off ${p.name}`);
+    li.append(doff);
+  }
   return li;
 }
 

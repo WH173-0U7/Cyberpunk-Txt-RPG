@@ -75,7 +75,8 @@ clothing are the items so far:
   Clothing carried is an `Item` of kind `clothing` with `gear` naming the garment;
   `Game.wear(itemId)` swaps it in: the garment it replaces goes in a pocket with room (or is
   left behind), after what was in its pockets, the wallet included, has found room, else the
-  swap is off. A rack (`Game.menu()` at a store) sells garments as `clothing` menu items at
+  swap is off; `Game.takeOff(pocketId)` sheds a hat or face wear into a pocket with room,
+  and refuses the slots `GEAR.start` covers (those get swapped, never shed). A rack (`Game.menu()` at a store) sells garments as `clothing` menu items at
   their own price, with the slot, style and brand as `detail`, and bags by the store's tier
   (`GEAR.quality`, else drawn like an eatery's). Stores are businesses in `src/data/city.ts`
   (the wiki's chains and named stores keep to their districts) with roles in

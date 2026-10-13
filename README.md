@@ -209,7 +209,9 @@ own.
   designer pieces and used clothes. Buying a garment puts it in a pocket; **Wear** in the
   inventory puts it on. What you had on comes off into a pocket with room, or stays where
   you stand if there is none; whatever was in its pockets, the wallet included, moves to
-  pockets with room first, or the swap is off.
+  pockets with room first, or the swap is off. A hat or face wear can also just come off
+  (**Take off** on its row) into a pocket with room; the rest of what you wear gets swapped,
+  never shed.
 - **Eddies**: cash and the account. Cash is **bills** in a wallet in your pants (it holds a
   thousand; a note weighs next to nothing) and **coins** loose in the pocket beside it (a
   slot of their own, and six grams to the eddie, so a pocketful of change is a heavy one).
