@@ -1,6 +1,11 @@
-import type { Dish } from './food';
+import type { Dish, Quality } from './food';
 import type { Money } from './money';
 import type { Item, ItemKind } from './types';
+
+/** Where a garment is worn, after the wiki's 2077 clothing slots. */
+export type Slot = 'head' | 'face' | 'outer' | 'inner' | 'legs' | 'feet';
+/** The wiki's four styles of 2077. */
+export type Style = 'entropism' | 'kitsch' | 'neomilitarism' | 'neokitsch';
 
 /** The cash a pocket has to bear: bills in the wallet, coins loose in the change pocket. */
 export type Cash = Pick<Money, 'bills' | 'coins'>;
@@ -15,10 +20,16 @@ export type Cash = Pick<Money, 'bills' | 'coins'>;
  * pocket for the coins. The numbers are in `src/data/gear.ts`.
  */
 
-/** A kind of pocket or bag: its room, its own weight, and (for a wallet) how many eddies it holds. */
+/** A kind of pocket or bag, or a garment with pockets (or none): its room, its own weight, and (for a wallet) how many eddies it holds. */
 export interface PocketKind {
   name: string;
-  /** How many stacks of things fit. A wallet has none; it holds eddies. */
+  /** Where it's worn, for a garment. Bags and the wallet have no slot. */
+  slot?: Slot;
+  brand?: string;
+  style?: Style;
+  /** The tier it belongs to, for a garment: what kind of store carries it. */
+  quality?: Quality;
+  /** How many stacks of things fit. A wallet has none; it holds eddies; a tank top has none at all. */
   slots: number;
   /** The most its contents can weigh, in grams. */
   maxGrams: number;
@@ -54,10 +65,15 @@ export interface GearContent {
   kinds: Record<string, PocketKind>;
   /** What a new player wears. */
   start: PocketState[];
-  /** What each kind of store (by business id) has on its rack, by pocket kind. */
+  /** What each kind of store (by business id) has on its rack: garments and bags, by kind. */
   racks: Record<string, string[]>;
-  /** A line about a store's rack, in the panel. */
-  blurb: string;
+  /** The tier a store sells at, by business id; a store not listed draws one from its district like an eatery. */
+  quality: Record<string, Quality>;
+  slotLabels: Record<Slot, string>;
+  styleLabels: Record<Style, string>;
+  /** What a rack is, in the panel and on the menu: a store of each tier, or bags only. */
+  labels: Record<Quality, string>;
+  blurbs: Record<Quality | 'bags', string>;
 }
 
 export interface Load {
@@ -68,6 +84,12 @@ export interface Load {
 /** A pocket with everything about it worked out, for the inventory. */
 export interface PocketLoad extends PocketState {
   name: string;
+  /** For a garment: where it's worn, and what it is. */
+  slot?: Slot;
+  brand?: string;
+  style?: Style;
+  quality?: Quality;
+  note?: string;
   slots: number;
   maxGrams: number;
   /** Slots and grams taken by what's inside (and inner pockets, each a slot). */
@@ -85,13 +107,30 @@ export interface PocketLoad extends PocketState {
   over: boolean;
 }
 
-/** What one of something weighs, in grams. */
-export function itemGrams(item: Pick<Item, 'id' | 'kind'>, gear: GearContent, dishes: Dish[]): number {
+/** What one of something weighs, in grams: a dish its own, a garment what it weighs on you, anything else by its kind. */
+export function itemGrams(item: Pick<Item, 'id' | 'kind' | 'gear'>, gear: GearContent, dishes: Dish[]): number {
   if (item.kind === 'consumable') {
     const dish = dishes.find((d) => d.id === item.id);
     if (dish) return dish.grams ?? gear.dish[dish.kind];
   }
+  if (item.kind === 'clothing') {
+    const kind = gear.kinds[item.gear ?? item.id];
+    if (kind) return kind.grams;
+  }
   return gear.items[item.kind]?.grams ?? 250;
+}
+
+/** The garments worn, in the order of the slots, and the bags carried. */
+export function outfit(pockets: PocketState[], gear: GearContent): { worn: Partial<Record<Slot, PocketState>>; bags: PocketState[] } {
+  const worn: Partial<Record<Slot, PocketState>> = {};
+  const bags: PocketState[] = [];
+  for (const p of pockets) {
+    if (p.in !== null) continue;
+    const slot = gear.kinds[p.kind]?.slot;
+    if (slot) worn[slot] ??= p;
+    else bags.push(p);
+  }
+  return { worn, bags };
 }
 
 /** How many slots a stack of `count` of something takes. */
@@ -133,7 +172,7 @@ export function loadOf(pocket: PocketState, pockets: PocketState[], items: Item[
 }
 
 /** Whether `count` more of something fit in a pocket, joining a stack of it already there if there is one. A wallet takes credchips in its card slots, and nothing else. */
-export function fits(pocket: PocketState, pockets: PocketState[], items: Item[], money: Cash, item: Pick<Item, 'id' | 'kind'>, count: number, gear: GearContent, dishes: Dish[]): boolean {
+export function fits(pocket: PocketState, pockets: PocketState[], items: Item[], money: Cash, item: Pick<Item, 'id' | 'kind' | 'gear'>, count: number, gear: GearContent, dishes: Dish[]): boolean {
   const kind = kindOf(pocket, gear);
   if (kind.holds !== undefined) return item.kind === 'credchip' && chipsIn(pocket, items) + count <= (kind.chips ?? 0);
   if (kind.slots <= 0) return false;
@@ -145,7 +184,7 @@ export function fits(pocket: PocketState, pockets: PocketState[], items: Item[],
 }
 
 /** The pocket to put `count` of something in: the wallet for a credchip while it has a card slot free; else one already holding some of it if that has room, else the first with room. Null when nothing fits. */
-export function placeFor(pockets: PocketState[], items: Item[], money: Cash, item: Pick<Item, 'id' | 'kind'>, count: number, gear: GearContent, dishes: Dish[]): string | null {
+export function placeFor(pockets: PocketState[], items: Item[], money: Cash, item: Pick<Item, 'id' | 'kind' | 'gear'>, count: number, gear: GearContent, dishes: Dish[]): string | null {
   const roomy = pockets.filter((p) => fits(p, pockets, items, money, item, count, gear, dishes));
   const wallet = item.kind === 'credchip' ? roomy.find((p) => kindOf(p, gear).holds !== undefined) : undefined;
   const same = roomy.find((p) => items.some((i) => i.id === item.id && i.in === p.id));
@@ -184,6 +223,11 @@ export function loads(pockets: PocketState[], items: Item[], money: Cash, gear: 
     const out: PocketLoad = {
       ...pocket,
       name: kind.name,
+      ...(kind.slot ? { slot: kind.slot } : {}),
+      ...(kind.brand ? { brand: kind.brand } : {}),
+      ...(kind.style ? { style: kind.style } : {}),
+      ...(kind.quality ? { quality: kind.quality } : {}),
+      ...(kind.note ? { note: kind.note } : {}),
       slots: kind.slots,
       maxGrams: kind.maxGrams,
       load,

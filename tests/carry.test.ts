@@ -30,10 +30,12 @@ describe('carrying things', () => {
   it('counts the wallet as a slot of the pants, the bills in it as weight, and the coins as a slot and weight of their own', () => {
     const money = { bills: 320, coins: 0 };
     const walletGrams = GEAR.kinds.wallet!.grams + 320 * GEAR.gramsPerBill;
+    // The clothes themselves weigh something too.
+    const clothes = GEAR.kinds.jacket!.grams + GEAR.kinds.pants!.grams;
     expect(loadOf(worn[1] as PocketState, worn, [], money, GEAR, dishes)).toEqual({ slots: 1, grams: Math.round(walletGrams) });
     expect(pocketGrams(worn[2] as PocketState, worn, [], money, GEAR, dishes)).toBe(Math.round(walletGrams));
     expect(loadOf(worn[0] as PocketState, worn, [taco(3), sake(1)], money, GEAR, dishes)).toEqual({ slots: 3, grams: 3 * GEAR.dish.food + GEAR.dish.alcohol });
-    expect(totalGrams(worn, [taco(3), sake(1)], money, GEAR, dishes)).toBe(3 * GEAR.dish.food + GEAR.dish.alcohol + Math.round(walletGrams));
+    expect(totalGrams(worn, [taco(3), sake(1)], money, GEAR, dishes)).toBe(clothes + 3 * GEAR.dish.food + GEAR.dish.alcohol + Math.round(walletGrams));
     const all = loads(worn, [taco(3)], money, GEAR, dishes);
     expect(all.map((p) => p.id)).toEqual(['jacket', 'pants', 'wallet']);
     expect(all[2]).toMatchObject({ bills: 320, holds: GEAR.kinds.wallet!.holds, over: false, grams: Math.round(walletGrams) });

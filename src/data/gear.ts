@@ -1,13 +1,16 @@
 import type { GearContent } from '../engine/carry';
+import { GARMENTS, SLOTS, STORE_QUALITY, STORES, STYLES } from './clothing';
 
 /**
- * What the player carries things in. The pockets of the clothes on your back come first,
- * with the wallet in the pants; bags are sold by general stores, thrift shops and clothing
- * stores. Eddies are cash (2077's eurodollars, per the wiki: hologram-marked bills, and the
- * 2020 coins carried forward) and weigh what cash weighs: a note next to nothing, coins a lot,
- * so a pocketful of change is a heavy one; credchips (the wiki's 2020 chips of eurodollars)
- * ride in the wallet's card slots. The wiki's 2077 clothing has no bags, so these are plain
- * things named for what they are; every number here is ours.
+ * What the player carries things in. The clothes on your back come first: every garment is
+ * a real piece of 2077 clothing from the wiki (`src/data/clothing.ts`), worn in one of the
+ * wiki's six slots, and the ones with pockets carry things; the wallet rides in the pants.
+ * Bags are sold by general stores, thrift shops and clothing stores. Eddies are cash (2077's
+ * eurodollars, per the wiki: hologram-marked bills, and the 2020 coins carried forward) and
+ * weigh what cash weighs: a note next to nothing, coins a lot, so a pocketful of change is a
+ * heavy one; credchips (the wiki's 2020 chips of eurodollars) ride in the wallet's card
+ * slots. The wiki's 2077 clothing has no bags, so those are plain things named for what they
+ * are; every number here is ours.
  */
 export const GEAR: GearContent = {
   gramsPerBill: 0.05,
@@ -26,24 +29,40 @@ export const GEAR: GearContent = {
   },
   dish: { food: 250, drink: 350, alcohol: 650 },
   kinds: {
-    jacket: { name: 'Jacket pockets', slots: 4, maxGrams: 2000, grams: 0 },
-    pants: { name: 'Pants pockets', slots: 3, maxGrams: 1500, grams: 0, change: true },
     wallet: { name: 'Wallet', slots: 0, maxGrams: 0, grams: 40, holds: 1000, chips: 4 },
     'belt-pouch': { name: 'Belt pouch', slots: 2, maxGrams: 800, grams: 80, price: 12, note: 'Two pockets more, on a strap.' },
     'messenger-bag': { name: 'Messenger bag', slots: 5, maxGrams: 5000, grams: 450, price: 30, note: 'Slung across the chest. Five slots, five kilos.' },
     'duffel-bag': { name: 'Duffel bag', slots: 8, maxGrams: 9000, grams: 700, price: 40, note: 'Eight slots and nine kilos, over one shoulder.' },
     backpack: { name: 'Backpack', slots: 7, maxGrams: 8000, grams: 600, price: 55, note: 'Seven slots, eight kilos, both hands free.' },
+    ...GARMENTS,
   },
+  // A new player is dressed off the thrift rack, head bare, the wallet in the pants.
   start: [
+    { id: 'tank', kind: 'tank', in: null },
     { id: 'jacket', kind: 'jacket', in: null },
     { id: 'pants', kind: 'pants', in: null },
+    { id: 'high-tops', kind: 'high-tops', in: null },
     { id: 'wallet', kind: 'wallet', in: 'pants' },
   ],
   racks: {
     'general-store': ['belt-pouch', 'duffel-bag', 'backpack'],
-    'thrift-shop': ['belt-pouch', 'messenger-bag', 'duffel-bag'],
-    'clothing-store': ['messenger-bag', 'backpack'],
-    boutique: ['messenger-bag'],
+    'thrift-shop': [...STORES['thrift-shop'], 'belt-pouch', 'messenger-bag', 'duffel-bag'],
+    'clothing-store': [...STORES['clothing-store'], 'messenger-bag', 'backpack'],
+    boutique: [...STORES.boutique, 'messenger-bag'],
+    stylishly: [...STORES.stylishly, 'backpack'],
+    jinguji: STORES.jinguji,
+    avante: STORES.avante,
+    saekos: STORES.saekos,
+    'ded-zed': STORES['ded-zed'],
   },
-  blurb: 'Bags and belts on the rack: more pockets, for a price.',
+  quality: STORE_QUALITY,
+  slotLabels: SLOTS,
+  styleLabels: STYLES,
+  labels: { luxury: 'Luxury', everyday: 'Everyday', poverty: 'Secondhand' },
+  blurbs: {
+    bags: 'Bags and belts on the rack: more pockets, for a price.',
+    luxury: 'Designer racks, a tailor in the back, and prices that assume you are not asking.',
+    everyday: 'Racks of clothes people actually wear, at prices people actually pay.',
+    poverty: 'Secondhand racks: worn, washed and priced to move.',
+  },
 };

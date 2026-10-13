@@ -145,7 +145,7 @@ own.
   card's **Web** unfolds to show them in the middle and everyone you know them to know
   around them, each spoke labeled with the relation or "?" (dashed) when all you know is
   that they're connected; tap a name to open that person's card (even if they're not here,
-  then you can only look). The people you know of are listed under everyone here.
+  then you can only look).
 - **The conversation**: a person's card is a terminal: a short header (who they are as far
   as you know, how they feel about you, what they're doing; what you know of them folded to
   one line, tap to unfold), the transcript filling the rest (your lines after a `›`, theirs
@@ -186,14 +186,30 @@ own.
   under it, so they get the whole lower screen. Each has one strip for a header (what it
   is, a count, **×**); the place you're at stays on the sign above, so nothing is said
   twice. **×** or **Esc** closes one, and the panel comes back.
-- **Carrying things**: nothing floats along behind you. Everything you own is in a pocket:
-  your jacket's (four slots, two kilos), your pants' (three slots, a kilo and a half), and
-  any bag you buy. Every item takes a slot (small things share one, two to a slot) and
-  weighs something (a taco 250 g, a bottle of sake 650 g); a pocket holds only so many slots
-  and so much weight. Buying something means a pocket with room for it, or the counter says
-  so: eat something, or **Drop** it. General stores, thrift shops and clothing stores sell
-  bags (**Shop** on the panel): a belt pouch, a messenger bag, a duffel bag, a backpack,
-  each more slots and kilos.
+- **Carrying things**: nothing floats along behind you. Everything you own is in a pocket
+  of something you wear: your jacket's, your pants', a bag's. Every item takes a slot (small
+  things share one, two to a slot) and weighs something (a taco 250 g, a bottle of sake
+  650 g); a pocket holds only so many slots and so much weight. Buying something means a
+  pocket with room for it, or the counter says so: eat something, or **Drop** it. General
+  stores, thrift shops and clothing stores sell bags (**Shop** on the panel): a belt pouch,
+  a messenger bag, a duffel bag, a backpack, each more slots and kilos.
+- **Clothes**: you're dressed head to toe but the head, in the wiki's six slots (head, face,
+  outer torso, inner torso, legs, feet), and every garment is a real piece of 2077 clothing
+  from the wiki in one of its four styles (Entropism, Kitsch, Neomilitarism, Neokitsch),
+  with its brand where it has one (Arasaka, Kang Tao, Uniware, Sudo, ICON America, AT-AK,
+  MaxiWear, Saeko's, Darra Polytechnic, Spunky Monkey). The pockets are ours: a coat has
+  deep ones, a tank top none, and the pants take the loose change. A new player wears the
+  thrift rack: a Basic tank top, an Old duolayer jacket with buckles, Worn cargo pants and
+  Worn aramid high-tops, the wallet in the pants. The wiki's clothing stores sell what the
+  wiki shows them selling, each at its tier: **Jinguji**'s flagship downtown and **Avante**
+  (**Appel de Paris** on Corpo Plaza, a store in Charter Hill) are luxury neokitsch; the
+  **Stylishly** chain keeps to Watson, Heywood and Santo Domingo; **Blossoming Sakura
+  Clothier** is Saeko's store on the Japantown boardwalk; **Ded-Zed** is on Richmond Street
+  in Northside; and the plain clothing stores, boutiques and thrift shops sell streetwear,
+  designer pieces and used clothes. Buying a garment puts it in a pocket; **Wear** in the
+  inventory puts it on. What you had on comes off into a pocket with room, or stays where
+  you stand if there is none; whatever was in its pockets, the wallet included, moves to
+  pockets with room first, or the swap is off.
 - **Eddies**: cash and the account. Cash is **bills** in a wallet in your pants (it holds a
   thousand; a note weighs next to nothing) and **coins** loose in the pocket beside it (a
   slot of their own, and six grams to the eddie, so a pocketful of change is a heavy one).
@@ -217,11 +233,14 @@ own.
   and once they've worked for you, you know their trade. Corpos nearly always carry a chip
   with real money on it, the street often with less, gangers rarely. Whoever comes to
   collect takes the chips on you, too, when your cash runs short.
-- **Inventory**: the **Inventory** button in the map's header (or **I**) opens your pockets:
-  each with how many slots and how much weight are taken, what's in it with its weight and
-  its Eat, Drink and Drop buttons, the wallet with the bills in it, the chips in it under
-  it (each with what's on it, and whether it's locked), and the coins beside it. The strip
-  counts everything and weighs it. Your cash is in the map's header too.
+- **Inventory**: the **Inventory** button in the map's header (or **I**) opens on you head
+  to toe: a row per slot with what you wear there, its brand, style and tier, how full its
+  pockets are and what it weighs; then the bags you carry. Tap a garment or a bag to open
+  its pockets: what's in them with its weight and its Eat, Drink, Wear and Drop buttons,
+  and the pockets inside (the wallet in the pants, with the coins beside it), which open in
+  turn: the wallet shows the bills in it and the chips, each with what's on it and whether
+  it's locked. **‹** goes back a level. The strip counts everything and weighs it. Your cash
+  is in the map's header too.
 - **Settings**: the gear next to it opens the settings. For now that's the save:
   **Restart this city** puts the same city back to the start, and **Erase save** deletes the
   save from this device and starts a brand new city. Both ask first, with Cancel as the

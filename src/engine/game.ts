@@ -1,7 +1,7 @@
 import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
-import { changeRoom, loads, newChipId, newPocketId, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState } from './carry';
+import { changeRoom, loadOf, loads, newChipId, newPocketId, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState } from './carry';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Venue } from './food';
 import { answer, compose, deflect, describeStranger, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, moodOf, openness, openTopics, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
@@ -198,6 +198,12 @@ export class Game {
     // Pockets of kinds the game no longer has are gone, and with none left the player wears the usual; anything not in a pocket is put away.
     const pockets = (progress?.gear ?? []).filter((p) => p.kind in rules.gear.kinds).map((p) => ({ ...p }));
     this.pockets = pockets.length ? pockets : rules.gear.start.map((p) => ({ ...p }));
+    // A save from before the player was dressed, or missing a slot, wears the usual wherever it has nothing on.
+    for (const start of rules.gear.start) {
+      const kind = rules.gear.kinds[start.kind];
+      if (!kind?.slot || this.pockets.some((p) => p.in === null && rules.gear.kinds[p.kind]?.slot === kind.slot)) continue;
+      this.pockets.push({ ...start, id: this.pockets.some((p) => p.id === start.id) ? newPocketId(start.kind, this.pockets) : start.id });
+    }
     this.items = (progress?.items ?? []).map((item) => ({ ...item }));
     this.stow();
     this.resumed = Boolean(progress);
@@ -402,15 +408,29 @@ export class Game {
 
   /** A store's rack of bags and belts, priced by how good a store it is. */
   private rack(building: Building): Menu | null {
-    const ids = building.business ? this.rules.gear.racks[building.business] : undefined;
-    if (!ids?.length) return null;
-    const quality = drawQuality(this.world, building);
+    const { gear, food } = this.rules;
+    const key = building.business && gear.racks[building.business] ? building.business : null;
+    const ids = key ? gear.racks[key] : undefined;
+    if (!key || !ids?.length) return null;
+    // A clothing store sells at its tier; a store with only bags on the rack prices them the way its district eats.
+    const quality = gear.quality[key] ?? drawQuality(this.world, building);
     const venue: Venue = { id: building.id, name: building.name, district: building.district, kindLabel: building.kindLabel, quality, chain: false };
-    const items: MenuItem[] = ids.flatMap((id) => {
-      const kind = this.rules.gear.kinds[id];
-      return kind?.price ? [{ id, name: kind.name, note: kind.note ?? '', kind: 'gear' as const, price: priceFor(kind.price, quality, this.rules.food) }] : [];
+    const items = ids.flatMap((id): MenuItem[] => {
+      const kind = gear.kinds[id];
+      if (!kind?.price) return [];
+      // A garment is priced for what it is (its tier is in it); a bag by the store.
+      if (kind.slot) {
+        const detail = [gear.slotLabels[kind.slot], kind.style ? gear.styleLabels[kind.style] : '', kind.brand ?? ''].filter(Boolean).join(' · ');
+        return [{ id, name: kind.name, note: kind.note ?? '', kind: 'clothing' as const, price: kind.price, detail }];
+      }
+      return [{ id, name: kind.name, note: kind.note ?? '', kind: 'gear' as const, price: priceFor(kind.price, quality, food) }];
     });
     return { venue, items, kind: 'gear' };
+  }
+
+  /** What buying something off a menu puts in a pocket: a dish, or a garment to wear later. */
+  private protoFor(item: MenuItem): Pick<Item, 'id' | 'kind' | 'gear'> {
+    return item.kind === 'clothing' ? { id: item.id, kind: 'clothing', gear: item.id } : { id: item.id, kind: 'consumable' };
   }
 
   /** Why the player can't buy something here, or null if they can: it isn't for sale, they're barred, short of eddies, or out of room. */
@@ -421,7 +441,7 @@ export class Game {
     const barred = this.barred(now);
     if (barred) return barred;
     if (!this.canPay(item.price, this.takesTransfers(menu))) return this.shortBy(item.name, item.price, this.takesTransfers(menu));
-    if (item.kind !== 'gear' && !this.pocketFor({ id: item.id, kind: 'consumable' })) return `No room for ${item.name}: your pockets are full. Eat something, or drop something.`;
+    if (item.kind !== 'gear' && !this.pocketFor(this.protoFor(item))) return `No room for ${item.name}: your pockets are full. Eat something, or drop something.`;
     return null;
   }
 
@@ -440,13 +460,73 @@ export class Game {
       this.pockets.push({ id: newPocketId(item.id, this.pockets), kind: item.id, in: null });
       this.say(`Bought a ${item.name.toLowerCase()} for ${item.price} €$. More room.`, 'system');
     } else {
-      const pocket = this.pocketFor({ id: item.id, kind: 'consumable' }) ?? undefined;
-      const owned = this.items.find((i) => i.id === item.id && i.in === pocket);
+      const proto = this.protoFor(item);
+      const pocket = this.pocketFor(proto) ?? undefined;
+      const owned = this.items.find((i) => i.id === item.id && i.kind === proto.kind && i.in === pocket);
       if (owned) owned.count++;
-      else this.items.push({ id: item.id, kind: 'consumable', name: item.name, count: 1, in: pocket });
-      this.say(`Bought ${item.name} for ${item.price} €$.`, 'system');
+      else this.items.push({ id: item.id, kind: proto.kind, name: item.name, count: 1, in: pocket, ...(proto.gear ? { gear: proto.gear } : {}) });
+      this.say(`Bought ${item.name} for ${item.price} €$.${proto.gear ? ' Put it on from the inventory.' : ''}`, 'system');
     }
     this.events.emit('walletChanged', this.wallet);
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  /**
+   * Puts on a garment carried in a pocket. What was worn in that slot comes off and goes in a
+   * pocket with room (or stays where you stand, if there is none); whatever was in its
+   * pockets, the wallet included, moves to pockets with room first, or the swap is off.
+   */
+  wear(itemId: string): boolean {
+    const { gear, food } = this.rules;
+    const item = this.items.find((i) => i.id === itemId && i.kind === 'clothing');
+    const kind = item?.gear ? gear.kinds[item.gear] : undefined;
+    if (!item?.gear || !kind?.slot) return false;
+    const current = this.pockets.find((p) => p.in === null && gear.kinds[p.kind]?.slot === kind.slot);
+    const currentKind = current ? gear.kinds[current.kind] : undefined;
+    const fresh: PocketState = { id: newPocketId(item.gear, this.pockets), kind: item.gear, in: null };
+    // Everything is tried on copies first: nothing changes unless all of it fits.
+    const pockets = [...this.pockets.filter((p) => p !== current).map((p) => ({ ...p })), fresh];
+    const items = this.items.map((i) => ({ ...i }));
+    const taken = items.find((i) => i.id === item.id && i.in === item.in);
+    if (taken) {
+      taken.count--;
+      if (taken.count <= 0) items.splice(items.indexOf(taken), 1);
+    }
+    const moving = current ? items.filter((i) => i.in === current.id) : [];
+    const inner = current ? pockets.filter((p) => p.in === current.id) : [];
+    for (const i of moving) delete i.in;
+    // The pockets inside it (the wallet) need a slot somewhere worn, the new garment first.
+    for (const p of inner) {
+      p.in = null;
+      const home = [fresh, ...pockets].find((q) => q !== p && q.in === null && (gear.kinds[q.kind]?.slots ?? 0) > loadOf(q, pockets, items, this.money, gear, food.dishes).slots);
+      if (!home) {
+        this.say(`Nowhere to move the ${gear.kinds[p.kind]?.name.toLowerCase() ?? p.kind} that's in your ${currentKind?.name ?? 'pockets'}. Make room first.`, 'error');
+        return false;
+      }
+      p.in = home.id;
+    }
+    // Then what was in its pockets, then the garment itself.
+    for (const i of moving) {
+      const home = placeFor(pockets, items, this.money, i, i.count, gear, food.dishes);
+      if (!home) {
+        this.say(`No room for the ${i.name} that's in your ${currentKind?.name ?? 'pockets'}. Make room first.`, 'error');
+        return false;
+      }
+      i.in = home;
+    }
+    let left = '';
+    if (current && currentKind) {
+      const old: Item = { id: current.kind, kind: 'clothing', name: currentKind.name, count: 1, gear: current.kind };
+      const home = placeFor(pockets, items, this.money, old, 1, gear, food.dishes);
+      const stack = home ? items.find((i) => i.id === old.id && i.kind === 'clothing' && i.in === home) : undefined;
+      if (stack) stack.count++;
+      else if (home) items.push({ ...old, in: home });
+      else left = ` No room to carry the ${currentKind.name}: it stays where you stand.`;
+    }
+    this.pockets.splice(0, this.pockets.length, ...pockets);
+    this.items.splice(0, this.items.length, ...items);
+    this.say(`You put on the ${kind.name}.${left}`, 'system');
     this.events.emit('inventoryChanged', this.inventory);
     return true;
   }

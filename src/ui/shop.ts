@@ -4,7 +4,9 @@ export interface ShopItemView {
   id: string;
   name: string;
   note: string;
-  kind: 'food' | 'drink' | 'alcohol' | 'gear';
+  kind: 'food' | 'drink' | 'alcohol' | 'gear' | 'clothing';
+  /** For clothing: the slot, the style, the brand, in place of the kind's label. */
+  detail?: string;
   price: number;
   affordable: boolean;
   /** How many the player already carries. */
@@ -28,7 +30,7 @@ export interface ShopElements extends OverlayElements {
   list: HTMLElement;
 }
 
-const KIND_LABEL: Record<ShopItemView['kind'], string> = { food: 'Food', drink: 'Drink', alcohol: 'Alcohol', gear: 'Gear' };
+const KIND_LABEL: Record<ShopItemView['kind'], string> = { food: 'Food', drink: 'Drink', alcohol: 'Alcohol', gear: 'Gear', clothing: 'Clothing' };
 
 /**
  * An eatery's menu, or a store's rack, over the map. It shows whatever view it's given; the
@@ -71,7 +73,8 @@ function row(item: ShopItemView): HTMLElement {
   const li = el('li', `shop-item is-${item.kind}`);
   const text = el('div', 'shop-item-text');
   const head = el('div', 'shop-item-head');
-  const kind = item.carried ? `${KIND_LABEL[item.kind]} · ×${item.carried} carried` : KIND_LABEL[item.kind];
+  const label = item.detail ?? KIND_LABEL[item.kind];
+  const kind = item.carried ? `${label} · ×${item.carried} carried` : label;
   head.append(el('span', 'shop-item-name', item.name), el('span', 'shop-item-kind', kind));
   text.append(head, el('p', 'shop-item-note', item.note));
   const buy = el('button', 'shop-buy');

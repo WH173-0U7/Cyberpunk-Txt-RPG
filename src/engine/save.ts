@@ -158,7 +158,8 @@ function isItem(value: unknown): value is Item {
     (item.count as number) > 0 &&
     (item.in === undefined || typeof item.in === 'string') &&
     (item.balance === undefined || (isNumber(item.balance) && item.balance >= 0)) &&
-    (item.locked === undefined || typeof item.locked === 'boolean')
+    (item.locked === undefined || typeof item.locked === 'boolean') &&
+    (item.gear === undefined || typeof item.gear === 'string')
   );
 }
 

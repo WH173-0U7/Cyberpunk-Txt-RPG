@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
-import type { GearContent } from '../src/engine/carry';
+import { outfit, type GearContent } from '../src/engine/carry';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
 import { MONEY } from '../src/data/money';
@@ -973,16 +973,96 @@ describe('Game', () => {
       kinds: { ...GEAR.kinds, jacket: { ...GEAR.kinds.jacket!, slots: 1 }, pants: { ...GEAR.kinds.pants!, slots: 2, change: false } },
     };
 
-    it('wears the usual pockets, with the wallet in the pants weighing what the eddies weigh', () => {
+    it('wears the usual clothes, with the wallet in the pants weighing what the eddies weigh', () => {
       const { game } = inside('b-noodle', 38, 20);
       expect(game.gearSaved).toEqual(GEAR.start);
       const { grams, pockets } = game.carry();
-      expect(pockets.map((p) => p.id)).toEqual(['jacket', 'pants', 'wallet']);
+      expect(pockets.map((p) => p.id)).toEqual(['tank', 'jacket', 'pants', 'high-tops', 'wallet']);
       const walletGrams = Math.round(GEAR.kinds.wallet!.grams + 100 * GEAR.gramsPerBill);
-      expect(pockets[2]).toMatchObject({ bills: 100, holds: GEAR.kinds.wallet!.holds, grams: walletGrams, over: false });
-      expect(pockets[1]?.load).toEqual({ slots: 1, grams: walletGrams });
-      expect(grams).toBe(walletGrams);
+      expect(pockets[4]).toMatchObject({ bills: 100, holds: GEAR.kinds.wallet!.holds, grams: walletGrams, over: false });
+      expect(pockets[2]?.load).toEqual({ slots: 1, grams: walletGrams });
+      const clothes = GEAR.start.filter((p) => p.in === null).reduce((sum, p) => sum + (GEAR.kinds[p.kind]?.grams ?? 0), 0);
+      expect(grams).toBe(clothes + walletGrams);
       expect(game.wallet).toMatchObject({ eddies: 100, bills: 100, coins: 0, account: 0 });
+      // Each garment says where it's worn and what it is.
+      expect(pockets[1]).toMatchObject({ slot: 'outer', style: 'entropism', quality: 'poverty', name: 'Old duolayer jacket with buckles' });
+      expect(pockets[0]).toMatchObject({ slot: 'inner', slots: 0 });
+    });
+
+    it('dresses a new player head to toe, and an older save the same, keeping what it wore', () => {
+      const { game } = inside('b-noodle', 38, 20);
+      const { worn, bags } = outfit(game.gearSaved, GEAR);
+      expect(Object.keys(worn).sort()).toEqual(['feet', 'inner', 'legs', 'outer']);
+      expect(bags).toEqual([]);
+      // A save from before clothes had a jacket, pants and the wallet: it keeps those and gets the rest.
+      const old = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), gear: [{ id: 'jacket', kind: 'jacket', in: null }, { id: 'pants', kind: 'pants', in: null }, { id: 'wallet', kind: 'wallet', in: 'pants' }] });
+      expect(old.gearSaved.map((p) => p.kind).sort()).toEqual(['high-tops', 'jacket', 'pants', 'tank', 'wallet']);
+      // One wearing something else in a slot keeps it.
+      const dressed = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), gear: [{ id: 'zebriger-led-jacket-1', kind: 'zebriger-led-jacket', in: null }, { id: 'pants', kind: 'pants', in: null }, { id: 'wallet', kind: 'wallet', in: 'pants' }] });
+      expect(outfit(dressed.gearSaved, GEAR).worn.outer?.kind).toBe('zebriger-led-jacket');
+      expect(dressed.gearSaved.some((p) => p.kind === 'jacket')).toBe(false);
+    });
+
+    it("sells clothing off a store's rack at its tier, to wear from the inventory, the pockets' contents and the wallet moving over", () => {
+      // The gun shop stands in for Stylishly: an everyday rack with a chain's stock and a bag.
+      const racked: GearContent = { ...GEAR, racks: { ...GEAR.racks, 'gun-shop': GEAR.racks.stylishly! }, quality: { ...GEAR.quality, 'gun-shop': 'everyday' } };
+      const taco = { id: 'taco', kind: 'consumable' as const, name: 'Taco', count: 1, in: 'jacket' };
+      const game = new Game(world, { ...RULES, gear: racked }, { ...progressInside('b-shop', 32, 20, [taco]), money: { bills: 400, coins: 0, account: 0 } });
+      game.start(T0);
+      const { take, outputs } = record(game);
+      const menu = game.menu();
+      expect(menu?.kind).toBe('gear');
+      expect(menu?.venue.quality).toBe('everyday');
+      const jacket = { ...GEAR.kinds['zebriger-led-jacket']!, price: GEAR.kinds['zebriger-led-jacket']?.price ?? 0 };
+      expect(jacket.price).toBeGreaterThan(0);
+      expect(menu?.items.find((i) => i.id === 'zebriger-led-jacket')).toMatchObject({ kind: 'clothing', price: jacket.price, detail: 'Outer torso · Kitsch' });
+      expect(menu?.items.find((i) => i.id === 'icon-america-fleets')?.detail).toBe('Feet · Kitsch · ICON America');
+      expect(menu?.items.find((i) => i.id === 'backpack')?.kind).toBe('gear');
+      // Bought, it's carried, not worn.
+      expect(game.buy('zebriger-led-jacket')).toBe(true);
+      expect(outputs(take()).at(-1)?.text).toBe(`Bought ${jacket.name} for ${jacket.price} €$. Put it on from the inventory.`);
+      expect(game.inventory.find((i) => i.id === 'zebriger-led-jacket')).toMatchObject({ kind: 'clothing', gear: 'zebriger-led-jacket', count: 1, in: 'jacket' });
+      expect(game.wallet.eddies).toBe(400 - jacket.price);
+      // Put on: the old jacket and the taco in it find pockets, and the old jacket is one to wear again.
+      expect(game.wear('zebriger-led-jacket')).toBe(true);
+      expect(outputs(take()).at(-1)?.text).toBe(`You put on the ${jacket.name}.`);
+      expect(outfit(game.gearSaved, GEAR).worn.outer).toMatchObject({ id: 'zebriger-led-jacket-1', kind: 'zebriger-led-jacket' });
+      expect(game.gearSaved.some((p) => p.id === 'jacket')).toBe(false);
+      const old = game.inventory.find((i) => i.id === 'jacket');
+      expect(old).toMatchObject({ kind: 'clothing', gear: 'jacket', count: 1 });
+      expect(game.gearSaved.some((p) => p.id === old?.in)).toBe(true);
+      expect(game.gearSaved.some((p) => p.id === game.inventory.find((i) => i.id === 'taco')?.in)).toBe(true);
+      expect(game.wear('nothing')).toBe(false);
+      expect(game.wear('taco')).toBe(false);
+      // New pants take the wallet with them, and the loose change.
+      expect(game.buy('dark-sapphire-rocker-pants')).toBe(true);
+      expect(game.wear('dark-sapphire-rocker-pants')).toBe(true);
+      expect(game.gearSaved.find((p) => p.kind === 'wallet')?.in).toBe('dark-sapphire-rocker-pants-1');
+      expect(game.carry().pockets.find((p) => p.id === 'dark-sapphire-rocker-pants-1')).toMatchObject({ slot: 'legs', coins: 0 });
+      expect(game.inventory.find((i) => i.id === 'pants')).toMatchObject({ kind: 'clothing', gear: 'pants' });
+    });
+
+    it("won't swap a garment whose pockets have nowhere to empty into, and leaves behind one it can't carry", () => {
+      // Five slots in the jacket, one thing to a slot: four tacos and a vest to put on, which has two slots; the pants are full.
+      const packed: GearContent = { ...GEAR, items: { ...GEAR.items, consumable: { grams: 250, perSlot: 1 } }, kinds: { ...GEAR.kinds, jacket: { ...GEAR.kinds.jacket!, slots: 5 }, pants: { ...GEAR.kinds.pants!, slots: 1 } } };
+      const tacos = { id: 'taco', kind: 'consumable' as const, name: 'Taco', count: 4, in: 'jacket' };
+      const vest = { id: 'duolayer-nylon-vest', kind: 'clothing' as const, name: GEAR.kinds['duolayer-nylon-vest']!.name, count: 1, gear: 'duolayer-nylon-vest', in: 'jacket' };
+      const { game, take, outputs } = inside('b-noodle', 38, 20, { gear: packed }, [tacos, vest]);
+      expect(game.wear('duolayer-nylon-vest')).toBe(false);
+      expect(outputs(take()).at(-1)).toEqual({ text: "No room for the Taco that's in your Old duolayer jacket with buckles. Make room first.", tone: 'error' });
+      expect(outfit(game.gearSaved, GEAR).worn.outer?.id).toBe('jacket');
+      expect(game.inventory.find((i) => i.id === 'duolayer-nylon-vest')?.in).toBe('jacket');
+      // Hotpants with one small pocket, put on with the jacket near its weight: the wallet moves into them and takes their one slot, so the old pants fit nowhere and stay behind.
+      const heavy = { id: 'sake-utagawa', kind: 'consumable' as const, name: 'Sake Utagawa', count: 2, in: 'jacket' };
+      const snack = { id: 'taco', kind: 'consumable' as const, name: 'Taco', count: 2, in: 'jacket' };
+      const hotpants = { id: 'golden-pocket-hotpants', kind: 'clothing' as const, name: GEAR.kinds['golden-pocket-hotpants']!.name, count: 1, gear: 'golden-pocket-hotpants', in: 'pants' };
+      const tight = new Game(world, { ...RULES, startingEddies: 100 }, progressInside('b-noodle', 38, 20, [heavy, snack, hotpants]));
+      tight.start(T0);
+      const { take: takeTight, outputs: outTight } = record(tight);
+      expect(tight.wear('golden-pocket-hotpants')).toBe(true);
+      expect(outTight(takeTight()).at(-1)?.text).toBe(`You put on the ${hotpants.name}. No room to carry the Worn cargo pants: it stays where you stand.`);
+      expect(tight.inventory.some((i) => i.id === 'pants')).toBe(false);
+      expect(tight.gearSaved.find((p) => p.kind === 'wallet')?.in).toBe('golden-pocket-hotpants-1');
     });
 
     it('puts what it buys where there is room, refuses when there is none, and drops things to make some', () => {
@@ -994,7 +1074,7 @@ describe('Game', () => {
       // The jacket's one slot is taken: the next goes in the pants, as its own stack.
       expect(game.buy(dish.id)).toBe(true);
       expect(game.inventory.map((i) => i.in)).toEqual(['jacket', 'pants']);
-      expect(game.carry().pockets.map((p) => `${p.load.slots}/${p.slots}`)).toEqual(['1/1', '2/2', '0/0']);
+      expect(game.carry().pockets.map((p) => `${p.load.slots}/${p.slots}`)).toEqual(['0/0', '1/1', '2/2', '0/0', '0/0']);
       take();
       // Nowhere left: no sale, no charge, and the reason.
       const eddies = game.wallet.eddies;

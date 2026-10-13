@@ -81,7 +81,7 @@ export interface Venue {
 }
 
 /** What's for sale: something to eat or drink, or a bag to carry things in. */
-export type MenuKind = Dish['kind'] | 'gear';
+export type MenuKind = Dish['kind'] | 'gear' | 'clothing';
 
 export interface MenuItem {
   id: string;
@@ -89,6 +89,8 @@ export interface MenuItem {
   note: string;
   kind: MenuKind;
   price: number;
+  /** A word on what it is, for clothing: the slot, the style, the brand. */
+  detail?: string;
 }
 
 export interface Menu {
