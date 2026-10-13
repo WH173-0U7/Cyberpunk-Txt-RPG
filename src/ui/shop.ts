@@ -13,21 +13,17 @@ export interface ShopItemView {
 
 /** Everything a menu shows. */
 export interface ShopView {
-  title: string;
-  /** Quality, kind of place, district. */
+  /** How good a place this is: "Luxury", "Cheap eats"… */
   kicker: string;
   blurb: string;
-  eddies: string;
   /** What just happened: a purchase, or why one didn't go through. */
   status: string;
   items: ShopItemView[];
 }
 
 export interface ShopElements extends OverlayElements {
-  title: HTMLElement;
   kicker: HTMLElement;
   blurb: HTMLElement;
-  eddies: HTMLElement;
   status: HTMLElement;
   list: HTMLElement;
 }
@@ -56,11 +52,9 @@ export class Shop {
   }
 
   render(view: ShopView): void {
-    const { title, kicker, blurb, eddies, status, list } = this.els;
-    title.textContent = view.title;
+    const { kicker, blurb, status, list } = this.els;
     kicker.textContent = view.kicker;
     blurb.textContent = view.blurb;
-    eddies.textContent = view.eddies;
     status.textContent = view.status;
     // Buying redraws the list; the Buy that was tapped keeps focus, or, if that's now out of
     // reach, the close button takes it (the status line is read out as it changes).

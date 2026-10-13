@@ -17,13 +17,11 @@ export interface InventorySection {
 
 /** Everything the inventory shows. */
 export interface InventoryView {
-  eddies: string;
   pass: string;
   sections: InventorySection[];
 }
 
 export interface InventoryElements extends OverlayElements {
-  eddies: HTMLElement;
   pass: HTMLElement;
   total: HTMLElement;
   sections: HTMLElement;
@@ -53,8 +51,7 @@ export class Inventory {
   }
 
   render(view: InventoryView): void {
-    const { eddies, pass, total, sections } = this.els;
-    eddies.textContent = view.eddies;
+    const { pass, total, sections } = this.els;
     pass.textContent = view.pass;
     const count = view.sections.reduce((sum, s) => sum + s.items.reduce((n, item) => n + item.count, 0), 0);
     total.textContent = `${count} ${count === 1 ? 'item' : 'items'}`;

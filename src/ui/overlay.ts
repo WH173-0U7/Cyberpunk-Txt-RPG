@@ -6,9 +6,10 @@ export interface OverlayElements {
 }
 
 /**
- * A panel that covers the map, opened from a button in the map's header: the inventory,
- * settings. Only one is open at a time; opening one closes the other. The panel under the
- * map stays usable while it's open.
+ * A panel that covers the map and the panel under it, opened from a button in the map's
+ * header (the inventory, settings) or from the panel (people, the menu). Only one is open
+ * at a time; opening one closes the other. Its header is one strip: what it is, a count,
+ * and the close; the place the player is at stays on the sign above.
  */
 export class MapOverlay {
   private static current: MapOverlay | null = null;

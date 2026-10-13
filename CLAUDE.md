@@ -161,11 +161,19 @@ Eateries sell food, into the inventory (eating it comes later):
 as its text changes or types out: anything longer scrolls inside `.place-text`. Keep it that
 way when adding to the panel; the map re-renders (and re-clamps its camera) on every resize.
 
+## Overlays
+
+Every overlay (`MapOverlay` in `src/ui/overlay.ts`: inventory, settings, people, menu) lies
+over the map and the panel under it, and its header is one `.overlay-strip`: what it is, a
+count or a detail, and the close. Don't put the place's name or district in one; the sign
+above has it. Phone taps need room: chips and commands are at least 36px tall, and the
+panel's buttons share their row (`flex: 1`) with one-line labels, so keep subtitles short.
+
 ## Settings
 
-`src/ui/settings.ts` is the settings overlay (over the map, like the inventory; both are a
-`MapOverlay`). It only looks after the save for now: restart this city, or erase the save
-and start a new one, each asking first. New options go in it as their own groups.
+`src/ui/settings.ts` is the settings overlay. It only looks after the save for now: restart
+this city, or erase the save and start a new one, each asking first. New options go in it
+as their own groups.
 
 ## Checks before a PR
 

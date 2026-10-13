@@ -68,38 +68,23 @@
           </div>
         </div>
         <div id="inventory" class="overlay inventory" role="dialog" aria-labelledby="inventory-title" hidden>
-          <div class="overlay-head">
-            <div>
-              <p class="overlay-kicker">Carried on you</p>
-              <h2 id="inventory-title" class="overlay-title">Inventory</h2>
-            </div>
+          <div class="overlay-strip">
+            <span class="overlay-barcode" aria-hidden="true"></span>
+            <span id="inventory-title" class="overlay-label">NCNET//INV</span>
+            <span id="inventory-total" class="overlay-detail"></span>
             <button id="inventory-close" class="icon-btn overlay-close" type="button" aria-label="Close inventory" title="Close (Esc)"></button>
           </div>
-          <div class="overlay-strip" aria-hidden="true">
-            <span class="overlay-barcode"></span>
-            <span>NCNET//INV</span>
-            <span id="inventory-total"></span>
-          </div>
           <div class="overlay-body">
-            <dl class="inventory-wallet">
-              <div><dt>Eddies</dt><dd id="inventory-eddies"></dd></div>
-              <div><dt>NCART pass</dt><dd id="inventory-pass"></dd></div>
-            </dl>
+            <p class="inventory-pass">NCART pass <span id="inventory-pass"></span></p>
             <ul id="inventory-sections" class="inventory-sections"></ul>
           </div>
         </div>
         <div id="settings" class="overlay settings" role="dialog" aria-labelledby="settings-title" hidden>
-          <div class="overlay-head">
-            <div>
-              <p class="overlay-kicker">System</p>
-              <h2 id="settings-title" class="overlay-title">Settings</h2>
-            </div>
+          <div class="overlay-strip">
+            <span class="overlay-barcode" aria-hidden="true"></span>
+            <span id="settings-title" class="overlay-label">NCNET//SYS</span>
+            <span id="settings-seed" class="overlay-detail"></span>
             <button id="settings-close" class="icon-btn overlay-close" type="button" aria-label="Close settings" title="Close (Esc)"></button>
-          </div>
-          <div class="overlay-strip" aria-hidden="true">
-            <span class="overlay-barcode"></span>
-            <span>NCNET//SYS</span>
-            <span id="settings-seed"></span>
           </div>
           <div class="overlay-body">
             <section class="settings-group" aria-labelledby="settings-save">
@@ -126,17 +111,11 @@
           </div>
         </div>
         <div id="people" class="overlay people" role="dialog" aria-labelledby="people-title" hidden>
-          <div class="overlay-head">
-            <div>
-              <p id="people-kicker" class="overlay-kicker"></p>
-              <h2 id="people-title" class="overlay-title"></h2>
-            </div>
+          <div class="overlay-strip">
+            <span class="overlay-barcode" aria-hidden="true"></span>
+            <span id="people-title" class="overlay-label">NCNET//PEOPLE</span>
+            <span id="people-count" class="overlay-detail"></span>
             <button id="people-close" class="icon-btn overlay-close" type="button" aria-label="Close" title="Close (Esc)"></button>
-          </div>
-          <div class="overlay-strip" aria-hidden="true">
-            <span class="overlay-barcode"></span>
-            <span>NCNET//PEOPLE</span>
-            <span id="people-count"></span>
           </div>
           <div class="overlay-body">
             <p id="people-rep" class="people-rep" hidden></p>
@@ -161,17 +140,11 @@
           </div>
         </div>
         <div id="shop" class="overlay shop" role="dialog" aria-labelledby="shop-title" hidden>
-          <div class="overlay-head">
-            <div>
-              <p id="shop-kicker" class="overlay-kicker"></p>
-              <h2 id="shop-title" class="overlay-title"></h2>
-            </div>
+          <div class="overlay-strip">
+            <span class="overlay-barcode" aria-hidden="true"></span>
+            <span id="shop-title" class="overlay-label">NCNET//MENU</span>
+            <span id="shop-kicker" class="overlay-detail"></span>
             <button id="shop-close" class="icon-btn overlay-close" type="button" aria-label="Close the menu" title="Close (Esc)"></button>
-          </div>
-          <div class="overlay-strip" aria-hidden="true">
-            <span class="overlay-barcode"></span>
-            <span>NCNET//MENU</span>
-            <span id="shop-eddies"></span>
           </div>
           <div class="overlay-body">
             <p id="shop-blurb" class="shop-blurb"></p>
