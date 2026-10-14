@@ -27,9 +27,10 @@ Other scripts:
 
 Branches and releases: new work goes to `beta` by pull request, and a push to `beta` or `main`
 rebuilds both sites (the beta under `/beta/`, the stable release at the root) and deploys them.
-When the beta is good, merge `beta` into `main` and tag it `vX.Y.Z`: the tag publishes a GitHub
-Release with the notes since the last one and the built site as a zip. Settings says which build
-you're on.
+When the beta is good, merge `beta` into `main` and run the **Release** workflow from the Actions
+tab with the version (e.g. `0.2.0`): it tags `main` as `v0.2.0` and publishes a GitHub Release
+with the notes since the last one and the built site as a zip. Settings says which build you're
+on.
 
 ## Playing
 

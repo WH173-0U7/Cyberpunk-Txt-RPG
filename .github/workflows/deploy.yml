@@ -1,7 +1,9 @@
 name: Test, build and deploy
 
 # Two builds live on GitHub Pages: the stable release at the root, from `main`, and the beta
-# under /beta/, from `beta`, with its own save. A push to either rebuilds both and deploys.
+# under /beta/, from `beta`, with its own save. A push to either rebuilds both and deploys:
+# the Pages environment only takes deployments from `main`, so a push to `beta` asks main's
+# workflow to do it.
 on:
   push:
     branches: [main, beta]
@@ -33,8 +35,22 @@ jobs:
         env:
           CHANNEL: ${{ github.ref == 'refs/heads/beta' && 'beta' || 'stable' }}
 
+  # A push to beta can't deploy from its own run: it starts this workflow on main, which builds both.
+  redeploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/beta'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - run: gh workflow run deploy.yml --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
   site:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -79,7 +95,7 @@ jobs:
           path: site
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: site
     runs-on: ubuntu-latest
     permissions:
