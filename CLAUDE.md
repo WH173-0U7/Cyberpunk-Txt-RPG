@@ -292,15 +292,22 @@ Eateries sell food, into the inventory (eating it comes later):
 ## The header and the status drop-down
 
 The sign (`src/ui/hud.ts`) says where the player is and shrinks its letters to fit a long
-name; the address above it says only the district. Nothing else on the screen repeats the
-name: the panel under the map has no title inside a building or at a place (the target view
-keeps its own). One line under the energy bar (`src/ui/status.ts`, filled by `showStatus` in
-`main.ts` on every tick) says the energy level, when the next point comes, and anything the
-matter (drunk, masked, the job's rung); tapping it unfolds everything else about the player:
-experience, charisma, eddies and the bank, the pass, the job, the condition, the mask, every
-reputation, the map count. Anything new the player should know about themselves goes in
-there as a row, not on the header, the map's head (the cash and the save light only) or the
-People overlay's strip (only what people here can see: the mask).
+name; the address above it says only the district, and the clock only the time of day.
+Nothing else on the screen repeats them: the panel's kicker says what's here ("You are
+here · Restaurant", "Inside · Block G1"), never the district, and has no title inside a
+building or at a place (the target view keeps its own, with the district, since it's
+elsewhere). The energy bar has no words: one line under it (`src/ui/status.ts`, filled by
+`showStatus` in `main.ts` on every tick) says the figure, the level, when the next point
+comes, and anything the matter (drunk, masked, the job's rung); tapping it unfolds
+everything else about the player: experience, charisma, eddies and the bank, the pass, the
+job, the condition, the mask, every reputation, the map count, the weather, the date, and
+last the **Settings** link (the drop-down's `foot`, which `StatusPanel.render` keeps at the
+bottom). Anything new the player should know about themselves goes in there as a row, not
+on the header, the map's head (the save light and the one button: the inventory, with the
+cash on it) or the People overlay's strip (only what people here can see: the mask). The
+map has no footer; it zooms by pinch, scroll or a tap on a block, and its only button, the
+one that finds the player (`CityMap`'s `updateControls`), shows while they're off the
+screen. Buttons go away when they can, not into a corner.
 
 ## The panel under the map
 

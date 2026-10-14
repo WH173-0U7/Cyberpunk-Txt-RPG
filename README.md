@@ -49,7 +49,7 @@ own.
   fog lights up and thins like smoke, thin wisps first and thick ones last, with swirling
   edges, while puffs of smoke roll away from it. Walking flickers the edge of the fog with
   scanlines, and wherever an arrival uncovers new ground the map glitches open in torn
-  strips first. The map's foot counts how much you've mapped.
+  strips first. The status drop-down counts how much you've mapped.
 - **Buildings**: every block is filled with its own buildings, zoned by district: corporate
   towers downtown, apartment blocks and storefronts in Watson, factories and warehouses in
   Santo Domingo, derelicts in Pacifica, shacks and containers out in the Badlands, plus parks,
@@ -63,10 +63,11 @@ own.
   Japantown's to pachinko and karaoke, Santo Domingo's to garages. Everything else is
   residential, corporate, industrial, storage, public space, parking or abandoned. The
   categories are in `src/data/city.ts` and will drive managing buildings later.
-- **Zoom**: drag to pan; pinch, scroll or use the **+ / −** buttons to zoom; the target button
-  flies back to where you are. Zoomed out, tapping a block flies in to it. Close in, tapping a
-  building picks it out and the panel shows its name, category, what it is, its block
-  address and size.
+- **Zoom**: drag to pan; pinch or scroll to zoom (+ and − on a keyboard). Zoomed out, tapping
+  a block flies in to it. Close in, tapping a building picks it out and the panel shows its
+  name, category, what it is, its block address and size. Wander off yourself and a target
+  button appears in the map's corner to fly back to where you are; it's gone while you're in
+  view.
 - **Going inside**: walk to a building and **Go inside** (anything with floors; parks, plazas
   and parking lots are open ground). The map outlines the building, your marker waits at its
   door, and the weather stays outside. Eateries have a menu (below); there's nothing to do
@@ -285,9 +286,9 @@ own.
   its pockets: what's in them with its weight and its Eat, Drink, Wear and Drop buttons,
   and the pockets inside (the wallet in the pants, with the coins beside it), which open in
   turn: the wallet shows the bills in it and the chips, each with what's on it and whether
-  it's locked. **‹** goes back a level. The strip counts everything and weighs it. Your cash
-  is in the map's header too.
-- **Settings**: the gear next to it opens the settings. For now that's the save:
+  it's locked. **‹** goes back a level. The strip counts everything and weighs it. The
+  button itself is the one thing in the map's header, with your cash on it.
+- **Settings**: the last row of the status drop-down (below). For now that's the save:
   **Restart this city** puts the same city back to the start, and **Erase save** deletes the
   save from this device and starts a brand new city. Both ask first, with Cancel as the
   default.
@@ -313,12 +314,13 @@ own.
 - **Panel**: where you are and what it's like, what you've picked and how long getting there
   takes each way, or the trip you're on with a countdown.
 - **Transmissions**: the city's chatter types across the top of the map, then fades.
-- **Status**: the sign says where you are and the address above it the district; under
-  the energy bar one line says your energy level, when the next point comes, and anything
-  the matter (drunk, masked, on a shift somewhere). Tap it and a drop-down unfolds the rest:
-  energy and charisma experience, your cash, the bank and your chips, the NCART pass, your
-  job, your condition, your mask, every reputation that stands at anything, and how much of
-  the city you've mapped. Nothing else repeats it.
+- **Status**: the sign says where you are, the address above it the district, and the clock
+  the time of day; under the energy bar one line says your energy, its level, when the next
+  point comes, and anything the matter (drunk, masked, on a shift somewhere). Tap it and a
+  drop-down unfolds the rest: energy and charisma experience, your cash, the bank and your
+  chips, the NCART pass, your job, your condition, your mask, every reputation that stands at
+  anything, how much of the city you've mapped, the weather, the date, and the way into the
+  settings. Nothing else repeats it.
 - **Saving**: progress saves automatically on your device after every move (the light in the
   map's head stays on; it says **Not saved** if the browser won't allow it, e.g. in a private
   window). Come

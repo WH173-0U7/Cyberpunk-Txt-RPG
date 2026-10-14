@@ -1,6 +1,6 @@
 import type { Weather } from '../engine/types';
 
-const WEATHER_LABEL: Record<Weather, string> = {
+export const WEATHER_LABEL: Record<Weather, string> = {
   rain: 'Heavy rain',
   drizzle: 'Drizzle',
   dust: 'Dust storm',
@@ -11,7 +11,6 @@ const WEATHER_LABEL: Record<Weather, string> = {
 export interface HudElements {
   sign: HTMLElement;
   path: HTMLElement;
-  weather: HTMLElement;
   clock: HTMLElement;
 }
 
@@ -36,10 +35,9 @@ export class Hud {
   }
 
   /** The sign says where you are; the address above it says the district (the sign has the name). */
-  setLocation(name: string, district: string, weather: Weather): void {
+  setLocation(name: string, district: string): void {
     this.els.sign.textContent = name;
     this.els.path.textContent = `NCNET://${slug(district)}`;
-    this.els.weather.textContent = WEATHER_LABEL[weather];
     this.fitSign();
     this.flickerSign();
   }
@@ -63,10 +61,9 @@ export class Hud {
     sign.classList.add('sign-boot');
   }
 
+  /** The time of day, and no more: the date is the status drop-down's. */
   private tick(): void {
     const now = new Date();
-    this.els.clock.textContent =
-      `2077.${pad(now.getMonth() + 1)}.${pad(now.getDate())} ` +
-      `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    this.els.clock.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
   }
 }

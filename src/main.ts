@@ -25,14 +25,14 @@ import { randomSeed } from './engine/rng';
 import { createSave, readSave, resume, savedSeed, type Progress } from './engine/save';
 import { snapToStreet } from './engine/streets';
 import { tripProgress } from './engine/travel';
-import type { Building, Item, TravelMode, Trip, TripPlan, Wallet, Whereabouts, World } from './engine/types';
+import type { Building, Item, TravelMode, Trip, TripPlan, Wallet, Weather, Whereabouts, World } from './engine/types';
 import { GlitchText } from './fx/glitch';
 import { ScreenFx } from './fx/screen';
 import { applyTheme, resolveTheme } from './fx/theme';
 import { WeatherFx } from './fx/weather';
 import { ITEM_KINDS } from './data/items';
 import { formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
-import { Hud } from './ui/hud';
+import { Hud, WEATHER_LABEL } from './ui/hud';
 import { EnergyMeter } from './ui/energy';
 import { StatusPanel, type StatusRow } from './ui/status';
 import { Bank } from './ui/bank';
@@ -61,7 +61,9 @@ const weather = new WeatherFx($<HTMLCanvasElement>('#weather'), reducedMotion);
 const screen = new ScreenFx({ app: $('#app'), flash: $('#flash') }, reducedMotion);
 const glitchText = new GlitchText(reducedMotion);
 const registerGlitch = (el: HTMLElement, text: string) => glitchText.register(el, text);
-const hud = new Hud({ sign: $('#hud-sign'), path: $('#hud-path'), weather: $('#hud-weather'), clock: $('#hud-clock') });
+const hud = new Hud({ sign: $('#hud-sign'), path: $('#hud-path'), clock: $('#hud-clock') });
+/** The sky where the player is: shown in the status drop-down, not on the header. */
+let skyNow: Weather = 'clear';
 const mapStage = $('#map-stage');
 const saveStatus = $('#save-status');
 const walletLabel = $('#wallet');
@@ -112,11 +114,7 @@ const map = new CityMap(
     nodes: $('#map-nodes'),
     sweep: $('#map-sweep'),
     player: $('#map-player'),
-    progress: $('#map-progress'),
-    coords: $('#map-coords'),
     controls: $('#map-zoom'),
-    zoomIn: $<HTMLButtonElement>('#zoom-in'),
-    zoomOut: $<HTMLButtonElement>('#zoom-out'),
     zoomHome: $<HTMLButtonElement>('#zoom-home'),
   },
   {
@@ -324,8 +322,10 @@ let webOpen = false;
 let factsOpen = false;
 let picker: Picker = null;
 
-const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill'), value: $('#energy-value') });
-const statusPanel = new StatusPanel({ toggle: $<HTMLButtonElement>('#status-toggle'), summary: $('#status-summary'), list: $('#status') });
+const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill') });
+const statusPanel = new StatusPanel({ toggle: $<HTMLButtonElement>('#status-toggle'), summary: $('#status-summary'), list: $('#status'), foot: $('#status-foot') });
+// Settings opens from the bottom of the drop-down, which folds away as it does.
+$('#settings-toggle').addEventListener('click', () => statusPanel.toggle(false));
 
 let game: Game;
 /** What the player has picked to go to, if anything. */
@@ -518,7 +518,6 @@ function rideAction(plan: TripPlan | null, now: number): PanelAction {
 function hereView(now: number): PanelView {
   const where = game.whereabouts;
   const district = game.districtOf(where);
-  const dname = district?.name ?? 'Night City';
   const name = game.nameOf(where);
   const location = game.location;
   if (location) {
@@ -527,7 +526,7 @@ function hereView(now: number): PanelView {
     const barred = menu ? game.barred(now) : null;
     return {
       mode: 'here',
-      kicker: `You are here · ${dname} · ${location.kindLabel}`,
+      kicker: `You are here · ${location.kindLabel}`,
       description: location.description,
       actions: [peopleAction(here), ...(menu ? [barred ? { id: 'menu' as const, label: 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : [])],
       closable: false,
@@ -540,7 +539,7 @@ function hereView(now: number): PanelView {
     const lines = lineNames(where.station);
     return {
       mode: 'here',
-      kicker: `You are here · ${dname} · NCART`,
+      kicker: 'You are here · NCART',
       meta: active ? `Monthly pass valid until ${formatDay(game.wallet.passUntil)}` : undefined,
       description: `NCART, run by Night Corp. ${lines}. A ride costs ${fare} €$, or nothing with a monthly pass.`,
       actions: [
@@ -560,7 +559,7 @@ function hereView(now: number): PanelView {
   const door = game.door;
   return {
     mode: 'here',
-    kicker: `You are here · ${dname}${building ? ` · Block ${building.block}` : ''}`,
+    kicker: `You are here${building ? ` · Block ${building.block}` : ''}`,
     description: building ? `${categoryOf(building).label} · ${[building.kindLabel, heightOf(building)].filter(Boolean).join(', ')}. ${mood}` : mood,
     actions: door ? [{ id: 'enter', label: 'Go inside', sub: door.kindLabel }] : [],
     closable: false,
@@ -575,7 +574,6 @@ function hereView(now: number): PanelView {
  */
 function insideView(building: Building): PanelView {
   const now = Date.now();
-  const district = game.districtOf(game.whereabouts)?.name ?? 'Night City';
   const menu = game.menu();
   const here = game.peopleHere(now).length;
   const barred = game.barred(now);
@@ -584,7 +582,7 @@ function insideView(building: Building): PanelView {
   const description = barred ?? (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut, and a credchip in your name is banked.' : here ? 'People live and work in here.' : 'Nobody around right now.');
   return {
     mode: 'inside',
-    kicker: `Inside · ${district} · Block ${building.block}`,
+    kicker: `Inside · Block ${building.block}`,
     meta: [menu ? '' : categoryOf(building).label, building.kindLabel, heightOf(building)].filter(Boolean).join(' · '),
     description,
     actions: [
@@ -825,7 +823,9 @@ function showStatus(now: number): void {
   const pass = wallet.passUntil > now;
   const refill = energy.nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(energy.nextPointAt - now)}`;
   const condition = drunk.stage ? `${drunk.stage.label} · sober in ${formatCountdown((drunk.soberAt ?? now) - now)}` : '';
-  const summary = [`Lv ${energy.level} · ${refill}`, drunk.stage?.label, mask ? 'Masked' : '', job ? job.rung.title : ''].filter(Boolean).join(' · ');
+  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, drunk.stage?.label, mask ? 'Masked' : '', job ? job.rung.title : ''].filter(Boolean).join(' · ');
+  const today = new Date(now);
+  const pad = (n: number) => String(n).padStart(2, '0');
   const rows: StatusRow[] = [
     { label: 'Energy', value: `Lv ${energy.level} · ${energy.xp}/${energy.xpToNext} XP · ${refill}` },
     { label: 'Charisma', value: `Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP` },
@@ -836,6 +836,8 @@ function showStatus(now: number): void {
     ...(mask ? [{ label: 'Mask', value: `${mask.name} · nobody knows your face`, tone: 'warn' as const }] : []),
     ...game.reputation(now).map((r) => ({ label: r.label, value: `${r.value > 0 ? '+' : '−'}${Math.abs(r.value)}`, tone: (r.value < 0 ? 'bad' : 'good') as 'bad' | 'good' })),
     { label: 'Mapped', value: `${game.mapState.visited.size} of ${Object.keys(game.world.locations).length} places` },
+    { label: 'Weather', value: WEATHER_LABEL[skyNow] },
+    { label: 'Date', value: `2077.${pad(today.getMonth() + 1)}.${pad(today.getDate())}` },
   ];
   statusPanel.render(summary, rows);
 }
@@ -1010,10 +1012,10 @@ function wire(g: Game): void {
   g.events.on('arrived', ({ from, where, place: location, district }) => {
     const theme = resolveTheme(district, location);
     applyTheme(theme);
-    const sky = location?.weather ?? district?.weather ?? 'clear';
-    weather.setWeather(sky);
+    skyNow = location?.weather ?? district?.weather ?? 'clear';
+    weather.setWeather(skyNow);
     weather.setTint(theme.primary);
-    hud.setLocation(g.nameOf(where), district?.name ?? 'Night City', sky);
+    hud.setLocation(g.nameOf(where), district?.name ?? 'Night City');
     if (from) screen.glitch();
     place.scan();
     refresh();
@@ -1025,9 +1027,9 @@ function wire(g: Game): void {
     const district = g.districtOf(where);
     map.setInside(building?.id ?? null);
     // Indoors, the weather stays outside.
-    const sky = building ? 'clear' : (district?.weather ?? 'clear');
-    weather.setWeather(sky);
-    hud.setLocation(building ? building.name : g.nameOf(where), district?.name ?? 'Night City', sky);
+    skyNow = building ? 'clear' : (district?.weather ?? 'clear');
+    weather.setWeather(skyNow);
+    hud.setLocation(building ? building.name : g.nameOf(where), district?.name ?? 'Night City');
     place.scan();
     refresh();
     queueSave();
