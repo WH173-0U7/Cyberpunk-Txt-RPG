@@ -24,7 +24,7 @@ export type Eloquence = 'blunt' | 'easy' | 'smooth';
 /** What a chat can turn to; `news` is what happened between people lately (life.ts). */
 export type Topic = 'job' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news';
 /** What the player can ask someone about themselves. */
-export type Question = Exclude<Fact, 'nature' | 'drinks'>;
+export type Question = Exclude<Fact, 'nature' | 'drinks' | 'dead'>;
 export type Reply = 'answer' | 'deflect' | 'refuse';
 
 /** When a fragment fits: everything given must hold. */
@@ -81,17 +81,19 @@ export interface DialogueLines {
   pressed: Line[];
   /** Asked what they already said, with `{answer}` for it. */
   repeat: Line[];
-  /** Asked whether they know someone: they do (`{other}`, `{word}`), they don't, or they've said already. */
-  ask: { knows: Line[]; unknown: Line[]; repeat: Line[] };
+  /** Asked whether they know someone: they do (`{other}`, `{word}`), they don't, or they've said already; they did, and `{other}` is dead (`{otherAgo}`); they did, and they're done with them (an ex, a friend fallen out with). */
+  ask: { knows: Line[]; unknown: Line[]; repeat: Line[]; dead: Line[]; ex: Line[] };
   gift: { thanks: Line[]; favorite: Line[]; refuse: Line[] };
   insult: { reply: Line[]; shove: Line[] };
   rob: { done: Line[]; nothing: Line[]; fought: Line[] };
   /** A netrunner asked to chop a stolen credchip (`{balance}` on it, `{cut}` theirs, `{left}` after): they do, or they won't. */
   chop: { done: Line[]; refuse: Line[] };
   /** A boss asked for work (`{title}` the bottom rung, `{work}` the place, `{pay}` a shift): taken on, turned down, or not in a mask; a word after a shift; moved up (`{title}` the new rung); told the player quits. */
-  /** `broke`: a boss whose place is struggling, turning the player away. */
-  work: { hire: Line[]; refuse: Line[]; masked: Line[]; shift: Line[]; promote: Line[]; quit: Line[]; broke: Line[] };
+  /** `broke`: a boss whose place is struggling, turning the player away; `rehire`: a boss the player walked out on (`memQuit`) or who let them go (`memFired`), still remembering it. */
+  work: { hire: Line[]; refuse: Line[]; masked: Line[]; shift: Line[]; promote: Line[]; quit: Line[]; broke: Line[]; rehire: Line[] };
   revenge: { person: Line[]; gang: Line[] };
+  /** What someone brings up of what the player did, as they remember it (memory.ts): `mem` and `mem<Kind>` say which, with `{memWho}`, `{memWord}`, `{memAgo}`, `{memItem}`, `{memTook}`, `{memTitle}` and `memTwice`, `memAgain` (brought up before), `memRobbery`, `memInsult`, `memFavorite`. */
+  memory: Line[];
   /** A storefront that won't serve the player. */
   barred: Line[];
   /** A mask on the player: a counter that serves no mask (`{work}`, `{mask}`), and someone who was there when the mask did something, seeing it again (`{mask}`). */
@@ -300,6 +302,7 @@ export function describeStranger(person: Person, content: PeopleContent): string
 
 export const KIN_LABEL: Record<TieKind, string> = {
   spouse: 'spouse',
+  partner: 'partner',
   sibling: 'sibling',
   cousin: 'cousin',
   parent: 'parent',
@@ -316,6 +319,7 @@ export const KIN_LABEL: Record<TieKind, string> = {
 export function kinWord(person: Person, kind: TieKind, other: Person): string {
   const gendered = (she: string, he: string, they: string) => (other.pronouns === 'she' ? she : other.pronouns === 'he' ? he : they);
   if (kind === 'spouse') return gendered('wife', 'husband', 'spouse');
+  if (kind === 'partner') return gendered('girlfriend', 'boyfriend', 'partner');
   if (kind === 'sibling') return gendered('sister', 'brother', 'sibling');
   if (kind === 'parent') return gendered('mother', 'father', 'parent');
   if (kind === 'child') return gendered('daughter', 'son', 'kid');
@@ -341,9 +345,10 @@ export function finish(template: string, vars: Record<string, string>): string {
   return text.replace(/(^|[.!?…]["”]?\s+)(\p{Ll})/gu, (_, before: string, letter: string) => before + letter.toUpperCase());
 }
 
-export const FAMILY: TieKind[] = ['spouse', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew', 'kin'];
+/** Family, and the one they're seeing: the people a line about their people names. */
+export const FAMILY: TieKind[] = ['spouse', 'partner', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew', 'kin'];
 
-/** Everything a template can mention about a person, and the one relative (`kin`) a line about family would name. */
+/** Everything a template can mention about a person, and the one relative (`kin`) a line about family would name (`kinDead` when they're gone). */
 export function varsFor(person: Person, world: World, population: Population, content: PeopleContent, dishes: Array<{ id: string; name: string }>, kin?: Tie): Record<string, string> {
   const gang = gangOf(person, content);
   const district = world.districts[person.district];
@@ -379,6 +384,7 @@ export function varsFor(person: Person, world: World, population: Population, co
     kinName: kinPerson?.given ?? '',
     kinWord: kin && kinPerson ? kinWord(person, kin.kind, kinPerson) : '',
     kinWork: kinWork?.name ?? (kinPerson ? kinPerson.job.role : ''),
+    kinDead: kinPerson?.diedOn !== undefined ? 'yes' : '',
   };
 }
 

@@ -1,3 +1,4 @@
+import { remember, type Memory, type MemoryRules } from './memory';
 import { INVERSE, tiesOf, type Person, type Population, type TieKind } from './people';
 import type { Rng } from './rng';
 
@@ -92,8 +93,8 @@ export interface Threat {
 /** How the player came to know of someone, or of a tie between two people. */
 export type KnownHow = 'seen' | 'told' | 'asked';
 
-/** Something about a person that takes asking (or watching, or being told) to know. */
-export type Fact = 'name' | 'job' | 'age' | 'home' | 'likes' | 'drinks' | 'hates' | 'nature';
+/** Something about a person that takes asking (or watching, or being told) to know; `dead`, that they are, takes being told. */
+export type Fact = 'name' | 'job' | 'age' | 'home' | 'likes' | 'drinks' | 'hates' | 'nature' | 'dead';
 
 /** One line of what passed between the player and a person. */
 export interface LogEntry {
@@ -133,6 +134,8 @@ export interface SocietyState {
   nextId: number;
   known: Record<string, Knowledge>;
   links: Record<string, KnownLink>;
+  /** What each person remembers of the player (memory.ts), by person. */
+  memories: Record<string, Memory[]>;
 }
 
 export interface SocietyRules {
@@ -185,10 +188,12 @@ export interface SocietyRules {
   /** A mask on the player, as a gang reads it: this much attitude against them, with anyone in a gang. */
   mask: { turf: number };
   openness: OpennessRules;
+  /** What people remember of the player, how long, and what they bring up (memory.ts). */
+  memory: MemoryRules;
 }
 
 export function freshSociety(): SocietyState {
-  return { standings: {}, rep: {}, incidents: [], threats: [], nextId: 1, known: {}, links: {} };
+  return { standings: {}, rep: {}, incidents: [], threats: [], nextId: 1, known: {}, links: {}, memories: {} };
 }
 
 // ───────────── What the player knows ─────────────
@@ -253,6 +258,20 @@ export function learnLink(state: SocietyState, a: string, b: string, kind: TieKi
   const had = state.links[key];
   if (had && (had.kind !== null || kind === null)) return false;
   const stored = kind && kind !== 'none' && a > b ? INVERSE[kind] : kind;
+  state.links[key] = { kind: stored, how, at: now };
+  return true;
+}
+
+/**
+ * What the player hears of a tie that has changed (a couple got together, married or split
+ * up; friends fell out or made up): unlike `learnLink`, it replaces what they knew, since
+ * what they knew isn't so anymore. True if that's news.
+ */
+export function relearnLink(state: SocietyState, a: string, b: string, kind: TieKind | 'none', how: KnownHow, now: number): boolean {
+  if (a === b) return false;
+  const key = linkKey(a, b);
+  const stored = kind !== 'none' && a > b ? INVERSE[kind] : kind;
+  if (state.links[key]?.kind === stored) return false;
   state.links[key] = { kind: stored, how, at: now };
   return true;
 }
@@ -452,6 +471,13 @@ function cascade(state: SocietyState, population: Population, incident: Incident
   }
   affected.sort((a, b) => b.grudge - a.grudge);
 
+  // What it was, as each of them will remember it: done to them, seen, or heard of from their people.
+  remember(state, victim.id, { kind: 'wronged', at: incident.at, what: incident.kind, ...(incident.took ? { amount: incident.took } : {}) }, rules.memory, timeScale, now);
+  for (const { id: pid, grudge } of affected) {
+    if (pid === victim.id || grudge < rules.memory.heardAt) continue;
+    remember(state, pid, { kind: incident.witnesses.includes(pid) ? 'saw' : 'heard', at: incident.at, about: victim.id, what: incident.kind }, rules.memory, timeScale, now);
+  }
+
   const rep: Record<string, number> = {};
   const hit = (key: string, by: number) => {
     if (!by) return;
@@ -498,6 +524,26 @@ function cascade(state: SocietyState, population: Population, incident: Incident
   }
   state.threats.push(...threats);
   return { affected, rep, threats };
+}
+
+/**
+ * Word that the player was good to someone (a gift): the people closest to them (closeness
+ * a half or more: family, a partner, friends) warm to the player a little, by how close they
+ * are, and remember hearing it. Returns who heard.
+ */
+export function passGoodWord(state: SocietyState, population: Population, from: Person, worth: number, rules: SocietyRules, timeScale: number, now: number): string[] {
+  const heard: string[] = [];
+  for (const t of tiesOf(population, from.id)) {
+    const closeness = rules.closeness[t.kind];
+    const rapport = Math.round(worth * rules.memory.goodWord * closeness);
+    if (closeness < 0.5 || rapport < 1) continue;
+    const other = population.people.find((p) => p.id === t.to);
+    if (!other || other.diedOn !== undefined) continue;
+    changeStanding(state, other.id, { rapport }, rules, timeScale, now);
+    remember(state, other.id, { kind: 'goodWord', at: now, about: from.id }, rules.memory, timeScale, now);
+    heard.push(other.id);
+  }
+  return heard;
 }
 
 /** Threats that have come due. */

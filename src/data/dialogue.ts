@@ -11,6 +11,8 @@ import type { DialogueLines, Fragment, When } from '../engine/dialogue';
 const only = (text: string, when: When): Fragment => ({ text, when });
 /** A line that should win over the plain ones whenever it fits. */
 const loud = (text: string, when: When, weight = 6): Fragment => ({ text, when, weight });
+/** A line for when nothing more particular fits: it gives way to the ones that say more. */
+const vague = (text: string, when: When): Fragment => ({ text, when, weight: 0.3 });
 
 // Who they are.
 const ganger: When = { voice: ['gang'] };
@@ -55,7 +57,13 @@ const blunt: When = { eloquence: ['blunt'] };
 const easy: When = { eloquence: ['easy'] };
 const smooth: When = { eloquence: ['smooth'] };
 
-const both = (...parts: When[]): When => Object.assign({}, ...parts);
+/** Every condition of every part; what must be filled and what must be empty add up. */
+const both = (...parts: When[]): When =>
+  parts.reduce<When>((all, part) => {
+    const needs = [...(all.needs ?? []), ...(part.needs ?? [])];
+    const lacks = [...(all.lacks ?? []), ...(part.lacks ?? [])];
+    return { ...all, ...part, ...(needs.length ? { needs } : {}), ...(lacks.length ? { lacks } : {}) };
+  }, {});
 
 export const LINES: DialogueLines = {
   lexicon: {
@@ -237,10 +245,14 @@ export const LINES: DialogueLines = {
       only('Every {hateMember} I ever met was a {gonk} with a gun.', { needs: ['hate'] }),
     ],
     kin: [
-      only('My {kinWord} {kinName} is at {kinWork}. Good people.', { needs: ['kinName'] }),
-      only("Family's everything. My {kinWord} {kinName} would tell you the same.", { needs: ['kinName'] }),
-      only("Got a {kinWord}, {kinName}. Don't go bothering {kinHim}.", { needs: ['kinName'] }),
-      only("{kinName}, my {kinWord}, says I talk too much. {KinHe}'s not wrong.", { needs: ['kinName'] }),
+      only('My {kinWord} {kinName} is at {kinWork}. Good people.', { needs: ['kinName'], lacks: ['kinDead'] }),
+      only("Family's everything. My {kinWord} {kinName} would tell you the same.", { needs: ['kinName'], lacks: ['kinDead'] }),
+      only("Got a {kinWord}, {kinName}. Don't go bothering {kinHim}.", { needs: ['kinName'], lacks: ['kinDead'] }),
+      only('{kinName}, my {kinWord}, says I talk too much. Not wrong, either.', { needs: ['kinName'], lacks: ['kinDead'] }),
+      // A relative who has died.
+      only('My {kinWord} {kinName} passed. I still save {kinHim} a seat.', { needs: ['kinName', 'kinDead'] }),
+      only('Lost my {kinWord} {kinName} not long ago. This city takes and takes.', { needs: ['kinName', 'kinDead'] }),
+      only("Some days I still go to call my {kinWord} {kinName}. Then I remember.", { needs: ['kinName', 'kinDead'] }),
     ],
     district: [
       "{district} isn't what it was. Nothing is.",
@@ -305,6 +317,82 @@ export const LINES: DialogueLines = {
       only("Me and {newsWho} are done. Don't ask.", news('Fallout', 'Mine')),
       only('{newsWho} and I had words {newsAgo}. That\'s that.', news('Fallout', 'Mine')),
       only("My {newsWord} {newsWho} fell out with someone {newsAgo}. Won't say who.", news('Fallout', 'Kin')),
+      // Friends who made it up.
+      only("{newsWho} and me patched it up. Life's too short in this city.", news('Makeup', 'Mine')),
+      only("Talking to {newsWho} again. Don't ask what it took.", news('Makeup', 'Mine')),
+      only('My {newsWord} {newsWho} made up with {newsWith}. Thank god. The sulking was unbearable.', news('Makeup', 'Kin', { needs: ['newsWith'] })),
+      only('My {newsWord} {newsWho} patched things up with an old friend {newsAgo}.', news('Makeup', 'Kin')),
+      // A couple got together.
+      only("Been seeing {newsWho}. Don't make it a thing.", news('Romance', 'Mine')),
+      only('{newsWho} and me are a thing now. Started {newsAgo}.', news('Romance', 'Mine')),
+      only('My {newsWord} {newsWho} has been seeing {newsWith}. Moves fast, that one.', news('Romance', 'Kin', { needs: ['newsWith'] })),
+      only("My {newsWord} {newsWho} is seeing someone. Won't say who.", news('Romance', 'Kin')),
+      only('{newsWith} and {newsWho} are an item now. Everybody in {district} knows.', news('Romance', 'Heard', { needs: ['newsWith'] })),
+      only('Heard {newsWho} is seeing someone. Good for {newsHim}.', news('Romance', 'Heard')),
+      // A wedding.
+      only('{newsWho} and I got married {newsAgo}. Small thing. Real thing.', news('Wedding', 'Mine')),
+      only('Married {newsWho} {newsAgo}. Still getting used to the word.', news('Wedding', 'Mine')),
+      only('My {newsWord} {newsWho} married {newsWith} {newsAgo}. Whole family cried. Some of it was happy.', news('Wedding', 'Kin', { needs: ['newsWith'] })),
+      only('My {newsWord} {newsWho} got married {newsAgo}. I give it a year. Kidding. Mostly.', news('Wedding', 'Kin')),
+      only('{newsWith} and {newsWho} tied the knot {newsAgo}. In this city. Brave.', news('Wedding', 'Heard', { needs: ['newsWith'] })),
+      only('Heard {newsWho} got married {newsAgo}. Somebody around here is happy.', news('Wedding', 'Heard')),
+      // A couple split.
+      only('I ended it with {newsWho} {newsAgo}. Had to.', news('Breakup', 'Mine', { needs: ['newsWon'] })),
+      only('Me and {newsWho}? Done. My call.', news('Breakup', 'Mine', { needs: ['newsWon'] })),
+      only("{newsWho} walked out on me {newsAgo}. Didn't even take {newsHis} stuff.", news('Breakup', 'Mine', { lacks: ['newsWon'] })),
+      only("{newsWho} left. That's all I'm saying.", news('Breakup', 'Mine', { lacks: ['newsWon'] })),
+      only('My {newsWord} {newsWho} dumped {newsWith} {newsAgo}. About time.', news('Breakup', 'Kin', { needs: ['newsWon', 'newsWith'] })),
+      only('My {newsWord} {newsWho} ended things with someone {newsAgo}.', news('Breakup', 'Kin', { needs: ['newsWon'] })),
+      only('{newsWith} walked out on my {newsWord} {newsWho} {newsAgo}. Bad few days in our house.', news('Breakup', 'Kin', { needs: ['newsWith'], lacks: ['newsWon'] })),
+      only("My {newsWord} {newsWho} got left {newsAgo}. Don't bring it up.", news('Breakup', 'Kin', { lacks: ['newsWon'] })),
+      only('{newsWith} walked out on {newsWho} {newsAgo}. Saw it coming a block away.', news('Breakup', 'Heard', { needs: ['newsWith'] })),
+      only('Heard {newsWho} got dumped {newsAgo}. Ouch.', news('Breakup', 'Heard')),
+      // A storefront took someone on.
+      only('Took on {newsWho} {newsAgo}. Business is good enough for another pair of hands.', news('Hired', 'Mine', { needs: ['newsWon'] })),
+      only('New face at {newsWhere}: {newsWho}. Keep {newsHim} honest for me.', news('Hired', 'Mine', { needs: ['newsWon'] })),
+      only('Got taken on at {newsWhere} {newsAgo}. Steady work, for once.', news('Hired', 'Mine', { lacks: ['newsWon'] })),
+      only("I work at {newsWhere} now. Don't laugh.", news('Hired', 'Mine', { lacks: ['newsWon'] })),
+      only('My {newsWord} {newsWho} took on {newsWith} at {newsWhere}. Must be doing alright.', news('Hired', 'Kin', { needs: ['newsWon', 'newsWith'] })),
+      only('My {newsWord} {newsWho} is hiring at {newsWhere}. Business is good.', news('Hired', 'Kin', { needs: ['newsWon'] })),
+      only('My {newsWord} {newsWho} got work at {newsWhere} {newsAgo}. Finally.', news('Hired', 'Kin', { lacks: ['newsWon'] })),
+      only("{newsWhere} took on {newsWho} {newsAgo}. Somebody's doing alright.", news('Hired', 'Heard')),
+      // A storefront let someone go.
+      only("Had to let {newsWho} go {newsAgo}. The books don't lie.", news('LaidOff', 'Mine', { needs: ['newsWon'] })),
+      only('Let {newsWho} go. Worst part of the job.', news('LaidOff', 'Mine', { needs: ['newsWon'] })),
+      only('{newsWhere} let me go {newsAgo}. Last in, first out.', news('LaidOff', 'Mine', { lacks: ['newsWon'] })),
+      only("Got cut at {newsWhere}. So. I'm looking.", news('LaidOff', 'Mine', { lacks: ['newsWon'] })),
+      only('My {newsWord} {newsWho} had to let {newsWith} go at {newsWhere}. Took it hard.', news('LaidOff', 'Kin', { needs: ['newsWon', 'newsWith'] })),
+      only('My {newsWord} {newsWho} had to cut someone at {newsWhere}.', news('LaidOff', 'Kin', { needs: ['newsWon'] })),
+      only('{newsWhere} let my {newsWord} {newsWho} go {newsAgo}. After everything.', news('LaidOff', 'Kin', { lacks: ['newsWon'] })),
+      only('{newsWhere} let {newsWho} go {newsAgo}. Times are hard all over.', news('LaidOff', 'Heard')),
+      // Someone died: killed in a fight between crews, or of their years.
+      only("{newsWho} came at us {newsAgo}. {NewsHe} won't again.", news('Death', 'Mine', { needs: ['newsWon'] })),
+      only('Put {newsWho} down {newsAgo}. {NewsHis} crew knows where to find me.', news('Death', 'Mine', { needs: ['newsWon'] })),
+      only('My {newsWord} {newsWho} was in the fight that killed {newsWith}. Nobody in our house talks about it.', news('Death', 'Kin', { needs: ['newsWon', 'newsWith'] })),
+      only("My {newsWord} {newsWho} was in a fight {newsAgo}. Somebody didn't walk away from it.", news('Death', 'Kin', { needs: ['newsWon'] })),
+      only('My {newsWord} {newsWho} got flatlined {newsAgo}. {newsGang}. I know their faces.', news('Death', 'Kin', { needs: ['newsKilled', 'newsGang'], lacks: ['newsWon'] })),
+      only('We buried my {newsWord} {newsWho} {newsAgo}. {newsGang} did it, and everyone knows it.', news('Death', 'Kin', { needs: ['newsKilled', 'newsGang'], lacks: ['newsWon'] })),
+      only("My {newsWord} {newsWho} passed {newsAgo}. Peaceful, they said. Nothing's peaceful here.", news('Death', 'Kin', { lacks: ['newsWon', 'newsKilled'] })),
+      only('Lost my {newsWord} {newsWho} {newsAgo}. Old age. In this city, can you believe it.', news('Death', 'Kin', { lacks: ['newsWon', 'newsKilled'] })),
+      only('{newsWho} found out what crossing {newsGang} costs, {newsAgo}.', news('Death', 'Ours')),
+      only('{newsWho} got what was coming {newsAgo}. {newsGang} settle what we\'re owed.', news('Death', 'Ours')),
+      only('Heard {newsWho} got flatlined {newsAgo}. {newsGang} work, they say.', news('Death', 'Heard', { needs: ['newsKilled', 'newsGang'] })),
+      only('Somebody flatlined {newsWho} {newsAgo}. {newsGang} colors all over it.', news('Death', 'Heard', { needs: ['newsKilled', 'newsGang'] })),
+      only('{newsWho} passed {newsAgo}. Old age. In Night City. Imagine that.', news('Death', 'Heard', { lacks: ['newsKilled'] })),
+      only('Heard {newsWho} died {newsAgo}. In {newsHis} sleep, they say. Lucky.', news('Death', 'Heard', { lacks: ['newsKilled'] })),
+      // A gang took someone on.
+      only('Brought {newsWho} in {newsAgo}. {newsGang} look after their own.', news('Joined', 'Mine', { needs: ['newsWon'] })),
+      only('{newsWho} wears our colors now. I vouched.', news('Joined', 'Mine', { needs: ['newsWon'] })),
+      only('I run with {newsGang} now. Started {newsAgo}.', news('Joined', 'Mine', { lacks: ['newsWon'] })),
+      only('{newsGang} took me in. {newsWho} vouched for me.', news('Joined', 'Mine', { lacks: ['newsWon'] })),
+      only('My {newsWord} {newsWho} brought {newsWith} into {newsGang} {newsAgo}.', news('Joined', 'Kin', { needs: ['newsWon', 'newsWith'] })),
+      only('My {newsWord} {newsWho} is bringing kids into {newsGang} now.', news('Joined', 'Kin', { needs: ['newsWon'] })),
+      only("My {newsWord} {newsWho} joined {newsGang} {newsAgo}. Nobody's happy about it.", news('Joined', 'Kin', { lacks: ['newsWon'] })),
+      only("{newsWho}, my {newsWord}, took {newsGang} colors. I couldn't stop {newsHim}.", news('Joined', 'Kin', { lacks: ['newsWon'] })),
+      only('{newsWho} runs with us now. Be nice to the new blood.', news('Joined', 'Ours')),
+      only('New face in our colors: {newsWho}.', news('Joined', 'Ours')),
+      only('Heard {newsWho} took {newsGang} colors {newsAgo}.', news('Joined', 'Heard')),
+      only('{newsWho} is {newsGang} now. Another kid gone.', news('Joined', 'Heard')),
     ],
     here: [
       only('{here}. Not the worst place in {district}.', { needs: ['here'], lacks: ['atWork', 'atHome'] }),
@@ -454,13 +542,26 @@ export const LINES: DialogueLines = {
   repeat: ['Told you already. {answer}', "Weren't you listening? {answer}", 'Again? {answer}', "You've got a short memory. {answer}"],
 
   ask: {
-    knows: ["{other}? {OtherHe}'s my {word}.", 'Sure, I know {other}. My {word}.', '{other} is my {word}. Why?', '{other}. My {word}. What about {otherHim}?'],
+    knows: ["{other}? That's my {word}.", 'Sure, I know {other}. My {word}.', '{other} is my {word}. Why?', '{other}. My {word}. What about {otherHim}?'],
     unknown: ['{other}? Never heard of {otherHim}.', "Doesn't ring a bell.", 'No idea who that is.', "{other}... no. There's a lot of people in {district}."],
     repeat: [
       only('{other}? I told you. My {word}.', { needs: ['word'] }),
       only('Still my {word}, last I checked.', { needs: ['word'] }),
       only('{other} again? Never heard of {otherHim}. Still.', { lacks: ['word'] }),
       only("I told you. Don't know any {other}.", { lacks: ['word'] }),
+    ],
+    dead: [
+      '{other} was my {word}. Died {otherAgo}.',
+      'We buried {other} {otherAgo}. My {word}.',
+      "{other}... my {word}. Gone, {otherAgo}. Don't ask me how.",
+      only('{other} was my {word}. Was. You understand?', hard),
+      only('My {word} {other}. {otherAgo}, we lost {otherHim}. I still set a plate out.', kind),
+    ],
+    ex: [
+      "{other}? We're done. Don't say that name in here.",
+      "Ask someone else about {other}. I'm finished with {otherHim}.",
+      "{other} and me? Over. That's all you get.",
+      only('{other}. Ha. No. Next question.', hot),
     ],
   },
 
@@ -472,8 +573,17 @@ export const LINES: DialogueLines = {
       only('Thank you. Unexpected.', corpo),
       only("Huh. {preem}. Don't make it weird.", ganger),
       only("Free? I'll take free.", greedy),
+      loud("Another {item}? You're keeping me fed.", { needs: ['again'] }),
+      loud('{item} again. You do remember a face, at least.', { needs: ['again'] }),
     ],
-    favorite: ['{item}! You know me.', "No way. {item}. You're alright.", "{item}. Now we're talking.", "How'd you know? {item}'s the one thing I'd kill for."],
+    favorite: [
+      '{item}! You know me.',
+      "No way. {item}. You're alright.",
+      "{item}. Now we're talking.",
+      "How'd you know? {item}'s the one thing I'd kill for.",
+      loud('{item} again! You remember. Nobody remembers.', { needs: ['again'] }),
+      loud("You keep bringing me {item}, I'll have to start liking you.", { needs: ['again'] }),
+    ],
     refuse: ['{given} knocks it out of your hand. "Keep it."', "{given} doesn't even look at it."],
   },
 
@@ -550,6 +660,14 @@ export const LINES: DialogueLines = {
       only("Thirty years, never seen it this slow. Ask me when it isn't.", elder),
       only("Boss says no new hires. Boss says a lot of things lately.", young),
     ],
+    rehire: [
+      'Not after last time.',
+      only('You quit on me {memAgo}. I remember. No.', { needs: ['memQuit'] }),
+      only('You walked out on me {memAgo}. Find somebody else to walk out on.', { needs: ['memQuit'] }),
+      only("I let you go once. I'm not hiring you twice.", { needs: ['memFired'] }),
+      only("After what you did to my people? You don't work here.", { needs: ['memFired'] }),
+      only('Your file says "do not rehire." I wrote the file.', corpo),
+    ],
     shift: [
       'Not bad. Same time tomorrow.',
       "You're still here. Good.",
@@ -584,6 +702,60 @@ export const LINES: DialogueLines = {
     person: ['{name} and two friends catch up with you at {where}. They take {take} €$ and leave you in the gutter.', '{name} has been waiting. At {where} it costs you {take} €$ and everything you had left.'],
     gang: ['{gang} colors step out of the dark at {where}. They take {take} €$ and make sure you remember.', 'The {gang} find you at {where}. It goes badly: {take} €$, and the rest of your night.'],
   },
+
+  memory: [
+    // Something the player did to them.
+    only('You took {memTook} {eddies} off me {memAgo}. I remember your face.', { needs: ['memWronged', 'memRobbery', 'memTook'], lacks: ['memTwice'] }),
+    only("Twice now you've robbed me. {memTook} {eddies}, all told. There won't be a third time.", { needs: ['memWronged', 'memRobbery', 'memTook', 'memTwice'] }),
+    only('You robbed me {memAgo}. You think I forgot?', { needs: ['memWronged', 'memRobbery'] }),
+    only('{memAgo} you had a blade in my face and your hand in my pockets. Now you want to chat?', { needs: ['memWronged', 'memRobbery'] }),
+    only('Nobody robs a {member} and walks around breathing. You\'ve been lucky.', both(ganger, { needs: ['memWronged', 'memRobbery', 'member'] })),
+    only('What you said to me {memAgo}? I heard it. I still hear it.', { needs: ['memWronged', 'memInsult'] }),
+    only('Come to say it again? Go on. I dare you.', both(hot, { needs: ['memWronged', 'memInsult'] })),
+    only("You've run your mouth at me twice now. Third time, I answer.", { needs: ['memWronged', 'memInsult', 'memTwice'] }),
+    vague('I remember what you did to me {memAgo}.', { needs: ['memWronged'] }),
+    loud("I haven't forgotten. I told you I wouldn't.", { needs: ['memWronged', 'memAgain'] }, 3),
+    loud("Still on that, if you were wondering. I'll be on it a while.", { needs: ['memWronged', 'memAgain'] }, 3),
+    // Heard of it from their people, or second hand.
+    only('My {memWord} {memWho} says you robbed {memHim}. Look me in the eye and say {memHe} made it up.', { needs: ['memHeard', 'memRobbery', 'memWord'] }),
+    only("You're the one who robbed my {memWord} {memWho}. I know your face from how {memHe} described it.", { needs: ['memHeard', 'memRobbery', 'memWord'] }),
+    only('Heard what you said to my {memWord} {memWho}. Say it to me.', { needs: ['memHeard', 'memInsult', 'memWord'] }),
+    only('My {memWord} {memWho} told me about you. All of it.', { needs: ['memHeard', 'memWord'] }),
+    only('Word is you robbed {memWho}. People talk around here.', { needs: ['memHeard', 'memRobbery'], lacks: ['memWord'] }),
+    only('Heard you mouthed off at {memWho}. Classy.', { needs: ['memHeard', 'memInsult'], lacks: ['memWord'] }),
+    vague('I heard what you did to {memWho}.', { needs: ['memHeard'] }),
+    loud("I haven't forgotten what you did to {memWho}. Nobody here has.", { needs: ['memHeard', 'memAgain'] }, 3),
+    // Saw it.
+    only('I was there when you robbed {memWho}. I saw your hands.', { needs: ['memSaw', 'memRobbery'] }),
+    only('I heard you go off at {memWho}. The whole place heard.', { needs: ['memSaw', 'memInsult'] }),
+    vague('I saw what you did to {memWho} {memAgo}.', { needs: ['memSaw'] }),
+    // Came to collect.
+    only("We're square now. {memTook} {eddies} square. Keep it that way.", { needs: ['memSettled', 'memTook'] }),
+    only("We're even. Don't make me come looking again.", { needs: ['memSettled'] }),
+    // Something given.
+    only('That {memItem} you brought me {memAgo}? Still thinking about it.', { needs: ['memGift', 'memItem'], lacks: ['memFavorite'] }),
+    only('You remembered I like {memItem}. Nobody remembers that.', { needs: ['memGift', 'memItem', 'memFavorite'] }),
+    only('{memItem}, {memAgo}. I owe you one. Small one.', both(greedy, { needs: ['memGift', 'memItem'] })),
+    vague('Thanks again, for the other day.', { needs: ['memGift'] }),
+    // A good word from their people.
+    only("My {memWord} {memWho} says you're alright. That counts for something with me.", { needs: ['memGoodWord', 'memWord'] }),
+    only("{memWho} says good things about you. Don't make {memHim} a liar.", { needs: ['memGoodWord'] }),
+    // Work.
+    only("Don't make me regret taking you on.", { needs: ['memHired'] }),
+    only('Still glad I took you on. Mostly.', both(warm, { needs: ['memHired'] })),
+    only("{memTitle}. Suits you. Don't let it go to your head.", { needs: ['memPromoted', 'memTitle'] }),
+    only('Moved you up, and you earned it. Keep it that way.', { needs: ['memPromoted'] }),
+    only('You walked out on me {memAgo}. Just so you know, I noticed.', { needs: ['memQuit'] }),
+    loud('Still not over you walking out. Just so you know.', { needs: ['memQuit', 'memAgain'] }, 3),
+    only('Look who it is. The one who quit.', { needs: ['memQuit'] }),
+    only('I had to let you go. You know why.', { needs: ['memFired'] }),
+    // A chip chopped.
+    only('{memTook} on that chip I cleaned for you. Hope it was worth what it cost someone.', { needs: ['memChopped', 'memTook'] }),
+    only("That chip I cleaned. Spend it far from here, {yeah}?", { needs: ['memChopped'] }),
+    // Asked about someone.
+    only('Why were you asking about my {memWord} {memWho}?', { needs: ['memAsked', 'memWord'] }),
+    only('Still looking for {memWho}?', { needs: ['memAsked'] }),
+  ],
 
   barred: ["{work} won't serve you. Not after what you did to their people.", 'The counter at {work} closes the moment they see your face.'],
 

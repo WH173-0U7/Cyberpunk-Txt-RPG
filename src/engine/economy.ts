@@ -123,7 +123,7 @@ export function economyDay({ world, population, state, rules, tier, turf, base, 
   const storefronts = world.buildings.filter((b) => b.business);
   const byId = new Map(storefronts.map((b) => [b.id, b]));
   const staffOf = new Map<string, Person[]>();
-  for (const p of population.people) if (p.job.building && byId.has(p.job.building)) staffOf.set(p.job.building, [...(staffOf.get(p.job.building) ?? []), p]);
+  for (const p of population.people) if (p.job.building && byId.has(p.job.building) && p.diedOn === undefined) staffOf.set(p.job.building, [...(staffOf.get(p.job.building) ?? []), p]);
   const takings = new Map<string, number>();
   // What walked in off the street, and what the player left on the counter.
   for (const b of storefronts) {
@@ -136,6 +136,8 @@ export function economyDay({ world, population, state, rules, tier, turf, base, 
   }
   const payday = weekdayOf(day) === rules.payday;
   for (const person of population.people) {
+    // The dead neither spend nor earn.
+    if (person.diedOn !== undefined) continue;
     const laidUp = (state.hurt[person.id] ?? -1) >= day;
     const started = base.get(person.id) ?? person.eddies;
     // Living costs a day's share of a week's money, and a little of whatever they hold besides.
@@ -180,7 +182,7 @@ export function economyDay({ world, population, state, rules, tier, turf, base, 
 
 /** How a storefront is doing, and the line that says so inside. */
 export function tradeAt(building: Building, population: Population, tills: Record<string, Till>, tier: Quality, rules: EconomyRules): { health: Health; line: string } {
-  const staff = population.people.filter((p) => p.job.building === building.id);
+  const staff = population.people.filter((p) => p.job.building === building.id && p.diedOn === undefined);
   const health = healthOf(tills[building.id], staffCostOf(staff, bossOf(building, population), tier, rules) + rules.rent[tier] * 7, rules);
   return { health, line: rules.trade[health] };
 }

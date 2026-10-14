@@ -22,9 +22,18 @@ import type { SocietyRules } from '../engine/society';
  * everyone (a stranger in one gets a name out of people, sometimes, and little else; a friend
  * still tells most things), and reads as 20 points against the player to anyone in a gang: a
  * ganger who'd be a stranger is cold to a mask on their turf.
+ *
+ * Memory is what people keep of the player, thing by thing. The one robbed remembers it a
+ * month, the people who heard of it two weeks, a witness ten days; a boss remembers being
+ * walked out on three weeks (and won't take the player back while they do), letting them go
+ * a month; a gift a week. What's on someone's mind most, and freshest, is what they bring
+ * up, three times in four when there's something: a grievance up to three times, the rest
+ * once or twice. Something heard of sticks from five grudge up. A gift is worth a good word:
+ * the people closest to whoever got it warm to the player by two fifths of it, times how
+ * close they are. Twelve memories a person at most.
  */
 export const SOCIETY: SocietyRules = {
-  closeness: { spouse: 1, parent: 0.9, child: 0.9, sibling: 0.8, cousin: 0.5, uncle: 0.5, nephew: 0.5, kin: 0.4, friend: 0.5, crew: 0.45, coworker: 0.3 },
+  closeness: { spouse: 1, partner: 0.8, parent: 0.9, child: 0.9, sibling: 0.8, cousin: 0.5, uncle: 0.5, nephew: 0.5, kin: 0.4, friend: 0.5, crew: 0.45, coworker: 0.3 },
   severity: { insult: 12, robbery: 55, assault: 75, murder: 100 },
   gossip: 0.35,
   witness: 0.3,
@@ -46,5 +55,14 @@ export const SOCIETY: SocietyRules = {
     answerAt: 1,
     deflectAt: -1,
     press: 2,
+  },
+  memory: {
+    cap: 12,
+    days: { wronged: 30, heard: 14, saw: 10, settled: 21, gift: 7, goodWord: 10, hired: 7, promoted: 7, quit: 21, fired: 30, chopped: 10, asked: 5 },
+    weight: { wronged: 10, heard: 6, saw: 5, settled: 7, gift: 3, goodWord: 4, hired: 3, promoted: 4, quit: 6, fired: 6, chopped: 2, asked: 2 },
+    repeat: { wronged: 3, heard: 2, saw: 1, settled: 1, gift: 1, goodWord: 1, hired: 1, promoted: 1, quit: 2, fired: 2, chopped: 1, asked: 1 },
+    recall: 0.75,
+    heardAt: 5,
+    goodWord: 0.4,
   },
 };

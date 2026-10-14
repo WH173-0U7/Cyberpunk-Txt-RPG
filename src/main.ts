@@ -18,8 +18,7 @@ import { blockAt } from './engine/buildings';
 import { Game, type Presence, streetSpot } from './engine/game';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu, Quality } from './engine/food';
-import { kinWord } from './engine/dialogue';
-import type { Fact } from './engine/society';
+import { kinWord, type Question } from './engine/dialogue';
 import type { InebriationStatus } from './engine/inebriation';
 import { randomSeed } from './engine/rng';
 import { createSave, readSave, resume, savedSeed, type Progress } from './engine/save';
@@ -275,7 +274,7 @@ const people = new People(
     onQuestion: (id, fact) => {
       lastActivity = performance.now();
       factsOpen = false;
-      game.askFact(id, fact as Exclude<Fact, 'nature' | 'drinks'>, Date.now());
+      game.askFact(id, fact as Question, Date.now());
     },
     onToggleFacts: () => {
       // Unfolding what's known folds any command's choices away, so the web has the card to itself.
@@ -877,7 +876,7 @@ function showPeople(): void {
   const mask = game.masked();
   const how = { seen: 'seen together', told: 'told', asked: 'asked' };
   const nameOf = (id: string, fallback: string) => game.describe(id)?.name ?? fallback;
-  const described = shown ? game.describe(shown.id) : null;
+  const described = shown ? game.describe(shown.id, now) : null;
   const named = (p: { id: string }) => game.describe(p.id)?.named ?? false;
   people.render({
     count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
@@ -904,14 +903,14 @@ function showPeople(): void {
             name: described.name,
             stance: standing.stance,
             stanceLabel: STANCE_LABEL[standing.stance],
-            kicker: [gangOf(shown.gang) && described.named ? `${gangOf(shown.gang)} colors` : undefined, present ? withCompany(present.doing, present.scene) : 'Not here'].filter(Boolean).join(' · '),
+            kicker: [gangOf(shown.gang) && described.named ? `${gangOf(shown.gang)} colors` : undefined, present ? withCompany(present.doing, present.scene) : described.facts.dead ? 'Dead' : 'Not here'].filter(Boolean).join(' · '),
             facts: described.lines.length ? described.lines.join(' · ') : described.named ? 'That\'s all you know.' : 'Nothing known yet. Talk, watch, ask.',
             factsOpen,
             here: Boolean(present),
             web: standing.web.map((link) => ({ id: link.person.id, name: nameOf(link.person.id, link.person.name), label: link.kind ? kinWord(shown, link.kind, link.person) : '?', how: how[link.how] })),
             webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Ask about people you've met, watch who they keep company with, or get them talking.`,
             picker,
-            questions: (Object.entries(LINES.questions) as Array<[Exclude<Fact, 'nature' | 'drinks'>, { label: string }]>)
+            questions: (Object.entries(LINES.questions) as Array<[Question, { label: string }]>)
               .filter(([fact]) => !standing.knowledge.facts.includes(fact))
               .map(([fact, q]) => ({ fact, label: q.label })),
             askAbout: known.filter((p) => p.id !== shown.id && named(p)).map((p) => ({ id: p.id, name: p.name })),

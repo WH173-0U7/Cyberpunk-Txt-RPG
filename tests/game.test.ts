@@ -9,10 +9,11 @@ import { PEOPLE } from '../src/data/people';
 import { CHARISMA } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
 import { LIFE } from '../src/data/life';
-import { freshLife } from '../src/engine/life';
-import { openness } from '../src/engine/dialogue';
+import { freshLife, newsFor, tieKey } from '../src/engine/life';
+import { FAMILY, openness } from '../src/engine/dialogue';
 import { bossOf } from '../src/engine/jobs';
-import { newsFor } from '../src/engine/life';
+import { memoriesOf } from '../src/engine/memory';
+import { tiesOf } from '../src/engine/people';
 import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
 import { freshSociety } from '../src/engine/society';
@@ -1717,6 +1718,93 @@ describe('Game', () => {
         expect(again.jobStatus(now)).toMatchObject({ rung: { id: 'prep' }, trust: 7, shifts: 7, blocked: null });
         expect(new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), job: { building: 'b-shop', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 } }).jobSaved).toBeNull();
         expect(new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), job: { building: 'b-gone', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 } }).jobSaved).toBeNull();
+      });
+
+      describe('memory and the people\'s ties', () => {
+        const DAY = 24 * HOUR;
+        /** Rules under which whoever has something to bring up always does. */
+        const remembering: Partial<GameRules> = { society: { ...SOCIETY, memory: { ...SOCIETY.memory, recall: 1 } } };
+
+        it('has someone the player insulted bring it up when they next talk, and keeps it through a save', () => {
+          const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20, {}, remembering);
+          expect(game.insult(worker.id, now)).toBe(true);
+          take();
+          expect(game.talk(worker.id, now + MINUTE)).toBe(true);
+          const said = outputs(take()).map((o) => o.text).join(' ');
+          expect(said).toMatch(/what you said to me|run your mouth|say it again|what you did to me/i);
+          expect(game.societySaved.memories[worker.id]?.[0]).toMatchObject({ kind: 'wronged', what: 'insult', times: 1, said: 1 });
+          const again = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), society: game.societySaved });
+          expect(again.societySaved.memories).toEqual(game.societySaved.memories);
+        });
+
+        it('remembers a gift, the same again as twice over, and passes a good word to the people closest to them', () => {
+          const probe = atWork('b-noodle', 38, 20);
+          const dish = FOOD.dishes.find((d) => d.kind === 'food' && d.id !== probe.worker.likes.dish) as (typeof FOOD.dishes)[number];
+          const { game, now, worker } = atWork('b-noodle', 38, 20, { items: [{ id: dish.id, kind: 'consumable', name: dish.name, count: 2 }] });
+          expect(game.gift(worker.id, dish.id, now)).toBe(true);
+          for (const t of tiesOf(game.population, worker.id).filter((u) => SOCIETY.closeness[u.kind] >= 0.5)) {
+            expect(game.standingWith(t.to, now)?.standing.rapport, t.kind).toBeGreaterThan(0);
+            expect(game.societySaved.memories[t.to]?.[0], t.kind).toMatchObject({ kind: 'goodWord', about: worker.id });
+          }
+          expect(game.gift(worker.id, dish.id, now + MINUTE)).toBe(true);
+          expect(game.societySaved.memories[worker.id]?.find((m) => m.kind === 'gift')).toMatchObject({ what: dish.id, times: 2 });
+        });
+
+        it("won't be taken back by a boss they walked out on, while the boss remembers it", () => {
+          const { game, now, boss } = withBoss('b-noodle', 38, 20);
+          expect(game.askForWork(boss.id, now)).toBe(true);
+          expect(game.quit(now + MINUTE)).toBe(true);
+          expect(game.askForWork(boss.id, now + 2 * MINUTE)).toBe(true);
+          expect(game.jobStatus(now + 2 * MINUTE)).toBeNull();
+          expect(game.conversation(boss.id).at(-1)?.text).toMatch(/last time|quit on me|walked out|do not rehire/i);
+          expect(game.standingWith(boss.id, now + 2 * MINUTE)?.standing.refused.hire).toBe(now + 2 * MINUTE);
+          // Three weeks on, it's forgotten.
+          expect(memoriesOf(game.societySaved, boss.id, SOCIETY.memory, 1, now + 22 * DAY).some((m) => m.kind === 'quit')).toBe(false);
+        });
+
+        it("keeps the dead out of everywhere, and has their people say so when asked about them", () => {
+          const probe = atWork('b-noodle', 38, 20);
+          const ties = tiesOf(probe.game.population, probe.worker.id);
+          const tie = ties.find((t) => FAMILY.includes(t.kind)) ?? ties[0];
+          if (!tie) throw new Error(`${probe.worker.name} knows nobody`);
+          const today = Math.floor(probe.now / DAY);
+          const life = { ...freshLife(), day: today, dead: { [tie.to]: today - 3 } };
+          const society = { ...friendOf(probe.worker.id, probe.now), known: { [tie.to]: { met: false, seen: false, told: true, facts: ['name' as const], log: [] } } };
+          const game = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside('b-noodle', 38, 20), life, society });
+          game.start(probe.now);
+          expect(game.person(tie.to)?.diedOn).toBe(today - 3);
+          expect(game.peopleHere(probe.now).some((p) => p.person.id === tie.to)).toBe(false);
+          expect(game.talk(tie.to, probe.now)).toBe(false);
+          expect(game.describe(tie.to, probe.now)?.facts.dead).toBeUndefined();
+          expect(game.ask(probe.worker.id, tie.to, probe.now)).toBe(true);
+          expect(game.conversation(probe.worker.id).at(-1)?.text).toMatch(/died|buried|gone|was my/i);
+          expect(game.describe(tie.to, probe.now)?.facts.dead).toBe('Died a few days back');
+        });
+
+        it('hears who got married from one of the two, and knows them for a couple after', () => {
+          const probe = atWork('b-noodle', 38, 20);
+          const tied = new Set(tiesOf(probe.game.population, probe.worker.id).map((t) => t.to));
+          const other = probe.game.population.people.find((p) => p.id !== probe.worker.id && !tied.has(p.id));
+          if (!other) throw new Error('everyone knows everyone');
+          const today = Math.floor(probe.now / DAY);
+          const life = {
+            ...freshLife(),
+            day: today,
+            nextId: 2,
+            events: [{ id: 1, day: today - 2, kind: 'wedding' as const, who: [probe.worker.id, other.id] as [string, string], gang: null, district: 'test', took: 0, where: null }],
+            made: [{ from: probe.worker.id, to: other.id, kind: 'spouse' as const }],
+            since: { [tieKey(probe.worker.id, other.id)]: today - 20 },
+          };
+          // Nothing on their mind but the news.
+          const cost = { ...SOCIETY.openness.cost, district: 50, life: 50, here: 50, job: 50, likes: 50, hates: 50, kin: 50, rumor: 50 };
+          const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20, { life, society: friendOf(probe.worker.id, probe.now) }, { society: { ...SOCIETY, openness: { ...SOCIETY.openness, cost } } });
+          expect(tiesOf(game.population, worker.id).find((t) => t.to === other.id)?.kind).toBe('spouse');
+          take();
+          expect(game.talk(worker.id, now)).toBe(true);
+          expect(outputs(take()).map((o) => o.text).join(' ')).toContain(other.given);
+          expect(game.standingWith(worker.id, now)?.web.find((l) => l.person.id === other.id)?.kind).toBe('spouse');
+          expect(game.describe(other.id)?.named).toBe(true);
+        });
       });
     });
   });

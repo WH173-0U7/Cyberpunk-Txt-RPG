@@ -136,8 +136,8 @@ it needs no generator bump. The pieces:
   and hangouts are made within a draw; coworkers, crews and bios over everyone at the end.
 - A `Person` has a home, a job (`building` null for freelance work), maybe a `gang`,
   `traits`, `likes` (a dish, a drink, a `hangout` spot), `hates` (a gang) and `eddies`.
-  `Tie`s link people both ways: `to` is `from`'s `kind` (spouse, parent, uncle, friend, crew,
-  coworker…; `INVERSE` gives the other side). `whereIs` puts a person somewhere by the clock
+  `Tie`s link people both ways: `to` is `from`'s `kind` (spouse, partner, parent, uncle,
+  friend, crew, coworker…; `INVERSE` gives the other side), one tie a pair. `whereIs` puts a person somewhere by the clock
   (`Clock`: hour, weekday, day; the phone's local time, or `rules.clock` in tests); nobody is
   placed on the streets, only in buildings and at places, so `Game.peopleHere(now)` works
   inside a building or at a location.
@@ -148,14 +148,32 @@ it needs no generator bump. The pieces:
   `src/data/society.ts` and calling `Game`'s private `incident()`. Anything that should
   change how someone feels goes through `changeStanding`/`changeRep` so it fades right.
 - What the player knows is separate from what is true: `SocietyState.known` (met, seen,
-  told of; which `facts` the player has: name, job, age, home, likes, hates, nature; and
+  told of; which `facts` the player has: name, job, age, home, likes, hates, nature, and
+  `dead` once they've been told; and
   the `log` of what was said, the last `LOG_CAP` lines) and `links` (what the player knows
   of a tie, keyed `a|b`; `kind` null for "connected somehow", `'none'` for "asked, and
   they'd never heard of them"). The UI shows a person only through `Game.describe` (name
   or their look, and the facts known), `standingWith` (web) and `conversation`, never the
   `Person` or the population's ties directly; new ways of finding things out go through
   `learnOf`, `learnFact` and `learnLink` (`Game.look` for what's plain to see, the topics
-  in `talk`, `Game.ask` and `Game.askFact`), and everything said goes through `logLine`.
+  in `talk`, `Game.ask` and `Game.askFact`), and everything said goes through `logLine`. A
+  tie that has changed since (told of a couple, a wedding, a split, a falling out or a
+  making up) is `relearnLink`, which replaces what the player knew.
+- People remember what the player did, thing by thing (`src/engine/memory.ts`): a `Memory`
+  is a `kind` (`MemoryKind`: wronged, heard, saw, settled, gift, goodWord, hired, promoted,
+  quit, fired, chopped, asked), when, `about` whom, `what`, an `amount`, how many `times` and
+  how often it's been `said`, kept per person in `SocietyState.memories` (saved under
+  `society`), with the numbers in `SOCIETY.memory` (days each kind lasts, its weight, how
+  often it's brought up, the `cap`). The incident cascade writes what was done, seen and
+  heard (from `heardAt` grudge up); `Game`'s private `remember` writes the rest (gifts, a
+  good word through `passGoodWord` to the people closest to whoever got one, work, chops,
+  questions, someone collecting). `Game.talk` brings up `recall`'s pick (`memory.recall` of
+  the time) from `LINES.memory`, filled by `memoryVars` (`mem`, `mem<Kind>`, `memWho`,
+  `memWord`, `memAgo`, `memTook`, `memItem`, `memTwice`…); a grievance (`GRIEVANCES`) is all
+  they say. What memory changes goes through it too: a boss with `quit` or `fired` on their
+  mind turns the player away (`LINES.work.rehire`), a gift had before is `again`. A new thing
+  to remember is another `MemoryKind` with its numbers and lines (the dialogue test pins
+  every memory line, and every news line, to exactly one kind).
 - `src/engine/skills.ts` is a skill that grows with use (experience, levels, a bonus per
   level); charisma is the one so far (`src/data/skills.ts`), applied in `Game.talk`,
   `gift` and `ask`. A new skill is another `SkillRules` in `src/data/skills.ts`, a state on
@@ -188,18 +206,27 @@ it needs no generator bump. The pieces:
 - The people have days of their own (`src/engine/life.ts`, numbers in `src/data/life.ts`):
   `liveUntil` lives each clock day since the last one lived (at most `catchUpDays`), rolling
   a few `LifeEvent`s per district from the seed and the day (a `shakedown`, a `robbery`, a
-  `fight`, `friends` made, a `fallout`) and changing the people as it goes: eddies (earned
-  back by `recover` a day toward what they started with), `hates`, ties made and broken,
-  and `Person.hurtUntil` (laid up at home in `whereIs`). The changes are the `LifeState`
-  saved as `life`; `applyLife` puts them back onto a population made fresh for the seed, so
-  `generatePeople` stays pure and a save brings the same people back. `Game` lives the days
-  in `start` and `tick` (`live`), emitting `societyChanged` when anything happened.
-  `newsFor(person)` is what someone would bring up (the freshest thing that was theirs, a
-  relative's, their gang's doing, or their district's); `Game.talk` puts it in the speaker's
-  vars (`news`, `newsShakedown`…, `newsMine`/`newsKin`/`newsOurs`/`newsHeard`, `newsWho`,
-  `newsGang` the gang's name, `newsWord`, `newsAgo`, `newsTook`, `newsWon`, `newsHurt`) for the `news`
-  topic, whose lines in `src/data/dialogue.ts` fit by kind and role; telling it is an
-  introduction to whoever it was about. `scenesAt` pairs the people at a spot by their ties
+  `fight`; `romance`, a `wedding`, a `breakup`; `friends` made, a `fallout`, a `makeup`;
+  `hired` and `laidOff` by the storefronts' books; a `death`, in a fight between crews or of
+  old age; a gang `joined` in a dead member's place) and changing the people as it goes:
+  eddies, `hates`, ties (one tie a pair, changed only through `setTie`: `broken` writes off
+  a pair's ties from the start, `made` is what they are now), jobs (`LifeState.jobs`, with
+  `Person.hiredOn`, so `bossOf` never makes a hire the boss), gangs, `Person.hurtUntil`
+  (laid up at home in `whereIs`) and `Person.diedOn` (the dead are nowhere, never live a day
+  or spend a cent, and anyone dead who meant to come collect never comes). The changes are
+  the `LifeState` saved as `life`; `applyLife` puts them back onto a population made fresh
+  for the seed, so `generatePeople` stays pure and a save brings the same people back.
+  `Game` lives the days in `start` and `tick` (`live`), emitting `societyChanged` when
+  anything happened. `newsFor(person)` is what someone would bring up (the freshest thing
+  that was theirs, a relative's, their gang's doing, or their district's; `LIFE.lasting`
+  keeps a death or a wedding in mind longer); `Game.talk` puts it in the speaker's vars
+  (`news`, `newsShakedown`…, `newsMine`/`newsKin`/`newsOurs`/`newsHeard`, `newsWho`,
+  `newsWith` the other one in it, `newsGang` the gang's name, `newsWord`, `newsAgo`,
+  `newsTook`, `newsWon`, `newsHurt`, `newsKilled`) for the `news` topic, whose lines in
+  `src/data/dialogue.ts` fit by kind and role; telling it is an introduction to whoever it
+  was about, and teaches the player the tie as it is now (or the death). Asked about someone
+  dead, their people say so (`LINES.ask.dead`); about an ex, they're done with them
+  (`LINES.ask.ex`). `scenesAt` pairs the people at a spot by their ties
   (and a ganger on their turf with the help, rivals with each other) with a phrase from
   `LIFE.scenes`, drawn for the place, the day and the three-hour block; it's `Presence.scene`,
   and the People overlay says "eating Wontons · arguing with a woman in Mox colors". A new

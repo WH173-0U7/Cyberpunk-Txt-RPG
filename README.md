@@ -195,16 +195,39 @@ own.
   comes to hate that gang, and earns the eddies back over the week); someone with the nerve
   picks a fight with a gang they hate, or rival crews go at it, and the loser is laid up at
   home for days (missing from the counter and the bar); two regulars of the same place become
-  friends; a hot temper ends a friendship. It all happens the same way for a seed whenever
-  the days are lived through, up to a month at a time when you've been away, and it sticks:
-  the city you come back to has moved on. People talk about it. Chatting turns to the news
-  two times in three when there is any: what happened to them, to a relative ("my cousin
-  Rosa got jumped by Maelstrom two nights back"), what their gang did, or what they heard
-  around the district, and being told of someone is an introduction (the name, and the tie
-  when it was family). Wherever you are, the people there are with each other too: a couple
+  friends; a hot temper ends a friendship, and some get patched up again. Hearts change too:
+  two people who are free (friends, or regulars of the same bar, near enough in age) start
+  seeing each other, marry after a couple of weeks or so, or one with a temper or a cold
+  heart walks out. Work changes with the books: a thriving place takes on someone from the
+  neighborhood who's been looking, a struggling one lets the last one taken on go (and their
+  coworkers stop being coworkers). Now and then a fight between rival crews ends with someone
+  dead (their family come to hate whoever did it, and the gang takes someone young in their
+  place), and the oldest die of their years. The dead are gone for good: nowhere to be
+  found, and anyone dead who was coming for you never comes. It all happens the same way for
+  a seed whenever the days are lived through, up to a month at a time when you've been away,
+  and it sticks: the city you come back to has moved on. People talk about it. Chatting
+  turns to the news two times in three when there is any: what happened to them, to a
+  relative ("my cousin Rosa got jumped by Maelstrom two nights back", "my brother married
+  Jun last week"), what their gang did, or what they heard around the district; a death or a
+  wedding they bring up for weeks. Being told of someone is an introduction (the name, and
+  the tie when it was family), and being told who got together, married, split up or fell
+  out puts that right in what you know of them. Ask someone about a relative who's died and
+  they'll tell you (the card says **Dead** after); ask about an ex and they're done with
+  them. Wherever you are, the people there are with each other too: a couple
   sharing a table or not speaking, family arguing, friends drinking, a crew holding court,
   coworkers on a break, a ganger leaning on the help, rivals staring each other down. The
   **People** list says who is with whom.
+- **Memory**: people remember what you did to them, and say so. Rob someone and they
+  remember how much and when ("You took 34 eddies off me yesterday"), and twice is twice;
+  their family and friends remember hearing about it ("My sister Ana says you robbed her"),
+  anyone who saw it remembers that. Give someone a gift and they remember it, and tell their
+  people: the ones closest to them warm to you a little and say so ("My cousin says you're
+  alright"); the same gift again, they notice. A boss remembers taking you on, moving you up,
+  and the day you walked out, and won't take you back while they remember it (three weeks;
+  being let go, a month). A netrunner remembers the chip, someone you asked about a relative
+  wonders why, and whoever came to collect tells you you're square. Each memory fades on its
+  own clock (a gift in a week, a robbery in a month), and when someone talks to you they bring
+  up whatever's most on their mind, three times in four, each thing only so often.
 - **Work**: every eatery and clothing store has a boss, the one who runs it (the cook at a
   one-cook noodle bar, whoever runs the counter or the shop otherwise). Find them and their
   card gets a **Work** command: **Ask for work**, and whether they take you on is their
@@ -431,8 +454,10 @@ Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
   says (by stance, voice, mood, history, traits, the player's eloquence, or which variables
   are filled). The cascade's numbers (closeness of each tie, severity of each incident,
   reputation costs, the ban threshold, how fast grudges fade, when someone comes to collect)
-  and openness (what each question costs, what each stance and each level of charisma is
-  worth) are in [`src/data/society.ts`](src/data/society.ts). People never change the city,
+  openness (what each question costs, what each stance and each level of charisma is worth)
+  and memory (how long each kind of memory lasts, how much it weighs, how often it's brought
+  up) are in [`src/data/society.ts`](src/data/society.ts); how often people's days bring a
+  fight, a romance, a wedding, a hire or a death is in [`src/data/life.ts`](src/data/life.ts). People never change the city,
   so they need no generator bump; a change to how they're made only loses the player's
   standings with people who no longer exist.
 - **Food** is in [`src/data/food.ts`](src/data/food.ts): every dish names the menus it turns

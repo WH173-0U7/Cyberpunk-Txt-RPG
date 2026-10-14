@@ -241,6 +241,19 @@ describe('dialogue', () => {
     expect(line(LINES.refuse, speakerOf(person('x'), { voice: 'corpo', stance: 'cold' }), createRng('r'))).toMatch(/\S/);
   });
 
+  it('keeps every piece of news to its own kind and side, and every memory to its own kind', () => {
+    const kinds = ['Shakedown', 'Robbery', 'Fight', 'Friends', 'Fallout', 'Makeup', 'Romance', 'Wedding', 'Breakup', 'Hired', 'LaidOff', 'Death', 'Joined'];
+    const roles = ['Mine', 'Kin', 'Ours', 'Heard'];
+    const needs = (l: (typeof LINES.memory)[number]) => (typeof l === 'string' ? [] : (l.when?.needs ?? []));
+    const text = (l: (typeof LINES.memory)[number]) => (typeof l === 'string' ? l : l.text);
+    for (const l of LINES.topics.news) {
+      expect(needs(l).filter((n) => kinds.some((k) => n === `news${k}`)), text(l)).toHaveLength(1);
+      expect(needs(l).filter((n) => roles.some((r) => n === `news${r}`)), text(l)).toHaveLength(1);
+    }
+    const memories = ['Wronged', 'Heard', 'Saw', 'Settled', 'Gift', 'GoodWord', 'Hired', 'Promoted', 'Quit', 'Fired', 'Chopped', 'Asked'];
+    for (const l of LINES.memory) expect(needs(l).filter((n) => memories.some((k) => n === `mem${k}`)), text(l)).toHaveLength(1);
+  });
+
   it('never leaves a hole in a line, whoever is talking, across whole cities', () => {
     const holes = /[{}]|  |^\p{Ll}|^\s|\s$/u;
     const check = (said: string, about: string) => {
@@ -289,6 +302,8 @@ describe('dialogue', () => {
           flush: rng.chance(0.2) ? 'yes' : '',
           slow: rng.chance(0.2) ? 'yes' : '',
           brisk: rng.chance(0.2) ? 'yes' : '',
+          kinDead: kin && rng.chance(0.3) ? 'yes' : '',
+          again: rng.chance(0.3) ? 'yes' : '',
         };
         const speaker: Speaker = {
           person: p,
@@ -334,6 +349,49 @@ describe('dialogue', () => {
           }
         }
         lines += 32;
+        // The news of people's hearts, work and deaths, and what they remember of the player: every other speaker is plenty of voices.
+        const deep = population.people.indexOf(p) % 2 === 0;
+        const told = (kind: string, role: string, extra: Record<string, string>) => {
+          if (!deep) return;
+          const telling: Speaker = { ...speaker, vars: { ...vars, news: 'yes', [`news${kind}`]: 'yes', [`news${role}`]: 'yes', newsWho: 'Ana', newsGang: 'Valentinos', newsWord: 'cousin', newsAgo: 'last night', newsTook: '0', newsWhere: 'Tom\'s Diner', newsHe: 'she', newsHim: 'her', newsHis: 'her', newsWon: '', newsHurt: '', newsWith: '', newsKilled: '', ...extra } };
+          check(compose(LINES.topics.news, telling, LINES, rng, { opener: false }), `${about} news ${kind} ${role} ${JSON.stringify(extra)}`);
+          lines += 1;
+        };
+        const sides: Record<string, string[]> = { Makeup: ['Mine', 'Kin'], Romance: ['Mine', 'Kin', 'Heard'], Wedding: ['Mine', 'Kin', 'Heard'], Breakup: ['Mine', 'Kin', 'Heard'], Hired: ['Mine', 'Kin', 'Heard'], LaidOff: ['Mine', 'Kin', 'Heard'], Joined: ['Mine', 'Kin', 'Ours', 'Heard'] };
+        for (const [kind, roles] of Object.entries(sides)) for (const role of roles) for (const won of ['yes', '']) for (const withWho of ['Jun', '']) told(kind, role, { newsWon: won, newsWith: withWho });
+        // A death: a killer telling it, their people, the dead's people (killed, or of their years), the killer's gang, and the district.
+        told('Death', 'Mine', { newsWon: 'yes', newsKilled: 'yes' });
+        for (const withWho of ['Jun', '']) {
+          told('Death', 'Kin', { newsWon: 'yes', newsKilled: 'yes', newsWith: withWho });
+          told('Death', 'Kin', { newsKilled: 'yes', newsWith: withWho });
+          told('Death', 'Heard', { newsKilled: 'yes', newsWith: withWho });
+        }
+        told('Death', 'Kin', { newsGang: '' });
+        told('Death', 'Ours', { newsWon: 'yes', newsKilled: 'yes', newsWith: 'Jun' });
+        told('Death', 'Heard', { newsGang: '' });
+        // What they remember of the player, every kind of it, in every shape it comes in.
+        const recalls: Array<Record<string, string>> = [];
+        for (const what of ['memRobbery', 'memInsult', '']) {
+          for (const took of ['40', '']) for (const twice of ['yes', '']) recalls.push({ memWronged: 'yes', ...(what ? { [what]: 'yes' } : {}), memTook: took, memTwice: twice });
+          for (const word of ['cousin', '']) recalls.push({ memHeard: 'yes', ...(what ? { [what]: 'yes' } : {}), memWord: word });
+          recalls.push({ memSaw: 'yes', ...(what ? { [what]: 'yes' } : {}) });
+        }
+        for (const took of ['60', '']) recalls.push({ memSettled: 'yes', memTook: took }, { memChopped: 'yes', memTook: took });
+        recalls.push({ memGift: 'yes', memItem: 'Taco', memFavorite: 'yes' }, { memGift: 'yes', memItem: 'Taco' }, { memGift: 'yes' });
+        for (const word of ['sister', '']) recalls.push({ memGoodWord: 'yes', memWord: word }, { memAsked: 'yes', memWord: word });
+        for (const title of ['prep', '']) recalls.push({ memPromoted: 'yes', memTitle: title }, { memQuit: 'yes', memTitle: title });
+        recalls.push({ memHired: 'yes' }, { memFired: 'yes' });
+        for (const memory of deep ? recalls : []) {
+          const remembering: Speaker = { ...speaker, vars: { ...vars, mem: 'yes', memWho: 'Ana', memHe: 'she', memHim: 'her', memHis: 'her', memAgo: 'yesterday', memAgain: rng.chance(0.5) ? 'yes' : '', ...memory } };
+          check(compose(LINES.memory, remembering, LINES, rng, { opener: false }), `${about} memory ${JSON.stringify(memory)}`);
+          if (memory.memQuit || memory.memFired) check(line(LINES.work.rehire, remembering, rng), `${about} rehire ${JSON.stringify(memory)}`);
+          lines += 1;
+        }
+        // Asked about someone who's dead, or someone they're done with.
+        const asking: Speaker = { ...speaker, vars: { ...vars, other: 'Ana', otherHe: 'she', otherHim: 'her', otherHis: 'her', word: 'cousin', otherAgo: 'last week' } };
+        check(compose(LINES.ask.dead, asking, LINES, rng), `${about} ask dead`);
+        check(compose(LINES.ask.ex, { ...asking, vars: { ...asking.vars, word: '', otherAgo: '' } }, LINES, rng), `${about} ask ex`);
+        lines += 2;
         // A boss, asked for work: every answer, in and out of a mask, with a place to name.
         const bossing: Speaker = { ...speaker, vars: { ...vars, work: 'El Pinche Grill' } };
         for (const pool of [LINES.work.hire, LINES.work.refuse, LINES.work.shift, LINES.work.promote, LINES.work.quit]) check(line(pool, bossing, rng), `${about} work pool`);
@@ -360,5 +418,5 @@ describe('dialogue', () => {
       }
     }
     expect(lines).toBeGreaterThan(5000);
-  });
+  }, 120_000);
 });

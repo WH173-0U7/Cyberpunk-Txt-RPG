@@ -5,6 +5,7 @@ import type { EnergyState } from './energy';
 import type { InebriationState } from './inebriation';
 import type { JobState } from './jobs';
 import type { LifeState } from './life';
+import type { Memory } from './memory';
 import type { SkillState } from './skills';
 import type { SocietyState } from './society';
 import type { Item, ItemKind, Leg, MapState, Point, Trip, Wallet, Whereabouts, World } from './types';
@@ -134,7 +135,7 @@ export function readSave(raw: unknown): SaveData | null {
     energy: isEnergy(save.energy) ? save.energy : null,
     inebriation: isInebriation(save.inebriation) ? save.inebriation : null,
     // And before there were people to deal with, nobody knew the player (and before they could be known of, no one was).
-    society: isSociety(save.society) ? { ...save.society, known: knownOf(save.society.known), links: save.society.links ?? {} } : null,
+    society: isSociety(save.society) ? { ...save.society, known: knownOf(save.society.known), links: save.society.links ?? {}, memories: memoriesOf(save.society.memories) } : null,
     charisma: isSkill(save.charisma) ? save.charisma : null,
     // And before there was work, the player had none.
     job: isJob(save.job) ? save.job : null,
@@ -210,12 +211,34 @@ function knownOf(known: SocietyState['known'] | undefined): SocietyState['known'
   return out;
 }
 
+/** What people remember of the player, as far as it reads: older saves have none, and anything unreadable is forgotten. */
+function memoriesOf(memories: unknown): SocietyState['memories'] {
+  const out: SocietyState['memories'] = {};
+  if (typeof memories !== 'object' || memories === null || Array.isArray(memories)) return out;
+  for (const [id, list] of Object.entries(memories as Record<string, unknown>)) {
+    if (!Array.isArray(list)) continue;
+    const kept = list.filter((m): m is Memory => typeof m === 'object' && m !== null && typeof (m as Memory).kind === 'string' && isNumber((m as Memory).at) && Number.isInteger((m as Memory).times) && Number.isInteger((m as Memory).said));
+    if (kept.length) out[id] = kept;
+  }
+  return out;
+}
+
 function isLife(value: unknown): value is LifeState {
   const l = value as Record<string, unknown> | null;
   if (typeof l !== 'object' || l === null) return false;
   const record = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v);
   const optional = (v: unknown) => v === undefined || record(v);
-  return Number.isInteger(l.day) && Number.isInteger(l.nextId) && Array.isArray(l.events) && record(l.eddies) && record(l.hurt) && record(l.hates) && Array.isArray(l.made) && Array.isArray(l.broken) && optional(l.tills) && optional(l.treasuries);
+  return (
+    Number.isInteger(l.day) &&
+    Number.isInteger(l.nextId) &&
+    Array.isArray(l.events) &&
+    record(l.eddies) &&
+    record(l.hurt) &&
+    record(l.hates) &&
+    Array.isArray(l.made) &&
+    Array.isArray(l.broken) &&
+    [l.tills, l.treasuries, l.jobs, l.gangs, l.dead, l.since].every(optional)
+  );
 }
 
 function isJob(value: unknown): value is JobState {
