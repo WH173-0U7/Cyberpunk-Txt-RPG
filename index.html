@@ -79,6 +79,15 @@
             <button id="settings-close" class="icon-btn overlay-close" type="button" aria-label="Close settings" title="Close (Esc)"></button>
           </div>
           <div class="overlay-body">
+            <section class="settings-group" aria-labelledby="settings-you">
+              <h3 id="settings-you" class="settings-label">You</h3>
+              <p class="settings-note">The pronouns you go by. Who's drawn to you in Night City goes by them too.</p>
+              <div id="settings-pronouns" class="settings-choices" role="group" aria-labelledby="settings-you">
+                <button class="settings-choice" type="button" data-pronouns="she" aria-pressed="false">She</button>
+                <button class="settings-choice" type="button" data-pronouns="he" aria-pressed="false">He</button>
+                <button class="settings-choice" type="button" data-pronouns="they" aria-pressed="false">They</button>
+              </div>
+            </section>
             <section class="settings-group" aria-labelledby="settings-save">
               <h3 id="settings-save" class="settings-label">Save</h3>
               <p class="settings-note">Your progress saves on this device as you play. <span id="settings-progress"></span></p>

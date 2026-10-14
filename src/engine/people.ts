@@ -1,3 +1,4 @@
+import type { Style } from './carry';
 import type { Dish } from './food';
 import { createRng, type Rng } from './rng';
 import type { Building, Location, World } from './types';
@@ -59,9 +60,43 @@ export interface PeopleContent {
   chips: Record<'corpo' | 'gang' | 'street', { chance: number; range: [number, number] }>;
   /** Kinds of place people go to in the evening. */
   hangouts: string[];
+  /** Street names (made up, never a canon character's), and the chance of one for a ganger, for anyone else on the street, and for a corpo. */
+  handles: { pool: string[]; chance: Record<'gang' | 'street' | 'corpo', number> };
+  /** What people want out of life, each weighted by the kinds of people who'd want it. */
+  dreams: Record<Dream, Partial<Record<Walk, number>>>;
+  /** Who people are drawn to and what wins them over (`heartOf`). */
+  hearts: HeartContent;
   /** One line each, picked by a person's strongest trait. */
   traitLines: Record<keyof Traits, { high: string; low: string }>;
 }
+
+/** What someone wants out of life: out of Night City, new chrome, a place of their own, a family, wheels, a Trauma Team card, fame, the corporate ladder, payback, a quiet life, to retire, to move up in their gang, or to be a legend. */
+export type Dream = 'out' | 'chrome' | 'shop' | 'family' | 'wheels' | 'trauma' | 'fame' | 'ladder' | 'payback' | 'quiet' | 'retire' | 'rank' | 'legend';
+
+/** A way of coming at someone that wins them over, of the ways a chat can start (dialogue.ts's `Approach`, but for a flirt). */
+export type Want = 'chat' | 'compliment' | 'joke' | 'gossip' | 'care';
+
+/**
+ * Someone's heart: whom they're drawn to, by the pronouns people go by (no one at all, for
+ * some), the way in that wins them over, and the look they go for on someone, if any.
+ */
+export interface Heart {
+  drawnTo: Pronouns[];
+  wants: Want;
+  style: Style | null;
+}
+
+export interface HeartContent {
+  /** Whom people are drawn to, by their own pronouns, weighted. */
+  drawn: Record<Pronouns, Array<{ to: Pronouns[]; weight: number }>>;
+  /** The way in each wants: a base weight, and the trait that makes it likelier (twice the trait, added). */
+  wants: Record<Want, { base: number; trait?: keyof Traits }>;
+  /** The look they go for, by walk of life; `none` is no look in particular. */
+  styles: Record<Style | 'none', Partial<Record<Walk, number>>>;
+}
+
+/** The walks of life a dream is weighed by: someone can be several (a young ganger who hates a rival gang). */
+export type Walk = 'gang' | 'corpo' | 'street' | 'elder' | 'young' | 'hater';
 
 export interface Traits {
   warmth: number;
@@ -98,9 +133,14 @@ export interface Person {
   bio: string;
   /** The clock day until which they're laid up at home, after losing a fight (see life.ts). */
   hurtUntil?: number;
+  /** The clock day they died, if they have (see life.ts): they're nowhere from then on. */
+  diedOn?: number;
+  /** The clock day they were taken on at the storefront they work at now, if it isn't where they started: never its boss. */
+  hiredOn?: number;
 }
 
-export type TieKind = 'spouse' | 'sibling' | 'cousin' | 'parent' | 'child' | 'uncle' | 'nephew' | 'kin' | 'friend' | 'crew' | 'coworker';
+/** Family by birth and marriage; `partner` is someone they're seeing (life.ts: a romance, before any wedding); then friends, crew and coworkers. */
+export type TieKind = 'spouse' | 'partner' | 'sibling' | 'cousin' | 'parent' | 'child' | 'uncle' | 'nephew' | 'kin' | 'friend' | 'crew' | 'coworker';
 
 /** `to` is `from`'s `kind`: their parent, their friend. Stored both ways (the parent's side says "child"). */
 export interface Tie {
@@ -136,6 +176,7 @@ const WORK_KINDS = new Set(['tower', 'factory', 'warehouse']);
 /** What `from` is to `to`, given what `to` is to `from`. */
 export const INVERSE: Record<TieKind, TieKind> = {
   spouse: 'spouse',
+  partner: 'partner',
   sibling: 'sibling',
   cousin: 'cousin',
   parent: 'child',
@@ -357,6 +398,8 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
   const at = (spot: Spot | null, doing: string) => (spot ? { spot, doing } : null);
   const outLate = person.gang ? 0.45 : person.traits.chatty * 0.3;
 
+  // The dead are nowhere.
+  if (person.diedOn !== undefined && day >= person.diedOn) return null;
   // Laid up: home all day, nursing it.
   if (person.hurtUntil !== undefined && day <= person.hurtUntil) return at(home, hour < 6 || hour >= 23 ? 'at home, asleep' : 'at home, laid up');
   if (hour < 6) return rng.chance(outLate) && hangout ? at(hangout, hangingOut(person, world, hangout, dishes)) : at(home, 'at home, asleep');
@@ -383,6 +426,65 @@ export function peopleAt(population: Population, world: World, spot: Spot, clock
     if (where && where.spot.kind === spot.kind && where.spot.id === spot.id) found.push({ person, doing: where.doing });
   }
   return found;
+}
+
+/** Whether someone works for a corporation: in a tower, or with a corporate title. */
+export function isCorpo(person: Person, world: World): boolean {
+  const work = person.job.building ? world.buildings.find((b) => b.id === person.job.building) : undefined;
+  return work?.kind === 'tower' || /analyst|manager|executive|consultant/i.test(person.job.role);
+}
+
+/** Someone's street name, if they go by one: most gangers do, a few others on the street, corpos never. Drawn on its own stream, so the people stay who they are. */
+export function handleOf(person: Person, world: World, content: PeopleContent): string | null {
+  const rng = createRng(`${person.id}:handle`);
+  const chance = person.gang ? content.handles.chance.gang : isCorpo(person, world) ? content.handles.chance.corpo : content.handles.chance.street;
+  return rng.chance(chance) && content.handles.pool.length ? rng.pick(content.handles.pool) : null;
+}
+
+/** What someone wants out of life, weighed by who they are. Drawn on its own stream; a life that changes them (joining a gang) can change it. */
+export function dreamOf(person: Person, world: World, content: PeopleContent): Dream {
+  const walks = walksOf(person, world);
+  const weighted = (Object.entries(content.dreams) as Array<[Dream, Partial<Record<Walk, number>>]>).map(([dream, by]) => [dream, walks.reduce((n, w) => n + (by[w] ?? 0), 0)] as [Dream, number]).filter(([, w]) => w > 0);
+  return (pickWeighted(createRng(`${person.id}:dream`), weighted) as Dream | null) ?? 'quiet';
+}
+
+/** The walks of life someone is on: a ganger, a corpo or on the street; old, young; with a gang they hate. */
+function walksOf(person: Person, world: World): Walk[] {
+  const walks: Walk[] = [];
+  if (person.gang) walks.push('gang');
+  else if (isCorpo(person, world)) walks.push('corpo');
+  else walks.push('street');
+  if (person.age >= 56) walks.push('elder');
+  if (person.age <= 25) walks.push('young');
+  if (person.hates && !person.gang) walks.push('hater');
+  return walks;
+}
+
+/**
+ * Someone's heart: whom they're drawn to, the way in that wins them over, and the look they
+ * go for. Drawn on its own stream, so the people stay who they are; someone married is drawn
+ * to whoever their spouse is, whatever the draw said.
+ */
+export function heartOf(person: Person, world: World, content: PeopleContent, population?: Population): Heart {
+  const rng = createRng(`${person.id}:heart`);
+  const { hearts } = content;
+  const drawn = hearts.drawn[person.pronouns] ?? [];
+  const to = (pickWeighted(rng, drawn.map((d, i) => [String(i), d.weight])) ?? '0') as string;
+  const drawnTo = [...(drawn[Number(to)]?.to ?? [])];
+  for (const tie of population ? tiesOf(population, person.id) : []) {
+    const spouse = tie.kind === 'spouse' ? personById(population as Population, tie.to) : undefined;
+    if (spouse && !drawnTo.includes(spouse.pronouns)) drawnTo.push(spouse.pronouns);
+  }
+  const wants = (pickWeighted(rng, (Object.entries(hearts.wants) as Array<[Want, { base: number; trait?: keyof Traits }]>).map(([w, by]) => [w, by.base + (by.trait ? person.traits[by.trait] * 2 : 0)])) ?? 'chat') as Want;
+  const walks = walksOf(person, world);
+  const styles = (Object.entries(hearts.styles) as Array<[Style | 'none', Partial<Record<Walk, number>>]>).map(([style, by]) => [style, walks.reduce((n, w) => n + (by[w] ?? 0), 0)] as [string, number]).filter(([, w]) => w > 0);
+  const style = pickWeighted(rng, styles);
+  return { drawnTo, wants, style: !style || style === 'none' ? null : (style as Style) };
+}
+
+/** Whether someone is drawn to people who go by these pronouns. */
+export function drawnTo(heart: Heart, pronouns: Pronouns): boolean {
+  return heart.drawnTo.includes(pronouns);
 }
 
 export function gangOf(person: Person, content: PeopleContent): GangContent | null {

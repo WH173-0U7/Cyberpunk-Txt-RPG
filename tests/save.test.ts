@@ -15,7 +15,7 @@ import { TRAVEL } from '../src/data/travel';
 import { Game } from '../src/engine/game';
 import { GENERATOR_VERSION, generateWorld } from '../src/engine/generate';
 import { hashSeed } from '../src/engine/rng';
-import { createSave, readSave, resume, savedSeed, type SaveData } from '../src/engine/save';
+import { createSave, readSave, resume, savedSeed, type Progress, type SaveData } from '../src/engine/save';
 import type { World } from '../src/engine/types';
 
 const world = generateWorld('7f3a29c1', CITY);
@@ -72,6 +72,26 @@ describe('saving', () => {
     expect(resume(world, { ...save, where: { ...at, building: null } })?.inside).toBeNull();
   });
 
+  it('carries who the player goes by and who they see, dropping either if it makes no sense', () => {
+    const { game, now } = played(1);
+    game.setPronouns('she');
+    const id = game.population.people[0]?.id ?? '';
+    const romance = { with: id, stage: 'together' as const, since: now, dates: 3, lastDateAt: now };
+    const saved = { ...saveOf(game, now), society: { ...game.societySaved, romance } };
+    const read = readSave(JSON.parse(JSON.stringify(saved)));
+    expect(read?.you).toEqual({ pronouns: 'she' });
+    expect(read?.society?.romance).toEqual(romance);
+    const resumed = new Game(world, rules, (read && resume(world, read)) ?? undefined);
+    expect(resumed.pronouns).toBe('she');
+    expect(resumed.romance(now)).toMatchObject({ id, stage: 'together', dates: 3 });
+    // Nonsense is dropped: they go by they, and see no one.
+    const odd = readSave(JSON.parse(JSON.stringify({ ...saved, you: { pronouns: 'it' }, society: { ...saved.society, romance: { with: id, stage: 'married', since: now, dates: -1, lastDateAt: 0 } } })));
+    expect(odd?.you).toBeNull();
+    expect(odd?.society?.romance).toBeNull();
+    const { you: _, ...old } = saveOf(game, now);
+    expect(new Game(world, rules, resume(world, readSave(JSON.parse(JSON.stringify(old))) as SaveData) as Progress).pronouns).toBe('they');
+  });
+
   it('carries the inventory, dropping anything in it that is not an item', () => {
     const { game, now } = played(1);
     expect(game.inventory).toEqual([]);
@@ -80,17 +100,20 @@ describe('saving', () => {
     const chip = { id: 'credchip-1', kind: 'credchip', name: 'CredChip', count: 1, in: 'wallet', balance: 120, locked: true };
     // Clothing carried says which garment it is.
     const coat = { id: 'worn-punk-coat', kind: 'clothing', name: 'Worn PUNK coat', count: 1, gear: 'worn-punk-coat', in: 'jacket' };
-    const saved = { ...saveOf(game, now), items: [shard, { id: 'x', kind: 'spaceship', name: 'Nope', count: 1 }, { ...shard, count: 0 }, 'junk', chip, { ...chip, id: 'credchip-2', balance: -5 }, { ...chip, id: 'credchip-3', locked: 'yes' }, coat, { ...coat, gear: 7 }] };
+    // A gun says which it is and how many rounds are in it; loose rounds are a stack like anything else.
+    const gun = { id: 'lexington-1', kind: 'weapon', name: 'M-10AF Lexington', count: 1, weapon: 'lexington', loaded: 12, in: 'jacket' };
+    const rounds = { id: 'handgun-ammo', kind: 'ammo', name: 'Handgun Ammo', count: 38, in: 'jacket' };
+    const saved = { ...saveOf(game, now), items: [shard, { id: 'x', kind: 'spaceship', name: 'Nope', count: 1 }, { ...shard, count: 0 }, 'junk', chip, { ...chip, id: 'credchip-2', balance: -5 }, { ...chip, id: 'credchip-3', locked: 'yes' }, coat, { ...coat, gear: 7 }, gun, { ...gun, id: 'lexington-2', loaded: -1 }, { ...gun, id: 'lexington-3', loaded: 1.5 }, { ...gun, id: 'lexington-4', weapon: 3 }, rounds] };
     const read = readSave(JSON.parse(JSON.stringify(saved)));
-    expect(read?.items).toEqual([shard, chip, coat]);
+    expect(read?.items).toEqual([shard, chip, coat, gun, rounds]);
     const { items: _, ...old } = saveOf(game, now);
     expect(readSave(JSON.parse(JSON.stringify(old)))?.items).toEqual([]);
 
     const progress = read && resume(world, read);
     if (!progress) throw new Error('no progress');
     const resumed = new Game(world, rules, progress);
-    // The shard said no pocket: it's put away in the jacket. The chip stays in the wallet, the coat where it was.
-    expect(resumed.inventory).toEqual([{ ...shard, in: 'jacket' }, chip, coat]);
+    // The shard said no pocket: it's put away where there's room, the pants (the gun and its rounds fill the jacket). The chip stays in the wallet, the rest where they were.
+    expect(resumed.inventory).toEqual([{ ...shard, in: 'pants' }, chip, coat, gun, rounds]);
     expect(read?.gear).toEqual(GEAR.start);
     // A save from before pockets has none: the player wears the usual.
     const { items: _i, gear: _g, ...older } = saveOf(game, now);
@@ -190,7 +213,9 @@ describe('saving', () => {
     const again = new Game(world, rules, progress);
     expect(again.charisma()).toMatchObject({ level: 3, xp: 12 });
     expect(again.knownPeople().map((p) => p.id)).toEqual([someone.id]);
-    expect(again.describe(someone.id)).toMatchObject({ name: someone.name, named: true });
+    // Introduced, they go by their street name too, if they have one.
+    expect(again.describe(someone.id)).toMatchObject({ named: true });
+    expect(again.describe(someone.id)?.name.replace(/ "[^"]+"/, '')).toBe(someone.name);
     expect(again.conversation(someone.id)).toEqual([{ at: now, who: 'you', text: 'Hey.' }]);
     // A save from before facts and the log were kept: the person is known, with neither.
     const bare = readSave(JSON.parse(JSON.stringify({ ...saved, society: { ...society, known: { [someone.id]: { met: true, seen: false, told: false } } } })));
@@ -202,8 +227,21 @@ describe('saving', () => {
     const { known: _k, links: _l, ...society0 } = game.societySaved;
     const oldRead = readSave(JSON.parse(JSON.stringify({ ...old, society: society0 })));
     expect(oldRead?.charisma).toBeNull();
-    expect(oldRead?.society).toMatchObject({ known: {}, links: {} });
+    expect(oldRead?.society).toMatchObject({ known: {}, links: {}, memories: {} });
     expect(readSave({ ...saved, charisma: { level: 0, xp: 1 } })?.charisma).toBeNull();
+  });
+
+  it('carries what people remember of the player, and forgets what it cannot read', () => {
+    const { game, now } = played(1);
+    const someone = game.population.people[0];
+    if (!someone) throw new Error('no people');
+    const memory = { kind: 'wronged' as const, at: now, what: 'robbery', amount: 30, times: 1, said: 0 };
+    const society = { ...game.societySaved, memories: { [someone.id]: [memory, { kind: 'gift', at: 'yesterday' }], nobody: 'x' } };
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), society })));
+    expect(read?.society?.memories).toEqual({ [someone.id]: [memory] });
+    const progress = read && resume(world, read);
+    if (!progress) throw new Error('no progress');
+    expect(new Game(world, rules, progress).societySaved.memories).toEqual({ [someone.id]: [memory] });
   });
 
   it('ignores anything that is not a save it understands', () => {

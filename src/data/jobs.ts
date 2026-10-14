@@ -6,7 +6,8 @@ import type { JobRules } from '../engine/jobs';
  * between nine and five by the clock, for a little pay into the account and a little trust
  * with the boss. The pay is low on purpose and climbs with the rung; a luxury place pays more
  * than a secondhand one. Six shifts of trust and a boss who's warmed to the player is the
- * first step up; the top takes the better part of a month of showing up.
+ * first step up; the top takes the better part of a month of showing up. Walking out costs
+ * four rapport with the boss.
  */
 export const JOBS: JobRules = {
   ladders: {
@@ -28,5 +29,6 @@ export const JOBS: JobRules = {
   trustPerShift: 1,
   rapport: 3,
   rep: 1,
+  quit: 4,
   promoteAt: ['warm', 'friend'],
 };

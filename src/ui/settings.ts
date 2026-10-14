@@ -1,3 +1,4 @@
+import type { Pronouns } from '../engine/people';
 import { MapOverlay, type OverlayElements } from './overlay';
 
 /** What settings shows about the game in progress. */
@@ -7,6 +8,8 @@ export interface SettingsView {
   progress: string;
   /** Which build this is: "Stable build 0.1.0 (a283362)", or the beta. */
   build: string;
+  /** The pronouns the player goes by. */
+  pronouns: Pronouns;
 }
 
 export interface SettingsElements extends OverlayElements {
@@ -19,6 +22,8 @@ export interface SettingsElements extends OverlayElements {
   confirmText: HTMLElement;
   confirmYes: HTMLButtonElement;
   confirmNo: HTMLButtonElement;
+  /** The pronoun choices, a button each with `data-pronouns`. */
+  pronouns: HTMLElement;
 }
 
 export interface SettingsHandlers {
@@ -26,6 +31,8 @@ export interface SettingsHandlers {
   onRestart(): void;
   /** Delete the save from this device and start a brand new city. */
   onErase(): void;
+  /** The player picked the pronouns they go by. */
+  onPronouns(pronouns: Pronouns): void;
 }
 
 type Danger = 'restart' | 'erase';
@@ -42,8 +49,9 @@ const ASK: Record<Danger, { text: string; yes: string }> = {
 };
 
 /**
- * Settings, over the map. For now it looks after the save: start this city over, or erase the
- * save and start a new one. Both ask first, and nothing happens until the second tap.
+ * Settings, over the map: who the player is (the pronouns they go by, which decides who's
+ * drawn to them), and the save: start this city over, or erase the save and start a new one.
+ * Both of those ask first, and nothing happens until the second tap.
  */
 export class Settings {
   readonly overlay: MapOverlay;
@@ -60,6 +68,11 @@ export class Settings {
     els.restart.addEventListener('click', () => this.ask('restart'));
     els.erase.addEventListener('click', () => this.ask('erase'));
     els.confirmNo.addEventListener('click', () => this.ask(null, true));
+    els.pronouns.addEventListener('click', (e) => {
+      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('[data-pronouns]') : null;
+      const pronouns = button?.dataset.pronouns;
+      if (pronouns === 'she' || pronouns === 'he' || pronouns === 'they') handlers.onPronouns(pronouns);
+    });
     els.confirmYes.addEventListener('click', () => {
       const danger = this.asking;
       this.ask(null);
@@ -72,6 +85,7 @@ export class Settings {
     this.els.seed.textContent = `Seed ${view.seed}`;
     this.els.progress.textContent = view.progress;
     this.els.build.textContent = view.build;
+    for (const button of this.els.pronouns.querySelectorAll<HTMLButtonElement>('[data-pronouns]')) button.setAttribute('aria-pressed', String(button.dataset.pronouns === view.pronouns));
   }
 
   /** Shows the question for a dangerous choice, or puts it away (null). */

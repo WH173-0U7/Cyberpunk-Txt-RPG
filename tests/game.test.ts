@@ -3,20 +3,23 @@ import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
 import { outfit, type GearContent } from '../src/engine/carry';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
+import { ARMS } from '../src/data/weapons';
 import { MONEY } from '../src/data/money';
 import { LINES } from '../src/data/dialogue';
 import { PEOPLE } from '../src/data/people';
 import { CHARISMA } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
 import { LIFE } from '../src/data/life';
-import { openness } from '../src/engine/dialogue';
+import { freshLife, newsFor, tieKey } from '../src/engine/life';
+import { FAMILY, openness } from '../src/engine/dialogue';
 import { bossOf } from '../src/engine/jobs';
-import { newsFor } from '../src/engine/life';
+import { memoriesOf } from '../src/engine/memory';
+import { dreamOf, handleOf, tiesOf, type Person, type Pronouns } from '../src/engine/people';
 import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
-import { freshSociety } from '../src/engine/society';
+import { freshSociety, type SocietyState } from '../src/engine/society';
 import type { TravelRules } from '../src/engine/travel';
-import type { GameEvents, Item, Location, Whereabouts, World } from '../src/engine/types';
+import type { Building, GameEvents, Item, Location, Whereabouts, World } from '../src/engine/types';
 
 // A small city on a 3×3 grid of streets:
 //
@@ -51,7 +54,7 @@ const world: World = {
   welcomeBack: 'hello again',
   layout: { avenues: [20, 50, 80], streets: [20, 50, 80], coast: null },
   buildings: [
-    { id: 'b-shop', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Gun shop', category: 'firearms', business: 'gun-shop', name: 'Test Guns', floors: 3, x: 30, y: 21, w: 4, h: 4 },
+    { id: 'b-shop', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Cyberware outlet', category: 'cyberware', business: 'cyberware-outlet', name: 'Test Chrome', floors: 3, x: 30, y: 21, w: 4, h: 4 },
     { id: 'b-park', block: 'B2', district: 'test', kind: 'park', kindLabel: 'Park', category: 'public', business: null, name: 'Test Park', floors: 0, x: 30, y: 51, w: 6, h: 6 },
     { id: 'b-noodle', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Noodle bar', category: 'food', business: 'noodle-bar', name: 'Test Noodles', floors: 2, x: 36, y: 21, w: 4, h: 4 },
     { id: 'b-bank', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Bank', category: 'services', business: 'bank', name: 'EuroBank', floors: 2, x: 42, y: 21, w: 4, h: 4 },
@@ -168,6 +171,8 @@ function go(game: Game, to: Whereabouts, mode: 'foot' | 'ncart', now: number) {
 }
 
 const sorted = (set: ReadonlySet<string>) => [...set].sort();
+/** What was said with someone, without the notes on how it went. */
+const spoken = (game: Game, id: string) => game.conversation(id).filter((l) => l.who !== 'note');
 
 describe('Game', () => {
   it('greets the player and puts them at the start, knowing its neighbors', () => {
@@ -787,7 +792,7 @@ describe('Game', () => {
       expect(told.standingWith(relative.to, now)?.knowledge.told).toBe(true);
       // Asked again, they've said already.
       expect(told.ask(worker.id, relative.to, now + MINUTE)).toBe(true);
-      expect(told.conversation(worker.id).at(-1)?.text).toMatch(/told you|last I checked/i);
+      expect(spoken(told, worker.id).at(-1)?.text).toMatch(/told you|last I checked/i);
       expect(told.ask(worker.id, stranger.id, now)).toBe(true);
       expect(told.standingWith(worker.id, now)?.web.some((l) => l.person.id === stranger.id)).toBe(false);
       expect(told.societySaved.links[[worker.id, stranger.id].sort().join('|')]?.kind).toBe('none');
@@ -879,7 +884,7 @@ describe('Game', () => {
       const stranger = game.describe(worker.id);
       expect(stranger).toMatchObject({ named: false, lines: [] });
       expect(stranger?.name).toMatch(/^(A|An) (young |older )?(man|woman|person)/);
-      expect(game.conversation(worker.id)).toEqual([]);
+      expect(spoken(game, worker.id)).toEqual([]);
       // Looking around the noodle bar: whoever is at work here plainly works here.
       game.look(now);
       expect(game.describe(worker.id)?.facts.job).toContain('Test Noodles');
@@ -887,7 +892,7 @@ describe('Game', () => {
       // Talking is an introduction, on the record both ways.
       expect(game.talk(worker.id, now)).toBe(true);
       expect(game.describe(worker.id)).toMatchObject({ named: true, name: worker.name });
-      const log = game.conversation(worker.id);
+      const log = spoken(game, worker.id);
       expect(log[0]?.who).toBe('you');
       expect(log.some((l) => l.who === 'them')).toBe(true);
       take();
@@ -900,10 +905,10 @@ describe('Game', () => {
         expect(answer).toContain(String(worker.age));
       }
       // The question was put bluntly: that's all a level of charisma affords.
-      const asked = game.conversation(worker.id).at(-2);
+      const asked = spoken(game, worker.id).at(-2);
       expect(asked?.who).toBe('you');
       expect(LINES.questions.age.lines.map((l) => `"${typeof l === 'string' ? l : l.text}"`)).toContain(asked?.text);
-      expect(game.conversation(worker.id).at(-1)?.who).toBe('them');
+      expect(spoken(game, worker.id).at(-1)?.who).toBe('them');
       expect(game.askFact('nobody', 'age', now)).toBe(false);
       // Only someone whose name the player has can be asked about.
       const other = game.population.people.find((p) => p.id !== worker.id);
@@ -922,21 +927,22 @@ describe('Game', () => {
       expect(said[0]?.text.startsWith(`${worker.given}: "`)).toBe(true);
       const standing = game.standingWith(worker.id, now)?.standing;
       expect(standing).toMatchObject({ asks: 1, refused: { home: now } });
-      // Asking again right away is pressing: still nothing, and they think less of the player for it.
+      // Asking again right away is pressing: still nothing, and they think less of the player for it (and a stranger is put off being asked where they live, again).
       expect(game.askFact(worker.id, 'home', now + MINUTE)).toBe(true);
       expect(game.describe(worker.id)?.facts.home).toBeUndefined();
-      expect(game.standingWith(worker.id, now + MINUTE)?.standing.rapport).toBe((standing?.rapport ?? 0) - SOCIETY.openness.press);
-      expect(LINES.pressed.map((l) => (typeof l === 'string' ? l : l.text))).toContain(game.conversation(worker.id).at(-1)?.text);
+      expect(game.standingWith(worker.id, now + MINUTE)?.standing.rapport).toBe((standing?.rapport ?? 0) - SOCIETY.openness.press - SOCIETY.reactions.rapport);
+      expect(game.conversation(worker.id).at(-1)).toMatchObject({ who: 'note', text: expect.stringMatching(/^Pushed after a no · (.+ · )?Rapport −4/), tone: 'bad' });
+      expect(LINES.pressed.map((l) => (typeof l === 'string' ? l : l.text))).toContain(spoken(game, worker.id).at(-1)?.text);
       // A smooth talker puts it differently, and hears it. Asked again, they've said already, which is no practice.
       const smooth = new Game(world, { ...RULES, startingEddies: 100 }, { ...carryingProgress([]), where: outside('b-noodle', 38, 20), inside: 'b-noodle', charisma: { level: 12, xp: 0 } });
       smooth.start(now);
       expect(smooth.askFact(worker.id, 'home', now)).toBe(true);
       expect(smooth.describe(worker.id)?.facts.home).toBeDefined();
-      expect(smooth.conversation(worker.id).at(-2)?.text).toBe('"Whereabouts do you lay your head? Just so I know where to send the good word."');
+      expect(spoken(smooth, worker.id).at(-2)?.text).toBe('"Whereabouts do you lay your head? Just so I know where to send the good word."');
       const xp = smooth.charisma().xp;
       expect(smooth.askFact(worker.id, 'home', now + MINUTE)).toBe(true);
       expect(smooth.charisma().xp).toBe(xp);
-      expect(smooth.conversation(worker.id).at(-1)?.text).toMatch(/told you already|listening|again\?|short memory/i);
+      expect(spoken(smooth, worker.id).at(-1)?.text).toMatch(/told you already|listening|again\?|short memory/i);
     });
 
     it('keeps the player\'s standing in the save, and forgets people the city no longer has', () => {
@@ -1019,7 +1025,7 @@ describe('Game', () => {
 
     it("sells clothing off a store's rack at its tier, to wear from the inventory, the pockets' contents and the wallet moving over", () => {
       // The gun shop stands in for Stylishly: an everyday rack with a chain's stock and a bag.
-      const racked: GearContent = { ...GEAR, racks: { ...GEAR.racks, 'gun-shop': GEAR.racks.stylishly! }, quality: { ...GEAR.quality, 'gun-shop': 'everyday' } };
+      const racked: GearContent = { ...GEAR, racks: { ...GEAR.racks, 'cyberware-outlet': GEAR.racks.stylishly! }, quality: { ...GEAR.quality, 'cyberware-outlet': 'everyday' } };
       const taco = { id: 'taco', kind: 'consumable' as const, name: 'Taco', count: 1, in: 'jacket' };
       const game = new Game(world, { ...RULES, gear: racked }, { ...progressInside('b-shop', 32, 20, [taco]), money: { bills: 400, coins: 0, account: 0 } });
       game.start(T0);
@@ -1148,7 +1154,7 @@ describe('Game', () => {
     });
 
     it('sells bags at a store with a rack, which are more pockets', () => {
-      const rack: GearContent = { ...tiny, racks: { 'gun-shop': ['duffel-bag', 'belt-pouch'] } };
+      const rack: GearContent = { ...tiny, racks: { 'cyberware-outlet': ['duffel-bag', 'belt-pouch'] } };
       const { game, take, outputs } = inside('b-shop', 32, 20, { gear: rack });
       const menu = game.menu();
       expect(menu?.kind).toBe('gear');
@@ -1210,7 +1216,7 @@ describe('Game', () => {
 
     it('takes a transfer where the counter does, and cash where it does not', () => {
       // A rack of gear takes a transfer when the account covers it; a neighborhood noodle bar wants cash.
-      const rack: GearContent = { ...GEAR, racks: { 'gun-shop': ['belt-pouch'] } };
+      const rack: GearContent = { ...GEAR, racks: { 'cyberware-outlet': ['belt-pouch'] } };
       const banked = new Game(world, { ...RULES, startingEddies: 100, gear: rack }, { ...progressInside('b-shop', 32, 20), money: { bills: 5, coins: 0, account: 200 } });
       banked.start(T0);
       const pouch = banked.menu()?.items[0];
@@ -1328,7 +1334,7 @@ describe('Game', () => {
       expect(game.inventory[0]).toMatchObject({ balance: 90, locked: false });
       expect(game.wallet.chips).toBe(90);
       expect(said.some((o) => o.tone === 'talk' && /30/.test(o.text) && /90/.test(o.text))).toBe(true);
-      expect(game.conversation(tech.worker.id).map((l) => l.who)).toEqual(['you', 'them']);
+      expect(spoken(game, tech.worker.id).map((l) => l.who)).toEqual(['you', 'them']);
       // Watching them work, the player knows their trade; and there's nothing more to chop.
       expect(game.describe(tech.worker.id)?.facts.job).toMatch(/Test Decks/);
       expect(game.chop(tech.worker.id, 'credchip-1', now)).toBe(false);
@@ -1357,7 +1363,7 @@ describe('Game', () => {
       expect(cook.game.chop(cook.worker.id, 'credchip-1', cook.now)).toBe(false);
 
       // Clean, the chip pays where a transfer is taken (the chip before the account), and not where cash is wanted.
-      const rack: GearContent = { ...GEAR, racks: { 'gun-shop': ['belt-pouch'] } };
+      const rack: GearContent = { ...GEAR, racks: { 'cyberware-outlet': ['belt-pouch'] } };
       const clean: Item = { ...hot(90), locked: false };
       const shop = new Game(world, { ...RULES, startingEddies: 0, gear: rack }, { ...progressInside('b-shop', 32, 20, [clean]), money: { bills: 0, coins: 0, account: 50 } });
       shop.start(T0);
@@ -1552,6 +1558,44 @@ describe('Game', () => {
         throw new Error(`the boss of ${building} is never in`);
       }
 
+      /** A week of books for a storefront: a day's net, seven times. */
+      const books = (building: string, net: number) => ({ life: { ...freshLife(), tills: { [building]: { days: Array.from({ length: 7 }, () => net), pending: 0 } } } });
+
+      it('reads a place by its books: a week in the red pays less and takes nobody on, a good week pays more', () => {
+        const noodle = world.buildings.find((b) => b.id === 'b-noodle') as Building;
+        // Fresh books: steady, the plain rate.
+        const plain = withBoss('b-noodle', 38, 20);
+        expect(plain.game.trade(noodle)).toEqual({ health: 'steady', line: LIFE.economy.trade.steady });
+        // In the red: the boss won't hire, whatever they think of the player.
+        const { game, now, boss, take, outputs } = withBoss('b-noodle', 38, 20, books('b-noodle', -40));
+        expect(game.trade(noodle).health).toBe('struggling');
+        take();
+        expect(game.askForWork(boss.id, now)).toBe(true);
+        expect(game.jobStatus(now)).toBeNull();
+        const refusal = spoken(game, boss.id).at(-1);
+        expect(refusal?.who).toBe('them');
+        expect(LINES.work.broke.map((l) => (typeof l === 'string' ? l : l.text).replace(/\{[a-z]+\}/gi, '')).some((t) => refusal?.text.includes(t.split(' ').slice(0, 3).join(' ')))).toBe(true);
+        expect(outputs(take()).some((o) => /You work at/.test(o.text))).toBe(false);
+        // Doing well: the same job pays a quarter more.
+        const good = withBoss('b-noodle', 38, 20, books('b-noodle', 400));
+        expect(good.game.trade(noodle).health).toBe('thriving');
+        expect(good.game.askForWork(good.boss.id, good.now)).toBe(true);
+        expect(good.game.jobStatus(good.now)?.pay).toBe(Math.round(24 * LIFE.economy.pay.thriving));
+        const bad = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside('b-noodle', 38, 20), ...books('b-noodle', -40), job: { building: 'b-noodle', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 } });
+        bad.start(now);
+        expect(bad.jobStatus(now)?.pay).toBe(Math.round(24 * LIFE.economy.pay.struggling));
+      });
+
+      it('puts what the player spends at a storefront in its till, for the day to be lived', () => {
+        const { game } = inside('b-noodle', 38, 20);
+        const dish = game.menu()?.items.find((i) => i.kind === 'food');
+        if (!dish) throw new Error('Nothing on the menu');
+        expect(game.buy(dish.id)).toBe(true);
+        expect(game.buy(dish.id)).toBe(true);
+        // Starting the game lived the last days' books already; what the player spent waits for the next.
+        expect(game.lifeSaved.tills['b-noodle']?.pending).toBe(dish.price * 2);
+      });
+
       it('takes the player on at the bottom of the ladder when the boss will, pays a shift a day into the account, and moves them up on trust', () => {
         const { game, now, boss, take, outputs } = withBoss('b-noodle', 38, 20);
         expect(game.jobStatus(now)).toBeNull();
@@ -1561,7 +1605,7 @@ describe('Game', () => {
         expect(game.askForWork(boss.id, now)).toBe(true);
         const said = outputs(take());
         expect(said.some((o) => /You work at Test Noodles now: dish pit, 24 €\$ a shift, 9am to 5pm/.test(o.text))).toBe(true);
-        expect(game.conversation(boss.id).at(-1)?.who).toBe('them');
+        expect(spoken(game, boss.id).at(-1)?.who).toBe('them');
         const status = game.jobStatus(now);
         expect(status).toMatchObject({ rung: { id: 'dishes' }, next: { id: 'prep' }, trust: 0, shifts: 0, pay: 24, here: true, blocked: null });
         expect(status?.boss?.id).toBe(boss.id);
@@ -1595,7 +1639,7 @@ describe('Game', () => {
         expect(moved).not.toBeNull();
         expect(game.jobStatus(now + (moved as number) * 24 * HOUR)).toMatchObject({ rung: { id: 'prep' }, pay: 40 });
         expect(game.jobStatus(now)?.trust).toBeGreaterThanOrEqual(JOBS.ladders.food![1]!.at);
-        expect(game.conversation(boss.id).some((l) => l.who === 'them' && /prep/i.test(l.text))).toBe(true);
+        expect(spoken(game, boss.id).some((l) => l.who === 'them' && /prep/i.test(l.text))).toBe(true);
 
         // Quitting, to the boss's face.
         const last = now + (moved as number) * 24 * HOUR;
@@ -1604,7 +1648,7 @@ describe('Game', () => {
         expect(game.jobStatus(last)).toBeNull();
         expect(game.workWith(boss.id)).toBe('hire');
         expect(outputs(take()).some((o) => /You don't work at Test Noodles anymore/.test(o.text))).toBe(true);
-        expect(game.conversation(boss.id).at(-2)?.who).toBe('you');
+        expect(spoken(game, boss.id).at(-2)?.who).toBe('you');
         expect(game.quit(last)).toBe(false);
       });
 
@@ -1626,7 +1670,7 @@ describe('Game', () => {
         masked.take();
         expect(masked.game.askForWork(masked.boss.id, masked.now)).toBe(true);
         expect(masked.game.jobStatus(masked.now)).toBeNull();
-        expect(masked.game.conversation(masked.boss.id).at(-1)?.text).toMatch(/face|mask/i);
+        expect(spoken(masked.game, masked.boss.id).at(-1)?.text).toMatch(/face|mask/i);
         // Hired, then robbing the boss: the place is done with the player.
         const hired = withBoss('b-noodle', 38, 20);
         expect(hired.game.askForWork(hired.boss.id, hired.now)).toBe(true);
@@ -1678,6 +1722,410 @@ describe('Game', () => {
         expect(again.jobStatus(now)).toMatchObject({ rung: { id: 'prep' }, trust: 7, shifts: 7, blocked: null });
         expect(new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), job: { building: 'b-shop', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 } }).jobSaved).toBeNull();
         expect(new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), job: { building: 'b-gone', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 } }).jobSaved).toBeNull();
+      });
+
+      describe('how people take things', () => {
+        /** Someone at the noodle counter, made into whoever the test needs. */
+        function someone(traits: Partial<Person['traits']>, progress: Partial<Progress> = {}) {
+          const at = atWork('b-noodle', 38, 20, progress);
+          const person = at.game.person(at.worker.id) as Person;
+          person.traits = { warmth: 0.5, temper: 0.5, loyalty: 0.5, greed: 0.5, courage: 0.5, chatty: 0.5, ...traits };
+          return at;
+        }
+        const notes = (game: Game, id: string) => game.conversation(id).filter((l) => l.who === 'note');
+
+        it('lands a compliment with someone warm, and says so after', () => {
+          const { game, now, worker } = someone({ warmth: 0.9 }, { charisma: { level: 3, xp: 0 } });
+          expect(game.talk(worker.id, now, 'compliment')).toBe(true);
+          const said = spoken(game, worker.id);
+          expect(said[0]?.who).toBe('you');
+          expect(LINES.approaches.compliment.you.map((l) => (typeof l === 'string' ? l : l.text))).toContain(said[0]?.text);
+          // Liked: more than a chat is worth, and the note says why.
+          const base = Math.round(SOCIETY.talk.base * (0.6 + 0.9 * 0.8) * game.charisma().bonus);
+          const rapport = game.standingWith(worker.id, now)?.standing.rapport ?? 0;
+          expect(rapport).toBe(base + 2 * SOCIETY.reactions.rapport);
+          const note = notes(game, worker.id).at(-1);
+          expect(note).toMatchObject({ tone: 'good' });
+          expect(note?.text).toMatch(/^Likes a kind word · Rapport \+\d+ · Charisma \+3 XP/);
+        });
+
+        it("has a joke fall flat with a temper, which puts them off saying anything else", () => {
+          const { game, now, worker } = someone({ temper: 0.9, chatty: 0.2, warmth: 0.5 });
+          expect(game.talk(worker.id, now, 'joke')).toBe(true);
+          const theirs = spoken(game, worker.id).filter((l) => l.who === 'them');
+          // A greeting and the brush-off; no small talk after.
+          expect(theirs).toHaveLength(2);
+          expect(LINES.approaches.joke.disliked.map((l) => (typeof l === 'string' ? l : l.text)).some((t) => theirs[1]?.text.includes(t))).toBe(true);
+          expect(game.standingWith(worker.id, now)?.standing.rapport).toBeLessThan(0);
+          expect(notes(game, worker.id).at(-1)).toMatchObject({ tone: 'bad', text: expect.stringMatching(/^Not in the mood for jokes · Rapport −\d+ · Charisma \+1 XP/) });
+        });
+
+        it('wears people out with question after question, and says so', () => {
+          const { game, now, worker } = someone({});
+          const facts = ['name', 'job', 'likes', 'age'] as const;
+          facts.forEach((fact, i) => game.askFact(worker.id, fact, now + i * MINUTE));
+          const last = notes(game, worker.id).at(-1);
+          expect(last?.text).toMatch(/^Tired of all the questions · (.+ · )?Rapport −/);
+          expect(game.standingWith(worker.id, now + 3 * MINUTE)?.standing.sitting).toBe(4);
+          // A while later, it's a fresh start.
+          game.askFact(worker.id, 'hates', now + 3 * MINUTE + (SOCIETY.openness.grill.minutes + 1) * MINUTE);
+          expect(game.standingWith(worker.id, now + 30 * MINUTE)?.standing.sitting).toBe(1);
+        });
+
+        it('notes what a gift and an insult did: rapport, a grudge, the stance', () => {
+          const probe = atWork('b-noodle', 38, 20);
+          const dish = FOOD.dishes.find((d) => d.id === probe.worker.likes.dish) as (typeof FOOD.dishes)[number];
+          const { game, now, worker } = atWork('b-noodle', 38, 20, { items: [{ id: dish.id, kind: 'consumable', name: dish.name, count: 1 }] });
+          expect(game.gift(worker.id, dish.id, now)).toBe(true);
+          expect(notes(game, worker.id).at(-1)).toMatchObject({ tone: 'good', text: expect.stringMatching(new RegExp(`^${dish.name} is \\w+ favorite · Rapport \\+${SOCIETY.gift.favorite} · Charisma \\+3 XP`)) });
+          expect(game.insult(worker.id, now + MINUTE)).toBe(true);
+          expect(notes(game, worker.id).at(-1)).toMatchObject({ tone: 'bad', text: expect.stringMatching(new RegExp(`Rapport −${SOCIETY.insult.rapport + Math.round(SOCIETY.severity.insult / 3)} · Grudge \\+${SOCIETY.severity.insult}`)) });
+        });
+
+        it('goes by a street name once introduced, and tells the player what they want out of life', () => {
+          const cost = { ...SOCIETY.openness.cost, district: 50, life: 50, here: 50, job: 50, likes: 50, hates: 50, kin: 50, rumor: 50, news: 50, views: 50 };
+          const { game, now, worker } = atWork('b-noodle', 38, 20, {}, { society: { ...SOCIETY, openness: { ...SOCIETY.openness, cost: { ...cost, dream: -5 } } } });
+          expect(game.talk(worker.id, now)).toBe(true);
+          expect(game.describe(worker.id, now)?.facts.dream).toBe(LINES.dreams[dreamOf(worker, world, PEOPLE)]);
+          const handle = handleOf(worker, world, PEOPLE);
+          expect(game.describe(worker.id, now)?.name).toBe(handle ? `${worker.given} "${handle}" ${worker.name.slice(worker.given.length + 1)}` : worker.name);
+        });
+      });
+
+      describe('memory and the people\'s ties', () => {
+        const DAY = 24 * HOUR;
+        /** Rules under which whoever has something to bring up always does. */
+        const remembering: Partial<GameRules> = { society: { ...SOCIETY, memory: { ...SOCIETY.memory, recall: 1 } } };
+
+        it('has someone the player insulted bring it up when they next talk, and keeps it through a save', () => {
+          const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20, {}, remembering);
+          expect(game.insult(worker.id, now)).toBe(true);
+          take();
+          expect(game.talk(worker.id, now + MINUTE)).toBe(true);
+          const said = outputs(take()).map((o) => o.text).join(' ');
+          expect(said).toMatch(/what you said to me|run your mouth|say it again|what you did to me/i);
+          expect(game.societySaved.memories[worker.id]?.[0]).toMatchObject({ kind: 'wronged', what: 'insult', times: 1, said: 1 });
+          const again = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), society: game.societySaved });
+          expect(again.societySaved.memories).toEqual(game.societySaved.memories);
+        });
+
+        it('remembers a gift, the same again as twice over, and passes a good word to the people closest to them', () => {
+          const probe = atWork('b-noodle', 38, 20);
+          const dish = FOOD.dishes.find((d) => d.kind === 'food' && d.id !== probe.worker.likes.dish) as (typeof FOOD.dishes)[number];
+          const { game, now, worker } = atWork('b-noodle', 38, 20, { items: [{ id: dish.id, kind: 'consumable', name: dish.name, count: 2 }] });
+          expect(game.gift(worker.id, dish.id, now)).toBe(true);
+          for (const t of tiesOf(game.population, worker.id).filter((u) => SOCIETY.closeness[u.kind] >= 0.5)) {
+            expect(game.standingWith(t.to, now)?.standing.rapport, t.kind).toBeGreaterThan(0);
+            expect(game.societySaved.memories[t.to]?.[0], t.kind).toMatchObject({ kind: 'goodWord', about: worker.id });
+          }
+          expect(game.gift(worker.id, dish.id, now + MINUTE)).toBe(true);
+          expect(game.societySaved.memories[worker.id]?.find((m) => m.kind === 'gift')).toMatchObject({ what: dish.id, times: 2 });
+        });
+
+        it("won't be taken back by a boss they walked out on, while the boss remembers it", () => {
+          const { game, now, boss } = withBoss('b-noodle', 38, 20);
+          expect(game.askForWork(boss.id, now)).toBe(true);
+          expect(game.quit(now + MINUTE)).toBe(true);
+          expect(game.askForWork(boss.id, now + 2 * MINUTE)).toBe(true);
+          expect(game.jobStatus(now + 2 * MINUTE)).toBeNull();
+          expect(spoken(game, boss.id).at(-1)?.text).toMatch(/last time|quit on me|walked out|do not rehire/i);
+          expect(game.standingWith(boss.id, now + 2 * MINUTE)?.standing.refused.hire).toBe(now + 2 * MINUTE);
+          // Three weeks on, it's forgotten.
+          expect(memoriesOf(game.societySaved, boss.id, SOCIETY.memory, 1, now + 22 * DAY).some((m) => m.kind === 'quit')).toBe(false);
+        });
+
+        it("keeps the dead out of everywhere, and has their people say so when asked about them", () => {
+          const probe = atWork('b-noodle', 38, 20);
+          const ties = tiesOf(probe.game.population, probe.worker.id);
+          const tie = ties.find((t) => FAMILY.includes(t.kind)) ?? ties[0];
+          if (!tie) throw new Error(`${probe.worker.name} knows nobody`);
+          const today = Math.floor(probe.now / DAY);
+          const life = { ...freshLife(), day: today, dead: { [tie.to]: today - 3 } };
+          const society = { ...friendOf(probe.worker.id, probe.now), known: { [tie.to]: { met: false, seen: false, told: true, facts: ['name' as const], log: [] } } };
+          const game = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside('b-noodle', 38, 20), life, society });
+          game.start(probe.now);
+          expect(game.person(tie.to)?.diedOn).toBe(today - 3);
+          expect(game.peopleHere(probe.now).some((p) => p.person.id === tie.to)).toBe(false);
+          expect(game.talk(tie.to, probe.now)).toBe(false);
+          expect(game.describe(tie.to, probe.now)?.facts.dead).toBeUndefined();
+          expect(game.ask(probe.worker.id, tie.to, probe.now)).toBe(true);
+          expect(spoken(game, probe.worker.id).at(-1)?.text).toMatch(/died|buried|gone|was my/i);
+          expect(game.describe(tie.to, probe.now)?.facts.dead).toBe('Died a few days back');
+        });
+
+        it('hears who got married from one of the two, and knows them for a couple after', () => {
+          const probe = atWork('b-noodle', 38, 20);
+          const tied = new Set(tiesOf(probe.game.population, probe.worker.id).map((t) => t.to));
+          const other = probe.game.population.people.find((p) => p.id !== probe.worker.id && !tied.has(p.id));
+          if (!other) throw new Error('everyone knows everyone');
+          const today = Math.floor(probe.now / DAY);
+          const life = {
+            ...freshLife(),
+            day: today,
+            nextId: 2,
+            events: [{ id: 1, day: today - 2, kind: 'wedding' as const, who: [probe.worker.id, other.id] as [string, string], gang: null, district: 'test', took: 0, where: null }],
+            made: [{ from: probe.worker.id, to: other.id, kind: 'spouse' as const }],
+            since: { [tieKey(probe.worker.id, other.id)]: today - 20 },
+          };
+          // Nothing on their mind but the news.
+          const cost = { ...SOCIETY.openness.cost, district: 50, life: 50, here: 50, job: 50, likes: 50, hates: 50, kin: 50, rumor: 50, dream: 50, views: 50 };
+          const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20, { life, society: friendOf(probe.worker.id, probe.now) }, { society: { ...SOCIETY, openness: { ...SOCIETY.openness, cost } } });
+          expect(tiesOf(game.population, worker.id).find((t) => t.to === other.id)?.kind).toBe('spouse');
+          take();
+          expect(game.talk(worker.id, now)).toBe(true);
+          expect(outputs(take()).map((o) => o.text).join(' ')).toContain(other.given);
+          expect(game.standingWith(worker.id, now)?.web.find((l) => l.person.id === other.id)?.kind).toBe('spouse');
+          expect(game.describe(other.id)?.named).toBe(true);
+        });
+      });
+    });
+
+    describe('weapons', () => {
+      // The test chrome shop racks guns for these: a store of the gun shop's kind, at the everyday tier.
+      const armory: GearContent = {
+        ...GEAR,
+        racks: { 'cyberware-outlet': ['holster', 'gun-case', 'messenger-bag'] },
+        quality: { 'cyberware-outlet': 'everyday' },
+        arms: { ...ARMS, stores: { 'cyberware-outlet': { guns: 8, ammo: true } } },
+      };
+      const rich = (rules: Partial<GameRules> = {}, items: Progress['items'] = []) => {
+        const game = new Game(world, { ...RULES, startingEddies: 100, gear: armory, ...rules }, { ...progressInside('b-shop', 32, 20, items), money: { bills: 0, coins: 0, account: 20_000 } });
+        game.start(T0);
+        const { take, outputs } = record(game);
+        return { game, take, outputs };
+      };
+      const lexington: Item = { id: 'lexington-1', kind: 'weapon', weapon: 'lexington', name: 'M-10AF Lexington', count: 1, in: 'jacket', loaded: 0 };
+
+      it('racks a store\'s guns first, then a box of each kind of round, then what carries them', () => {
+        const { game } = rich();
+        const menu = game.menu();
+        expect(menu?.kind).toBe('gear');
+        const kinds = menu?.items.map((i) => i.kind) ?? [];
+        expect(kinds.filter((k) => k === 'weapon')).toHaveLength(8);
+        expect(kinds.filter((k) => k === 'ammo')).toHaveLength(4);
+        expect(kinds.indexOf('ammo')).toBeGreaterThan(kinds.lastIndexOf('weapon'));
+        expect(kinds.indexOf('gear')).toBeGreaterThan(kinds.lastIndexOf('ammo'));
+        // Everyday stores stock everyday and cheap guns, never the tower's smart guns; the same store always has the same rack.
+        for (const item of menu?.items.filter((i) => i.kind === 'weapon') ?? []) expect(['everyday', 'poverty']).toContain(ARMS.weapons[item.id]?.quality);
+        expect(rich().game.menu()).toEqual(menu);
+        const box = menu?.items.find((i) => i.id === 'handgun-ammo');
+        expect(box?.detail).toMatch(/Box of 50/);
+      });
+
+      it('sells a gun empty, into a pocket, and a box of rounds by the box, which loads it and comes back out', () => {
+        const { game, take, outputs } = rich({ gear: { ...armory, arms: { ...ARMS, weapons: { lexington: ARMS.weapons.lexington! }, stores: { 'cyberware-outlet': { guns: 1, ammo: true } } } } });
+        expect(game.menu()?.items[0]?.id).toBe('lexington');
+        expect(game.buy('lexington')).toBe(true);
+        const gun = game.inventory.find((i) => i.kind === 'weapon');
+        expect(gun).toMatchObject({ weapon: 'lexington', loaded: 0, count: 1 });
+        expect(outputs(take()).at(-1)?.text).toMatch(/Empty: it takes Handgun Ammo/);
+        // Nothing to load it with yet.
+        expect(game.canLoad(gun!.id)).toEqual({ load: false, unload: false });
+        expect(game.load(gun!.id)).toBe(false);
+        expect(game.buy('handgun-ammo')).toBe(true);
+        expect(game.inventory.find((i) => i.kind === 'ammo')).toMatchObject({ id: 'handgun-ammo', count: 50 });
+        expect(game.canLoad(gun!.id)).toEqual({ load: true, unload: false });
+        const before = game.carry().grams;
+        expect(game.load(gun!.id)).toBe(true);
+        expect(game.inventory.find((i) => i.id === gun!.id)?.loaded).toBe(20);
+        expect(game.inventory.find((i) => i.kind === 'ammo')?.count).toBe(30);
+        // The rounds weigh the same in the gun as loose.
+        expect(game.carry().grams).toBe(before);
+        expect(game.armed()).toMatchObject({ short: 'Lexington', gun: true, loaded: 20, magazine: 20 });
+        expect(game.canLoad(gun!.id)).toEqual({ load: false, unload: true });
+        expect(game.load(gun!.id)).toBe(false);
+        expect(game.unload(gun!.id)).toBe(true);
+        expect(game.inventory.find((i) => i.id === gun!.id)?.loaded).toBe(0);
+        expect(game.inventory.filter((i) => i.kind === 'ammo').reduce((n, i) => n + i.count, 0)).toBe(50);
+        // Loose rounds drop all at once.
+        take();
+        expect(game.drop('handgun-ammo')).toBe(true);
+        expect(game.inventory.some((i) => i.kind === 'ammo')).toBe(false);
+        expect(outputs(take())[0]?.text).toMatch(/50 rounds/);
+      });
+
+      it('wants a bag for a long gun, and puts it in one', () => {
+        const ajax = { ...armory, arms: { ...ARMS, weapons: { ajax: ARMS.weapons.ajax! }, stores: { 'cyberware-outlet': { guns: 1 } } } };
+        const { game } = rich({ gear: ajax });
+        expect(game.canBuy('ajax')).toMatch(/too long for a pocket/);
+        expect(game.buy('ajax')).toBe(false);
+        expect(game.buy('messenger-bag')).toBe(true);
+        expect(game.canBuy('ajax')).toBeNull();
+        expect(game.buy('ajax')).toBe(true);
+        const bag = game.gearSaved.find((p) => p.kind === 'messenger-bag');
+        expect(game.inventory.find((i) => i.weapon === 'ajax')?.in).toBe(bag?.id);
+      });
+
+      it('keeps a holster for weapons, and a sealed gun loaded and beyond reloading', () => {
+        const cheap = { ...armory, arms: { ...ARMS, weapons: { 'slaught-o-matic': ARMS.weapons['slaught-o-matic']! }, stores: { 'cyberware-outlet': { guns: 1, ammo: true } } } };
+        const { game } = rich({ gear: cheap });
+        expect(game.buy('holster')).toBe(true);
+        const holster = game.gearSaved.find((p) => p.kind === 'holster');
+        // A box of rounds is no weapon: it goes in a pocket, never the holster.
+        expect(game.buy('handgun-ammo')).toBe(true);
+        expect(game.inventory.find((i) => i.kind === 'ammo')?.in).not.toBe(holster?.id);
+        expect(game.buy('slaught-o-matic')).toBe(true);
+        const gun = game.inventory.find((i) => i.weapon === 'slaught-o-matic');
+        expect(gun?.loaded).toBe(36);
+        expect(game.canLoad(gun!.id)).toEqual({ load: false, unload: false });
+        expect(game.unload(gun!.id)).toBe(false);
+        expect(game.load(gun!.id)).toBe(false);
+      });
+
+      it('robs with the gun on the player, and the line says so', () => {
+        for (let day = 0; day < 14; day++) {
+          const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
+          const game = new Game(world, { ...RULES, startingEddies: 100 }, progressInside('b-noodle', 38, 20, [{ ...lexington, loaded: 20 }]));
+          game.start(now);
+          const worker = game.peopleHere(now).find((p) => p.person.job.building === 'b-noodle');
+          if (!worker) continue;
+          expect(game.armed()?.short).toBe('Lexington');
+          expect(game.rob(worker.person.id, now)).toBe(true);
+          const said = game.conversation(worker.person.id).filter((e) => e.who === 'you').map((e) => e.text);
+          expect(said.join(' ')).toContain('Lexington');
+          return;
+        }
+        throw new Error('nobody at the noodle bar');
+      });
+    });
+
+    describe('romance', () => {
+      // Hearts drawn to everyone, or to no one, so a test knows where it stands.
+      const hearts = (to: Pronouns[]) => ({ ...PEOPLE, hearts: { ...PEOPLE.hearts, drawn: { she: [{ to, weight: 1 }], he: [{ to, weight: 1 }], they: [{ to, weight: 1 }] } } });
+      const everyone = hearts(['she', 'he', 'they']);
+      /** Someone the player knows by name, likes, and has a spark with. */
+      const sweetOn = (id: string, now: number, spark: number, romance: SocietyState['romance'] = null): SocietyState => ({
+        ...freshSociety(),
+        standings: { [id]: { met: true, rapport: 60, grudge: 0, at: now, talks: 0, lastTalkAt: 0, gifts: 0, lastGiftAt: 0, robbedAt: 0, asks: 0, refused: {}, spark } },
+        known: { [id]: { met: true, seen: true, told: false, facts: ['name'], log: [] } },
+        romance,
+      });
+      /** Whether someone is with no one: no spouse, no one they're seeing. */
+      const free = (game: Game, id: string) => !tiesOf(game.population, id).some((t) => t.kind === 'spouse' || t.kind === 'partner');
+      /** An evening at the noodle bar, with someone free there who doesn't work there. */
+      function evening(progress: (id: string, now: number) => Partial<Progress> = () => ({}), rules: Partial<GameRules> = {}) {
+        for (let day = 0; day < 21; day++) {
+          for (const hour of [18, 19, 20, 21, 22, 23]) {
+            const now = Date.UTC(2077, 9, 12, hour, 5) + day * 24 * HOUR;
+            const probe = new Game(world, { ...RULES, people: everyone, ...rules }, progressInside('b-noodle', 38, 20));
+            probe.start(now);
+            const guest = probe.peopleHere(now).find((p) => p.person.job.building !== 'b-noodle' && p.person.age >= 18 && free(probe, p.person.id));
+            if (!guest) continue;
+            const game = new Game(world, { ...RULES, startingEddies: 400, people: everyone, ...rules }, { ...progressInside('b-noodle', 38, 20), ...progress(guest.person.id, now) });
+            game.start(now);
+            return { game, now, guest: guest.person, ...record(game) };
+          }
+        }
+        throw new Error('nobody out at the noodle bar of an evening');
+      }
+
+      it('sparks someone drawn to you with a flirt, and nobody who is not', () => {
+        const { game, now, guest } = evening((id, at) => ({ society: sweetOn(id, at, 30) }));
+        expect(game.talk(guest.id, now, 'flirt')).toBe(true);
+        expect(game.standingWith(guest.id, now)?.standing.spark).toBeGreaterThan(30);
+        expect(game.conversation(guest.id).at(-1)).toMatchObject({ who: 'note', text: expect.stringMatching(/♥ \+/) });
+        // Drawn to no one: no spark, and the note says why; asked out, a no.
+        const cold = evening((id, at) => ({ society: sweetOn(id, at, 30) }), { people: hearts([]) });
+        expect(cold.game.talk(cold.guest.id, cold.now, 'flirt')).toBe(true);
+        expect(cold.game.standingWith(cold.guest.id, cold.now)?.standing.spark).toBe(30);
+        expect(cold.game.conversation(cold.guest.id).at(-1)?.text).toMatch(/Not drawn to you/);
+        expect(cold.game.romanceWith(cold.guest.id, cold.now)).toEqual(['askOut']);
+        expect(cold.game.askOut(cold.guest.id, cold.now)).toBe(true);
+        expect(cold.game.romance(cold.now)).toBeNull();
+      });
+
+      it('goes by the pronouns the player picks: only those drawn to them are', () => {
+        const { game, now, guest } = evening((id, at) => ({ society: sweetOn(id, at, 30) }), { people: hearts(['she']) });
+        expect(game.pronouns).toBe('they');
+        game.talk(guest.id, now, 'flirt');
+        expect(game.standingWith(guest.id, now)?.standing.spark).toBe(30);
+        expect(game.conversation(guest.id).at(-1)?.text).toMatch(/Not drawn to you/);
+        game.setPronouns('she');
+        expect(game.youSaved).toEqual({ pronouns: 'she' });
+        expect(game.askOut(guest.id, now)).toBe(true);
+        expect(game.romance(now)?.id).toBe(guest.id);
+      });
+
+      it('asks out, takes out of an evening, makes it official, and ends it', () => {
+        const { game, now, guest, take, outputs } = evening((id, at) => ({ society: sweetOn(id, at, 40) }));
+        expect(game.romanceWith(guest.id, now)).toEqual(['askOut']);
+        expect(game.askOut(guest.id, now)).toBe(true);
+        expect(game.romance(now)).toMatchObject({ id: guest.id, stage: 'dating', dates: 0 });
+        expect(game.romanceWith(guest.id, now)).toEqual(['date', 'official', 'end']);
+        expect(game.describe(guest.id, now)?.lines[0]).toBe('Seeing you · 0 dates');
+        // Too soon to make it official.
+        expect(game.makeOfficial(guest.id, now)).toBe(true);
+        expect(game.romance(now)?.stage).toBe('dating');
+        take();
+        const cash = game.wallet.eddies + game.wallet.account;
+        const spark = game.standingWith(guest.id, now)?.standing.spark ?? 0;
+        expect(game.date(guest.id, now)).toBe(true);
+        expect(game.wallet.eddies + game.wallet.account).toBeLessThan(cash);
+        expect(game.romance(now)?.dates).toBe(1);
+        expect(game.standingWith(guest.id, now)?.standing.spark).toBeGreaterThan(spark);
+        expect(memoriesOf(game.societySaved, guest.id, SOCIETY.memory, RULES.timeScale, now).some((m) => m.kind === 'date' && m.what === 'Test Noodles')).toBe(true);
+        // Once a night.
+        expect(game.date(guest.id, now + MINUTE)).toBe(false);
+        expect(outputs(take()).at(-1)?.text).toMatch(/tonight already/);
+        // Ended: it hurts, and they remember.
+        expect(game.endRomance(now + MINUTE)).toBe(true);
+        expect(game.romance(now)).toBeNull();
+        const after = game.standingWith(guest.id, now + MINUTE)?.standing;
+        expect(after?.grudge).toBeGreaterThan(0);
+        expect(after?.spark).toBe(0);
+        expect(memoriesOf(game.societySaved, guest.id, SOCIETY.memory, RULES.timeScale, now + MINUTE).some((m) => m.kind === 'dumped')).toBe(true);
+      });
+
+      it('makes it official after enough dates and spark, and dates only of an evening, somewhere with a menu', () => {
+        const going = (id: string, at: number) => ({ society: sweetOn(id, at, 60, { with: id, stage: 'dating' as const, since: at, dates: SOCIETY.romance.official.dates, lastDateAt: 0 }) });
+        const { game, now, guest } = evening(going);
+        expect(game.makeOfficial(guest.id, now)).toBe(true);
+        expect(game.romance(now)?.stage).toBe('together');
+        expect(game.romanceWith(guest.id, now)).toEqual(['date', 'end']);
+        // Not in the morning.
+        const morning = evening(going, { society: { ...SOCIETY, romance: { ...SOCIETY.romance, date: { ...SOCIETY.romance.date, from: 3, to: 4 } } } });
+        expect(morning.game.date(morning.guest.id, morning.now)).toBe(false);
+        expect(morning.outputs(morning.take()).at(-1)?.text).toMatch(/evening thing/);
+      });
+
+      it('stings the one you are seeing when you flirt in front of them, and twice is once too often', () => {
+        // Seeing the noodle bar's worker, with someone else there to flirt with.
+        for (let day = 0; day < 14; day++) {
+          const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
+          const probe = new Game(world, { ...RULES, people: everyone }, progressInside('b-noodle', 38, 20));
+          probe.start(now);
+          const here = probe.peopleHere(now);
+          const partner = here.find((p) => p.person.job.building === 'b-noodle')?.person;
+          const other = here.find((p) => p.person.id !== partner?.id && p.person.age >= 18)?.person;
+          if (!partner || !other) continue;
+          const society = sweetOn(partner.id, now, 50, { with: partner.id, stage: 'dating', since: now, dates: 1, lastDateAt: 0 });
+          const game = new Game(world, { ...RULES, people: everyone }, { ...progressInside('b-noodle', 38, 20), society });
+          game.start(now);
+          expect(game.talk(other.id, now, 'flirt')).toBe(true);
+          const stung = game.standingWith(partner.id, now)?.standing;
+          expect(stung?.spark).toBeLessThan(50);
+          expect(memoriesOf(game.societySaved, partner.id, SOCIETY.memory, RULES.timeScale, now).find((m) => m.kind === 'cheated')?.about).toBe(other.id);
+          // Again, after the talk cooldown: twice, and the next time they talk, they end it.
+          const later = now + 2 * HOUR;
+          expect(game.talk(other.id, later, 'flirt')).toBe(true);
+          expect(game.peopleHere(later).some((p) => p.person.id === partner.id), 'still at work two hours on').toBe(true);
+          expect(game.talk(partner.id, later)).toBe(true);
+          expect(game.romance(later)).toBeNull();
+          expect(game.conversation(partner.id).at(-1)?.text).toMatch(/ended it/);
+          return;
+        }
+        throw new Error('never two people at the noodle bar');
+      });
+
+      it('knows someone\'s type once asked, and saves who the player goes by and who they see', () => {
+        const probe = atWork('b-noodle', 38, 20);
+        const society = sweetOn(probe.worker.id, probe.now, 30, { with: probe.worker.id, stage: 'together', since: probe.now, dates: 4, lastDateAt: 0 });
+        society.known[probe.worker.id] = { met: true, seen: true, told: false, facts: ['name', 'type'], log: [] };
+        const { game, worker } = atWork('b-noodle', 38, 20, { society, you: { pronouns: 'he' } }, { people: everyone });
+        expect(game.describe(worker.id)?.facts.type).toMatch(/^Into anyone · /);
+        expect(game.describe(worker.id)?.lines[0]).toBe('Together with you · 4 dates');
+        expect(game.pronouns).toBe('he');
+        expect(game.romance(probe.now)).toMatchObject({ id: worker.id, stage: 'together', dates: 4 });
       });
     });
   });

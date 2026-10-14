@@ -251,6 +251,71 @@ export const PEOPLE: PeopleContent = {
   more: { staff: 0.6, perHome: [0, 1], tall: 1, megabuilding: 3, gangs: 1 },
   // Credchips (the wiki's 2020 chips of eurodollars): corpos nearly always carry one with real money on it; the street often, with less; gangers deal in cash.
   chips: { corpo: { chance: 0.8, range: [80, 500] }, gang: { chance: 0.2, range: [20, 120] }, street: { chance: 0.45, range: [15, 150] } },
+  // Street names: made up, checked against the wiki so none is a canon character's (and none a canon weapon or perk). Most gangers go by one, some on the street, corpos never.
+  handles: {
+    pool: ['Static', 'Rust', 'Glitch', 'Ripsaw', 'Neon', 'Patch', 'Moth', 'Voltage', 'Gutter', 'Pinball', 'Saint', 'Crow', 'Tinsel', 'Kilo', 'Slick', 'Fuse', 'Smoke', 'Knuckles', 'Spook', 'Wire', 'Sparks', 'Nickel', 'Hex', 'Rivet', 'Socket', 'Cinder', 'Vandal', 'Jinx', 'Echo', 'Pixel', 'Bones', 'Gauge', 'Torque', 'Flux', 'Taser', 'Mojo', 'Sugar', 'Diesel', 'Grit', 'Solder', 'Ozone', 'Lag', 'Gremlin', 'Ratchet', 'Nails'],
+    chance: { gang: 0.7, street: 0.2, corpo: 0 },
+  },
+  // What people want out of life, by who'd want it: the young want chrome, fame and out; gangers rank and wheels; corpos the ladder; elders a quiet life; anyone with an enemy, payback.
+  dreams: {
+    out: { street: 3, young: 3, corpo: 1, elder: 1 },
+    chrome: { young: 3, gang: 3, street: 2 },
+    shop: { street: 2, elder: 1 },
+    family: { street: 2, corpo: 1, elder: 1 },
+    wheels: { young: 2, gang: 2, street: 1 },
+    trauma: { street: 2, corpo: 1, elder: 2 },
+    fame: { young: 3, street: 1 },
+    ladder: { corpo: 6 },
+    payback: { hater: 4 },
+    quiet: { elder: 3, street: 1 },
+    retire: { elder: 3, corpo: 1 },
+    rank: { gang: 4 },
+    legend: { gang: 1, young: 1, street: 1 },
+  },
+  // Whom people are drawn to, what wins them over, and the look they go for. Ours: most are
+  // drawn one way, a good share every way, a few to no one at all; the corpos like a sharp
+  // suit, the gangs their own flash, the street what's practical.
+  hearts: {
+    drawn: {
+      she: [
+        { to: ['he'], weight: 48 },
+        { to: ['he', 'they'], weight: 8 },
+        { to: ['she'], weight: 9 },
+        { to: ['she', 'they'], weight: 5 },
+        { to: ['she', 'he', 'they'], weight: 24 },
+        { to: [], weight: 6 },
+      ],
+      he: [
+        { to: ['she'], weight: 48 },
+        { to: ['she', 'they'], weight: 8 },
+        { to: ['he'], weight: 9 },
+        { to: ['he', 'they'], weight: 5 },
+        { to: ['she', 'he', 'they'], weight: 24 },
+        { to: [], weight: 6 },
+      ],
+      they: [
+        { to: ['she', 'he', 'they'], weight: 50 },
+        { to: ['she', 'they'], weight: 14 },
+        { to: ['he', 'they'], weight: 14 },
+        { to: ['they'], weight: 10 },
+        { to: [], weight: 12 },
+      ],
+    },
+    wants: {
+      chat: { base: 1, trait: 'chatty' },
+      compliment: { base: 1.5 },
+      joke: { base: 0.5, trait: 'chatty' },
+      gossip: { base: 0.3, trait: 'chatty' },
+      care: { base: 0.5, trait: 'warmth' },
+    },
+    styles: {
+      entropism: { street: 3, elder: 2, hater: 1 },
+      kitsch: { gang: 4, young: 3, street: 1 },
+      neomilitarism: { corpo: 4, gang: 1, elder: 1 },
+      neokitsch: { corpo: 2, young: 1, street: 1 },
+      none: { street: 3, gang: 1, corpo: 1, elder: 2 },
+    },
+  },
   hangouts: ['bar', 'club', 'noodle', 'diner', 'restaurant', 'market', 'pachinko', 'boardwalk', 'plaza', 'rooftop', 'street', 'dollhouse', 'docks', 'shrine', 'park', 'mall', 'hotel', 'nomad_camp', 'gas_station', 'junkyard', 'food', 'nightlife', 'entertainment'],
   traitLines: {
     warmth: { high: 'Easy to like.', low: 'Keeps everyone at arm\'s length.' },

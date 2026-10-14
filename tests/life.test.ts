@@ -4,28 +4,59 @@ import { FOOD } from '../src/data/food';
 import { LIFE } from '../src/data/life';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
+import { GEAR } from '../src/data/gear';
+import { healthOf, staffCostOf, turfFrom, weekdayOf } from '../src/engine/economy';
+import { bossOf } from '../src/engine/jobs';
+import { drawQuality, menuFor, type Quality } from '../src/engine/food';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, tieKey, type LifeEvent } from '../src/engine/life';
-import { generatePeople, tiesOf, whereIs, type Person, type Population } from '../src/engine/people';
+import { drawnTo, generatePeople, heartOf, INVERSE, tiesOf, whereIs, type Person, type Population, type Spot } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
+import type { World } from '../src/engine/types';
 
 const seeds = Array.from({ length: 6 }, (_, i) => createRng(`life-${i}`).next().toString(16).slice(2, 10));
 const sortedTies = (p: Population) => p.ties.map((t) => `${t.from}|${t.to}|${t.kind}`).sort();
 const T = 39366;
 
-function lived(seed: string, days: number, from = T) {
+/** The tier a place runs at, the way the game works it out: its menu's, its rack's, or its district's. */
+function tierIn(world: World): (spot: Spot) => Quality {
+  return (spot) => {
+    const at = spot.kind === 'building' ? world.buildings.find((b) => b.id === spot.id) : world.locations[spot.id];
+    if (!at) return 'everyday';
+    const business = spot.kind === 'building' ? (at as { business: string | null }).business : null;
+    return menuFor(world, at, FOOD)?.venue.quality ?? (business ? GEAR.quality[business] : undefined) ?? drawQuality(world, at);
+  };
+}
+const turf = turfFrom(PEOPLE.turf);
+
+function lived(seed: string, days: number, from = T, spokenFor: ReadonlySet<string> = new Set()) {
   const world = generateWorld(seed, CITY);
   const population = generatePeople(world, PEOPLE, FOOD.dishes);
   const base = new Map(population.people.map((p) => [p.id, p.eddies]));
   const state = freshLife();
   const events: LifeEvent[] = [];
-  for (let day = from; day < from + days; day++) events.push(...liveUntil(world, population, state, LIFE, base, day, seed));
+  for (let day = from; day < from + days; day++) events.push(...liveUntil(world, population, state, LIFE, base, day, seed, tierIn(world), turf, PEOPLE, spokenFor));
   return { world, population, base, state, events };
 }
 
 describe("the people's own days", () => {
+  it('bring together only people drawn to each other, and never anyone the player is seeing', () => {
+    // Everyone in the first few districts is spoken for, as if the player were seeing them.
+    const world = generateWorld(seeds[0] as string, CITY);
+    const taken = new Set(generatePeople(world, PEOPLE, FOOD.dishes).people.filter((p) => p.district === Object.keys(world.districts)[0]).map((p) => p.id));
+    const { population, events } = lived(seeds[0] as string, 120, T, taken);
+    const romances = events.filter((e) => e.kind === 'romance');
+    expect(romances.length).toBeGreaterThan(0);
+    for (const e of romances) {
+      const [a, b] = e.who.map((id) => population.people.find((p) => p.id === id) as Person);
+      expect(drawnTo(heartOf(a as Person, world, PEOPLE, population), (b as Person).pronouns), `${a?.name} → ${b?.name}`).toBe(true);
+      expect(drawnTo(heartOf(b as Person, world, PEOPLE, population), (a as Person).pronouns), `${b?.name} → ${a?.name}`).toBe(true);
+      for (const id of e.who) expect(taken.has(id), id).toBe(false);
+    }
+  });
+
   it('are the same days every time for a seed, and come back onto a fresh population exactly', () => {
-    const a = lived('7f3a29c1', 12);
-    const b = lived('7f3a29c1', 12);
+    const a = lived('7f3a29c1', 40);
+    const b = lived('7f3a29c1', 40);
     expect(a.events).toEqual(b.events);
     expect(a.state).toEqual(b.state);
     expect(a.population.people).toEqual(b.population.people);
@@ -38,7 +69,7 @@ describe("the people's own days", () => {
     const once = lived('7f3a29c1', 1, T + 11);
     const atOnce = generatePeople(once.world, PEOPLE, FOOD.dishes);
     const state = freshLife();
-    liveUntil(once.world, atOnce, state, LIFE, new Map(atOnce.people.map((p) => [p.id, p.eddies])), T + 11, '7f3a29c1');
+    liveUntil(once.world, atOnce, state, LIFE, new Map(atOnce.people.map((p) => [p.id, p.eddies])), T + 11, '7f3a29c1', tierIn(once.world), turf, PEOPLE);
     expect(state.day).toBe(T + 11);
   });
 
@@ -57,21 +88,23 @@ describe("the people's own days", () => {
         expect(doer, `${seed} ${e.id}`).toBeDefined();
         expect(done, `${seed} ${e.id}`).toBeDefined();
         expect(doer.district, `${seed} ${e.kind}`).toBe(e.district);
-        // A friend from across the city can be fallen out with; everyone else in it is local.
-        if (e.kind !== 'fallout') expect(done.district, `${seed} ${e.kind}`).toBe(e.district);
+        // A friend from across the city can be fallen out with, and made up with; everyone else in it is local.
+        if (e.kind !== 'fallout' && e.kind !== 'makeup') expect(done.district, `${seed} ${e.kind}`).toBe(e.district);
         const key = `${e.district}:${e.day}`;
         perDay.set(key, (perDay.get(key) ?? 0) + 1);
+        // Someone shaken down or robbed was no ganger then (a gang may have taken them on since), and worked where they were leaned on (unless their job has changed since).
+        const civilian = done.gang === null || state.gangs[done.id] !== undefined;
         if (e.kind === 'shakedown') {
           expect(doer.gang, seed).toBe(e.gang);
-          expect(done.gang, seed).toBeNull();
-          expect(done.job.building && storefronts.has(done.job.building), seed).toBe(true);
+          expect(civilian, seed).toBe(true);
+          expect(e.where?.kind === 'building' && storefronts.has(e.where.id), seed).toBe(true);
+          if (!state.jobs[done.id]) expect(e.where, seed).toEqual({ kind: 'building', id: done.job.building });
           expect(e.took, seed).toBeGreaterThan(0);
-          expect(e.where, seed).toEqual({ kind: 'building', id: done.job.building });
           expect(done.hates, seed).not.toBeNull();
         }
         if (e.kind === 'robbery') {
           expect(doer.gang, seed).toBe(e.gang);
-          expect(done.gang, seed).toBeNull();
+          expect(civilian, seed).toBe(true);
           expect(e.took, seed).toBeGreaterThan(0);
           expect(done.hates, seed).not.toBeNull();
         }
@@ -88,24 +121,113 @@ describe("the people's own days", () => {
         }
       }
       for (const [key, n] of perDay) expect(n, `${seed} ${key}`).toBeLessThanOrEqual(LIFE.perDistrict);
-      // Nothing older than the city remembers; nobody laid up past their days.
-      for (const e of state.events) expect(e.day, seed).toBeGreaterThan(state.day - LIFE.keepDays);
+      // Nothing older than the city remembers (the big things a while longer); nobody laid up past their days.
+      for (const e of state.events) expect(e.day, `${seed} ${e.kind}`).toBeGreaterThan(state.day - (LIFE.lasting[e.kind] ?? LIFE.keepDays));
       for (const until of Object.values(state.hurt)) expect(until, seed).toBeGreaterThanOrEqual(state.day);
       for (const p of population.people) expect(p.hurtUntil === undefined ? -1 : p.hurtUntil, p.name).toBe(state.hurt[p.id] ?? -1);
-      // Friendships made are ties both ways, and broken ones are gone both ways.
+      // Ties made are ties both ways; a pair whose ties from the start were broken has only what's been made since.
+      const ties = new Set(population.ties.map((t) => `${t.from}|${t.to}|${t.kind}`));
       for (const t of state.made) {
-        expect(population.ties.some((u) => u.from === t.from && u.to === t.to && u.kind === 'friend'), `${seed} ${t.from}`).toBe(true);
-        expect(population.ties.some((u) => u.from === t.to && u.to === t.from && u.kind === 'friend'), `${seed} ${t.to}`).toBe(true);
+        expect(ties.has(`${t.from}|${t.to}|${t.kind}`), `${seed} ${t.from}`).toBe(true);
+        expect(ties.has(`${t.to}|${t.from}|${INVERSE[t.kind]}`), `${seed} ${t.to}`).toBe(true);
       }
-      for (const key of state.broken) expect(population.ties.some((t) => tieKey(t.from, t.to) === key), `${seed} ${key}`).toBe(false);
+      const made = new Set(state.made.map((t) => tieKey(t.from, t.to)));
+      for (const key of state.broken) if (!made.has(key)) expect(population.ties.some((t) => tieKey(t.from, t.to) === key), `${seed} ${key}`).toBe(false);
       // Eddies taken are eddies had: nobody below nothing, and the gangs have what the rest lost, less what's been earned back.
       for (const p of population.people) expect(p.eddies, p.name).toBeGreaterThanOrEqual(0);
     }
-    expect([...kinds].sort()).toEqual(['fallout', 'fight', 'friends', 'robbery', 'shakedown']);
+    expect([...kinds]).toEqual(expect.arrayContaining(['fallout', 'fight', 'friends', 'robbery', 'shakedown']));
   });
 
-  it('keeps the laid up at home, and earns the shaken their eddies back', () => {
-    const { world, population, base, state, events } = lived(seeds[0] as string, 20);
+  it('gets couples together, marries and splits them, takes people on and lets them go, buries the dead and fills a gang\'s ranks, with every effect on the people', () => {
+    const kinds = new Set<string>();
+    for (const seed of seeds) {
+      const { world, population, state, events } = lived(seed, 90);
+      const fresh = generatePeople(world, PEOPLE, FOOD.dishes);
+      const byId = new Map(population.people.map((p) => [p.id, p]));
+      const alive = (id: string) => byId.get(id)?.diedOn === undefined;
+      const ties = new Set(population.ties.map((t) => `${t.from}|${t.to}`));
+      for (const e of events) {
+        kinds.add(e.kind);
+        const [a, b] = e.who.map((id) => byId.get(id) as Person) as [Person, Person];
+        // Nobody does anything once they're dead.
+        for (const p of [a, b]) if (p.diedOn !== undefined) expect(e.day, `${seed} ${e.kind} with ${p.name} dead`).toBeLessThanOrEqual(p.diedOn);
+        if (e.kind === 'death') {
+          expect(b.diedOn, `${seed} ${b.name}`).toBe(e.day);
+          // Killed in a fight between crews, or of their years.
+          if (a !== b) {
+            expect(a.gang && b.gang && a.gang !== b.gang, `${seed} ${a.name} killed ${b.name}`).toBeTruthy();
+            expect(e.gang).toBe(a.gang);
+          } else expect(b.age, `${seed} ${b.name}`).toBeGreaterThanOrEqual(LIFE.elderAt);
+        }
+        if (e.kind === 'romance') {
+          expect(Math.min(a.age, b.age), seed).toBeGreaterThanOrEqual(LIFE.adultAt);
+          expect(Math.abs(a.age - b.age), seed).toBeLessThanOrEqual(LIFE.ageGap);
+        }
+        if (e.kind === 'hired' || e.kind === 'laidOff') {
+          // The boss does it, and is who the place always had.
+          const shop = world.buildings.find((x) => x.id === e.where?.id);
+          expect(shop?.business, seed).toBeTruthy();
+          expect(bossOf(shop as never, fresh)?.id, `${seed} ${shop?.name}`).toBe(a.id);
+          // No ganger then (someone let go can end up in colors).
+          expect(b.gang === null || state.gangs[b.id] !== undefined, seed).toBe(true);
+          expect(b.id).not.toBe(a.id);
+        }
+        if (e.kind === 'joined') {
+          expect(b.gang, seed).toBe(e.gang);
+          expect(a.gang, seed).toBe(e.gang);
+          expect(b.age, seed).toBeLessThanOrEqual(LIFE.recruitAge);
+          expect(state.gangs[b.id], seed).toBe(e.gang);
+        }
+      }
+      // Every storefront is run by whoever ran it from the start, however many came and went.
+      for (const shop of world.buildings.filter((x) => x.business)) expect(bossOf(shop, population)?.id, `${seed} ${shop.name}`).toBe(bossOf(shop, fresh)?.id);
+      // One living partner or spouse each at most; every couple has the day it got together, and every tie runs both ways.
+      for (const p of population.people.filter((q) => q.diedOn === undefined)) {
+        const loves = population.ties.filter((t) => t.from === p.id && (t.kind === 'spouse' || t.kind === 'partner') && alive(t.to));
+        expect(loves.length, `${seed} ${p.name}`).toBeLessThanOrEqual(1);
+      }
+      for (const t of population.ties) {
+        expect(ties.has(`${t.to}|${t.from}`), `${seed} ${t.from} ${t.kind} ${t.to}`).toBe(true);
+        if (t.kind === 'partner') expect(state.since[tieKey(t.from, t.to)], `${seed} ${t.from}`).toBeDefined();
+      }
+      // The jobs people have now: coworkers work at the same place (whoever's let go stops being one), nobody working is dead, and whoever was taken on knows the boss (unless something has come between them since).
+      for (const [id, job] of Object.entries(state.jobs)) expect((byId.get(id) as Person).job, `${seed} ${id}`).toEqual({ role: job.role, building: job.building });
+      for (const t of population.ties) {
+        if (t.kind !== 'coworker') continue;
+        const [p, q] = [byId.get(t.from) as Person, byId.get(t.to) as Person];
+        expect(p.job.building, `${seed} ${p.name} and ${q.name}`).toBeTruthy();
+        expect(p.job.building, `${seed} ${p.name} and ${q.name}`).toBe(q.job.building);
+      }
+      for (const p of population.people) if (p.job.building) expect(p.diedOn, p.name).toBeUndefined();
+      for (const e of events.filter((x) => x.kind === 'hired')) {
+        const [boss, hire] = e.who;
+        const since = events.some((x) => x.day >= e.day && x.id !== e.id && x.who.includes(boss) && x.who.includes(hire));
+        if (byId.get(hire)?.job.building === e.where?.id && !since) expect(ties.has(`${hire}|${boss}`), `${seed} ${hire} hired by ${boss}`).toBe(true);
+      }
+      // The dead are nowhere, and a gang takes on no more than it has lost.
+      for (const p of population.people.filter((q) => q.diedOn !== undefined)) {
+        for (const hour of [3, 12, 20]) expect(whereIs(p, world, { hour, weekday: 3, day: state.day }, FOOD.dishes), p.name).toBeNull();
+        expect(state.dead[p.id]).toBe(p.diedOn);
+      }
+      for (const district of Object.keys(world.districts)) {
+        for (const [gang] of PEOPLE.turf[district] ?? []) {
+          const members = population.people.filter((p) => p.gang === gang && p.district === district);
+          const recruits = members.filter((p) => state.gangs[p.id] === gang).length;
+          expect(recruits, `${seed} ${gang} in ${district}`).toBeLessThanOrEqual(members.filter((p) => p.diedOn !== undefined).length);
+        }
+      }
+      // Put back onto a population made fresh for the seed, it's all there.
+      const again = generatePeople(world, PEOPLE, FOOD.dishes);
+      applyLife(again, structuredClone(state));
+      expect(again.people).toEqual(population.people);
+      expect(sortedTies(again)).toEqual(sortedTies(population));
+    }
+    expect([...kinds].sort()).toEqual(['breakup', 'death', 'fallout', 'fight', 'friends', 'hired', 'joined', 'laidOff', 'makeup', 'robbery', 'romance', 'shakedown', 'wedding']);
+  });
+
+  it('keeps the laid up at home', () => {
+    const { world, population, events } = lived(seeds[0] as string, 20);
     const fight = events.find((e) => e.kind === 'fight');
     if (fight) {
       const loser = population.people.find((p) => p.id === fight.who[1]) as Person;
@@ -117,11 +239,43 @@ describe("the people's own days", () => {
       }
       expect(whereIs(hurt, world, { hour: 11, weekday: 2, day: fight.day + 3 }, FOOD.dishes)?.doing).not.toMatch(/laid up/);
     }
-    // Whoever is short of what they started with is on the way back, a share a day.
-    const short = Object.keys(state.eddies).map((id) => population.people.find((p) => p.id === id) as Person).filter((p) => p.eddies < (base.get(p.id) as number));
-    const before = new Map(short.map((p) => [p.id, p.eddies]));
-    liveUntil(world, population, state, LIFE, base, state.day + 1, seeds[0] as string);
-    for (const p of short) expect(p.eddies, p.name).toBeGreaterThanOrEqual(before.get(p.id) as number);
+  });
+
+  it('moves the eddies: payday lifts nearly everyone, other days wear them down, the tills keep a week and the gangs take their cut', () => {
+    const payday = (day: number) => weekdayOf(day) === LIFE.economy.payday;
+    const healths = new Set<string>();
+    for (const seed of seeds) {
+      const { world, population, base, state } = lived(seed, 30);
+      const civilians = population.people.filter((p) => !p.gang);
+      const total = () => civilians.reduce((n, p) => n + p.eddies, 0);
+      // A day that isn't payday costs: living, and evenings out.
+      let day = state.day + 1;
+      while (payday(day)) day++;
+      const before = total();
+      liveUntil(world, population, state, LIFE, base, day, seed, tierIn(world), turf, PEOPLE);
+      expect(total(), `${seed} day ${day}`).toBeLessThan(before);
+      // Payday: a week's money on nearly everyone who isn't paid by a gang.
+      while (!payday(day)) day++;
+      const had = new Map(civilians.map((p) => [p.id, p.eddies]));
+      const chests = Object.values(state.treasuries).reduce((n, v) => n + v, 0);
+      expect(chests, `${seed} treasuries before payday`).toBeGreaterThan(0);
+      liveUntil(world, population, state, LIFE, base, day, seed, tierIn(world), turf, PEOPLE);
+      const up = civilians.filter((p) => p.eddies > (had.get(p.id) as number)).length;
+      expect(up / civilians.length, `${seed} paid on ${day}`).toBeGreaterThan(0.9);
+      // Every storefront keeps a week of books, and the city has places doing well and badly.
+      const storefronts = world.buildings.filter((b) => b.business);
+      for (const b of storefronts) expect(state.tills[b.id]?.days.length, `${seed} ${b.name}`).toBe(7);
+      for (const b of storefronts) {
+        const staff = population.people.filter((p) => p.job.building === b.id);
+        const tier = tierIn(world)({ kind: 'building', id: b.id });
+        healths.add(healthOf(state.tills[b.id], staffCostOf(staff, bossOf(b, population), tier, LIFE.economy) + LIFE.economy.rent[tier] * 7, LIFE.economy));
+      }
+      // Nobody is ruined by it: the city's civilians still hold about what they started with.
+      const started = civilians.reduce((n, p) => n + (base.get(p.id) as number), 0);
+      expect(total() / started, `${seed} eddies against the start`).toBeGreaterThan(0.6);
+      expect(total() / started, `${seed} eddies against the start`).toBeLessThan(2);
+    }
+    expect([...healths].sort()).toEqual(['steady', 'struggling', 'thriving']);
   });
 
   it('gives everyone news to tell from their own side of it, and pairs people up where they are', () => {
@@ -141,7 +295,7 @@ describe("the people's own days", () => {
       if (news.role === 'gang') expect(news.event.gang).toBe(p.gang);
       if (news.role === 'heard') {
         expect(news.event.district).toBe(p.district);
-        expect(['friends', 'fallout']).not.toContain(news.event.kind);
+        expect(['friends', 'fallout', 'makeup']).not.toContain(news.event.kind);
       }
       expect(byId.get(news.other.id)).toBeDefined();
     }

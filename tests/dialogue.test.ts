@@ -17,6 +17,7 @@ import {
   moodOf,
   openness,
   openTopics,
+  reactionTo,
   repeat,
   replyTo,
   smallTalk,
@@ -212,7 +213,7 @@ describe('dialogue', () => {
     expect(topics).not.toContain('kin');
     // A friend, with family to mention: everything, and their people only once that's earned.
     const friend = speakerOf(person('f', { hates: 'valentinos' }), { stance: 'friend' }, { kinName: 'Ana', kinWord: 'sister', kinWork: 'the grill' });
-    expect(openTopics(friend, 1, rules, createRng('t'), true)).toEqual(['district', 'life', 'here', 'job', 'likes', 'hates', 'kin']);
+    expect(openTopics(friend, 1, rules, createRng('t'), true)).toEqual(['district', 'life', 'here', 'job', 'likes', 'hates', 'kin', 'dream', 'views']);
     expect(openTopics(friend, 1, rules, createRng('t'), false)).not.toContain('kin');
     const chat = smallTalk(friend, ['kin'], LINES, createRng('k'));
     expect(chat.topic).toBe('kin');
@@ -220,6 +221,51 @@ describe('dialogue', () => {
     const nothing = smallTalk(friend, [], LINES, createRng('k'));
     expect(nothing.topic).toBeNull();
     expect(LINES.brushOff.map((l) => (typeof l === 'string' ? l : l.text))).toContain(nothing.said);
+  });
+
+  it('opens up or closes by the moment: a drink, a shift, one question too many, the gang they hate in the room, grief, the small hours, a drunk asking', () => {
+    const rules = SOCIETY.openness;
+    const plain = person('p').traits;
+    const at = (asked: Asked, moment = {}, stance: Stance = 'neutral') => openness(asked, stance, 1, plain, rules, false, moment);
+    expect(at('age', { mood: 'drinking' })).toBeGreaterThan(at('age'));
+    expect(at('age', { mood: 'busy' })).toBeLessThan(at('age'));
+    // Busy at work, the work itself is still fair game.
+    expect(at('job', { mood: 'busy' })).toBe(at('job'));
+    expect(at('name', { grilled: 2 })).toBeCloseTo(at('name') - 2 * rules.moment.grilled, 5);
+    expect(at('hates', { enemyHere: true })).toBeLessThan(at('hates'));
+    expect(at('age', { enemyHere: true })).toBe(at('age'));
+    // The braver they are, the less the enemy in the room matters.
+    const brave = { ...plain, courage: 0.9 };
+    expect(openness('hates', 'neutral', 1, brave, rules) - openness('hates', 'neutral', 1, brave, rules, false, { enemyHere: true })).toBeLessThan(at('hates') - at('hates', { enemyHere: true }));
+    expect(at('job', { grieving: true })).toBeLessThan(at('job'));
+    expect(at('home', { late: true })).toBeLessThan(at('home'));
+    expect(at('job', { late: true })).toBe(at('job'));
+    expect(at('job', { drunk: true })).toBeLessThan(at('job'));
+    expect(at('job', { drunk: true }, 'friend')).toBe(at('job', {}, 'friend'));
+  });
+
+  it('takes a compliment, a joke, gossip and a kind word by who they are, and says why', () => {
+    const traits = (t: Partial<Person['traits']>) => ({ warmth: 0.5, temper: 0.5, loyalty: 0.5, greed: 0.5, courage: 0.5, chatty: 0.5, ...t });
+    const warmOne = speakerOf(person('w', { traits: traits({ warmth: 0.9 }) }), { eloquence: 'easy' });
+    const hardOne = speakerOf(person('h', { traits: traits({ warmth: 0.1 }) }), { eloquence: 'easy' });
+    const { approach } = SOCIETY.reactions;
+    expect(reactionTo(approach.compliment, warmOne)).toEqual({ score: 2, why: 'Likes a kind word' });
+    expect(reactionTo(approach.compliment, hardOne)).toEqual({ score: -2, why: 'Not one for flattery' });
+    // The player's way with words counts: smooth lands better, blunt worse.
+    expect(reactionTo(approach.compliment, { ...warmOne, eloquence: 'smooth' }).score).toBe(3);
+    expect(reactionTo(approach.compliment, { ...warmOne, eloquence: 'blunt' }).score).toBe(1);
+    // A temper takes no jokes, grief none at all; the chatty love gossip; the grieving are glad to be asked how they are.
+    const hothead = speakerOf(person('t', { traits: traits({ temper: 0.9 }) }), { eloquence: 'easy' });
+    expect(reactionTo(approach.joke, hothead)).toEqual({ score: -2, why: 'Not in the mood for jokes' });
+    const mourner = speakerOf(person('m'), { eloquence: 'easy' }, { grief: 'Ana', griefWord: 'sister' });
+    expect(reactionTo(approach.joke, mourner)).toEqual({ score: -3, why: 'Grieving her sister' });
+    expect(reactionTo(approach.care, mourner)).toEqual({ score: 3, why: 'Needed someone to ask, after losing her sister' });
+    expect(reactionTo(approach.gossip, speakerOf(person('c', { traits: traits({ chatty: 0.9 }) }), { eloquence: 'easy' }))).toEqual({ score: 2, why: 'Loves gossip' });
+    // Nothing that fits, nothing to say.
+    expect(reactionTo(approach.chat, speakerOf(person('n'), { eloquence: 'easy' }))).toEqual({ score: 0, why: '' });
+    // Questions too: a stranger is put off being asked where they live; anyone likes talking food.
+    expect(reactionTo(SOCIETY.reactions.asked.home, speakerOf(person('s'))).score).toBeLessThan(0);
+    expect(reactionTo(SOCIETY.reactions.asked.likes, speakerOf(person('s'))).score).toBeGreaterThan(0);
   });
 
   it('answers, deflects, repeats and refuses in character', () => {
@@ -239,6 +285,19 @@ describe('dialogue', () => {
     expect(deflect(drifter, 'age', LINES, createRng('d'))).toMatch(/Old enough|Older than I look|writing a book/);
     expect(deflect(drifter, 'district', LINES, createRng('d'))).toMatch(/Pass|Next question|well enough/);
     expect(line(LINES.refuse, speakerOf(person('x'), { voice: 'corpo', stance: 'cold' }), createRng('r'))).toMatch(/\S/);
+  });
+
+  it('keeps every piece of news to its own kind and side, and every memory to its own kind', () => {
+    const kinds = ['Shakedown', 'Robbery', 'Fight', 'Friends', 'Fallout', 'Makeup', 'Romance', 'Wedding', 'Breakup', 'Hired', 'LaidOff', 'Death', 'Joined'];
+    const roles = ['Mine', 'Kin', 'Ours', 'Heard'];
+    const needs = (l: (typeof LINES.memory)[number]) => (typeof l === 'string' ? [] : (l.when?.needs ?? []));
+    const text = (l: (typeof LINES.memory)[number]) => (typeof l === 'string' ? l : l.text);
+    for (const l of LINES.topics.news) {
+      expect(needs(l).filter((n) => kinds.some((k) => n === `news${k}`)), text(l)).toHaveLength(1);
+      expect(needs(l).filter((n) => roles.some((r) => n === `news${r}`)), text(l)).toHaveLength(1);
+    }
+    const memories = ['Wronged', 'Heard', 'Saw', 'Settled', 'Gift', 'GoodWord', 'Hired', 'Promoted', 'Quit', 'Fired', 'Chopped', 'Asked', 'Date', 'Dumped', 'Cheated'];
+    for (const l of LINES.memory) expect(needs(l).filter((n) => memories.some((k) => n === `mem${k}`)), text(l)).toHaveLength(1);
   });
 
   it('never leaves a hole in a line, whoever is talking, across whole cities', () => {
@@ -265,6 +324,7 @@ describe('dialogue', () => {
         const voice = voices[rng.int(0, voices.length - 1)] as Voice;
         const vars = {
           ...LINES.lexicon[voice],
+          ...(voice === 'gang' && p.gang ? (LINES.gangLexicon[p.gang] ?? {}) : {}),
           ...varsFor(p, city, population, PEOPLE, FOOD.dishes, kin),
           here: rng.chance(0.8) ? 'The Afterlife' : '',
           late: rng.chance(0.3) ? 'this late' : '',
@@ -279,12 +339,31 @@ describe('dialogue', () => {
           item: 'Taco',
           take: '12',
           haul: '12 €$ and a credchip with 80 €$ on it',
+          ...rng.pick([{ weapon: '', gun: '', blade: '', blunt: '' }, { weapon: 'Lexington', gun: 'yes', blade: '', blunt: '' }, { weapon: 'katana', gun: '', blade: 'yes', blunt: '' }, { weapon: 'bat', gun: '', blade: '', blunt: 'yes' }]),
           balance: '120',
           cut: '30',
           left: '90',
           mask: rng.chance(0.3) ? 'gas mask' : '',
           title: 'dish pit',
           pay: '24',
+          broke: rng.chance(0.2) ? 'yes' : '',
+          flush: rng.chance(0.2) ? 'yes' : '',
+          slow: rng.chance(0.2) ? 'yes' : '',
+          brisk: rng.chance(0.2) ? 'yes' : '',
+          kinDead: kin && rng.chance(0.3) ? 'yes' : '',
+          again: rng.chance(0.3) ? 'yes' : '',
+          // The moment: the player drunk, grief, the gang they hate here, questions piling up, a question they're touchy about or glad of.
+          youDrunk: rng.chance(0.2) ? 'yes' : '',
+          ...(rng.chance(0.15) ? { grief: 'Ana', griefWord: 'sister' } : {}),
+          enemyHere: p.hates && rng.chance(0.3) ? 'Valentinos' : '',
+          grilled: rng.chance(0.2) ? 'yes' : '',
+          ...(rng.chance(0.3) ? (rng.chance(0.5) ? { touchy: 'yes' } : { keen: 'yes' }) : {}),
+          // The heart, as it stands with the player: drawn to them, spoken for, seeing them, sweet on them, their look.
+          drawn: rng.chance(0.6) ? 'yes' : '',
+          ...(rng.chance(0.3) ? { taken: 'Rosa', takenWord: rng.pick(['wife', 'husband', 'girlfriend', 'partner']) } : {}),
+          ...(rng.chance(0.2) ? { withYou: 'yes', together: rng.chance(0.5) ? 'yes' : '' } : {}),
+          sweet: rng.chance(0.3) ? 'yes' : '',
+          yourType: rng.chance(0.2) ? 'yes' : '',
         };
         const speaker: Speaker = {
           person: p,
@@ -317,6 +396,32 @@ describe('dialogue', () => {
         for (const pool of [LINES.brushOff, LINES.grudge, LINES.hostile, LINES.asleep, LINES.talkedOut, LINES.refuse, LINES.pressed, LINES.ask.knows, LINES.ask.unknown, LINES.ask.repeat, LINES.gift.thanks, LINES.gift.favorite, LINES.gift.refuse, LINES.insult.reply, LINES.insult.shove, LINES.rob.done, LINES.rob.nothing, LINES.rob.fought, LINES.chop.done, LINES.chop.refuse, LINES.barred]) {
           check(line(pool, speaker, rng), `${about} pool`);
         }
+        // Every way into a chat, from the player in every way with words, and every way it can land.
+        for (const how of Object.values(LINES.approaches)) {
+          for (const eloquence of eloquences) check(line(how.you, { ...speaker, eloquence }, rng), `${about} approach ${how.label} you ${eloquence}`);
+          for (const pool of [how.liked, how.flat, how.disliked]) check(compose(pool, speaker, LINES, rng, { opener: false }), `${about} approach ${how.label}`);
+          lines += 6;
+        }
+        // Romance: every answer to being asked out, a date (their favorite or not), making it official, being dumped, ending it, jealousy.
+        const romance = LINES.romance;
+        for (const pool of [romance.ask.yes, romance.ask.notDrawn, romance.ask.taken, romance.ask.notYet, romance.official.yes, romance.official.notYet, romance.dumped]) {
+          check(compose(pool, { ...speaker, vars: { ...vars, taken: vars.taken || 'Rosa' } }, LINES, rng, { opener: false }), `${about} romance pool`);
+        }
+        check(line(romance.ask.masked, { ...speaker, vars: { ...vars, mask: 'balaclava' } }, rng), `${about} romance masked`);
+        for (const favorite of ['yes', '']) check(compose(romance.date, { ...speaker, vars: { ...vars, item: 'Sake', favorite } }, LINES, rng, { opener: false }), `${about} date ${favorite}`);
+        for (const end of [{ fizzled: 'yes', caught: '', other: '' }, { fizzled: '', caught: 'yes', other: 'Ana' }, { fizzled: '', caught: 'yes', other: '' }]) {
+          check(compose(romance.theyEnd, { ...speaker, vars: { ...vars, ...end } }, LINES, rng, { opener: false }), `${about} they end it ${JSON.stringify(end)}`);
+        }
+        check(line(romance.jealous, { ...speaker, vars: { ...vars, other: 'Ana' } }, rng), `${about} jealous`);
+        for (const eloquence of eloquences) {
+          for (const pool of [LINES.you.askOut, LINES.you.official, LINES.you.endIt]) check(line(pool, { ...speaker, eloquence }, rng), `${about} you romance ${eloquence}`);
+          check(line(LINES.you.date, { ...speaker, eloquence, vars: { ...vars, item: 'Sake' } }, rng), `${about} you date ${eloquence}`);
+        }
+        lines += 25;
+        // Asked about someone of theirs, by what they are to them.
+        for (const tieFlag of ['tieFamily', 'tieFriend', 'tieCrew', 'tieWork']) {
+          check(compose(LINES.ask.knows, { ...speaker, vars: { ...vars, other: 'Ana', otherHe: 'she', otherHim: 'her', word: 'cousin', [tieFlag]: 'yes' } }, LINES, rng), `${about} ask knows ${tieFlag}`);
+        }
         check(compose(LINES.chop.done, speaker, LINES, rng), `${about} chop done`);
         check(deflect(speaker, 'chop', LINES, rng), `${about} deflect chop`);
         // What happened between people lately, of every kind, from every side it can be told from.
@@ -330,6 +435,49 @@ describe('dialogue', () => {
           }
         }
         lines += 32;
+        // The news of people's hearts, work and deaths, and what they remember of the player: every other speaker is plenty of voices.
+        const deep = population.people.indexOf(p) % 2 === 0;
+        const told = (kind: string, role: string, extra: Record<string, string>) => {
+          if (!deep) return;
+          const telling: Speaker = { ...speaker, vars: { ...vars, news: 'yes', [`news${kind}`]: 'yes', [`news${role}`]: 'yes', newsWho: 'Ana', newsGang: 'Valentinos', newsWord: 'cousin', newsAgo: 'last night', newsTook: '0', newsWhere: 'Tom\'s Diner', newsHe: 'she', newsHim: 'her', newsHis: 'her', newsWon: '', newsHurt: '', newsWith: '', newsKilled: '', ...extra } };
+          check(compose(LINES.topics.news, telling, LINES, rng, { opener: false }), `${about} news ${kind} ${role} ${JSON.stringify(extra)}`);
+          lines += 1;
+        };
+        const sides: Record<string, string[]> = { Makeup: ['Mine', 'Kin'], Romance: ['Mine', 'Kin', 'Heard'], Wedding: ['Mine', 'Kin', 'Heard'], Breakup: ['Mine', 'Kin', 'Heard'], Hired: ['Mine', 'Kin', 'Heard'], LaidOff: ['Mine', 'Kin', 'Heard'], Joined: ['Mine', 'Kin', 'Ours', 'Heard'] };
+        for (const [kind, roles] of Object.entries(sides)) for (const role of roles) for (const won of ['yes', '']) for (const withWho of ['Jun', '']) told(kind, role, { newsWon: won, newsWith: withWho });
+        // A death: a killer telling it, their people, the dead's people (killed, or of their years), the killer's gang, and the district.
+        told('Death', 'Mine', { newsWon: 'yes', newsKilled: 'yes' });
+        for (const withWho of ['Jun', '']) {
+          told('Death', 'Kin', { newsWon: 'yes', newsKilled: 'yes', newsWith: withWho });
+          told('Death', 'Kin', { newsKilled: 'yes', newsWith: withWho });
+          told('Death', 'Heard', { newsKilled: 'yes', newsWith: withWho });
+        }
+        told('Death', 'Kin', { newsGang: '' });
+        told('Death', 'Ours', { newsWon: 'yes', newsKilled: 'yes', newsWith: 'Jun' });
+        told('Death', 'Heard', { newsGang: '' });
+        // What they remember of the player, every kind of it, in every shape it comes in.
+        const recalls: Array<Record<string, string>> = [];
+        for (const what of ['memRobbery', 'memInsult', '']) {
+          for (const took of ['40', '']) for (const twice of ['yes', '']) recalls.push({ memWronged: 'yes', ...(what ? { [what]: 'yes' } : {}), memTook: took, memTwice: twice });
+          for (const word of ['cousin', '']) recalls.push({ memHeard: 'yes', ...(what ? { [what]: 'yes' } : {}), memWord: word });
+          recalls.push({ memSaw: 'yes', ...(what ? { [what]: 'yes' } : {}) });
+        }
+        for (const took of ['60', '']) recalls.push({ memSettled: 'yes', memTook: took }, { memChopped: 'yes', memTook: took });
+        recalls.push({ memGift: 'yes', memItem: 'Taco', memFavorite: 'yes' }, { memGift: 'yes', memItem: 'Taco' }, { memGift: 'yes' });
+        for (const word of ['sister', '']) recalls.push({ memGoodWord: 'yes', memWord: word }, { memAsked: 'yes', memWord: word });
+        for (const title of ['prep', '']) recalls.push({ memPromoted: 'yes', memTitle: title }, { memQuit: 'yes', memTitle: title });
+        recalls.push({ memHired: 'yes' }, { memFired: 'yes' });
+        for (const memory of deep ? recalls : []) {
+          const remembering: Speaker = { ...speaker, vars: { ...vars, mem: 'yes', memWho: 'Ana', memHe: 'she', memHim: 'her', memHis: 'her', memAgo: 'yesterday', memAgain: rng.chance(0.5) ? 'yes' : '', ...memory } };
+          check(compose(LINES.memory, remembering, LINES, rng, { opener: false }), `${about} memory ${JSON.stringify(memory)}`);
+          if (memory.memQuit || memory.memFired) check(line(LINES.work.rehire, remembering, rng), `${about} rehire ${JSON.stringify(memory)}`);
+          lines += 1;
+        }
+        // Asked about someone who's dead, or someone they're done with.
+        const asking: Speaker = { ...speaker, vars: { ...vars, other: 'Ana', otherHe: 'she', otherHim: 'her', otherHis: 'her', word: 'cousin', otherAgo: 'last week' } };
+        check(compose(LINES.ask.dead, asking, LINES, rng), `${about} ask dead`);
+        check(compose(LINES.ask.ex, { ...asking, vars: { ...asking.vars, word: '', otherAgo: '' } }, LINES, rng), `${about} ask ex`);
+        lines += 2;
         // A boss, asked for work: every answer, in and out of a mask, with a place to name.
         const bossing: Speaker = { ...speaker, vars: { ...vars, work: 'El Pinche Grill' } };
         for (const pool of [LINES.work.hire, LINES.work.refuse, LINES.work.shift, LINES.work.promote, LINES.work.quit]) check(line(pool, bossing, rng), `${about} work pool`);
@@ -356,5 +504,5 @@ describe('dialogue', () => {
       }
     }
     expect(lines).toBeGreaterThan(5000);
-  });
+  }, 120_000);
 });

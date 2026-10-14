@@ -4,8 +4,8 @@ export interface ShopItemView {
   id: string;
   name: string;
   note: string;
-  kind: 'food' | 'drink' | 'alcohol' | 'gear' | 'clothing';
-  /** For clothing: the slot, the style, the brand, in place of the kind's label. */
+  kind: 'food' | 'drink' | 'alcohol' | 'gear' | 'clothing' | 'weapon' | 'ammo';
+  /** For clothing: the slot, the style, the brand; for a weapon, its class and maker; for ammo, the box: in place of the kind's label. */
   detail?: string;
   price: number;
   affordable: boolean;
@@ -30,7 +30,7 @@ export interface ShopElements extends OverlayElements {
   list: HTMLElement;
 }
 
-const KIND_LABEL: Record<ShopItemView['kind'], string> = { food: 'Food', drink: 'Drink', alcohol: 'Alcohol', gear: 'Gear', clothing: 'Clothing' };
+const KIND_LABEL: Record<ShopItemView['kind'], string> = { food: 'Food', drink: 'Drink', alcohol: 'Alcohol', gear: 'Gear', clothing: 'Clothing', weapon: 'Weapon', ammo: 'Ammo' };
 
 /**
  * An eatery's menu, or a store's rack, over the map. It shows whatever view it's given; the
@@ -73,9 +73,11 @@ function row(item: ShopItemView): HTMLElement {
   const li = el('li', `shop-item is-${item.kind}`);
   const text = el('div', 'shop-item-text');
   const head = el('div', 'shop-item-head');
-  const label = item.detail ?? KIND_LABEL[item.kind];
-  const kind = item.carried ? `${label} · ×${item.carried} carried` : label;
-  head.append(el('span', 'shop-item-name', item.name), el('span', 'shop-item-kind', kind));
+  // Each part of the line keeps together; a long one (a gun's class, maker and magazine) wraps between them.
+  const parts = [...(item.detail ? item.detail.split(' · ') : [KIND_LABEL[item.kind]]), ...(item.carried ? [`×${item.carried} carried`] : [])];
+  const kind = el('span', 'shop-item-kind');
+  parts.forEach((part, i) => kind.append(...(i ? [' · '] : []), el('span', 'shop-item-part', part)));
+  head.append(el('span', 'shop-item-name', item.name), kind);
   text.append(head, el('p', 'shop-item-note', item.note));
   const buy = el('button', 'shop-buy');
   buy.type = 'button';

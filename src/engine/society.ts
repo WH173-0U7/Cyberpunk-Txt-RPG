@@ -1,4 +1,7 @@
+import type { Approach, Reaction } from './dialogue';
+import { remember, type Memory, type MemoryRules } from './memory';
 import { INVERSE, tiesOf, type Person, type Population, type TieKind } from './people';
+import type { Romance, RomanceRules } from './romance';
 import type { Rng } from './rng';
 
 /**
@@ -26,10 +29,25 @@ export interface Standing {
   asks: number;
   /** When they last wouldn't say, by what was asked (`age`, `home`, `about:<id>`…): asking again soon is pressing. */
   refused: Record<string, number>;
+  /** When the player last asked them something, and how many questions in a row that makes (one after another, within `openness.grill.minutes`). */
+  lastAskAt?: number;
+  sitting?: number;
+  /** How taken they are with the player, 0 to 100 (romance.ts): flirts that land and dates raise it, and it fades on the clock. */
+  spark?: number;
 }
 
+/** What each stance is called where the player can see it. */
+export const STANCE_LABEL: Record<Stance, string> = {
+  hostile: 'Hostile',
+  cold: 'Cold',
+  wary: 'Wary',
+  neutral: 'Stranger',
+  warm: 'Warm',
+  friend: 'Friend',
+};
+
 /** Something the player can want from someone: a fact about them, a topic, their people, (`chop`) their hands on a stolen credchip, or (`hire`) a job at the place they run. */
-export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'chop' | 'hire';
+export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'type' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views' | 'chop' | 'hire';
 
 /**
  * How ready people are to tell the player things: a base by how they feel, a step per level
@@ -48,6 +66,16 @@ export interface OpennessRules {
   deflectAt: number;
   /** Rapport lost for asking again soon after a no. */
   press: number;
+  /**
+   * The moment, as it moves people: a few drinks loosen tongues, being busy or eating tightens
+   * them (on anything but their work); every question past `grill.free` in a row costs this
+   * much more; someone from the gang they hate being right here costs this much on who they
+   * hate (less the braver they are); grief costs on everything; the small hours on where they
+   * live; a drunk player with anyone short of warm.
+   */
+  moment: { drinking: number; busy: number; eating: number; grilled: number; enemy: number; grieving: number; late: number; drunk: number };
+  /** Questions in a row: the first `free` are fine; within `minutes` (on the game's clock) of the last, each one past that costs `rapport` and openness. */
+  grill: { free: number; minutes: number; rapport: number };
 }
 
 /** A reputation, as last written down; it recovers toward nothing since. */
@@ -92,18 +120,19 @@ export interface Threat {
 /** How the player came to know of someone, or of a tie between two people. */
 export type KnownHow = 'seen' | 'told' | 'asked';
 
-/** Something about a person that takes asking (or watching, or being told) to know. */
-export type Fact = 'name' | 'job' | 'age' | 'home' | 'likes' | 'drinks' | 'hates' | 'nature';
+/** Something about a person that takes asking (or watching, or being told) to know; `dead`, that they are, takes being told. */
+export type Fact = 'name' | 'job' | 'age' | 'home' | 'likes' | 'drinks' | 'hates' | 'type' | 'nature' | 'dream' | 'dead';
 
-/** One line of what passed between the player and a person. */
+/** One line of what passed between the player and a person; a `note` is how it went down (rapport, charisma, their stance, and why), `tone` whether that was good for the player. */
 export interface LogEntry {
   at: number;
-  who: 'you' | 'them';
+  who: 'you' | 'them' | 'note';
   text: string;
+  tone?: 'good' | 'bad' | 'even';
 }
 
 /** Lines kept per person. */
-export const LOG_CAP = 24;
+export const LOG_CAP = 40;
 
 /** What the player knows of a person: met them, seen them about, or heard of them; which of their facts; and what's been said. */
 export interface Knowledge {
@@ -133,6 +162,10 @@ export interface SocietyState {
   nextId: number;
   known: Record<string, Knowledge>;
   links: Record<string, KnownLink>;
+  /** What each person remembers of the player (memory.ts), by person. */
+  memories: Record<string, Memory[]>;
+  /** Who the player is seeing, if anyone (romance.ts). */
+  romance?: Romance | null;
 }
 
 export interface SocietyRules {
@@ -185,10 +218,20 @@ export interface SocietyRules {
   /** A mask on the player, as a gang reads it: this much attitude against them, with anyone in a gang. */
   mask: { turf: number };
   openness: OpennessRules;
+  /** What people remember of the player, how long, and what they bring up (memory.ts). */
+  memory: MemoryRules;
+  /** Romance with the player (romance.ts). */
+  romance: RomanceRules;
+  /**
+   * What people like and don't like being asked, and how they take each way of starting a
+   * chat: each reaction that fits the speaker (dialogue.ts `fits`) adds its `by`, worth
+   * `rapport` a point, and the strongest says why.
+   */
+  reactions: { rapport: number; openness: number; asked: Partial<Record<Asked, Reaction[]>>; approach: Record<Approach, Reaction[]> };
 }
 
 export function freshSociety(): SocietyState {
-  return { standings: {}, rep: {}, incidents: [], threats: [], nextId: 1, known: {}, links: {} };
+  return { standings: {}, rep: {}, incidents: [], threats: [], nextId: 1, known: {}, links: {}, memories: {}, romance: null };
 }
 
 // ───────────── What the player knows ─────────────
@@ -225,9 +268,9 @@ export function learnFact(state: SocietyState, id: string, fact: Fact): boolean 
 }
 
 /** Keeps a line of what was said, the last `LOG_CAP` per person. */
-export function logLine(state: SocietyState, id: string, who: LogEntry['who'], text: string, now: number): void {
+export function logLine(state: SocietyState, id: string, who: LogEntry['who'], text: string, now: number, tone?: LogEntry['tone']): void {
   const k = knowledgeOf(state, id);
-  state.known[id] = { ...k, log: [...k.log, { at: now, who, text }].slice(-LOG_CAP) };
+  state.known[id] = { ...k, log: [...k.log, { at: now, who, text, ...(tone ? { tone } : {}) }].slice(-LOG_CAP) };
 }
 
 export function linkKey(a: string, b: string): string {
@@ -253,6 +296,20 @@ export function learnLink(state: SocietyState, a: string, b: string, kind: TieKi
   const had = state.links[key];
   if (had && (had.kind !== null || kind === null)) return false;
   const stored = kind && kind !== 'none' && a > b ? INVERSE[kind] : kind;
+  state.links[key] = { kind: stored, how, at: now };
+  return true;
+}
+
+/**
+ * What the player hears of a tie that has changed (a couple got together, married or split
+ * up; friends fell out or made up): unlike `learnLink`, it replaces what they knew, since
+ * what they knew isn't so anymore. True if that's news.
+ */
+export function relearnLink(state: SocietyState, a: string, b: string, kind: TieKind | 'none', how: KnownHow, now: number): boolean {
+  if (a === b) return false;
+  const key = linkKey(a, b);
+  const stored = kind !== 'none' && a > b ? INVERSE[kind] : kind;
+  if (state.links[key]?.kind === stored) return false;
   state.links[key] = { kind: stored, how, at: now };
   return true;
 }
@@ -300,17 +357,18 @@ function drift(value: number, at: number, perDay: number, timeScale: number, now
 export function standingOf(state: SocietyState, id: string, rules: SocietyRules, timeScale: number, now: number): Standing {
   const s = state.standings[id] ?? blank(now);
   // Saves from before questions were counted have neither.
-  return { ...s, asks: s.asks ?? 0, refused: s.refused ?? {}, grudge: drift(s.grudge, s.at, rules.forgivePerDay, timeScale, now) };
+  return { ...s, asks: s.asks ?? 0, refused: s.refused ?? {}, grudge: drift(s.grudge, s.at, rules.forgivePerDay, timeScale, now), spark: drift(s.spark ?? 0, s.at, rules.romance.fadePerDay, timeScale, now) };
 }
 
 /** Writes a standing down at `now`, grudge faded first, then changed by `by`. */
-export function changeStanding(state: SocietyState, id: string, by: Partial<Standing> & { rapport?: number; grudge?: number }, rules: SocietyRules, timeScale: number, now: number): Standing {
+export function changeStanding(state: SocietyState, id: string, by: Partial<Standing> & { rapport?: number; grudge?: number; spark?: number }, rules: SocietyRules, timeScale: number, now: number): Standing {
   const faded = standingOf(state, id, rules, timeScale, now);
   const next: Standing = {
     ...faded,
     ...by,
     rapport: Math.max(-100, Math.min(100, faded.rapport + (by.rapport ?? 0))),
     grudge: Math.max(0, Math.min(200, faded.grudge + (by.grudge ?? 0))),
+    spark: Math.max(0, Math.min(100, (faded.spark ?? 0) + (by.spark ?? 0))),
     at: now,
   };
   state.standings[id] = next;
@@ -452,6 +510,13 @@ function cascade(state: SocietyState, population: Population, incident: Incident
   }
   affected.sort((a, b) => b.grudge - a.grudge);
 
+  // What it was, as each of them will remember it: done to them, seen, or heard of from their people.
+  remember(state, victim.id, { kind: 'wronged', at: incident.at, what: incident.kind, ...(incident.took ? { amount: incident.took } : {}) }, rules.memory, timeScale, now);
+  for (const { id: pid, grudge } of affected) {
+    if (pid === victim.id || grudge < rules.memory.heardAt) continue;
+    remember(state, pid, { kind: incident.witnesses.includes(pid) ? 'saw' : 'heard', at: incident.at, about: victim.id, what: incident.kind }, rules.memory, timeScale, now);
+  }
+
   const rep: Record<string, number> = {};
   const hit = (key: string, by: number) => {
     if (!by) return;
@@ -498,6 +563,26 @@ function cascade(state: SocietyState, population: Population, incident: Incident
   }
   state.threats.push(...threats);
   return { affected, rep, threats };
+}
+
+/**
+ * Word that the player was good to someone (a gift): the people closest to them (closeness
+ * a half or more: family, a partner, friends) warm to the player a little, by how close they
+ * are, and remember hearing it. Returns who heard.
+ */
+export function passGoodWord(state: SocietyState, population: Population, from: Person, worth: number, rules: SocietyRules, timeScale: number, now: number): string[] {
+  const heard: string[] = [];
+  for (const t of tiesOf(population, from.id)) {
+    const closeness = rules.closeness[t.kind];
+    const rapport = Math.round(worth * rules.memory.goodWord * closeness);
+    if (closeness < 0.5 || rapport < 1) continue;
+    const other = population.people.find((p) => p.id === t.to);
+    if (!other || other.diedOn !== undefined) continue;
+    changeStanding(state, other.id, { rapport }, rules, timeScale, now);
+    remember(state, other.id, { kind: 'goodWord', at: now, about: from.id }, rules.memory, timeScale, now);
+    heard.push(other.id);
+  }
+  return heard;
 }
 
 /** Threats that have come due. */

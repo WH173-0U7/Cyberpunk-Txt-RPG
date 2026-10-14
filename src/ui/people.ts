@@ -1,4 +1,4 @@
-import type { Stance } from '../engine/society';
+import { STANCE_LABEL as STANCES, type Stance } from '../engine/society';
 import { MapOverlay, type OverlayElements } from './overlay';
 
 export interface PersonRowView {
@@ -24,12 +24,19 @@ export interface WebNodeView {
 }
 
 export interface LogLineView {
-  who: 'you' | 'them';
+  who: 'you' | 'them' | 'note';
   text: string;
+  /** For a note: whether it went well, badly, or neither. */
+  tone?: 'good' | 'bad' | 'even';
 }
 
 /** Which set of choices is unfolded under the conversation, if any. */
-export type Picker = 'ask' | 'give' | 'chop' | 'work' | 'more' | null;
+export type Picker = 'talk' | 'ask' | 'give' | 'chop' | 'work' | 'heart' | 'more' | null;
+
+/** What the heart command offers: asking them out, a date, making it official, ending it. */
+export type HeartMove = 'askOut' | 'date' | 'official' | 'end';
+
+const HEART_LABEL: Record<HeartMove, string> = { askOut: 'Ask out', date: 'Date', official: 'Make it official', end: 'End it' };
 
 export interface PersonCardView {
   id: string;
@@ -48,6 +55,8 @@ export interface PersonCardView {
   web: WebNodeView[];
   webHint: string;
   picker: Picker;
+  /** Ways to start a chat: just talking, a compliment, a joke… */
+  approaches: Array<{ id: string; label: string }>;
   /** Things to ask them about themselves. */
   questions: Array<{ fact: string; label: string }>;
   /** People the player knows of, to ask this person about. */
@@ -58,6 +67,8 @@ export interface PersonCardView {
   chops: Array<{ id: string; label: string }>;
   /** What there is to do about work with them: ask them for a job (they run a place that hires), quit the one they gave the player, or nothing. */
   work: 'hire' | 'quit' | null;
+  /** What there is to do about the heart with them: ask them out, or, with the one the player is seeing, a date, making it official, ending it (that one even when they're not here). */
+  heart: HeartMove[];
   /** What has passed between them, oldest first. */
   log: LogLineView[];
 }
@@ -93,24 +104,21 @@ export interface PeopleHandlers {
   /** A person was picked from the list, or (null) the list was gone back to. */
   onSelect(id: string | null): void;
   onAction(action: PersonAction, id: string): void;
+  /** The player started a chat a particular way. */
+  onTalk(id: string, approach: string): void;
   onGift(id: string, itemId: string): void;
   /** The player asked a person to chop a locked credchip. */
   onChop(id: string, chipId: string): void;
   onAsk(id: string, aboutId: string): void;
   onQuestion(id: string, fact: string): void;
+  /** The player made a move of the heart: asked them out, took them out, asked to make it official, ended it. */
+  onHeart(id: string, move: HeartMove): void;
   /** The facts line was tapped: what's known of them and their web unfold, or fold away. */
   onToggleFacts(): void;
   onPicker(picker: Picker): void;
 }
 
-export const STANCE_LABEL: Record<Stance, string> = {
-  hostile: 'Hostile',
-  cold: 'Cold',
-  wary: 'Wary',
-  neutral: 'Stranger',
-  warm: 'Warm',
-  friend: 'Friend',
-};
+export const STANCE_LABEL: Record<Stance, string> = STANCES;
 
 /**
  * Who's here, over the map: a list of everyone at the place the player is, and one person's
@@ -137,11 +145,12 @@ export class People {
     // Everything on the card goes through one listener: commands, the choices they unfold, names in the web.
     els.card.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
-      const button = target?.closest<HTMLElement>('[data-cmd], [data-fact], [data-about], [data-item], [data-chip], [data-action], [data-open]');
+      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-about], [data-item], [data-chip], [data-action], [data-heart], [data-open]');
       if (!button) return;
-      const { cmd, fact, about, item, chip, action, open, id } = button.dataset;
-      if (cmd === 'talk' && id) handlers.onAction('talk', id);
-      else if (cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'more') handlers.onPicker(cmd);
+      const { cmd, approach, fact, about, item, chip, action, heart, open, id } = button.dataset;
+      if (cmd === 'talk' || cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'heart' || cmd === 'more') handlers.onPicker(cmd);
+      else if (heart && id) handlers.onHeart(id, heart as HeartMove);
+      else if (approach && id) handlers.onTalk(id, approach);
       else if (fact && id) handlers.onQuestion(id, fact);
       else if (about && id) handlers.onAsk(id, about);
       else if (item && id) handlers.onGift(id, item);
@@ -157,7 +166,7 @@ export class People {
     els.reputation.replaceChildren(...view.reputation.map((line) => el('span', 'people-rep-item', line)));
     els.reputation.hidden = view.reputation.length === 0;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'fact', 'about', 'item', 'chip', 'action', 'open', 'id'].includes(key)) : undefined;
+    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'approach', 'fact', 'about', 'item', 'chip', 'action', 'heart', 'open', 'id'].includes(key)) : undefined;
     const focusedId = active?.dataset.id;
     if (view.card) {
       els.list.hidden = true;
@@ -198,8 +207,9 @@ export class People {
     cardLog.replaceChildren(
       ...(card.log.length
         ? card.log.map((line) => {
-            const li = el('li', `person-log-line is-${line.who}`);
+            const li = el('li', `person-log-line is-${line.who}${line.tone ? ` is-${line.tone}` : ''}`);
             if (line.who === 'you') li.append(el('span', 'person-log-who', '›'));
+            else if (line.who === 'note') li.append(el('span', 'sr-only', 'How it went: '));
             else li.append(el('span', 'sr-only', `${card.name.split(' ')[0] ?? card.name}: `));
             li.append(el('span', 'person-log-text', line.text));
             return li;
@@ -210,7 +220,9 @@ export class People {
 
     // The choices the open command unfolds, if any.
     const picker: HTMLElement[] = [];
-    if (card.here && card.picker === 'ask') {
+    if (card.here && card.picker === 'talk') {
+      picker.push(...card.approaches.map((a) => chip(a.label, { id: card.id, approach: a.id }, 'person-chip')));
+    } else if (card.here && card.picker === 'ask') {
       if (card.questions.length) picker.push(...card.questions.map((q) => chip(q.label, { id: card.id, fact: q.fact }, 'person-chip')));
       if (card.askAbout.length) picker.push(el('span', 'person-gifts-label', 'About'), ...card.askAbout.map((a) => chip(a.name, { id: card.id, about: a.id }, 'person-chip')));
     } else if (card.here && card.picker === 'give') {
@@ -219,23 +231,27 @@ export class People {
       picker.push(...card.chops.map((c) => chip(c.label, { id: card.id, chip: c.id }, 'person-chip')));
     } else if (card.here && card.picker === 'work' && card.work) {
       picker.push(card.work === 'hire' ? chip('Ask for work', { id: card.id, action: 'hire' }, 'person-chip') : chip('Quit', { id: card.id, action: 'quit' }, 'person-chip is-danger'));
+    } else if (card.picker === 'heart' && card.heart.length) {
+      picker.push(...card.heart.map((move) => chip(HEART_LABEL[move], { id: card.id, heart: move }, `person-chip${move === 'end' ? ' is-danger' : ' is-heart'}`)));
     } else if (card.here && card.picker === 'more') {
       picker.push(chip('Insult', { id: card.id, action: 'insult' }, 'person-chip is-danger'), chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'));
     }
     els.cardPicker.hidden = picker.length === 0;
     els.cardPicker.replaceChildren(...picker);
 
-    // One row of commands; what isn't possible isn't shown, and someone who isn't here gets none.
+    // One row of commands; what isn't possible isn't shown, and someone who isn't here gets none but the heart's (ending it, by message).
+    const heart = card.heart.length ? [{ cmd: 'heart', label: '♥', active: card.picker === 'heart' }] : [];
     const commands: Array<{ cmd: string; label: string; active?: boolean; quiet?: boolean }> = card.here
       ? [
-          { cmd: 'talk', label: 'Talk' },
+          { cmd: 'talk', label: 'Talk', active: card.picker === 'talk' },
           ...(card.questions.length || card.askAbout.length ? [{ cmd: 'ask', label: 'Ask', active: card.picker === 'ask' }] : []),
           ...(card.gifts.length ? [{ cmd: 'give', label: 'Give', active: card.picker === 'give' }] : []),
           ...(card.chops.length ? [{ cmd: 'chop', label: 'Chop', active: card.picker === 'chop' }] : []),
           ...(card.work ? [{ cmd: 'work', label: 'Work', active: card.picker === 'work' }] : []),
+          ...heart,
           { cmd: 'more', label: '⋯', active: card.picker === 'more', quiet: true },
         ]
-      : [];
+      : heart;
     els.cardCommands.hidden = commands.length === 0;
     els.cardCommands.replaceChildren(
       ...commands.map((c) => {
@@ -244,6 +260,7 @@ export class People {
         button.dataset.cmd = c.cmd;
         button.dataset.id = card.id;
         if (c.cmd === 'more') button.setAttribute('aria-label', 'More: insult, rob');
+        if (c.cmd === 'heart') button.setAttribute('aria-label', `Heart: ${card.heart.map((m) => HEART_LABEL[m]).join(', ')}`);
         if (c.active !== undefined) button.setAttribute('aria-pressed', String(c.active));
         return button;
       }),

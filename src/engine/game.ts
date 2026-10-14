@@ -1,15 +1,19 @@
 import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
-import { changeRoom, loadOf, loads, newChipId, newPocketId, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState } from './carry';
+import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
+import { tillOf, tradeAt, turfFrom, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
-import { answer, compose, deflect, describeStranger, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, moodOf, openness, openTopics, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
+import { answer, compose, deflect, describeStranger, drawnWord, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
 import { bossAt, bossOf, canPromote, ladderFor, nextRung, rungOf, shiftOpen, shiftPay, type JobRules, type JobState, type JobStatus, type Rung } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
-import { generatePeople, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type PeopleContent, type Person, type Population, type Spot, type Tie } from './people';
-import { createRng } from './rng';
+import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
+import { dreamOf, drawnTo, generatePeople, handleOf, heartOf, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
+import { createRng, type Rng } from './rng';
+import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
 import { freshSkill, gainXp, skillStatus, type SkillRules, type SkillState, type SkillStatus } from './skills';
 import {
   applyIncident,
@@ -26,9 +30,12 @@ import {
   learnOf,
   linkOf,
   logLine,
+  passGoodWord,
   pinIncident,
+  relearnLink,
   repOf,
   settleThreat,
+  STANCE_LABEL,
   standingOf,
   stanceOf,
   webOf,
@@ -160,6 +167,16 @@ export interface Description {
 
 const HOUR = 3_600_000;
 
+/** Where the player stood with someone before an exchange: their regard, any grudge, their stance, and the player's charisma. */
+interface Snapshot {
+  rapport: number;
+  grudge: number;
+  spark: number;
+  stance: Stance;
+  level: number;
+  xp: number;
+}
+
 /**
  * The game rules and state. It never touches the DOM: everything the player
  * sees or feels is driven by the events it emits. Time comes in as `now`
@@ -193,6 +210,8 @@ export class Game {
   private job: JobState | null;
   /** The people's own days so far, and what everyone started with in eddies, for earning it back. */
   private life: LifeState;
+  /** The player, as people see them: the pronouns they go by. */
+  private you: You;
   private readonly baseEddies: ReadonlyMap<string, number>;
   /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
   private readonly home: { building: string; bed: boolean } | null = null;
@@ -223,6 +242,8 @@ export class Game {
     applyLife(this.population, this.life);
     this.society = progress?.society ? { ...freshSociety(), ...structuredClone(progress.society) } : freshSociety();
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
+    // Saves from before the player said otherwise go by they.
+    this.you = progress?.you ? { ...progress.you } : { pronouns: 'they' };
     // A job at a place this city doesn't have, or that doesn't hire anymore, is no job.
     const workplace = progress?.job ? world.buildings.find((b) => b.id === progress.job?.building) : undefined;
     this.job = progress?.job && workplace && ladderFor(workplace, rules.jobs) ? { ...progress.job } : null;
@@ -232,6 +253,8 @@ export class Game {
     for (const id of Object.keys(this.society.known)) if (!known.has(id)) delete this.society.known[id];
     for (const key of Object.keys(this.society.links)) if (!key.split('|').every((id) => known.has(id))) delete this.society.links[key];
     this.society.threats = this.society.threats.filter((t) => !t.by || known.has(t.by));
+    forgetMemories(this.society, known);
+    if (this.society.romance && !known.has(this.society.romance.with)) this.society.romance = null;
     // Pockets of kinds the game no longer has are gone, and with none left the player wears the usual; anything not in a pocket is put away.
     const pockets = (progress?.gear ?? []).filter((p) => p.kind in rules.gear.kinds).map((p) => ({ ...p }));
     this.pockets = pockets.length ? pockets : rules.gear.start.map((p) => ({ ...p }));
@@ -420,9 +443,9 @@ export class Game {
     return { grams: totalGrams(this.pockets, this.items, this.money, gear, food.dishes), pockets: loads(this.pockets, this.items, this.money, gear, food.dishes) };
   }
 
-  /** The pocket with room for one of something, if any. */
-  private pocketFor(item: Pick<Item, 'id' | 'kind'>): string | null {
-    return placeFor(this.pockets, this.items, this.money, item, 1, this.rules.gear, this.rules.food.dishes);
+  /** The pocket with room for one of something (or `count`, all together), if any. */
+  private pocketFor(item: Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | 'loaded'>, count = 1): string | null {
+    return placeFor(this.pockets, this.items, this.money, item, count, this.rules.gear, this.rules.food.dishes);
   }
 
   /**
@@ -457,15 +480,27 @@ export class Game {
     return menuFor(this.world, at, this.rules.food) ?? (this.inside ? this.rack(this.inside) : null);
   }
 
-  /** A store's rack of bags and belts, priced by how good a store it is. */
+  /** A store's rack: garments at their own price, bags priced by how good a store it is; at a weapon store, its guns or blades at their own price and boxes of rounds priced like the bags. */
   private rack(building: Building): Menu | null {
     const { gear, food } = this.rules;
-    const key = building.business && gear.racks[building.business] ? building.business : null;
-    const ids = key ? gear.racks[key] : undefined;
-    if (!key || !ids?.length) return null;
+    const key = building.business && (gear.racks[building.business] || gear.arms.stores[building.business]) ? building.business : null;
+    if (!key) return null;
+    const ids = gear.racks[key] ?? [];
+    const stock = gear.arms.stores[key];
     // A clothing store sells at its tier; a store with only bags on the rack prices them the way its district eats.
     const quality = gear.quality[key] ?? drawQuality(this.world, building);
     const venue: Venue = { id: building.id, name: building.name, district: building.district, kindLabel: building.kindLabel, quality, chain: false };
+    // The weapons first, then the rounds, then whatever carries them.
+    const arms = stock ? stockFor(this.world.seed, building.id, building.district, quality, stock, gear.arms) : [];
+    const weapons = arms.flatMap((id): MenuItem[] => {
+      const weapon = gear.arms.weapons[id];
+      if (!weapon) return [];
+      const detail = [weaponDetail(weapon, gear.arms), weapon.magazine ? `${weapon.magazine} rounds` : '', gear.arms.classes[weapon.class]?.long ? 'Needs a bag' : ''].filter(Boolean).join(' · ');
+      return [{ id, name: weapon.name, note: weapon.note, kind: 'weapon', price: weapon.price, detail }];
+    });
+    const ammo = stock?.ammo
+      ? Object.entries(gear.arms.ammo).map(([id, a]): MenuItem => ({ id, name: a.name, note: a.note, kind: 'ammo', price: priceFor(a.price, quality, food), detail: `Box of ${a.box} · ${a.for}` }))
+      : [];
     const items = ids.flatMap((id): MenuItem[] => {
       const kind = gear.kinds[id];
       if (!kind?.price) return [];
@@ -476,7 +511,8 @@ export class Game {
       }
       return [{ id, name: kind.name, note: kind.note ?? '', kind: 'gear' as const, price: priceFor(kind.price, quality, food) }];
     });
-    return { venue, items, kind: 'gear' };
+    const all = [...weapons, ...ammo, ...items];
+    return all.length ? { venue, items: all, kind: 'gear' } : null;
   }
 
   /** Whether the player can pay for something on the menu here: in cash, or by transfer where the counter takes one. */
@@ -491,9 +527,20 @@ export class Game {
     return this.canPay(amount, this.rules.money.transfers.ncart);
   }
 
-  /** What buying something off a menu puts in a pocket: a dish, or a garment to wear later. */
-  private protoFor(item: MenuItem): Pick<Item, 'id' | 'kind' | 'gear'> {
-    return item.kind === 'clothing' ? { id: item.id, kind: 'clothing', gear: item.id } : { id: item.id, kind: 'consumable' };
+  /** What buying something off a menu puts in a pocket: a dish, a garment to wear later, a weapon (its magazine full only if it's sold loaded), or a box of rounds. */
+  private protoFor(item: MenuItem): Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | 'loaded'> {
+    if (item.kind === 'clothing') return { id: item.id, kind: 'clothing', gear: item.id };
+    if (item.kind === 'weapon') {
+      const weapon = this.rules.gear.arms.weapons[item.id];
+      return { id: item.id, kind: 'weapon', weapon: item.id, ...(weapon && isGun(weapon, this.rules.gear.arms) ? { loaded: weapon.disposable ? (weapon.magazine ?? 0) : 0 } : {}) };
+    }
+    if (item.kind === 'ammo') return { id: item.id, kind: 'ammo' };
+    return { id: item.id, kind: 'consumable' };
+  }
+
+  /** How many of something one purchase is: a box of rounds, else one. */
+  private boxOf(item: MenuItem): number {
+    return item.kind === 'ammo' ? (this.rules.gear.arms.ammo[item.id]?.box ?? 1) : 1;
   }
 
   /** Why the player can't buy something here, or null if they can: it isn't for sale, they're barred, short of eddies, or out of room. */
@@ -504,7 +551,13 @@ export class Game {
     const barred = this.barred(now);
     if (barred) return barred;
     if (!this.canPay(item.price, this.takesTransfers(menu))) return this.shortBy(item.name, item.price, this.takesTransfers(menu));
-    if (item.kind !== 'gear' && !this.pocketFor(this.protoFor(item))) return `No room for ${item.name}: your pockets are full. Eat something, or drop something.`;
+    if (item.kind !== 'gear' && !this.pocketFor(this.protoFor(item), this.boxOf(item))) {
+      const proto = this.protoFor(item);
+      // Something long wants a bag that takes it, and the pockets of your clothes never will.
+      if (isLong(proto, this.rules.gear.arms)) return `No room for the ${item.name}: it's too long for a pocket. It wants a bag with room: a messenger bag, a backpack, a duffel or a gun case.`;
+      if (item.kind === 'ammo') return `No room for a box of ${item.name}: a box wants a slot with room for its weight. Drop something, or carry a bag.`;
+      return `No room for ${item.name}: your pockets are full. Eat something, or drop something.`;
+    }
     return null;
   }
 
@@ -519,16 +572,30 @@ export class Game {
       return false;
     }
     this.pay(item.price, this.takesTransfers(menu));
+    // Spent at a storefront, it's in the till when the day is lived.
+    if (this.inside?.business && menu.venue.id === this.inside.id) tillOf(this.life.tills, this.inside.id).pending += item.price;
     if (item.kind === 'gear') {
       this.pockets.push({ id: newPocketId(item.id, this.pockets), kind: item.id, in: null });
       this.say(`Bought a ${item.name.toLowerCase()} for ${item.price} €$. More room.`, 'system');
+    } else if (item.kind === 'weapon') {
+      // Each weapon is its own thing, with its own magazine.
+      const proto = this.protoFor(item);
+      const weapon = this.rules.gear.arms.weapons[item.id];
+      const pocket = this.pocketFor(proto) ?? undefined;
+      this.items.push({ ...proto, id: newWeaponId(item.id, this.items), name: item.name, count: 1, in: pocket });
+      const rounds = weapon ? ammoFor(weapon, this.rules.gear.arms) : null;
+      const where = this.pockets.find((p) => p.id === pocket);
+      const whereName = where ? this.rules.gear.kinds[where.kind]?.name.toLowerCase() : '';
+      const tail = !weapon || !rounds ? '' : weapon.disposable ? ` It comes loaded: ${weapon.magazine} rounds, and no reloading it.` : ` Empty: it takes ${this.rules.gear.arms.ammo[rounds]?.name ?? 'ammo'}, loaded from the inventory.`;
+      this.say(`Bought the ${item.name} for ${item.price} €$${whereName ? `, into your ${whereName}` : ''}.${tail}`, 'system');
     } else {
       const proto = this.protoFor(item);
-      const pocket = this.pocketFor(proto) ?? undefined;
+      const count = this.boxOf(item);
+      const pocket = this.pocketFor(proto, count) ?? undefined;
       const owned = this.items.find((i) => i.id === item.id && i.kind === proto.kind && i.in === pocket);
-      if (owned) owned.count++;
-      else this.items.push({ id: item.id, kind: proto.kind, name: item.name, count: 1, in: pocket, ...(proto.gear ? { gear: proto.gear } : {}) });
-      this.say(`Bought ${item.name} for ${item.price} €$.${proto.gear ? ' Put it on from the inventory.' : ''}`, 'system');
+      if (owned) owned.count += count;
+      else this.items.push({ id: item.id, kind: proto.kind, name: item.name, count, in: pocket, ...(proto.gear ? { gear: proto.gear } : {}) });
+      this.say(item.kind === 'ammo' ? `Bought a box of ${item.name} for ${item.price} €$: ${count} rounds.` : `Bought ${item.name} for ${item.price} €$.${proto.gear ? ' Put it on from the inventory.' : ''}`, 'system');
     }
     this.events.emit('walletChanged', this.wallet);
     this.events.emit('inventoryChanged', this.inventory);
@@ -640,12 +707,121 @@ export class Game {
     return null;
   }
 
-  /** Drops one of something carried, for good: room for something else. False if there's none. */
+  /** Drops one of something carried, for good: room for something else; loose rounds go all at once. False if there's none. */
   drop(id: string): boolean {
     const item = this.items.find((i) => i.id === id);
     if (!item) return false;
-    this.takeOne(item);
-    this.say(`You drop the ${item.name}.`);
+    if (item.kind === 'ammo') {
+      this.items.splice(this.items.indexOf(item), 1);
+      this.say(`You drop ${item.count} ${item.count === 1 ? 'round' : 'rounds'} of ${item.name}.`);
+    } else {
+      this.takeOne(item);
+      this.say(`You drop the ${item.name}.`);
+    }
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  // ───────────── Weapons ─────────────
+
+  /** The weapon the player would pull on someone, and how it stands: a loaded gun before an empty one, any gun before a blade. Null when they carry none. */
+  armed(): { id: string; name: string; short: string; gun: boolean; loaded: number; magazine: number } | null {
+    const drawn = drawWeapon(this.items, this.rules.gear.arms);
+    if (!drawn) return null;
+    return { id: drawn.item.id, name: drawn.weapon.name, short: drawn.weapon.short, gun: drawn.gun, loaded: drawn.item.loaded ?? 0, magazine: drawn.weapon.magazine ?? 0 };
+  }
+
+  /** What can be done with a weapon carried: load it (there are rounds for it and room in the magazine), or unload it. Neither for a blade, or a gun sold sealed. */
+  canLoad(id: string): { load: boolean; unload: boolean } {
+    const arms = this.rules.gear.arms;
+    const item = this.items.find((i) => i.id === id && i.kind === 'weapon');
+    const weapon = item ? weaponOf(item, arms) : null;
+    const ammo = weapon ? ammoFor(weapon, arms) : null;
+    if (!item || !weapon || !ammo || weapon.disposable) return { load: false, unload: false };
+    const loaded = item.loaded ?? 0;
+    return { load: loaded < (weapon.magazine ?? 0) && this.items.some((i) => i.kind === 'ammo' && i.id === ammo), unload: loaded > 0 };
+  }
+
+  /**
+   * Loads a gun from the rounds carried for it: as many as its magazine takes and the
+   * pockets have, the ones in its own pocket first. The rounds weigh with the gun once
+   * they're in it, so it takes from another pocket only as many as its own will bear. A
+   * gun sold sealed takes none.
+   */
+  load(id: string): boolean {
+    const arms = this.rules.gear.arms;
+    const item = this.items.find((i) => i.id === id && i.kind === 'weapon');
+    const weapon = item ? weaponOf(item, arms) : null;
+    const ammoId = weapon ? ammoFor(weapon, arms) : null;
+    if (!item || !weapon || !ammoId) return false;
+    const ammo = arms.ammo[ammoId];
+    const magazine = weapon.magazine ?? 0;
+    const loaded = item.loaded ?? 0;
+    if (weapon.disposable) {
+      this.say(`The ${weapon.short} is sealed: there is no reloading it.`, 'error');
+      return false;
+    }
+    if (loaded >= magazine) {
+      this.say(`The ${weapon.short} is full: ${loaded}/${magazine}.`);
+      return false;
+    }
+    const stacks = this.items.filter((i) => i.kind === 'ammo' && i.id === ammoId).sort((a, b) => Number(b.in === item.in) - Number(a.in === item.in));
+    const have = stacks.reduce((n, stack) => n + stack.count, 0);
+    if (!have) {
+      this.say(`No ${ammo?.name ?? 'ammo'} on you for the ${weapon.short}.`, 'error');
+      return false;
+    }
+    // Rounds already in the gun's pocket weigh the same in the gun; the rest must fit the pocket's weight.
+    const pocket = this.pockets.find((p) => p.id === item.in);
+    const own = stacks.filter((stack) => stack.in === item.in).reduce((n, stack) => n + stack.count, 0);
+    const kind = pocket ? this.rules.gear.kinds[pocket.kind] : undefined;
+    const spare = pocket && kind ? kind.maxGrams - loadOf(pocket, this.pockets, this.items, this.money, this.rules.gear, this.rules.food.dishes).grams : Infinity;
+    const bears = own + Math.max(0, Math.floor(spare / Math.max(1, ammo?.grams ?? 1)));
+    const take = Math.min(magazine - loaded, have, bears);
+    if (take <= 0) {
+      this.say(`The ${kind?.name.toLowerCase() ?? 'pocket'} can't bear the weight of the rounds. Move the ${weapon.short}, or lighten it.`, 'error');
+      return false;
+    }
+    let left = take;
+    for (const stack of stacks) {
+      const from = Math.min(stack.count, left);
+      stack.count -= from;
+      left -= from;
+      if (stack.count <= 0) this.items.splice(this.items.indexOf(stack), 1);
+      if (!left) break;
+    }
+    item.loaded = loaded + take;
+    const short = take < magazine - loaded && take < have ? ` Its ${kind?.name.toLowerCase() ?? 'pocket'} won't bear more.` : take < magazine - loaded ? ` That's all the ${ammo?.name ?? 'ammo'} you had.` : '';
+    this.say(`You load the ${weapon.short}: ${item.loaded}/${magazine}.${short}`, 'system');
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  /** Takes the rounds out of a gun, into a pocket with room for them (one with a stack of them first); as many as fit, if not all. */
+  unload(id: string): boolean {
+    const arms = this.rules.gear.arms;
+    const item = this.items.find((i) => i.id === id && i.kind === 'weapon');
+    const weapon = item ? weaponOf(item, arms) : null;
+    const ammoId = weapon ? ammoFor(weapon, arms) : null;
+    if (!item || !weapon || !ammoId || weapon.disposable || !item.loaded) return false;
+    const rounds = item.loaded;
+    const name = arms.ammo[ammoId]?.name ?? 'ammo';
+    // Weighed out of the gun, then put away (onto a stack of them, where one has room): as many as one pocket will take.
+    item.loaded = 0;
+    const proto = { id: ammoId, kind: 'ammo' as const };
+    let count = rounds;
+    let home = this.pocketFor(proto, count);
+    while (!home && count > 1) home = this.pocketFor(proto, --count);
+    if (!home) {
+      item.loaded = rounds;
+      this.say(`No room on you for the rounds: they stay in the ${weapon.short}.`, 'error');
+      return false;
+    }
+    item.loaded = rounds - count;
+    const stack = this.items.find((i) => i.kind === 'ammo' && i.id === ammoId && i.in === home);
+    if (stack) stack.count += count;
+    else this.items.push({ id: ammoId, kind: 'ammo', name, count, in: home });
+    this.say(count < rounds ? `You take ${count} rounds out of the ${weapon.short}: no room on you for the other ${rounds - count}.` : `You unload the ${weapon.short}: ${count} rounds of ${name} into your pockets.`, 'system');
     this.events.emit('inventoryChanged', this.inventory);
     return true;
   }
@@ -778,7 +954,7 @@ export class Game {
     const clock = this.clockAt(now);
     const here = this.inside?.id === building.id;
     const blocked = !here ? 'away' : job.lastShiftDay === clock.day ? 'done' : !shiftOpen(clock.hour, this.rules.jobs) ? 'closed' : null;
-    return { building, boss: bossOf(building, this.population), rung, next: nextRung(job, ladder), trust: job.trust, shifts: job.shifts, pay: shiftPay(rung, this.tierOf(building), this.rules.jobs), here, blocked };
+    return { building, boss: bossOf(building, this.population), rung, next: nextRung(job, ladder), trust: job.trust, shifts: job.shifts, pay: this.shiftPayAt(rung, building), here, blocked };
   }
 
   /** The tier a storefront runs at: its menu's, its rack's, or drawn the way its district eats. */
@@ -820,19 +996,29 @@ export class Game {
     const { society, timeScale, lines, jobs } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);
     const bottom = (ladderFor(runs, jobs) as Rung[])[0] as Rung;
-    const pay = shiftPay(bottom, this.tierOf(runs), jobs);
+    const pay = this.shiftPayAt(bottom, runs);
     const speaker = this.speakerFor(person, stance, doing, now);
     speaker.vars = { ...speaker.vars, title: bottom.title.toLowerCase(), work: runs.name, pay: String(pay) };
     const rng = createRng(`${this.world.seed}:${id}:hire:${standing.asks}`);
+    const before = this.snapshot(person, now);
     learnOf(this.society, id, 'met');
     this.logged(id, 'you', line(lines.you.work, speaker, rng), now);
     const refused = { ...standing.refused };
     let pressed = false;
     let hired = false;
+    // A boss who let the player go, or whom they walked out on, remembers it a while.
+    const burned = memoryOf(this.society, id, 'fired', society.memory, timeScale, now) ?? memoryOf(this.society, id, 'quit', society.memory, timeScale, now);
     if (speaker.mood === 'asleep' || stance === 'hostile') {
       this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
     } else if (this.masked()) {
       this.speech(person, line(lines.work.masked, speaker, rng), now);
+    } else if (burned) {
+      this.speech(person, line(lines.work.rehire, { ...speaker, vars: { ...speaker.vars, ...this.memoryVars(person, burned, now) } }, rng), now);
+      refused.hire = now;
+    } else if (this.trade(runs).health === 'struggling') {
+      // A place in the red takes nobody on, whatever the boss thinks of the player.
+      this.speech(person, line(lines.work.broke, speaker, rng), now);
+      refused.hire = now;
     } else if (this.pressing(standing, 'hire', now)) {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
@@ -841,6 +1027,7 @@ export class Game {
       if (reply === 'answer') {
         hired = true;
         this.job = { building: runs.id, rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 };
+        this.remember(id, { kind: 'hired', at: now, what: runs.name }, now);
         this.speech(person, compose(lines.work.hire, speaker, lines, rng, { opener: false }), now);
         // The boss has a name and a job now, as far as the player's concerned.
         learnFact(this.society, id, 'name');
@@ -856,6 +1043,7 @@ export class Game {
       this.gainCharisma(3);
       this.events.emit('jobChanged', this.jobStatus(now));
     }
+    this.noteFeedback(person, before, now, pressed ? lines.notes.pressed : hired ? lines.notes.hired : '', speaker.vars);
     this.events.emit('societyChanged', { people: [id] });
     return true;
   }
@@ -898,7 +1086,8 @@ export class Game {
         if (canPromote(job, ladder, stance, jobs)) {
           job.rung += 1;
           const up = rungOf(job, ladder);
-          const raise = shiftPay(up, this.tierOf(building), jobs);
+          const raise = this.shiftPayAt(up, building);
+          this.remember(boss.id, { kind: 'promoted', at: now, what: up.title.toLowerCase() }, now);
           speaker.vars = { ...speaker.vars, title: up.title.toLowerCase(), work: building.name, pay: String(raise) };
           this.speech(boss, compose(lines.work.promote, speaker, lines, rng, { opener: false }), now);
           this.say(`You're moved up: ${up.title.toLowerCase()} at ${building.name}, ${raise} €$ a shift.`, 'system');
@@ -918,9 +1107,10 @@ export class Game {
   quit(now: number): boolean {
     const status = this.jobStatus(now);
     if (!status) return false;
-    const { lines } = this.rules;
+    const { lines, society, timeScale, jobs } = this.rules;
     const { boss, building, rung } = status;
     const about = boss ? this.isHere(boss.id, now) : undefined;
+    const before = boss ? this.snapshot(boss, now) : null;
     if (boss && about) {
       const speaker = this.speakerFor(boss, about.stance, about.doing, now);
       speaker.vars = { ...speaker.vars, work: building.name, title: rung.title.toLowerCase() };
@@ -929,6 +1119,13 @@ export class Game {
       this.speech(boss, line(lines.work.quit, speaker, rng), now);
     }
     this.job = null;
+    // Told to their face or heard from the staff, the boss remembers being walked out on.
+    if (boss) {
+      this.remember(boss.id, { kind: 'quit', at: now, what: rung.title.toLowerCase() }, now);
+      // Walking out costs a little with the boss.
+      changeStanding(this.society, boss.id, { rapport: -jobs.quit }, society, timeScale, now);
+      if (before) this.noteFeedback(boss, before, now, lines.notes.quit);
+    }
     this.say(`You don't work at ${building.name} anymore.`, 'system');
     this.events.emit('jobChanged', null);
     if (boss) this.events.emit('societyChanged', { people: [boss.id] });
@@ -944,6 +1141,8 @@ export class Game {
     const banned = !building || repOf(this.society, `business:${job.building}`, society, timeScale, now) <= society.rep.banAt || (building.business ? repOf(this.society, `chain:${building.business}`, society, timeScale, now) <= society.rep.banAt : false);
     if (!banned) return false;
     this.job = null;
+    const boss = building ? bossOf(building, this.population) : null;
+    if (boss) this.remember(boss.id, { kind: 'fired', at: now, what: building?.name ?? '' }, now);
     this.say(`${building?.name ?? 'The place'} is done with you: after what you did to its people, nobody there wants you on a shift.`, 'error');
     this.events.emit('jobChanged', null);
     return true;
@@ -977,6 +1176,309 @@ export class Game {
     }));
   }
 
+  // ───────────── The heart ─────────────
+
+  /** The player as people see them: the pronouns they go by, for saving. */
+  get youSaved(): You {
+    return { ...this.you };
+  }
+
+  /** The pronouns the player goes by, which decides who's drawn to them. */
+  get pronouns(): Pronouns {
+    return this.you.pronouns;
+  }
+
+  /** Changes the pronouns the player goes by (Settings). */
+  setPronouns(pronouns: Pronouns): void {
+    if (this.you.pronouns === pronouns) return;
+    this.you = { ...this.you, pronouns };
+    this.events.emit('youChanged', this.youSaved);
+  }
+
+  /** Someone's heart: whom they're drawn to, the way in that wins them over, the look they go for. */
+  private heartOf(person: Person): Heart {
+    return heartOf(person, this.world, this.rules.people, this.population);
+  }
+
+  /** Who someone is with, alive, other than the player: their spouse, or someone they're seeing. */
+  private partnerOf(person: Person): { person: Person; kind: TieKind } | null {
+    for (const tie of tiesOf(this.population, person.id)) {
+      if (tie.kind !== 'spouse' && tie.kind !== 'partner') continue;
+      const other = this.person(tie.to);
+      if (other && other.diedOn === undefined) return { person: other, kind: tie.kind };
+    }
+    return null;
+  }
+
+  /** The look the player has on: the style most of what they wear is in. */
+  private styleWorn(): Style | null {
+    const { worn } = outfit(this.pockets, this.rules.gear);
+    const counts = new Map<Style, number>();
+    for (const pocket of Object.values(worn)) {
+      const style = pocket ? this.rules.gear.kinds[pocket.kind]?.style : undefined;
+      if (style) counts.set(style, (counts.get(style) ?? 0) + 1);
+    }
+    let best: Style | null = null;
+    for (const [style, n] of counts) if (!best || n > (counts.get(best) ?? 0)) best = style;
+    return best;
+  }
+
+  /**
+   * Someone's heart as line variables, as it stands with the player: drawn to them (`drawn`,
+   * never for anyone too young), spoken for (`taken`, the name, and `takenWord`), seeing the
+   * player (`withYou`, `together`), sweet on them (`sweet`), the player's look their type
+   * (`yourType`).
+   */
+  private heartVars(person: Person, standing: Standing): Record<string, string> {
+    const rules = this.rules.society.romance;
+    const heart = this.heartOf(person);
+    const partner = this.partnerOf(person);
+    const romance = this.society.romance;
+    const mine = romance?.with === person.id;
+    return {
+      drawn: person.age >= rules.adultAt && drawnTo(heart, this.you.pronouns) ? 'yes' : '',
+      taken: partner?.person.given ?? '',
+      takenWord: partner ? kinWord(person, partner.kind, partner.person) : '',
+      withYou: mine ? 'yes' : '',
+      together: mine && romance?.stage === 'together' ? 'yes' : '',
+      sweet: (standing.spark ?? 0) >= rules.sweetAt ? 'yes' : '',
+      yourType: heart.style && this.styleWorn() === heart.style ? 'yes' : '',
+    };
+  }
+
+  /** Who the player is seeing, if anyone: who, how far along, since when, how many dates, and the spark. */
+  romance(now: number): { id: string; name: string; stage: RomanceStage; since: number; dates: number; spark: number } | null {
+    const romance = this.society.romance;
+    const person = romance ? this.person(romance.with) : undefined;
+    if (!romance || !person) return null;
+    const spark = Math.round(standingOf(this.society, person.id, this.rules.society, this.rules.timeScale, now).spark ?? 0);
+    return { id: person.id, name: this.describe(person.id, now)?.name ?? person.name, stage: romance.stage, since: romance.since, dates: romance.dates, spark };
+  }
+
+  /**
+   * What the heart command offers with someone: asking them out (someone here the player
+   * knows by name, old enough, while the player is seeing no one); with the one the player
+   * is seeing, a date and making it official (both here) and ending it (anywhere).
+   */
+  romanceWith(id: string, now: number): RomanceMove[] {
+    const person = this.person(id);
+    if (!person || person.diedOn !== undefined) return [];
+    const romance = this.society.romance;
+    const here = Boolean(this.isHere(id, now));
+    if (romance?.with === id) return [...(here ? (['date'] as const) : []), ...(here && romance.stage === 'dating' ? (['official'] as const) : []), 'end'];
+    if (romance || !here || person.age < this.rules.society.romance.adultAt || !knowledgeOf(this.society, id).facts.includes('name')) return [];
+    return ['askOut'];
+  }
+
+  /**
+   * Asks someone here out. A yes takes someone drawn to the player, free, warm or better, with
+   * enough spark and rapport; a no says why (not drawn to the player, spoken for, not yet, or
+   * not in a mask), and asking again within the talk cooldown is pressing.
+   */
+  askOut(id: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    if (!here) return false;
+    const { person, stance, doing } = here;
+    const { society, timeScale, lines } = this.rules;
+    const rules = society.romance;
+    const current = this.society.romance;
+    if (current) {
+      if (current.with !== id) this.say(`You're seeing ${this.person(current.with)?.given ?? 'someone'}.`, 'error');
+      return false;
+    }
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const before = this.snapshot(person, now);
+    learnOf(this.society, id, 'met');
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const rng = createRng(`${this.world.seed}:${id}:askOut:${standing.talks}:${standing.asks}`);
+    this.logged(id, 'you', line(lines.you.askOut, speaker, rng), now);
+    const refused = { ...standing.refused };
+    let rapport = 0;
+    let spark = 0;
+    let why = '';
+    if (speaker.mood === 'asleep' || stance === 'hostile') {
+      this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
+    } else if (this.pressing(standing, 'askOut', now)) {
+      this.speech(person, line(lines.pressed, speaker, rng), now);
+      rapport = -society.openness.press;
+      why = lines.notes.pressed;
+    } else {
+      const masked = Boolean(this.masked());
+      const yes = !masked && speaker.vars.drawn && !speaker.vars.taken && standing.spark !== undefined && standing.spark >= rules.ask.spark && standing.rapport >= rules.ask.rapport && rules.ask.stances.includes(stance);
+      const pool = masked ? lines.romance.ask.masked : !speaker.vars.drawn ? lines.romance.ask.notDrawn : speaker.vars.taken ? lines.romance.ask.taken : yes ? lines.romance.ask.yes : lines.romance.ask.notYet;
+      this.speech(person, compose(pool, speaker, lines, rng, { opener: false }), now);
+      if (yes) {
+        this.society.romance = freshRomance(id, now);
+        spark = rules.ask.yes;
+        this.say(`You're seeing ${person.given} now. Take ${pronounsOf(person).him} out of an evening: ♥ on ${pronounsOf(person).his} card, somewhere with a menu.`, 'system');
+      } else {
+        refused.askOut = now;
+        why = masked ? lines.notes.masked : '';
+      }
+    }
+    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport, spark }, society, timeScale, now);
+    this.noteFeedback(person, before, now, why, speaker.vars);
+    this.events.emit('societyChanged', { people: [id] });
+    return true;
+  }
+
+  /**
+   * Takes the one the player is seeing out, here and now: an evening, somewhere with a menu,
+   * the player paying for two of what they like if it's on it (else the cheapest drink). Once a
+   * day; worth spark and rapport, and more when it's their favorite.
+   */
+  date(id: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    const romance = this.society.romance;
+    if (!here || romance?.with !== id) return false;
+    const { person, stance, doing } = here;
+    const { society, timeScale, lines, food } = this.rules;
+    const rules = society.romance;
+    const menu = this.menu();
+    const clock = this.clockAt(now);
+    const speaker = this.speakerFor(person, stance, doing, now);
+    if (!menu || menu.kind !== 'food' || !menu.items.length) {
+      this.say(`Not here: take ${person.given} somewhere with a menu. A bar, a diner, a noodle place.`, 'error');
+      return false;
+    }
+    if (!dateHour(clock.hour, rules)) {
+      this.say(`A date's an evening thing: from ${rules.date.from}:00 till ${String(rules.date.to).padStart(2, '0')}:00.`, 'error');
+      return false;
+    }
+    if (speaker.vars.atWork) {
+      this.say(`${person.given} is working. Come back when ${pronounsOf(person).he} ${person.pronouns === 'they' ? "aren't" : "isn't"}.`, 'error');
+      return false;
+    }
+    if (romance.lastDateAt && this.clockAt(romance.lastDateAt).day === clock.day) {
+      this.say(`You've been out with ${person.given} tonight already.`, 'error');
+      return false;
+    }
+    // What they like, if it's on; else the cheapest drink; else the cheapest thing.
+    const liked = menu.items.find((i) => i.id === person.likes.drink || i.id === person.likes.dish);
+    const drinks = menu.items.filter((i) => i.kind === 'drink' || i.kind === 'alcohol').sort((a, b) => a.price - b.price);
+    const order = liked ?? drinks[0] ?? [...menu.items].sort((a, b) => a.price - b.price)[0];
+    if (!order) return false;
+    const price = order.price * 2;
+    const transfers = this.takesTransfers(menu);
+    if (!this.canPay(price, transfers)) {
+      this.say(this.shortBy(`Two ${order.name}`, price, transfers), 'error');
+      return false;
+    }
+    const before = this.snapshot(person, now);
+    this.pay(price, transfers);
+    if (this.inside?.business && menu.venue.id === this.inside.id) tillOf(this.life.tills, this.inside.id).pending += price;
+    const favorite = Boolean(liked);
+    speaker.vars = { ...speaker.vars, item: order.name, favorite: favorite ? 'yes' : '' };
+    const rng = createRng(`${this.world.seed}:${id}:date:${romance.dates}`);
+    this.logged(id, 'you', line(lines.you.date, speaker, rng), now);
+    this.speech(person, compose(lines.romance.date, speaker, lines, rng, { opener: false }), now);
+    romance.dates += 1;
+    romance.lastDateAt = now;
+    changeStanding(this.society, id, { met: true, spark: rules.date.spark + (favorite ? rules.date.favorite : 0), rapport: rules.date.rapport, lastTalkAt: now }, society, timeScale, now);
+    this.remember(id, { kind: 'date', at: now, what: menu.venue.name }, now);
+    if (favorite) learnFact(this.society, id, food.dishes.find((d) => d.id === order.id)?.kind === 'food' ? 'likes' : 'drinks');
+    this.noteFeedback(person, before, now, [lines.notes.date, favorite ? lines.notes.favorite : ''].filter(Boolean).join(' · '), speaker.vars);
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('societyChanged', { people: [id] });
+    return true;
+  }
+
+  /** Asks the one the player is seeing to make it official: a yes after enough dates and spark, from someone who feels warmly. */
+  makeOfficial(id: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    const romance = this.society.romance;
+    if (!here || romance?.with !== id || romance.stage !== 'dating') return false;
+    const { person, stance, doing } = here;
+    const { society, timeScale, lines } = this.rules;
+    const rules = society.romance;
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const before = this.snapshot(person, now);
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const rng = createRng(`${this.world.seed}:${id}:official:${romance.dates}:${standing.asks}`);
+    this.logged(id, 'you', line(lines.you.official, speaker, rng), now);
+    const yes = romance.dates >= rules.official.dates && (standing.spark ?? 0) >= rules.official.spark && rules.ask.stances.includes(stance);
+    this.speech(person, compose(yes ? lines.romance.official.yes : lines.romance.official.notYet, speaker, lines, rng, { opener: false }), now);
+    if (yes) {
+      romance.stage = 'together';
+      changeStanding(this.society, id, { rapport: rules.official.rapport }, society, timeScale, now);
+    }
+    this.noteFeedback(person, before, now, yes ? lines.notes.official : '', speaker.vars);
+    this.events.emit('societyChanged', { people: [id] });
+    return true;
+  }
+
+  /** Ends it with the one the player is seeing: to their face if they're here, by message if not. It hurts them, and their people think less of the player. */
+  endRomance(now: number): boolean {
+    const romance = this.society.romance;
+    const person = romance ? this.person(romance.with) : undefined;
+    if (!romance || !person) return false;
+    const { society, timeScale, lines } = this.rules;
+    const rules = society.romance;
+    const here = this.isHere(person.id, now);
+    const before = this.snapshot(person, now);
+    const speaker = this.speakerFor(person, here?.stance ?? this.stanceOf(person, now), here?.doing ?? '', now);
+    const rng = createRng(`${this.world.seed}:${person.id}:end:${romance.since}`);
+    this.society.romance = null;
+    if (here) {
+      this.logged(person.id, 'you', line(lines.you.endIt, speaker, rng), now);
+      this.speech(person, compose(lines.romance.dumped, speaker, lines, rng, { opener: false }), now);
+    } else {
+      this.logged(person.id, 'you', `You message ${person.given}: it's over.`, now);
+      this.say(`You message ${person.given}: it's over.`, 'system');
+    }
+    const standing = standingOf(this.society, person.id, society, timeScale, now);
+    changeStanding(this.society, person.id, { rapport: -rules.dumped.rapport, grudge: rules.dumped.grudge, spark: -(standing.spark ?? 0) }, society, timeScale, now);
+    this.remember(person.id, { kind: 'dumped', at: now }, now);
+    // Their people take their side.
+    const touched = [person.id];
+    for (const tie of tiesOf(this.population, person.id)) {
+      if (!FAMILY.includes(tie.kind) && tie.kind !== 'friend') continue;
+      changeStanding(this.society, tie.to, { rapport: -Math.round(rules.dumped.kin * (society.closeness[tie.kind] ?? 0)) }, society, timeScale, now);
+      touched.push(tie.to);
+    }
+    this.noteFeedback(person, before, now, lines.notes.dumped, speaker.vars);
+    this.events.emit('societyChanged', { people: touched });
+    return true;
+  }
+
+  /** Whether the one the player is seeing ends it now: the spark gone, or the player caught flirting once too often. Says so if they do. */
+  private theyEndIt(person: Person, speaker: Speaker, rng: Rng, now: number): boolean {
+    const { society, timeScale, lines } = this.rules;
+    const rules = society.romance;
+    const standing = standingOf(this.society, person.id, society, timeScale, now);
+    const cheated = memoryOf(this.society, person.id, 'cheated', society.memory, timeScale, now);
+    const caught = Boolean(cheated && cheated.times >= rules.cheats);
+    const fizzled = (standing.spark ?? 0) < rules.endAt;
+    if (!caught && !fizzled) return false;
+    const before = this.snapshot(person, now);
+    const other = caught && cheated?.about ? this.person(cheated.about) : undefined;
+    const vars = { ...speaker.vars, fizzled: caught ? '' : 'yes', caught: caught ? 'yes' : '', other: other?.given ?? '' };
+    this.speech(person, compose(lines.romance.theyEnd, { ...speaker, vars }, lines, rng, { opener: false }), now);
+    this.society.romance = null;
+    changeStanding(this.society, person.id, { met: true, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
+    this.say(`${person.given} ended it.`, 'system');
+    this.noteFeedback(person, before, now, lines.notes.ended, vars);
+    this.events.emit('societyChanged', { people: [person.id] });
+    return true;
+  }
+
+  /** The one the player is seeing, here, seeing them flirt with someone else: it stings, and they remember. */
+  private jealous(other: Person, now: number): void {
+    const romance = this.society.romance;
+    const partner = romance && romance.with !== other.id ? this.isHere(romance.with, now) : undefined;
+    if (!partner) return;
+    const { society, timeScale, lines } = this.rules;
+    const rules = society.romance;
+    const before = this.snapshot(partner.person, now);
+    const speaker = this.speakerFor(partner.person, partner.stance, partner.doing, now);
+    speaker.vars = { ...speaker.vars, other: other.given };
+    const rng = createRng(`${this.world.seed}:${partner.person.id}:jealous:${now}`);
+    this.narrate(partner.person, line(lines.romance.jealous, speaker, rng), now, 'error');
+    changeStanding(this.society, partner.person.id, { spark: -rules.jealous.spark, rapport: -rules.jealous.rapport, grudge: rules.jealous.grudge }, society, timeScale, now);
+    this.remember(partner.person.id, { kind: 'cheated', at: now, about: other.id }, now);
+    this.noteFeedback(partner.person, before, now, lines.notes.jealous, speaker.vars);
+  }
+
   // ───────────── The people's own days ─────────────
 
   /** The people's own days so far, for saving. */
@@ -988,8 +1490,50 @@ export class Game {
   private live(now: number): void {
     const today = this.clockAt(now).day;
     if (this.life.day >= today) return;
-    const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed);
-    if (happened.length) this.events.emit('societyChanged', { people: [] });
+    // Whoever the player is seeing is no one else's to fall for.
+    const spokenFor = new Set(this.society.romance ? [this.society.romance.with] : []);
+    const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed, (spot) => this.tierOfSpot(spot), turfFrom(this.rules.people.turf), this.rules.people, spokenFor);
+    // Seeing someone who has died: word reaches the player, and it's over.
+    const partner = this.society.romance ? this.person(this.society.romance.with) : undefined;
+    if (partner?.diedOn !== undefined) {
+      this.society.romance = null;
+      learnFact(this.society, partner.id, 'dead');
+      this.say(`Word reaches you: ${partner.given} is dead.`, 'error');
+    }
+    if (happened.length || partner?.diedOn !== undefined) this.events.emit('societyChanged', { people: partner ? [partner.id] : [] });
+  }
+
+  /** The tier a place runs at, for what an evening there costs, remembered per place. */
+  private readonly tiers = new Map<string, Quality>();
+  private tierOfSpot(spot: Spot): Quality {
+    const key = `${spot.kind}:${spot.id}`;
+    const known = this.tiers.get(key);
+    if (known) return known;
+    const at = spot.kind === 'building' ? this.world.buildings.find((b) => b.id === spot.id) : this.world.locations[spot.id];
+    const tier: Quality = !at ? 'everyday' : spot.kind === 'building' ? this.tierOf(at as Building) : (menuFor(this.world, at, this.rules.food)?.venue.quality ?? drawQuality(this.world, at));
+    this.tiers.set(key, tier);
+    return tier;
+  }
+
+  /** How a storefront is doing on its last week's books, and the line that says so inside. */
+  trade(building: Building): { health: Health; line: string } {
+    return tradeAt(building, this.population, this.life.tills, this.tierOf(building), this.rules.life.economy);
+  }
+
+  /** What a shift pays the player at a storefront: its rung by its tier, and more or less by how the place is doing. */
+  private shiftPayAt(rung: Rung, building: Building): number {
+    return Math.max(1, Math.round(shiftPay(rung, this.tierOf(building), this.rules.jobs) * this.rules.life.economy.pay[this.trade(building).health]));
+  }
+
+  /** How long ago something was, said the way people say it, from a number of days. */
+  private agoWord(days: number): string {
+    if (days < 1) return 'today';
+    if (days < 2) return 'last night';
+    if (days < 3) return 'two nights back';
+    if (days < 7) return 'a few days back';
+    if (days < 14) return 'last week';
+    if (days < 28) return 'a few weeks back';
+    return 'a while back';
   }
 
   /** What someone would bring up about what happened between people lately, as the variables their lines are filled by; nothing when there's no news. */
@@ -997,8 +1541,7 @@ export class Game {
     const news = newsFor(person, this.population, this.life, this.rules.life, this.clockAt(now).day);
     if (!news) return {};
     const { event, role, other, tie, won } = news;
-    const days = this.clockAt(now).day - event.day;
-    const ago = days <= 0 ? 'today' : days === 1 ? 'last night' : days === 2 ? 'two nights back' : days < 7 ? 'a few days back' : 'last week';
+    const ago = this.agoWord(this.clockAt(now).day - event.day);
     const pronouns = pronounsOf(other);
     const where = event.where ? (event.where.kind === 'building' ? this.world.buildings.find((b) => b.id === event.where?.id)?.name : this.world.locations[event.where.id]?.name) : undefined;
     return {
@@ -1017,7 +1560,85 @@ export class Game {
       newsHis: pronouns.his,
       newsWon: won ? 'yes' : '',
       newsHurt: event.kind === 'fight' && event.who[1] === other.id ? 'yes' : '',
+      // The other one in it, for a relative's news or the district's; and, for a death, whether someone did it.
+      newsWith: news.with?.given ?? '',
+      newsKilled: event.kind === 'death' && event.who[0] !== event.who[1] ? 'yes' : '',
     };
+  }
+
+  /** What someone remembers of the player, as the variables a line of theirs is filled by (`mem`, `mem<Kind>`, and what's in it). */
+  private memoryVars(person: Person, memory: Memory, now: number): Record<string, string> {
+    const about = memory.about ? this.person(memory.about) : undefined;
+    const tie = about ? tiesOf(this.population, person.id).find((t) => t.to === about.id) : undefined;
+    const days = daysSince(memory.at, this.rules.timeScale, now);
+    const ago = days < 0.5 ? 'earlier' : days < 1.5 ? 'yesterday' : days < 2.5 ? 'two days back' : days < 7 ? 'a few days back' : days < 14 ? 'last week' : 'a while back';
+    const dish = memory.kind === 'gift' ? this.rules.food.dishes.find((d) => d.id === memory.what) : undefined;
+    const pronouns = about ? pronounsOf(about) : null;
+    return {
+      mem: 'yes',
+      [`mem${memory.kind.charAt(0).toUpperCase()}${memory.kind.slice(1)}`]: 'yes',
+      memWho: about?.given ?? '',
+      memWord: tie && about ? kinWord(person, tie.kind, about) : '',
+      memHe: pronouns?.he ?? '',
+      memHim: pronouns?.him ?? '',
+      memHis: pronouns?.his ?? '',
+      memAgo: ago,
+      memTwice: memory.times > 1 ? 'yes' : '',
+      // Brought up before: said differently the second time.
+      memAgain: memory.said > 0 ? 'yes' : '',
+      memRobbery: memory.what === 'robbery' ? 'yes' : '',
+      memInsult: memory.what === 'insult' ? 'yes' : '',
+      memTook: memory.amount ? String(memory.amount) : '',
+      memItem: dish?.name ?? '',
+      memFavorite: dish && (dish.id === person.likes.dish || dish.id === person.likes.drink) ? 'yes' : '',
+      memTitle: memory.kind === 'promoted' || memory.kind === 'quit' ? (memory.what ?? '') : '',
+      memPlace: memory.kind === 'date' ? (memory.what ?? '') : '',
+    };
+  }
+
+  /** Writes something down in someone's memory of the player. */
+  private remember(id: string, memory: Omit<Memory, 'said' | 'times'>, now: number): void {
+    remember(this.society, id, memory, this.rules.society.memory, this.rules.timeScale, now);
+  }
+
+  /** Where the player stands with someone right now, for telling them after an exchange what it did. */
+  private snapshot(person: Person, now: number): Snapshot {
+    const s = standingOf(this.society, person.id, this.rules.society, this.rules.timeScale, now);
+    return { rapport: s.rapport, grudge: s.grudge, spark: s.spark ?? 0, stance: this.stanceOf(person, now), level: this.charismaState.level, xp: this.charismaState.xp };
+  }
+
+  /** How many questions in a row this one makes, and how many of those are past the free ones. */
+  private grilling(standing: Standing, now: number): { sitting: number; grilled: number } {
+    const { grill } = this.rules.society.openness;
+    const going = standing.lastAskAt !== undefined && now - standing.lastAskAt < (grill.minutes * 60_000) / this.rules.timeScale;
+    const sitting = going ? (standing.sitting ?? 0) + 1 : 1;
+    return { sitting, grilled: Math.max(0, sitting - grill.free) };
+  }
+
+  /**
+   * A note on the record after an exchange, so the player can see how it went: why, if it
+   * was something they liked or didn't ("Likes a laugh"), what it did to their rapport and
+   * grudge, the charisma it earned (or the level), and their stance if it moved. Nothing
+   * when nothing changed and there's nothing to say.
+   */
+  private noteFeedback(person: Person, before: Snapshot, now: number, why = '', vars: Record<string, string> = {}): void {
+    const after = this.snapshot(person, now);
+    const rapport = Math.round(after.rapport - before.rapport);
+    const grudge = Math.round(after.grudge - before.grudge);
+    const spark = Math.round(after.spark - before.spark);
+    const rank: Record<Stance, number> = { hostile: 0, cold: 1, wary: 2, neutral: 3, warm: 4, friend: 5 };
+    const parts: string[] = [];
+    if (why) parts.push(finish(why, { ...pronounsOf(person), given: person.given, ...vars }));
+    if (rapport) parts.push(`Rapport ${rapport > 0 ? '+' : '−'}${Math.abs(rapport)}`);
+    if (grudge > 0) parts.push(`Grudge +${grudge}`);
+    if (spark) parts.push(`♥ ${spark > 0 ? '+' : '−'}${Math.abs(spark)}`);
+    if (after.level > before.level) parts.push(`Charisma Lv ${after.level}`);
+    else if (after.xp > before.xp) parts.push(`Charisma +${after.xp - before.xp} XP`);
+    if (after.stance !== before.stance) parts.push(`${STANCE_LABEL[before.stance]} → ${STANCE_LABEL[after.stance]}`);
+    if (!parts.length) return;
+    const worse = rapport < 0 || grudge > 0 || spark < 0 || rank[after.stance] < rank[before.stance];
+    const better = !worse && (rapport > 0 || spark > 0 || rank[after.stance] > rank[before.stance]);
+    this.logged(person.id, 'note', parts.join(' · '), now, better ? 'good' : worse ? 'bad' : 'even');
   }
 
   person(id: string): Person | undefined {
@@ -1083,8 +1704,8 @@ export class Game {
     this.recognize(now);
   }
 
-  /** A person as the player can tell them, and what the player knows of them. */
-  describe(id: string): Description | null {
+  /** A person as the player can tell them, and what the player knows of them (as of `now`, for how long someone's been dead). */
+  describe(id: string, now = Date.now()): Description | null {
     const person = this.person(id);
     if (!person) return null;
     const k = knowledgeOf(this.society, id);
@@ -1100,8 +1721,26 @@ export class Game {
     if (k.facts.includes('drinks')) facts.drinks = `Drinks ${food.dishes.find((d) => d.id === person.likes.drink)?.name ?? 'anything'}`;
     if (k.facts.includes('hates')) facts.hates = person.hates ? `Hates the ${people.gangs[person.hates]?.name ?? person.hates}` : 'Hates nobody in particular';
     if (k.facts.includes('nature')) facts.nature = person.bio.split('. ').slice(1, 2).join('').replace(/\.$/, '');
-    const order: Fact[] = ['job', 'age', 'home', 'likes', 'drinks', 'hates', 'nature'];
-    return { name: named ? person.name : describeStranger(person, people), named, facts, lines: order.map((f) => facts[f]).filter((line): line is string => Boolean(line)) };
+    if (k.facts.includes('dead') && person.diedOn !== undefined) facts.dead = `Died ${this.agoWord(this.clockAt(now).day - person.diedOn)}`;
+    if (k.facts.includes('dream')) facts.dream = this.rules.lines.dreams[dreamOf(person, this.world, people)];
+    if (k.facts.includes('type')) facts.type = this.typeLine(person);
+    const order: Fact[] = ['dead', 'job', 'age', 'home', 'likes', 'drinks', 'hates', 'type', 'dream', 'nature'];
+    // Introduced, they go by their street name too, if they have one.
+    const handle = handleOf(person, this.world, people);
+    const name = handle ? `${person.given} "${handle}" ${person.name.slice(person.given.length + 1)}` : person.name;
+    // Seeing the player: that first.
+    const romance = this.society.romance?.with === id ? this.society.romance : null;
+    const heart = romance ? `${romance.stage === 'together' ? 'Together with you' : 'Seeing you'} · ${romance.dates} ${romance.dates === 1 ? 'date' : 'dates'}` : '';
+    return { name: named ? name : describeStranger(person, people), named, facts, lines: [heart, ...order.map((f) => facts[f])].filter((line): line is string => Boolean(line)) };
+  }
+
+  /** Someone's type, as the card says it: whom they're drawn to, what wins them over, the look they like. */
+  private typeLine(person: Person): string {
+    const heart = this.heartOf(person);
+    const who = drawnWord(heart.drawnTo);
+    if (!who) return this.rules.lines.romance.notLooking;
+    const style = heart.style ? this.rules.gear.styleLabels[heart.style] : '';
+    return [`Into ${who}`, this.rules.lines.romance.wants[heart.wants], style ? `Likes ${style}` : ''].filter(Boolean).join(' · ');
   }
 
   /** What has passed between the player and a person, oldest first. */
@@ -1110,8 +1749,8 @@ export class Game {
   }
 
   /** Writes down a line of a conversation, on the record for that person. */
-  private logged(id: string, who: LogEntry['who'], text: string, now: number): void {
-    logLine(this.society, id, who, text, now);
+  private logged(id: string, who: LogEntry['who'], text: string, now: number, tone?: LogEntry['tone']): void {
+    logLine(this.society, id, who, text, now, tone);
   }
 
   /** How far the player's words go. */
@@ -1189,6 +1828,8 @@ export class Game {
     const districtRep = rep(`district:${person.district}`);
     const vars: Record<string, string> = {
       ...lines.lexicon[voice],
+      // A gang's own slang over the gang voice's.
+      ...(person.gang && voice === 'gang' ? (lines.gangLexicon[person.gang] ?? {}) : {}),
       ...varsFor(person, this.world, this.population, this.rules.people, this.rules.food.dishes, kin),
       here,
       late: hour < 5 || hour >= 23 ? 'this late' : '',
@@ -1200,8 +1841,45 @@ export class Game {
       districtGood: districtRep >= 10 ? 'yes' : '',
       districtBad: districtRep <= -10 ? 'yes' : '',
       mask: this.masked()?.word ?? '',
+      ...this.meansVars(person),
+      ...this.momentVars(person, now),
+      ...this.heartVars(person, standing),
     };
     return { person, voice, mood: moodOf(doing), stance, history: historyOf(standing, timeScale, now), eloquence: eloquenceOf(this.charismaState.level), vars };
+  }
+
+  /**
+   * The moment, as line variables: the player drunk (`youDrunk`), the speaker grieving a
+   * relative who died lately (`grief`, their name, and `griefWord`, what they were), and
+   * someone from the gang the speaker hates right here (`enemyHere`, the gang's name).
+   */
+  private momentVars(person: Person, now: number): Record<string, string> {
+    const stage = this.inebriation(now).stage?.id;
+    const today = this.clockAt(now).day;
+    const lost = tiesOf(this.population, person.id)
+      .filter((t) => FAMILY.includes(t.kind))
+      .map((t) => ({ t, p: this.person(t.to) }))
+      .find(({ p }) => p?.diedOn !== undefined && today - p.diedOn <= this.rules.life.griefDays);
+    const enemy = person.hates && this.spot ? this.peopleHere(now).some((p) => p.person.gang === person.hates && p.person.id !== person.id) : false;
+    return {
+      youDrunk: stage && stage !== 'tipsy' ? 'yes' : '',
+      grief: lost?.p?.given ?? '',
+      griefWord: lost?.p ? kinWord(person, lost.t.kind, lost.p) : '',
+      enemyHere: enemy && person.hates ? (this.rules.people.gangs[person.hates]?.name ?? '') : '',
+    };
+  }
+
+  /** How someone is fixed (`broke`, `flush`: against what they started with) and how the place they work is doing (`slow`, `brisk`), as line variables. */
+  private meansVars(person: Person): Record<string, string> {
+    const base = this.baseEddies.get(person.id) ?? person.eddies;
+    const work = person.job.building ? this.world.buildings.find((b) => b.id === person.job.building) : undefined;
+    const health = work?.business ? this.trade(work).health : 'steady';
+    return {
+      broke: person.eddies < base * 0.3 ? 'yes' : '',
+      flush: person.eddies > base * 1.6 ? 'yes' : '',
+      slow: health === 'struggling' ? 'yes' : '',
+      brisk: health === 'thriving' ? 'yes' : '',
+    };
   }
 
   /** A line of someone's: on the feed under their name, and on their record. */
@@ -1225,14 +1903,15 @@ export class Game {
   }
 
   /** Talks to someone here. What they say depends on who they are and how they feel about the player; it warms them a little. */
-  talk(id: string, now: number): boolean {
+  talk(id: string, now: number, approach: Approach = 'chat'): boolean {
     const here = this.isHere(id, now);
     if (!here) return false;
     const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);
+    const before = this.snapshot(person, now);
     learnOf(this.society, id, 'met');
-    const rng = createRng(`${this.world.seed}:${id}:talk:${standing.talks}:${standing.asks}`);
+    const rng = createRng(`${this.world.seed}:${id}:talk:${standing.talks}:${standing.asks}${approach === 'chat' ? '' : `:${approach}`}`);
     // A line about family names one relative: one the player hasn't heard of yet, if there is one.
     const family = tiesOf(this.population, id).filter((t) => FAMILY.includes(t.kind));
     const untold = family.filter((t) => !linkOf(this.society, id, t.to)?.kind);
@@ -1240,7 +1919,8 @@ export class Game {
     const speaker = this.speakerFor(person, stance, doing, now, kin);
     const news = newsFor(person, this.population, this.life, this.rules.life, this.clockAt(now).day);
     speaker.vars = { ...speaker.vars, ...this.newsVars(person, now) };
-    this.logged(id, 'you', line(lines.you.talk, speaker, rng), now);
+    const how = approach === 'chat' ? null : lines.approaches[approach];
+    this.logged(id, 'you', line(how ? how.you : lines.you.talk, speaker, rng), now);
     if (speaker.mood === 'asleep' || stance === 'hostile') {
       this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
       changeStanding(this.society, id, { met: true }, society, timeScale, now);
@@ -1252,18 +1932,41 @@ export class Game {
       this.events.emit('societyChanged', { people: [id] });
       return true;
     }
+    // Seeing the player, and done with it.
+    if (this.society.romance?.with === id && this.theyEndIt(person, speaker, rng, now)) return true;
     this.speech(person, line(lines.greeting, speaker, rng), now);
     let topic: Topic | null = null;
-    if (standing.grudge >= 10 && rng.chance(0.6)) {
+    const learned = [id];
+    // What they remember of the player, they may bring up; a grievance is all they'll say.
+    const memory = recall(this.society, id, society.memory, timeScale, now);
+    let aired = false;
+    if (memory && rng.chance(society.memory.recall)) {
+      const said = compose(lines.memory, { ...speaker, vars: { ...speaker.vars, ...this.memoryVars(person, memory, now) } }, lines, rng, { opener: false });
+      if (said) {
+        this.speech(person, said, now);
+        recalled(this.society, id, memory);
+        aired = GRIEVANCES.has(memory.kind);
+        if (memory.about && learnOf(this.society, memory.about, 'told')) learned.push(memory.about);
+      }
+    }
+    // How they take the way the player came at them: a joke to someone who likes a laugh, a compliment to someone who sees through it.
+    const reaction = reactionTo(society.reactions.approach[approach], speaker);
+    if (how && !aired) {
+      const pool = reaction.score > 0 ? how.liked : reaction.score < 0 ? how.disliked : how.flat;
+      this.speech(person, compose(pool, speaker, lines, rng, { opener: false }), now);
+    }
+    if (aired || (how && reaction.score < 0)) {
+      // Said their piece, or put off: nothing more out of them this time.
+    } else if (standing.grudge >= 10 && rng.chance(0.6)) {
       this.speech(person, line(lines.grudge, speaker, rng), now);
     } else {
-      // They bring up what they're open about with this player: the neighborhood and their lot for a stranger, their life and their people for a friend.
+      // They bring up what they're open about with this player: the neighborhood and their lot for a stranger, their life and their people for a friend; asked for the word, the news; asked how they are, their lot.
       const topics = openTopics(speaker, this.charismaState.level, society.openness, rng, standing.rapport >= society.talk.revealAt);
-      const chat = smallTalk(speaker, topics, lines, rng);
+      const prefer: Topic[] = approach === 'gossip' ? ['news', 'rumor', 'here', 'district'] : approach === 'care' ? ['life', 'kin'] : [];
+      const chat = smallTalk(speaker, topics, lines, rng, prefer);
       this.speech(person, chat.said, now);
       topic = chat.topic;
     }
-    const learned = [id];
     // Talking is an introduction; what they talk about, the player now knows; a few chats, and the player has their measure.
     learnFact(this.society, id, 'name');
     if (topic === 'job') learnFact(this.society, id, 'job');
@@ -1272,25 +1975,47 @@ export class Game {
       learnFact(this.society, id, 'drinks');
     }
     if (topic === 'hates') learnFact(this.society, id, 'hates');
+    if (topic === 'dream') learnFact(this.society, id, 'dream');
     if (standing.talks + 1 >= 3) learnFact(this.society, id, 'nature');
     if (topic === 'kin' && kin) {
       learnLink(this.society, id, kin.to, kin.kind, 'told', now);
       learnOf(this.society, kin.to, 'told');
+      if (this.person(kin.to)?.diedOn !== undefined) learnFact(this.society, kin.to, 'dead');
       learned.push(kin.to);
     }
-    // Told of what happened to someone, the player has their name; told it was a relative, the tie too.
+    // Told of what happened to someone, the player has their name; told it was a relative, the tie too; told who got together, married, split up or fell out, what they knew of that pair is out of date; told of a death, they know.
     if (topic === 'news' && news) {
       learnOf(this.society, news.other.id, 'told');
       if (news.tie) learnLink(this.society, id, news.other.id, news.tie.kind, 'told', now);
       learned.push(news.other.id);
+      if (news.with) {
+        learnOf(this.society, news.with.id, 'told');
+        learned.push(news.with.id);
+      }
+      const [a, b] = news.event.who;
+      const becomes: Partial<Record<string, TieKind | 'none'>> = { friends: 'friend', makeup: 'friend', fallout: 'none', breakup: 'none', romance: 'partner', wedding: 'spouse' };
+      const changed = becomes[news.event.kind];
+      if (changed && a !== b) relearnLink(this.society, a, b, changed, 'told', now);
+      if (news.event.kind === 'death') learnFact(this.society, b, 'dead');
     }
-    const gain = Math.round(society.talk.base * (0.6 + person.traits.warmth * 0.8) * (stance === 'cold' ? 0.4 : 1) * this.charisma().bonus);
-    changeStanding(this.society, id, { met: true, rapport: gain, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
+    // A chat is worth a little, by their warmth (less with the cold), and more or less by how they took the way it started; put off, it's worth nothing but the offense.
+    const base = Math.round(society.talk.base * (0.6 + person.traits.warmth * 0.8) * (stance === 'cold' ? 0.4 : 1) * this.charisma().bonus);
+    const gain = (how && reaction.score < 0 ? 0 : base) + Math.round(reaction.score * society.reactions.rapport);
+    // A flirt that lands with someone drawn to the player, and free, sparks something (one that doesn't, puts it out a little); so does the way in they fall for.
+    const free = !speaker.vars.taken || speaker.vars.withYou;
+    const drawn = Boolean(speaker.vars.drawn) && free && !aired;
+    const romance = society.romance;
+    const spark = !drawn ? 0 : approach === 'flirt' ? (reaction.score > 0 ? reaction.score * romance.flirt : -romance.miss) : approach === this.heartOf(person).wants && reaction.score > 0 ? romance.wants : 0;
+    changeStanding(this.society, id, { met: true, rapport: gain, spark, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
+    // Flirting in front of the one the player is seeing.
+    if (approach === 'flirt') this.jealous(person, now);
     // Getting on with someone counts for a little with their people.
     if (person.gang) changeRep(this.society, `gang:${person.gang}`, 1, society, timeScale, now);
     changeRep(this.society, `district:${person.district}`, 0.5, society, timeScale, now);
+    // Practice: a little more for what landed, a little less for what didn't.
+    this.gainCharisma(2 + Math.sign(reaction.score));
+    this.noteFeedback(person, before, now, reaction.why);
     this.events.emit('societyChanged', { people: learned });
-    this.gainCharisma(2);
     return true;
   }
 
@@ -1308,11 +2033,33 @@ export class Game {
     const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);
+    const before = this.snapshot(person, now);
+    const { sitting, grilled } = this.grilling(standing, now);
     learnOf(this.society, id, 'met');
     const otherPronouns = pronounsOf(other);
     const tie = tiesOf(this.population, id).find((t) => t.to === aboutId);
+    const today = this.clockAt(now).day;
+    // Someone they're done with lately: an ex, a friend fallen out with, and nothing between them since.
+    const ex = !tie && this.life.events.some((e) => (e.kind === 'breakup' || e.kind === 'fallout') && e.who.includes(id) && e.who.includes(aboutId));
     const speaker = this.speakerFor(person, stance, doing, now);
-    speaker.vars = { ...speaker.vars, other: other.given, otherHe: otherPronouns.he, otherHim: otherPronouns.him, word: tie ? kinWord(person, tie.kind, other) : '' };
+    speaker.vars = {
+      ...speaker.vars,
+      other: other.given,
+      otherHe: otherPronouns.he,
+      otherHim: otherPronouns.him,
+      otherHis: otherPronouns.his,
+      word: tie ? kinWord(person, tie.kind, other) : '',
+      otherAgo: other.diedOn !== undefined ? this.agoWord(today - other.diedOn) : '',
+      // What the other is to them, broadly, for how they'd talk about them: family, a friend, the crew, work.
+      tieFamily: tie && FAMILY.includes(tie.kind) ? 'yes' : '',
+      tieFriend: tie?.kind === 'friend' ? 'yes' : '',
+      tieCrew: tie?.kind === 'crew' ? 'yes' : '',
+      tieWork: tie?.kind === 'coworker' ? 'yes' : '',
+      grilled: grilled ? 'yes' : '',
+    };
+    // How they take being asked about one of their own, or an ex.
+    const reaction = reactionTo(society.reactions.asked.kin, { ...speaker, vars: { ...speaker.vars, ex: ex ? 'yes' : '' } });
+    speaker.vars.touchy = reaction.score < 0 ? 'yes' : '';
     const rng = createRng(`${this.world.seed}:${id}:ask:${aboutId}:${standing.asks}`);
     this.logged(id, 'you', line(lines.you.askAbout, speaker, rng), now);
     const key = `about:${aboutId}`;
@@ -1328,23 +2075,30 @@ export class Game {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      const reply = replyTo(openness('kin', stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked())), society.openness, rng);
+      const reply = replyTo(openness('kin', stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked()), momentOf(speaker, grilled)) + reaction.score * society.reactions.openness, society.openness, rng);
       if (reply === 'answer') {
-        this.speech(person, compose(tie ? lines.ask.knows : lines.ask.unknown, speaker, lines, rng), now);
+        const dead = other.diedOn !== undefined;
+        this.speech(person, compose(tie ? (dead ? lines.ask.dead : lines.ask.knows) : ex ? lines.ask.ex : lines.ask.unknown, speaker, lines, rng), now);
         if (tie) {
           learnLink(this.society, id, aboutId, tie.kind, 'asked', now);
           learnOf(this.society, aboutId, 'told');
+          if (dead) learnFact(this.society, aboutId, 'dead');
           learned.push(aboutId);
           this.gainCharisma(2);
         } else {
-          learnLink(this.society, id, aboutId, 'none', 'asked', now);
+          relearnLink(this.society, id, aboutId, 'none', 'asked', now);
         }
       } else {
         this.speech(person, reply === 'deflect' ? deflect(speaker, 'kin', lines, rng) : line(lines.refuse, speaker, rng), now);
         refused[key] = now;
       }
     }
-    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport: pressed ? -society.openness.press : 0 }, society, timeScale, now);
+    // Awake and willing to hear it, they remember being asked, and take it how they take it.
+    const heard = speaker.mood !== 'asleep' && stance !== 'hostile';
+    if (heard) this.remember(id, { kind: 'asked', at: now, about: aboutId }, now);
+    const rapport = heard ? (pressed ? -society.openness.press : 0) + Math.round(reaction.score * society.reactions.rapport) - grilled * society.openness.grill.rapport : 0;
+    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport, ...(heard ? { lastAskAt: now, sitting } : {}) }, society, timeScale, now);
+    this.noteFeedback(person, before, now, !heard ? '' : [pressed ? lines.notes.pressed : '', grilled ? lines.notes.grilled : '', reaction.why].filter(Boolean).join(' · '), speaker.vars);
     this.events.emit('societyChanged', { people: learned });
     return true;
   }
@@ -1361,14 +2115,21 @@ export class Game {
     const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);
+    const before = this.snapshot(person, now);
     learnOf(this.society, id, 'met');
+    const { sitting, grilled } = this.grilling(standing, now);
     const speaker = this.speakerFor(person, stance, doing, now);
+    // How they take being asked this, here and now: touchy about it, or glad to be asked.
+    const reaction = reactionTo(society.reactions.asked[fact], speaker);
+    speaker.vars = { ...speaker.vars, grilled: grilled ? 'yes' : '', touchy: reaction.score < 0 ? 'yes' : '', keen: reaction.score > 0 ? 'yes' : '' };
     const rng = createRng(`${this.world.seed}:${id}:fact:${fact}:${standing.asks}`);
     this.logged(id, 'you', `"${line(lines.questions[fact].lines, speaker, rng)}"`, now);
     const refused = { ...standing.refused };
     let pressed = false;
     let news = false;
+    let heard = true;
     if (speaker.mood === 'asleep' || stance === 'hostile') {
+      heard = false;
       this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
     } else if (knowledgeOf(this.society, id).facts.includes(fact)) {
       this.speech(person, repeat(speaker, fact, lines, rng), now);
@@ -1376,7 +2137,8 @@ export class Game {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      const reply = replyTo(openness(fact, stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked())), society.openness, rng);
+      const score = openness(fact, stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked()), momentOf(speaker, grilled)) + reaction.score * society.reactions.openness;
+      const reply = replyTo(score, society.openness, rng);
       if (reply === 'answer') {
         this.speech(person, answer(speaker, fact, lines, rng), now);
         news = learnFact(this.society, id, fact);
@@ -1388,8 +2150,11 @@ export class Game {
         refused[fact] = now;
       }
     }
-    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport: pressed ? -society.openness.press : 0 }, society, timeScale, now);
+    // Pressing after a no costs; so does a question they're touchy about, and one too many in a row; one they're glad of is worth a little.
+    const rapport = heard ? (pressed ? -society.openness.press : 0) + Math.round(reaction.score * society.reactions.rapport) - grilled * society.openness.grill.rapport : 0;
+    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport, ...(heard ? { lastAskAt: now, sitting } : {}) }, society, timeScale, now);
     if (news) this.gainCharisma(2);
+    this.noteFeedback(person, before, now, !heard ? '' : [pressed ? lines.notes.pressed : '', grilled ? lines.notes.grilled : '', reaction.why].filter(Boolean).join(' · '), speaker.vars);
     this.events.emit('societyChanged', { people: [id] });
     return true;
   }
@@ -1403,7 +2168,9 @@ export class Game {
     const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
     const speaker = this.speakerFor(person, stance, doing, now);
-    speaker.vars = { ...speaker.vars, item: dish.name };
+    // Something they've been given before, and remember: `again`.
+    const hadIt = memoriesOf(this.society, id, society.memory, timeScale, now).some((m) => m.kind === 'gift' && m.what === dish.id);
+    speaker.vars = { ...speaker.vars, item: dish.name, again: hadIt ? 'yes' : '' };
     const rng = createRng(`${this.world.seed}:${id}:gift:${now}`);
     if (stance === 'hostile') {
       this.logged(id, 'you', line(lines.you.gift, speaker, rng), now);
@@ -1411,6 +2178,7 @@ export class Game {
       this.events.emit('societyChanged', { people: [id] });
       return false;
     }
+    const before = this.snapshot(person, now);
     this.takeOne(item);
     const standing = standingOf(this.society, id, society, timeScale, now);
     const favorite = dish.id === person.likes.dish || dish.id === person.likes.drink;
@@ -1421,10 +2189,16 @@ export class Game {
     this.logged(id, 'you', line(lines.you.gift, speaker, rng), now);
     this.speech(person, compose(favorite ? lines.gift.favorite : lines.gift.thanks, speaker, lines, rng, { opener: false }), now);
     if (favorite) learnFact(this.society, id, dish.id === person.likes.dish ? 'likes' : 'drinks');
-    changeStanding(this.society, id, { met: true, rapport: gain, gifts: standing.gifts + 1, lastGiftAt: now }, society, timeScale, now);
-    this.events.emit('inventoryChanged', this.inventory);
-    this.events.emit('societyChanged', { people: [id] });
+    // Their favorite, from someone they're drawn to: a spark too.
+    const sparked = favorite && speaker.vars.drawn && (!speaker.vars.taken || speaker.vars.withYou) ? society.romance.gift : 0;
+    changeStanding(this.society, id, { met: true, rapport: gain, spark: sparked, gifts: standing.gifts + 1, lastGiftAt: now }, society, timeScale, now);
+    this.remember(id, { kind: 'gift', at: now, what: dish.id }, now);
+    // They tell their people: a good word goes round.
+    const heard = passGoodWord(this.society, this.population, person, gain, society, timeScale, now);
     this.gainCharisma(3);
+    this.noteFeedback(person, before, now, favorite ? lines.notes.favorite : recent ? lines.notes.twice : '', speaker.vars);
+    this.events.emit('inventoryChanged', this.inventory);
+    this.events.emit('societyChanged', { people: [id, ...heard] });
     return true;
   }
 
@@ -1436,6 +2210,7 @@ export class Game {
     const { society, timeScale, lines } = this.rules;
     const speaker = this.speakerFor(person, stance, doing, now);
     const rng = createRng(`${this.world.seed}:${id}:insult:${now}`);
+    const before = this.snapshot(person, now);
     const fallout = this.incident('insult', person, 0, now);
     learnOf(this.society, id, 'met');
     // From behind a mask it's nobody's insult, until someone here sees the mask again (`recognize`).
@@ -1446,6 +2221,7 @@ export class Game {
       this.narrate(person, line(lines.insult.shove, speaker, rng), now, 'error');
       this.drainEnergy(1, now);
     }
+    this.noteFeedback(person, before, now, this.masked() ? lines.notes.masked : '', speaker.vars);
     this.checkFired(now);
     this.events.emit('societyChanged', { people: fallout });
     return true;
@@ -1464,7 +2240,10 @@ export class Game {
     const standing = standingOf(this.society, id, society, timeScale, now);
     const rng = createRng(`${this.world.seed}:${id}:rob:${now}`);
     const emptied = standing.robbedAt && now - standing.robbedAt < (7 * 24 * HOUR) / timeScale;
-    const fought = !emptied && rng.chance(person.traits.courage * 0.5);
+    // What the player pulls on them: fewer fight back against a gun (loaded or not; they can't tell), more against a blade, most against bare hands.
+    const arms = this.rules.gear.arms;
+    const drawn = drawWeapon(this.items, arms);
+    const fought = !emptied && rng.chance(person.traits.courage * (drawn ? (drawn.gun ? arms.rob.gun : arms.rob.melee) : arms.rob.bare));
     const wanted = emptied ? 0 : Math.round(person.eddies * rng.range(0.4, 0.8) * (fought ? 0.5 : 1));
     // Their credchip too, if they carry one and there's a slot for it: it comes locked, and wants chopping before any of it is yours.
     const chipWanted = emptied ? 0 : person.chip;
@@ -1478,8 +2257,11 @@ export class Game {
     const take = bills + coins;
     const speaker = this.speakerFor(person, stance, doing, now);
     const haul = [take ? `${take} €$` : '', chip ? `a credchip with ${chip} €$ on it` : ''].filter(Boolean).join(' and ');
-    speaker.vars = { ...speaker.vars, take: String(take), haul };
+    const cut = drawn && !drawn.gun ? arms.classes[drawn.weapon.class]?.cut : undefined;
+    // A thrown weapon (a knife, an axe) is a blade in the hand.
+    speaker.vars = { ...speaker.vars, take: String(take), haul, weapon: drawn?.weapon.short ?? '', gun: drawn?.gun ? 'yes' : '', blade: cut === 'blade' || cut === 'thrown' ? 'yes' : '', blunt: cut === 'blunt' ? 'yes' : '' };
     const mask = this.masked();
+    const before = this.snapshot(person, now);
     const fallout = this.incident('robbery', person, take + chip, now);
     learnOf(this.society, id, 'met');
     // Robbed is robbed, mask or not: their pockets stay empty a while. Whose doing it was, they know only with the face.
@@ -1507,6 +2289,7 @@ export class Game {
     else if (witnesses) this.say(`${saw} saw that. Word will get around ${this.world.districts[person.district]?.name ?? 'the district'}.`, 'system');
     const work = person.job.building ? this.world.buildings.find((b) => b.id === person.job.building) : undefined;
     if (work && repOf(this.society, `business:${work.id}`, society, timeScale, now) <= society.rep.banAt) this.say(`${work.name} won't be serving you again.`, 'system');
+    this.noteFeedback(person, before, now, mask ? lines.notes.masked : '', speaker.vars);
     this.checkFired(now);
     this.events.emit('societyChanged', { people: fallout });
     return true;
@@ -1541,6 +2324,7 @@ export class Game {
     const speaker = this.speakerFor(person, stance, doing, now);
     speaker.vars = { ...speaker.vars, balance: String(balance), cut: String(cut), left: String(balance - cut) };
     const rng = createRng(`${this.world.seed}:${id}:chop:${standing.asks}`);
+    const before = this.snapshot(person, now);
     learnOf(this.society, id, 'met');
     this.logged(id, 'you', line(lines.you.chop, speaker, rng), now);
     const refused = { ...standing.refused };
@@ -1557,6 +2341,7 @@ export class Game {
         done = true;
         chip.locked = false;
         chip.balance = balance - cut;
+        this.remember(id, { kind: 'chopped', at: now, amount: balance }, now);
         this.speech(person, compose(lines.chop.done, speaker, lines, rng, { opener: false }), now);
         // A chip the cut empties is nothing now; it goes in the gutter.
         if (chip.balance <= 0) {
@@ -1577,6 +2362,7 @@ export class Game {
       this.events.emit('inventoryChanged', this.inventory);
       this.events.emit('walletChanged', this.wallet);
     }
+    this.noteFeedback(person, before, now, pressed ? lines.notes.pressed : done ? lines.notes.chopped : '', speaker.vars);
     this.events.emit('societyChanged', { people: [id] });
     return true;
   }
@@ -1655,6 +2441,11 @@ export class Game {
         continue;
       }
       const by = threat.by ? this.person(threat.by) : undefined;
+      // Whoever meant to come is dead: nobody comes.
+      if (by?.diedOn !== undefined) {
+        this.society.threats = this.society.threats.filter((t) => t.id !== threat.id);
+        continue;
+      }
       const gang = threat.gang ? people.gangs[threat.gang] : undefined;
       const grab = takeCash(this.money, threat.amount);
       let take = grab.taken;
@@ -1676,6 +2467,7 @@ export class Game {
       if (lost.length) this.say(`${lost.length === 1 ? 'The credchip on you goes' : `The ${lost.length} credchips on you go`} with them.`, 'error');
       this.drainEnergy(Infinity, now);
       settleThreat(this.society, threat, society, timeScale, now);
+      if (by) this.remember(by.id, { kind: 'settled', at: now, amount: take }, now);
       this.events.emit('walletChanged', this.wallet);
       if (lost.length) this.events.emit('inventoryChanged', this.inventory);
       this.events.emit('societyChanged', { people: by ? [by.id] : [] });

@@ -109,12 +109,61 @@ own.
   in their pocket. They keep hours on your phone's clock: home at night, work by day (with
   days off), their hangout in the evening, out on the streets in between. Inside a building
   or at a place, **People** lists who's there and what they're doing; tap one for their card.
-- **Getting on with people**: **Talk** gets a greeting that depends on how they feel about
-  you and how well they know you (a stranger, someone who saw you yesterday, a regular, a
-  face they haven't seen in days), then something about their life, and builds rapport a
-  little each time (not twice in an hour). Give them food or drink from your inventory
-  (their favorite counts double). The card shows where you stand: Stranger, Wary, Warm,
-  Friend, Cold, Hostile.
+- **An economy**: the eddies move while you're away. Payday is Friday, when everyone draws a
+  week's money (a gang's members from the gang's chest, filled by the cut it takes from the
+  storefronts on its turf), and every day living takes some back; most evenings the chatty go
+  out and spend at their hangouts, so people are flush on Friday night and short by Thursday,
+  and a robbery pays accordingly. Every storefront keeps books: walk-in trade, its regulars,
+  what you buy there, against rent, staff and the gang's cut. A week in the red and the place
+  is struggling (the boss won't hire, a shift pays a quarter less); a good week and it's
+  thriving (a quarter more). The panel inside says how trade is, and people talk about being
+  broke, flush, run off their feet or standing in an empty shop.
+- **Getting on with people**: **Talk** unfolds the ways in: **Chat** (safe: nobody minds,
+  the chatty like it), **Compliment**, **Joke**, **Gossip** or **How are you?**, and each
+  lands by who they are. A compliment pleases the warm and the young and falls flat with the
+  hard, the suspicious and a corpo; a joke lands with the chatty and the drinking, not with a
+  temper, someone at work or someone grieving; gossip with the chatty, not the loyal or the
+  nervous; asking how they're holding up means most to the grieving and the broke, and reads
+  as pity to the hard and to anyone in a gang. How well you put it counts (charisma: blunt,
+  easy, smooth). You get a greeting that depends on how they feel about you and how well they
+  know you, their reply, then something about their life, and rapport (not twice in an
+  hour); put off, they say nothing more and think a little less of you. Give them food or
+  drink from your inventory (their favorite counts double). The card shows where you stand:
+  Stranger, Wary, Warm, Friend, Cold, Hostile.
+- **Romance**: everyone has a heart: whom they're drawn to (women, men, anyone who goes by
+  they, everyone, or no one at all), the way in that wins them over (an easy talker, a way
+  with words, a laugh, someone in the know, someone who listens) and the look they go for
+  (one of the wiki's four styles, or none). Ask them **Type** and they'll tell you, and the
+  card keeps it. Say the pronouns you go by in **Settings** (they, unless you change it): who's
+  drawn to you goes by them. **Flirt** (with the other ways in under **Talk**) lands with
+  someone drawn to you and free: it lights a spark (the note says ♥ +5), more if you're
+  dressed the way they like or they're already sweet on you; coming at them the way they like
+  sparks it too, and so does their favorite as a gift. Someone married or seeing someone says
+  so. With enough spark and rapport, and once they feel warmly about you, the **♥** command
+  on their card can **Ask out**. Seeing someone, ♥ takes them on a **Date**: an evening
+  (six till two), somewhere with a menu, not while they're working, once a night; you pay for
+  two of their favorite if it's on the menu (they notice), else the cheapest drink. After
+  three dates and enough spark you can **Make it official**. Spark fades if you don't see
+  them; let it go out and they'll end it. Flirt with someone else in front of them and it
+  stings: twice, and they're done with you. **End it** yourself (to their face, or by message)
+  and it hurts them, and their family and friends think less of you. One at a time: whoever
+  you're seeing won't fall for anyone else in the meantime, and if they die, it's over. The
+  status drop-down's **Heart** row says who, how many dates and the spark.
+- **How it went**: after everything you say or do with someone, a small note in the
+  transcript says how it landed, green when it helped and red when it hurt: why ("Likes a
+  kind word", "Not in the mood for jokes", "Doesn't like being asked her age", "Tired of all
+  the questions"), what it did to their regard for you and any grudge, the charisma it
+  earned (or the level reached), and their stance if it moved ("Stranger → Warm").
+- **Personality**: most gangers go by a street name (Static, Rust, Moth…), and so do a few
+  others, and once introduced the card shows it. Each gang talks its own way: the Valentinos'
+  Spanish, the Voodoo Boys' Kreyòl, the Tyger Claws' Japanese, the Mox calling you "hon",
+  BARGHEST calling you "civvie". People want something out of life (out of Night City, new
+  chrome, a place of their own, a Trauma Team card, the corner office, payback, a quiet life,
+  to be a legend at the Afterlife) and tell you once they're talking, and the card keeps it.
+  They have views on Arasaka, the NCPD and Trauma Team, talk about their own district by
+  canon (Kabuki's lanterns, the Tyger Claws ruling Japantown by night, Rancho Coronado's
+  identical houses, Pacifica off the city's map), their boss and their years at the job, the
+  relative they lost. Drunk, your own lines slur, and people notice.
 - **How people talk**: nobody reads off a list. Every line is put together on the spot from
   fragments: an opener now and then (someone at the stove says "Hang on", someone three
   drinks in says "Pull up a stool"), the thing itself, and an aside that depends on who they
@@ -144,7 +193,13 @@ own.
   their name, and whatever they talk about (their work, what they eat, who they hate); a
   few chats and you have their measure. **Ask** them the rest (Name, Work, Age, Home,
   Tastes, Enemies); they answer, give a non-answer, or refuse, by how they feel about you,
-  your charisma and what the question asks of them. Watching tells you things too: open **People** inside a
+  your charisma and what the question asks of them, and the moment: a drink loosens tongues,
+  someone at work or eating has less time, a fourth question in a row wears on them, nobody
+  says who they hate with that gang in the room (unless they've the nerve), the grieving
+  close up, nobody gives out their address at three in the morning, and nobody trusts a
+  drunk. Some questions people mind (a stranger asked where they live, someone older asked
+  their age) and some they love (food; a ganger asked about rivals), and the answer shows
+  it. Watching tells you things too: open **People** inside a
   shop and its workers are plainly its workers, at night in an apartment block its
   residents plainly live there, and someone eating is eating what they like. Their card
   lists what you know and nothing else.
@@ -161,15 +216,18 @@ own.
   as you know, how they feel about you, what they're doing; what you know of them folded to
   one line: tap it and all of it unfolds, with their web in the transcript's place until you
   tap again or say something), the transcript filling the rest (your lines after a `›`,
-  theirs bare, newest at the bottom), and one row of commands at the bottom, each only when
-  it can be done: **Talk**, **Ask** (unfolds the questions and the people you can ask
+  theirs bare, the notes on how it went small and colored, newest at the bottom), and one row
+  of commands at the bottom, each only when it can be done: **Talk** (unfolds the ways in),
+  **Ask** (unfolds the questions and the people you can ask
   about), **Give** (what you carry), **Chop** (a hot credchip, when you can tell they're a
-  netrunner), **Work** (with a boss) and **⋯** (insult, rob). A command's choices show only
+  netrunner), **Work** (with a boss), **♥** (ask out, a date, make it official, end it) and
+  **⋯** (insult, rob). A command's choices show only
   while it's open. While the card is open, what they say stays off the map's feed; it's on
   the card.
 - **Crossing people**: **Insult** someone and they hold it against you (a temper shoves you
   into the wall, which costs energy); **Rob** them and you take a share of their eddies, and
-  their credchip if they carry one (locked to them: see **Eddies**). Every
+  their credchip if they carry one (locked to them: see **Eddies**); a weapon on you makes
+  them likelier to hand it over (see **Weapons and ammo**). Every
   such thing spreads: the victim holds a grudge, so do their spouse, parents, children,
   siblings, cousins, friends, crew and coworkers (by how close they are and how loyal), and
   their people a little; anyone who saw it talks. The victim's gang thinks less of you (its
@@ -186,16 +244,39 @@ own.
   comes to hate that gang, and earns the eddies back over the week); someone with the nerve
   picks a fight with a gang they hate, or rival crews go at it, and the loser is laid up at
   home for days (missing from the counter and the bar); two regulars of the same place become
-  friends; a hot temper ends a friendship. It all happens the same way for a seed whenever
-  the days are lived through, up to a month at a time when you've been away, and it sticks:
-  the city you come back to has moved on. People talk about it. Chatting turns to the news
-  two times in three when there is any: what happened to them, to a relative ("my cousin
-  Rosa got jumped by Maelstrom two nights back"), what their gang did, or what they heard
-  around the district, and being told of someone is an introduction (the name, and the tie
-  when it was family). Wherever you are, the people there are with each other too: a couple
+  friends; a hot temper ends a friendship, and some get patched up again. Hearts change too:
+  two people who are free (friends, or regulars of the same bar, near enough in age) start
+  seeing each other, marry after a couple of weeks or so, or one with a temper or a cold
+  heart walks out. Work changes with the books: a thriving place takes on someone from the
+  neighborhood who's been looking, a struggling one lets the last one taken on go (and their
+  coworkers stop being coworkers). Now and then a fight between rival crews ends with someone
+  dead (their family come to hate whoever did it, and the gang takes someone young in their
+  place), and the oldest die of their years. The dead are gone for good: nowhere to be
+  found, and anyone dead who was coming for you never comes. It all happens the same way for
+  a seed whenever the days are lived through, up to a month at a time when you've been away,
+  and it sticks: the city you come back to has moved on. People talk about it. Chatting
+  turns to the news two times in three when there is any: what happened to them, to a
+  relative ("my cousin Rosa got jumped by Maelstrom two nights back", "my brother married
+  Jun last week"), what their gang did, or what they heard around the district; a death or a
+  wedding they bring up for weeks. Being told of someone is an introduction (the name, and
+  the tie when it was family), and being told who got together, married, split up or fell
+  out puts that right in what you know of them. Ask someone about a relative who's died and
+  they'll tell you (the card says **Dead** after); ask about an ex and they're done with
+  them. Wherever you are, the people there are with each other too: a couple
   sharing a table or not speaking, family arguing, friends drinking, a crew holding court,
   coworkers on a break, a ganger leaning on the help, rivals staring each other down. The
   **People** list says who is with whom.
+- **Memory**: people remember what you did to them, and say so. Rob someone and they
+  remember how much and when ("You took 34 eddies off me yesterday"), and twice is twice;
+  their family and friends remember hearing about it ("My sister Ana says you robbed her"),
+  anyone who saw it remembers that. Give someone a gift and they remember it, and tell their
+  people: the ones closest to them warm to you a little and say so ("My cousin says you're
+  alright"); the same gift again, they notice. A boss remembers taking you on, moving you up,
+  and the day you walked out, and won't take you back while they remember it (three weeks;
+  being let go, a month). A netrunner remembers the chip, someone you asked about a relative
+  wonders why, and whoever came to collect tells you you're square. Each memory fades on its
+  own clock (a gift in a week, a robbery in a month), and when someone talks to you they bring
+  up whatever's most on their mind, three times in four, each thing only so often.
 - **Work**: every eatery and clothing store has a boss, the one who runs it (the cook at a
   one-cook noodle bar, whoever runs the counter or the shop otherwise). Find them and their
   card gets a **Work** command: **Ask for work**, and whether they take you on is their
@@ -249,6 +330,28 @@ own.
   pocket with room for it, or the counter says so: eat something, or **Drop** it. General
   stores, thrift shops and clothing stores sell bags (**Shop** on the panel): a belt pouch,
   a messenger bag, a duffel bag, a backpack, each more slots and kilos.
+- **Weapons and ammo**: gun shops, gunsmiths, ammo shops and blade shops have a **Shop**
+  too. Every weapon is a real 2077 one, checked against its page on the wiki: its name, maker,
+  class, Power, Tech or Smart, how many rounds its magazine takes, and what its note says.
+  Only what the game's vendors sell is on a rack (no crowbars or machetes: those are only
+  ever taken off people), and Dogtown's own guns, Hansen Armory's and the rest sold only
+  there, are in Pacifica's stores: the Militech M-10AF Lexington, the Budget Arms Carnage, the
+  Arasaka HJKE-11 Yukimura, the Kang Tao G-58 Dian, the Rostović DB-2 Satara, a katana, a
+  baseball bat. Each store stocks a handful at its tier, always the same handful: the cheap
+  ones sell Budget Arms, Rostović and secondhand Militech; the luxury ones Arasaka, Kang Tao
+  and Tsunami smart guns; a gunsmith reaches a tier above its own. Ammo is the wiki's four
+  kinds (Handgun Ammo for pistols, revolvers and SMGs; Shotgun Ammo; Heavy Ammo for rifles
+  and LMGs; Sniper Ammo), sold by the box and carried loose by the round, so many to a slot
+  and so many grams each: fifty handgun rounds are a slot and 600 g, twenty-five shells a
+  kilo. A gun is sold empty: **Load** in the inventory fills its magazine from the rounds on
+  you (they weigh the same in the gun), **Unload** takes them back out. The Slaught-O-Matic
+  comes loaded and sealed, and can't be reloaded. A pistol or a knife goes in a pocket; a
+  rifle, a shotgun, a katana or a bat is too long for one, and wants a bag that takes it (a
+  messenger bag, a backpack, a duffel) or the gun shop's **gun case**; an LMG is too heavy
+  for anything but a duffel or the case. A **holster** carries one handgun or knife off your
+  pockets. What you'd pull on someone is in the status drop-down (**Armed**): a loaded gun
+  before an empty one (nobody can tell), any gun before a blade. Rob someone with a gun and
+  few will fight back; with a blade, more; with bare hands, the brave ones.
 - **Clothes**: you're dressed head to toe but the head, in the wiki's six slots (head, face,
   outer torso, inner torso, legs, feet), and every garment is a real piece of 2077 clothing
   from the wiki in one of its four styles (Entropism, Kitsch, Neomilitarism, Neokitsch),
@@ -299,10 +402,10 @@ own.
   turn: the wallet shows the bills in it and the chips, each with what's on it and whether
   it's locked. **‹** goes back a level. The strip counts everything and weighs it. The
   button itself is the one thing in the map's header, with your cash on it.
-- **Settings**: the last row of the status drop-down (below). For now that's the save:
-  **Restart this city** puts the same city back to the start, and **Erase save** deletes the
-  save from this device and starts a brand new city. Both ask first, with Cancel as the
-  default.
+- **Settings**: the last row of the status drop-down (below). First **You**: the pronouns
+  you go by (she, he or they), which decides who's drawn to you. Then the save: **Restart this
+  city** puts the same city back to the start, and **Erase save** deletes the save from this
+  device and starts a brand new city. Both ask first, with Cancel as the default.
 - **Getting around**: tap a place, an NCART station, a building, or (zoomed in) any spot on
   a street. The panel shows two ways there:
   - **Walk**: free, along the streets, to anywhere on the map. Tapping the same thing again
@@ -360,14 +463,17 @@ effects layer decides how that should look:
 src/
   engine/   Game rules and state: the city generator, the NCART network, street routes,
             trip planning on the real clock, the wallet and pass, energy (energy.ts),
-            menus (food.ts), drink (inebriation.ts), the people (people.ts: who lives
+            menus (food.ts), weapons and what stores stock them (weapons.ts), drink
+            (inebriation.ts), the people (people.ts: who lives
             here and where they are), what they think of the player and what comes of it
             (society.ts, which also keeps what the player knows of people and of who knows
-            whom), what they say (dialogue.ts), skills that grow with use (skills.ts),
+            whom), what they say (dialogue.ts), romance with the player (romance.ts),
+            skills that grow with use (skills.ts),
             discovery, ambient chatter, the save format. No DOM, fully unit-tested.
   data/     The content the generator builds cities from (city.ts), travel times and
             prices (travel.ts), energy's numbers (energy.ts), the kinds of item the
-            inventory sorts by (items.ts), what there is to eat (food.ts), the stages
+            inventory sorts by (items.ts), what there is to eat (food.ts), the guns,
+            blades and ammo (weapons.ts), the stages
             of being drunk (inebriation.ts), the people's names, gangs, jobs and lines
             (people.ts), how grudges and reputations work (society.ts) and charisma's
             numbers (skills.ts).
@@ -422,8 +528,10 @@ Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
   says (by stance, voice, mood, history, traits, the player's eloquence, or which variables
   are filled). The cascade's numbers (closeness of each tie, severity of each incident,
   reputation costs, the ban threshold, how fast grudges fade, when someone comes to collect)
-  and openness (what each question costs, what each stance and each level of charisma is
-  worth) are in [`src/data/society.ts`](src/data/society.ts). People never change the city,
+  openness (what each question costs, what each stance and each level of charisma is worth)
+  and memory (how long each kind of memory lasts, how much it weighs, how often it's brought
+  up) are in [`src/data/society.ts`](src/data/society.ts); how often people's days bring a
+  fight, a romance, a wedding, a hire or a death is in [`src/data/life.ts`](src/data/life.ts). People never change the city,
   so they need no generator bump; a change to how they're made only loses the player's
   standings with people who no longer exist.
 - **Food** is in [`src/data/food.ts`](src/data/food.ts): every dish names the menus it turns

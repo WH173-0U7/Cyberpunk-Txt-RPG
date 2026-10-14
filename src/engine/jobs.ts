@@ -39,6 +39,8 @@ export interface JobRules {
   rapport: number;
   /** Reputation with the place a shift is worth. */
   rep: number;
+  /** Rapport lost with the boss for walking out. */
+  quit: number;
   /** How the boss has to feel about the player to move them up. */
   promoteAt: Stance[];
 }
@@ -75,10 +77,10 @@ export interface JobState {
 
 const RUNS_IT = /runs the|owner|manager|chef|maître|proprietor/i;
 
-/** Who runs a storefront: the worker whose role says so, else the first one. Null for a place nobody works at. */
+/** Who runs a storefront: the worker whose role says so, else the first one who was there from the start (anyone taken on since is help). Null for a place nobody works at. */
 export function bossOf(building: Building, population: Population): Person | null {
-  const staff = population.people.filter((p) => p.job.building === building.id);
-  return staff.find((p) => RUNS_IT.test(p.job.role)) ?? staff[0] ?? null;
+  const staff = population.people.filter((p) => p.job.building === building.id && p.diedOn === undefined);
+  return staff.find((p) => RUNS_IT.test(p.job.role)) ?? staff.find((p) => p.hiredOn === undefined) ?? staff[0] ?? null;
 }
 
 /** The ladder a storefront hires on, if it hires at all. */
