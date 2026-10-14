@@ -267,22 +267,19 @@ const people = new People(
   {
     onSelect: (id) => {
       personShown = id;
-      webOpen = false;
       factsOpen = false;
       picker = null;
       showPeople();
     },
     onQuestion: (id, fact) => {
       lastActivity = performance.now();
-      webOpen = false;
+      factsOpen = false;
       game.askFact(id, fact as Exclude<Fact, 'nature' | 'drinks'>, Date.now());
     },
-    onToggleWeb: () => {
-      webOpen = !webOpen;
-      showPeople();
-    },
     onToggleFacts: () => {
+      // Unfolding what's known folds any command's choices away, so the web has the card to itself.
       factsOpen = !factsOpen;
+      if (factsOpen) picker = null;
       showPeople();
     },
     onPicker: (which) => {
@@ -290,26 +287,26 @@ const people = new People(
       showPeople();
     },
     onAction: (action, id) => {
-      // Insulting or robbing folds the row away again; anything said brings the transcript back over the web.
+      // Insulting or robbing folds the row away again; anything said brings the transcript back over the facts and the web.
       if (action !== 'talk') picker = null;
-      webOpen = false;
+      factsOpen = false;
       actOn(action, id);
     },
     onGift: (id, itemId) => {
       lastActivity = performance.now();
       picker = null;
-      webOpen = false;
+      factsOpen = false;
       game.gift(id, itemId, Date.now());
     },
     onChop: (id, chipId) => {
       lastActivity = performance.now();
       picker = null;
-      webOpen = false;
+      factsOpen = false;
       game.chop(id, chipId, Date.now());
     },
     onAsk: (id, aboutId) => {
       lastActivity = performance.now();
-      webOpen = false;
+      factsOpen = false;
       game.ask(id, aboutId, Date.now());
     },
   },
@@ -317,8 +314,7 @@ const people = new People(
 );
 /** The person whose card is open, if any: someone here, or anyone the player knows of. */
 let personShown: string | null = null;
-/** Whether their web, and what's known of them, are unfolded; and which command's choices are. */
-let webOpen = false;
+/** Whether what's known of them and their web are unfolded; and which command's choices are. */
 let factsOpen = false;
 let picker: Picker = null;
 
@@ -910,7 +906,6 @@ function showPeople(): void {
             factsOpen,
             here: Boolean(present),
             web: standing.web.map((link) => ({ id: link.person.id, name: nameOf(link.person.id, link.person.name), label: link.kind ? kinWord(shown, link.kind, link.person) : '?', how: how[link.how] })),
-            webOpen,
             webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Ask about people you've met, watch who they keep company with, or get them talking.`,
             picker,
             questions: (Object.entries(LINES.questions) as Array<[Exclude<Fact, 'nature' | 'drinks'>, { label: string }]>)

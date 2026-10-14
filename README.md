@@ -142,20 +142,21 @@ own.
   two who are actually connected you've *seen together* (connected somehow, you don't know
   how). Once someone likes you they drop names ("My sister Ana works at…"), which tells you
   the relation and the name. And you can **Ask about** anyone whose name you have: they'll
-  tell you what the person is to them, that they've never heard of them, or nothing. The
-  card's **Web** unfolds to show them in the middle and everyone you know them to know
-  around them, each spoke labeled with the relation or "?" (dashed) when all you know is
-  that they're connected; tap a name to open that person's card (even if they're not here,
-  then you can only look).
+  tell you what the person is to them, that they've never heard of them, or nothing. Tap
+  the card's facts line and their web unfolds under it: them in the middle and everyone you
+  know them to know around them, each spoke labeled with the relation or "?" (dashed) when
+  all you know is that they're connected; tap a name to open that person's card (even if
+  they're not here, then you can only look).
 - **The conversation**: a person's card is a terminal: a short header (who they are as far
   as you know, how they feel about you, what they're doing; what you know of them folded to
-  one line, tap to unfold), the transcript filling the rest (your lines after a `›`, theirs
-  under their name, newest at the bottom), and one row of commands at the bottom: **Talk**,
-  **Ask** (unfolds the questions and the people you can ask about), **Give** (what you
-  carry), **Chop** (a hot credchip, when you can tell they're a netrunner), **Web** (their
-  web, in the transcript's place until you tap it again or say something) and **⋯** (insult,
-  rob). A command's choices show only while it's open. While the card is open, what they
-  say stays off the map's feed; it's on the card.
+  one line: tap it and all of it unfolds, with their web in the transcript's place until you
+  tap again or say something), the transcript filling the rest (your lines after a `›`,
+  theirs bare, newest at the bottom), and one row of commands at the bottom, each only when
+  it can be done: **Talk**, **Ask** (unfolds the questions and the people you can ask
+  about), **Give** (what you carry), **Chop** (a hot credchip, when you can tell they're a
+  netrunner), **Work** (with a boss) and **⋯** (insult, rob). A command's choices show only
+  while it's open. While the card is open, what they say stays off the map's feed; it's on
+  the card.
 - **Crossing people**: **Insult** someone and they hold it against you (a temper shoves you
   into the wall, which costs energy); **Rob** them and you take a share of their eddies, and
   their credchip if they carry one (locked to them: see **Eddies**). Every

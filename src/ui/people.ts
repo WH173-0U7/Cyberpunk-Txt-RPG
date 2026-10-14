@@ -39,15 +39,14 @@ export interface PersonCardView {
   stanceLabel: string;
   /** Gang colors, what they're doing (or that they're not here). */
   kicker: string;
-  /** What the player knows of them, or a line saying nothing yet; one line unless unfolded. */
+  /** What the player knows of them, or a line saying nothing yet; one line until unfolded, with the web. */
   facts: string;
   factsOpen: boolean;
   /** Whether they're here to be dealt with. */
   here: boolean;
-  /** Who the player knows them to be connected to. */
+  /** Who the player knows them to be connected to: unfolded with the facts, in the transcript's place. */
   web: WebNodeView[];
   webHint: string;
-  webOpen: boolean;
   picker: Picker;
   /** Things to ask them about themselves. */
   questions: Array<{ fact: string; label: string }>;
@@ -99,7 +98,7 @@ export interface PeopleHandlers {
   onChop(id: string, chipId: string): void;
   onAsk(id: string, aboutId: string): void;
   onQuestion(id: string, fact: string): void;
-  onToggleWeb(): void;
+  /** The facts line was tapped: what's known of them and their web unfold, or fold away. */
   onToggleFacts(): void;
   onPicker(picker: Picker): void;
 }
@@ -115,9 +114,9 @@ export const STANCE_LABEL: Record<Stance, string> = {
 
 /**
  * Who's here, over the map: a list of everyone at the place the player is, and one person's
- * card: who they are as far as the player knows, the conversation so far, and one row of
- * things to do, each unfolding its choices only when tapped. The game decides who is here
- * and what comes of it.
+ * card: who they are as far as the player knows (the facts line unfolds the rest, and their
+ * web), the conversation so far, and one row of things to do, each unfolding its choices
+ * only when tapped. The game decides who is here and what comes of it.
  */
 export class People {
   readonly overlay: MapOverlay;
@@ -142,7 +141,6 @@ export class People {
       if (!button) return;
       const { cmd, fact, about, item, chip, action, open, id } = button.dataset;
       if (cmd === 'talk' && id) handlers.onAction('talk', id);
-      else if (cmd === 'web') handlers.onToggleWeb();
       else if (cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'more') handlers.onPicker(cmd);
       else if (fact && id) handlers.onQuestion(id, fact);
       else if (about && id) handlers.onAsk(id, about);
@@ -187,20 +185,23 @@ export class People {
     els.cardStance.textContent = card.stanceLabel;
     els.cardStance.className = `stance is-${card.stance}`;
     els.cardKicker.textContent = card.kicker;
-    els.cardFacts.textContent = card.facts;
+    els.cardFacts.replaceChildren(el('span', 'person-facts-text', card.facts));
     els.cardFacts.classList.toggle('is-open', card.factsOpen);
     els.cardFacts.setAttribute('aria-expanded', String(card.factsOpen));
-    // The web stands in for the transcript while it's open, so the card never grows and the commands stay put.
-    els.cardWeb.hidden = !card.webOpen;
+    // The web unfolds with the facts and stands in for the transcript while it's open, so the card never grows and the commands stay put.
+    els.cardWeb.hidden = !card.factsOpen;
     els.cardWeb.replaceChildren(card.web.length ? web(card) : emptyWeb(card.webHint));
 
+    // Your lines after a prompt mark; theirs bare (the card says who they are).
     const { cardLog } = els;
-    cardLog.hidden = card.webOpen;
+    cardLog.hidden = card.factsOpen;
     cardLog.replaceChildren(
       ...(card.log.length
         ? card.log.map((line) => {
             const li = el('li', `person-log-line is-${line.who}`);
-            li.append(el('span', 'person-log-who', line.who === 'you' ? '›' : (card.name.split(' ')[0] ?? card.name)), el('span', 'person-log-text', line.text));
+            if (line.who === 'you') li.append(el('span', 'person-log-who', '›'));
+            else li.append(el('span', 'sr-only', `${card.name.split(' ')[0] ?? card.name}: `));
+            li.append(el('span', 'person-log-text', line.text));
             return li;
           })
         : [el('li', 'person-log-line is-empty', card.here ? 'Nothing said yet.' : 'Nothing said.')]),
@@ -224,7 +225,7 @@ export class People {
     els.cardPicker.hidden = picker.length === 0;
     els.cardPicker.replaceChildren(...picker);
 
-    // One row of commands; what isn't possible isn't shown.
+    // One row of commands; what isn't possible isn't shown, and someone who isn't here gets none.
     const commands: Array<{ cmd: string; label: string; active?: boolean; quiet?: boolean }> = card.here
       ? [
           { cmd: 'talk', label: 'Talk' },
@@ -232,10 +233,10 @@ export class People {
           ...(card.gifts.length ? [{ cmd: 'give', label: 'Give', active: card.picker === 'give' }] : []),
           ...(card.chops.length ? [{ cmd: 'chop', label: 'Chop', active: card.picker === 'chop' }] : []),
           ...(card.work ? [{ cmd: 'work', label: 'Work', active: card.picker === 'work' }] : []),
-          { cmd: 'web', label: `Web ${card.web.length}`, active: card.webOpen },
           { cmd: 'more', label: '⋯', active: card.picker === 'more', quiet: true },
         ]
-      : [{ cmd: 'web', label: `Web ${card.web.length}`, active: card.webOpen }];
+      : [];
+    els.cardCommands.hidden = commands.length === 0;
     els.cardCommands.replaceChildren(
       ...commands.map((c) => {
         const button = el('button', `person-cmd${c.active ? ' is-active' : ''}${c.quiet ? ' is-quiet' : ''}`, c.label);

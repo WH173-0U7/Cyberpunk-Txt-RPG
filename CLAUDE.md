@@ -210,9 +210,12 @@ it needs no generator bump. The pieces:
   checks a few).
 - `src/ui/people.ts` is the overlay (a `MapOverlay` off the panel's **People** action); the
   game decides who is here and what the actions do. A person's card is deliberately spare:
-  header, transcript, one command row whose choices (`Picker`) unfold only while open; keep
-  new things to do with a person behind a command, not as another row. Lines a person says
-  use the `talk` tone, which the feed skips while the card is open.
+  a header whose facts line unfolds (`factsOpen`) into everything known and their web, in
+  the transcript's place; the transcript (your lines after a `›`, theirs bare); one command
+  row (Talk, Ask, Give, Chop, Work, `⋯` for the hostile acts, each only when it can be done)
+  whose choices (`Picker`) unfold only while open; keep new things to do with a person
+  behind a command, not as another row, and new things to know behind the facts line. Lines
+  a person says use the `talk` tone, which the feed skips while the card is open.
 
 ## Work
 
