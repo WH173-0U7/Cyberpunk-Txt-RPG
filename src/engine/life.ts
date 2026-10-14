@@ -1,7 +1,7 @@
 import { economyDay, healthOf, staffCostOf, type EconomyRules, type Till } from './economy';
 import type { Quality } from './food';
 import { bossOf } from './jobs';
-import { INVERSE, tiesOf, type Clock, type PeopleContent, type Person, type Population, type Spot, type Tie, type TieKind } from './people';
+import { drawnTo, heartOf, INVERSE, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Spot, type Tie, type TieKind } from './people';
 import { createRng, type Rng } from './rng';
 import type { Building, World } from './types';
 
@@ -181,11 +181,17 @@ export function applyLife(population: Population, state: LifeState): void {
  * gangs' cut; `content` is the people data, for the roles a hire or a recruit takes. Returns
  * the events of those days.
  */
-export function liveUntil(world: World, population: Population, state: LifeState, rules: LifeRules, base: ReadonlyMap<string, number>, today: number, seed: string, tier: (spot: Spot) => Quality, turf: (district: string) => Array<[string, number]>, content: PeopleContent): LifeEvent[] {
+export function liveUntil(world: World, population: Population, state: LifeState, rules: LifeRules, base: ReadonlyMap<string, number>, today: number, seed: string, tier: (spot: Spot) => Quality, turf: (district: string) => Array<[string, number]>, content: PeopleContent, spokenFor: ReadonlySet<string> = new Set()): LifeEvent[] {
   if (state.day >= today) return [];
   const from = state.day < 0 ? today - 1 : Math.max(state.day + 1, today - rules.catchUpDays + 1);
   const happened: LifeEvent[] = [];
-  const ctx: DayContext = { tier, content, web: webFor(population), byId: new Map(population.people.map((p) => [p.id, p])) };
+  const hearts = new Map<string, Heart>();
+  const heart = (p: Person): Heart => {
+    let h = hearts.get(p.id);
+    if (!h) hearts.set(p.id, (h = heartOf(p, world, content, population)));
+    return h;
+  };
+  const ctx: DayContext = { tier, content, web: webFor(population), byId: new Map(population.people.map((p) => [p.id, p])), heart, spokenFor };
   for (let day = from; day <= today; day++) {
     const rng = createRng(`${seed}:life:${day}`);
     for (const id of Object.keys(state.hurt)) if ((state.hurt[id] as number) < day) delete state.hurt[id];
@@ -244,6 +250,10 @@ interface DayContext {
   content: PeopleContent;
   web: Web;
   byId: Map<string, Person>;
+  /** Whom someone is drawn to (people.ts), worked out once a person. */
+  heart: (person: Person) => Heart;
+  /** People the player is seeing: no one else's to fall for. */
+  spokenFor: ReadonlySet<string>;
 }
 
 /**
@@ -350,12 +360,12 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
       }
     }
   }
-  // Two people who are free get together: friends, or regulars of the same place, near enough in age.
+  // Two people who are free get together: friends, or regulars of the same place, near enough in age, and drawn to each other.
   if (room() && rng.chance(rules.chances.romance)) {
-    const free = locals.filter((p) => p.age >= rules.adultAt && !together(p));
+    const free = locals.filter((p) => p.age >= rules.adultAt && !together(p) && !ctx.spokenFor.has(p.id));
     const freeIds = new Set(free.map((p) => p.id));
     const pairs: Array<[Person, Person]> = [];
-    const close = (a: Person, b: Person) => Math.abs(a.age - b.age) <= rules.ageGap;
+    const close = (a: Person, b: Person) => Math.abs(a.age - b.age) <= rules.ageGap && drawnTo(ctx.heart(a), b.pronouns) && drawnTo(ctx.heart(b), a.pronouns);
     for (const a of free) for (const t of tiesFrom(a.id)) if (t.kind === 'friend' && a.id < t.to && freeIds.has(t.to) && close(a, byId.get(t.to) as Person)) pairs.push([a, byId.get(t.to) as Person]);
     const byHangout = new Map<string, Person[]>();
     for (const p of free) if (p.likes.hangout) byHangout.set(`${p.likes.hangout.kind}:${p.likes.hangout.id}`, [...(byHangout.get(`${p.likes.hangout.kind}:${p.likes.hangout.id}`) ?? []), p]);

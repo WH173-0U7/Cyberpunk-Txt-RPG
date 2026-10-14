@@ -272,6 +272,50 @@ export const PEOPLE: PeopleContent = {
     rank: { gang: 4 },
     legend: { gang: 1, young: 1, street: 1 },
   },
+  // Whom people are drawn to, what wins them over, and the look they go for. Ours: most are
+  // drawn one way, a good share every way, a few to no one at all; the corpos like a sharp
+  // suit, the gangs their own flash, the street what's practical.
+  hearts: {
+    drawn: {
+      she: [
+        { to: ['he'], weight: 48 },
+        { to: ['he', 'they'], weight: 8 },
+        { to: ['she'], weight: 9 },
+        { to: ['she', 'they'], weight: 5 },
+        { to: ['she', 'he', 'they'], weight: 24 },
+        { to: [], weight: 6 },
+      ],
+      he: [
+        { to: ['she'], weight: 48 },
+        { to: ['she', 'they'], weight: 8 },
+        { to: ['he'], weight: 9 },
+        { to: ['he', 'they'], weight: 5 },
+        { to: ['she', 'he', 'they'], weight: 24 },
+        { to: [], weight: 6 },
+      ],
+      they: [
+        { to: ['she', 'he', 'they'], weight: 50 },
+        { to: ['she', 'they'], weight: 14 },
+        { to: ['he', 'they'], weight: 14 },
+        { to: ['they'], weight: 10 },
+        { to: [], weight: 12 },
+      ],
+    },
+    wants: {
+      chat: { base: 1, trait: 'chatty' },
+      compliment: { base: 1.5 },
+      joke: { base: 0.5, trait: 'chatty' },
+      gossip: { base: 0.3, trait: 'chatty' },
+      care: { base: 0.5, trait: 'warmth' },
+    },
+    styles: {
+      entropism: { street: 3, elder: 2, hater: 1 },
+      kitsch: { gang: 4, young: 3, street: 1 },
+      neomilitarism: { corpo: 4, gang: 1, elder: 1 },
+      neokitsch: { corpo: 2, young: 1, street: 1 },
+      none: { street: 3, gang: 1, corpo: 1, elder: 2 },
+    },
+  },
   hangouts: ['bar', 'club', 'noodle', 'diner', 'restaurant', 'market', 'pachinko', 'boardwalk', 'plaza', 'rooftop', 'street', 'dollhouse', 'docks', 'shrine', 'park', 'mall', 'hotel', 'nomad_camp', 'gas_station', 'junkyard', 'food', 'nightlife', 'entertainment'],
   traitLines: {
     warmth: { high: 'Easy to like.', low: 'Keeps everyone at arm\'s length.' },

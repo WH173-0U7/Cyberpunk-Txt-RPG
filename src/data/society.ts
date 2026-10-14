@@ -83,7 +83,7 @@ export const SOCIETY: SocietyRules = {
     stance: { hostile: -9, cold: -2.5, wary: -1.2, neutral: 0, warm: 1.5, friend: 3 },
     perLevel: 0.5,
     traits: { chatty: 1.2, warmth: 0.8, loyalty: 1, courage: 1, greed: 1 },
-    cost: { name: -1, job: 0, likes: 0, age: 1, hates: 1.2, home: 2, kin: 1.6, district: -1, life: -1, here: -1, rumor: -1, news: -1.5, dream: 0.3, views: -0.5, chop: 0.4, hire: 0.6 },
+    cost: { name: -1, job: 0, likes: 0, age: 1, hates: 1.2, home: 2, kin: 1.6, district: -1, life: -1, here: -1, rumor: -1, news: -1.5, dream: 0.3, views: -0.5, type: 0.8, chop: 0.4, hire: 0.6 },
     mask: 1.2,
     answerAt: 1,
     deflectAt: -1,
@@ -93,12 +93,31 @@ export const SOCIETY: SocietyRules = {
   },
   memory: {
     cap: 12,
-    days: { wronged: 30, heard: 14, saw: 10, settled: 21, gift: 7, goodWord: 10, hired: 7, promoted: 7, quit: 21, fired: 30, chopped: 10, asked: 5 },
-    weight: { wronged: 10, heard: 6, saw: 5, settled: 7, gift: 3, goodWord: 4, hired: 3, promoted: 4, quit: 6, fired: 6, chopped: 2, asked: 2 },
-    repeat: { wronged: 3, heard: 2, saw: 1, settled: 1, gift: 1, goodWord: 1, hired: 1, promoted: 1, quit: 2, fired: 2, chopped: 1, asked: 1 },
+    days: { wronged: 30, heard: 14, saw: 10, settled: 21, gift: 7, goodWord: 10, hired: 7, promoted: 7, quit: 21, fired: 30, chopped: 10, asked: 5, date: 14, dumped: 45, cheated: 30 },
+    weight: { wronged: 10, heard: 6, saw: 5, settled: 7, gift: 3, goodWord: 4, hired: 3, promoted: 4, quit: 6, fired: 6, chopped: 2, asked: 2, date: 3, dumped: 8, cheated: 7 },
+    repeat: { wronged: 3, heard: 2, saw: 1, settled: 1, gift: 1, goodWord: 1, hired: 1, promoted: 1, quit: 2, fired: 2, chopped: 1, asked: 1, date: 1, dumped: 2, cheated: 2 },
     recall: 0.75,
     heardAt: 5,
     goodWord: 0.4,
+  },
+  // A flirt that lands with someone drawn to you is worth five spark a point, the way in they fall for three more; twenty spark and fifteen
+  // rapport, warm or better, and they'll say yes. A date is twelve, three dates and forty-five spark and it can be official. Spark fades
+  // a point and a half a day; under four, or caught flirting twice, and they end it.
+  romance: {
+    adultAt: 18,
+    fadePerDay: 1.5,
+    flirt: 5,
+    miss: 3,
+    wants: 3,
+    gift: 4,
+    ask: { spark: 20, rapport: 15, stances: ['warm', 'friend'], yes: 8 },
+    date: { from: 18, to: 2, spark: 12, rapport: 5, favorite: 4 },
+    official: { dates: 3, spark: 45, rapport: 6 },
+    endAt: 4,
+    cheats: 2,
+    jealous: { spark: 15, rapport: 8, grudge: 6 },
+    dumped: { rapport: 20, grudge: 15, kin: 4 },
+    sweetAt: 25,
   },
   reactions: {
     rapport: 2,
@@ -132,6 +151,11 @@ export const SOCIETY: SocietyRules = {
         { when: timid, by: -1, why: 'Nervous talking about gangs' },
         { when: { needs: ['enemyHere'] }, by: -2, why: '{enemyHere} are right here' },
       ],
+      type: [
+        { when: { needs: ['drawn', 'sweet'] }, by: 1, why: 'Glad you asked' },
+        { when: stranger, by: -1, why: 'A personal question from a stranger' },
+        { when: { needs: ['taken'] }, by: -1, why: 'Spoken for, and you know it' },
+      ],
       kin: [
         { when: { needs: ['tieFamily'], traits: { loyalty: 'high' }, stance: ['neutral', 'wary', 'cold'] }, by: -1, why: 'Protective of {his} family' },
         { when: { needs: ['ex'] }, by: -2, why: "Didn't want to hear that name" },
@@ -141,10 +165,12 @@ export const SOCIETY: SocietyRules = {
     },
     approach: {
       chat: [
+        { when: { needs: ['drawn', 'wantsChat'], lacks: ['taken'] }, by: 1, why: 'Likes how easy you are to talk to' },
         { when: chatty, by: 1, why: 'Likes a chat' },
         { when: { mood: ['drinking'] }, by: 1, why: 'Glad of the company over a drink' },
       ],
       compliment: [
+        { when: { needs: ['drawn', 'wantsCompliment'], lacks: ['taken'] }, by: 1, why: 'Weak for a way with words' },
         { when: kind, by: 2, why: 'Likes a kind word' },
         { when: { needs: ['ageYoung'] }, by: 1, why: 'Likes being noticed' },
         { when: gang, by: 1, why: 'Likes respect' },
@@ -155,6 +181,7 @@ export const SOCIETY: SocietyRules = {
         { when: blunt, by: -1, why: 'It came out clumsy' },
       ],
       joke: [
+        { when: { needs: ['drawn', 'wantsJoke'], lacks: ['taken'] }, by: 1, why: 'Falls for anyone who makes {him} laugh' },
         { when: chatty, by: 1, why: 'Likes a laugh' },
         { when: { mood: ['drinking'] }, by: 1, why: "A few drinks in: everything's funny" },
         { when: smooth, by: 1, why: 'Good delivery' },
@@ -166,6 +193,7 @@ export const SOCIETY: SocietyRules = {
         { when: { needs: ['grief'] }, by: -3, why: 'Grieving {his} {griefWord}' },
       ],
       gossip: [
+        { when: { needs: ['drawn', 'wantsGossip'], lacks: ['taken'] }, by: 1, why: 'Likes someone who knows what goes on' },
         { when: chatty, by: 2, why: 'Loves gossip' },
         { when: { needs: ['news'] }, by: 1, why: 'Has news to tell' },
         { when: { mood: ['drinking'] }, by: 1, why: 'Loose-lipped with a drink in hand' },
@@ -173,7 +201,25 @@ export const SOCIETY: SocietyRules = {
         { when: timid, by: -1, why: 'Nervous about loose talk' },
         { when: corpo, by: -1, why: 'Careful what gets around' },
       ],
+      flirt: [
+        { when: { needs: ['withYou'] }, by: 2, why: 'Already seeing you' },
+        { when: { needs: ['drawn'], lacks: ['taken', 'withYou'] }, by: 1, why: 'Drawn to you' },
+        { when: { needs: ['sweet'], lacks: ['withYou'] }, by: 1, why: 'Sweet on you' },
+        { when: { needs: ['yourType'] }, by: 1, why: 'Likes your look' },
+        { when: { lacks: ['drawn'] }, by: -2, why: 'Not drawn to you' },
+        { when: { needs: ['taken', 'drawn'], lacks: ['withYou'] }, by: -2, why: 'Spoken for: {his} {takenWord}' },
+        { when: { needs: ['taken'], lacks: ['drawn', 'withYou'] }, by: -1, why: 'Spoken for: {his} {takenWord}' },
+        { when: { stance: ['wary', 'cold'] }, by: -2, why: "Doesn't trust you that far" },
+        { when: { mood: ['drinking'] }, by: 1, why: 'A drink in, and in the mood' },
+        { when: { mood: ['busy'] }, by: -1, why: 'Working' },
+        { when: smooth, by: 1, why: 'Smooth' },
+        { when: blunt, by: -1, why: 'The line came out clumsy' },
+        { when: { needs: ['youDrunk'] }, by: -1, why: "You're drunk" },
+        { when: { needs: ['mask'] }, by: -2, why: 'Hard to flirt with a {mask}' },
+        { when: { needs: ['grief'] }, by: -3, why: 'Grieving {his} {griefWord}' },
+      ],
       care: [
+        { when: { needs: ['drawn', 'wantsCare'], lacks: ['taken'] }, by: 1, why: 'Likes someone who listens' },
         { when: { needs: ['grief'] }, by: 3, why: 'Needed someone to ask, after losing {his} {griefWord}' },
         { when: { needs: ['broke'] }, by: 2, why: 'Glad someone noticed how tight things are' },
         { when: { needs: ['slow'] }, by: 1, why: 'Work has been rough: glad you asked' },

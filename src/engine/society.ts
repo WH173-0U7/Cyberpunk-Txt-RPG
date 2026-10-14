@@ -1,6 +1,7 @@
 import type { Approach, Reaction } from './dialogue';
 import { remember, type Memory, type MemoryRules } from './memory';
 import { INVERSE, tiesOf, type Person, type Population, type TieKind } from './people';
+import type { Romance, RomanceRules } from './romance';
 import type { Rng } from './rng';
 
 /**
@@ -31,6 +32,8 @@ export interface Standing {
   /** When the player last asked them something, and how many questions in a row that makes (one after another, within `openness.grill.minutes`). */
   lastAskAt?: number;
   sitting?: number;
+  /** How taken they are with the player, 0 to 100 (romance.ts): flirts that land and dates raise it, and it fades on the clock. */
+  spark?: number;
 }
 
 /** What each stance is called where the player can see it. */
@@ -44,7 +47,7 @@ export const STANCE_LABEL: Record<Stance, string> = {
 };
 
 /** Something the player can want from someone: a fact about them, a topic, their people, (`chop`) their hands on a stolen credchip, or (`hire`) a job at the place they run. */
-export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views' | 'chop' | 'hire';
+export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'type' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views' | 'chop' | 'hire';
 
 /**
  * How ready people are to tell the player things: a base by how they feel, a step per level
@@ -118,7 +121,7 @@ export interface Threat {
 export type KnownHow = 'seen' | 'told' | 'asked';
 
 /** Something about a person that takes asking (or watching, or being told) to know; `dead`, that they are, takes being told. */
-export type Fact = 'name' | 'job' | 'age' | 'home' | 'likes' | 'drinks' | 'hates' | 'nature' | 'dream' | 'dead';
+export type Fact = 'name' | 'job' | 'age' | 'home' | 'likes' | 'drinks' | 'hates' | 'type' | 'nature' | 'dream' | 'dead';
 
 /** One line of what passed between the player and a person; a `note` is how it went down (rapport, charisma, their stance, and why), `tone` whether that was good for the player. */
 export interface LogEntry {
@@ -161,6 +164,8 @@ export interface SocietyState {
   links: Record<string, KnownLink>;
   /** What each person remembers of the player (memory.ts), by person. */
   memories: Record<string, Memory[]>;
+  /** Who the player is seeing, if anyone (romance.ts). */
+  romance?: Romance | null;
 }
 
 export interface SocietyRules {
@@ -215,6 +220,8 @@ export interface SocietyRules {
   openness: OpennessRules;
   /** What people remember of the player, how long, and what they bring up (memory.ts). */
   memory: MemoryRules;
+  /** Romance with the player (romance.ts). */
+  romance: RomanceRules;
   /**
    * What people like and don't like being asked, and how they take each way of starting a
    * chat: each reaction that fits the speaker (dialogue.ts `fits`) adds its `by`, worth
@@ -224,7 +231,7 @@ export interface SocietyRules {
 }
 
 export function freshSociety(): SocietyState {
-  return { standings: {}, rep: {}, incidents: [], threats: [], nextId: 1, known: {}, links: {}, memories: {} };
+  return { standings: {}, rep: {}, incidents: [], threats: [], nextId: 1, known: {}, links: {}, memories: {}, romance: null };
 }
 
 // ───────────── What the player knows ─────────────
@@ -350,17 +357,18 @@ function drift(value: number, at: number, perDay: number, timeScale: number, now
 export function standingOf(state: SocietyState, id: string, rules: SocietyRules, timeScale: number, now: number): Standing {
   const s = state.standings[id] ?? blank(now);
   // Saves from before questions were counted have neither.
-  return { ...s, asks: s.asks ?? 0, refused: s.refused ?? {}, grudge: drift(s.grudge, s.at, rules.forgivePerDay, timeScale, now) };
+  return { ...s, asks: s.asks ?? 0, refused: s.refused ?? {}, grudge: drift(s.grudge, s.at, rules.forgivePerDay, timeScale, now), spark: drift(s.spark ?? 0, s.at, rules.romance.fadePerDay, timeScale, now) };
 }
 
 /** Writes a standing down at `now`, grudge faded first, then changed by `by`. */
-export function changeStanding(state: SocietyState, id: string, by: Partial<Standing> & { rapport?: number; grudge?: number }, rules: SocietyRules, timeScale: number, now: number): Standing {
+export function changeStanding(state: SocietyState, id: string, by: Partial<Standing> & { rapport?: number; grudge?: number; spark?: number }, rules: SocietyRules, timeScale: number, now: number): Standing {
   const faded = standingOf(state, id, rules, timeScale, now);
   const next: Standing = {
     ...faded,
     ...by,
     rapport: Math.max(-100, Math.min(100, faded.rapport + (by.rapport ?? 0))),
     grudge: Math.max(0, Math.min(200, faded.grudge + (by.grudge ?? 0))),
+    spark: Math.max(0, Math.min(100, (faded.spark ?? 0) + (by.spark ?? 0))),
     at: now,
   };
   state.standings[id] = next;

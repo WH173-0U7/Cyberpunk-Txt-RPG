@@ -32,7 +32,13 @@ export type MemoryKind =
   /** Chopped a hot chip for the player: `amount` was on it. */
   | 'chopped'
   /** Was asked about `about`. */
-  | 'asked';
+  | 'asked'
+  /** Went out with the player: `what` is where. */
+  | 'date'
+  /** Was dumped by the player. */
+  | 'dumped'
+  /** Caught the player flirting with `about`, while they were together. */
+  | 'cheated';
 
 export interface Memory {
   kind: MemoryKind;
@@ -68,7 +74,7 @@ export interface MemoryRules {
 }
 
 /** The ones that are a grievance: brought up, they're the whole of what's said. */
-export const GRIEVANCES: ReadonlySet<MemoryKind> = new Set<MemoryKind>(['wronged', 'heard', 'saw', 'quit', 'fired']);
+export const GRIEVANCES: ReadonlySet<MemoryKind> = new Set<MemoryKind>(['wronged', 'heard', 'saw', 'quit', 'fired', 'dumped', 'cheated']);
 
 const DAY = 86_400_000;
 

@@ -3,7 +3,7 @@ import { CITY } from '../src/data/city';
 import { FOOD } from '../src/data/food';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
-import { dreamOf, generatePeople, handleOf, INVERSE, isCorpo, isNetrunner, peopleAt, whereIs, type Population, type TieKind } from '../src/engine/people';
+import { dreamOf, drawnTo, generatePeople, handleOf, heartOf, INVERSE, isCorpo, isNetrunner, peopleAt, tiesOf, whereIs, type Population, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 
@@ -139,6 +139,36 @@ describe('the people', () => {
       return w && p.likes.hangout && w.spot.id === p.likes.hangout.id;
     }).length;
     expect(evening).toBeGreaterThan(population.people.length / 4);
+  });
+
+  it('give everyone a heart: whom they are drawn to, what wins them over, the look they like; the same every time, and their spouse among them', () => {
+    let people = 0;
+    let none = 0;
+    let everyone = 0;
+    let styled = 0;
+    const wants = new Set<string>();
+    for (const { world, population } of cities.slice(0, 20)) {
+      for (const person of population.people) {
+        const heart = heartOf(person, world, PEOPLE, population);
+        expect(heartOf(person, world, PEOPLE, population), person.name).toEqual(heart);
+        expect(new Set(heart.drawnTo).size, person.name).toBe(heart.drawnTo.length);
+        for (const tie of tiesOf(population, person.id)) {
+          const spouse = tie.kind === 'spouse' ? population.people.find((p) => p.id === tie.to) : undefined;
+          if (spouse) expect(drawnTo(heart, spouse.pronouns), `${person.name} and ${spouse.name}`).toBe(true);
+        }
+        people++;
+        if (!heart.drawnTo.length) none++;
+        if (heart.drawnTo.length === 3) everyone++;
+        if (heart.style) styled++;
+        wants.add(heart.wants);
+      }
+    }
+    // Most are drawn to someone, a good share to anyone, a few to no one; most go for a look; every way in wins someone.
+    expect(none / people).toBeGreaterThan(0.01);
+    expect(none / people).toBeLessThan(0.15);
+    expect(everyone / people).toBeGreaterThan(0.15);
+    expect(styled / people).toBeGreaterThan(0.4);
+    expect([...wants].sort()).toEqual(['care', 'chat', 'compliment', 'gossip', 'joke']);
   });
 
   it('never names anyone after a real character', () => {

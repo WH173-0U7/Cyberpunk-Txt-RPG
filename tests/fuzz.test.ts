@@ -82,6 +82,14 @@ function check(game: Game, about: string): void {
   expect(again.wallet, `${about}: wallet after a save`).toEqual(game.wallet);
   expect(again.jobSaved, `${about}: job after a save`).toEqual(game.jobSaved);
   expect(again.lifeSaved, `${about}: the people's days after a save`).toEqual(game.lifeSaved);
+  expect(again.youSaved, `${about}: who the player is after a save`).toEqual(game.youSaved);
+  // Seeing someone alive, and no one else's.
+  const romance = game.societySaved.romance;
+  if (romance) {
+    const partner = game.population.people.find((p) => p.id === romance.with);
+    expect(partner && partner.diedOn === undefined, `${about}: seeing ${romance.with}`).toBe(true);
+    expect(again.societySaved.romance, `${about}: romance after a save`).toEqual(romance);
+  }
   // The people come back the same (their ties as a set: a friendship made again after a falling out sits elsewhere in the list).
   // Compared as text first, which is quick for hundreds of people; the slow deep match only says what differs.
   const tiesOf = (ties: Array<{ from: string; to: string; kind: string }>) => [...ties].map((t) => `${t.from}|${t.to}|${t.kind}`).sort();
@@ -157,7 +165,16 @@ describe('playing badly', () => {
           } else if (roll < 0.8 && people.length) {
             const who = rng.pick(people)!.person.id;
             const what = rng.next();
-            if (what < 0.3) game.talk(who, now);
+            if (what < 0.22) game.talk(who, now);
+            else if (what < 0.26) game.talk(who, now, 'flirt');
+            else if (what < 0.3) {
+              const moves = game.romanceWith(who, now);
+              const move = moves.length ? rng.pick(moves) : null;
+              if (move === 'askOut') game.askOut(who, now);
+              else if (move === 'date') game.date(who, now);
+              else if (move === 'official') game.makeOfficial(who, now);
+              else if (move === 'end') game.endRomance(now);
+            }
             else if (what < 0.55) game.rob(who, now);
             else if (what < 0.75 && game.workWith(who) === 'hire') game.askForWork(who, now);
             else if (what < 0.8 && game.workWith(who) === 'quit') game.quit(now);

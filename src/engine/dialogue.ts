@@ -1,5 +1,5 @@
 import { bossOf } from './jobs';
-import { dreamOf, gangOf, handleOf, pronounsOf, type Dream, type PeopleContent, type Person, type Population, type Tie, type TieKind, type Traits } from './people';
+import { dreamOf, gangOf, handleOf, heartOf, pronounsOf, type Dream, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Tie, type TieKind, type Traits, type Want } from './people';
 import type { Rng } from './rng';
 import type { Asked, Fact, OpennessRules, Stance, Standing } from './society';
 import type { World } from './types';
@@ -24,8 +24,8 @@ export type History = 'first' | 'recent' | 'regular' | 'long';
 export type Eloquence = 'blunt' | 'easy' | 'smooth';
 /** What a chat can turn to; `news` is what happened between people lately (life.ts), `dream` what they want out of life, `views` what they make of the corps, the badges and the city. */
 export type Topic = 'job' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views';
-/** How the player starts a chat: just talking, a compliment, a joke, asking what's the word, or asking how they're holding up. People take each by who they are and how they're doing. */
-export type Approach = 'chat' | 'compliment' | 'joke' | 'gossip' | 'care';
+/** How the player starts a chat: just talking, a compliment, a joke, asking what's the word, asking how they're holding up, or a flirt. People take each by who they are and how they're doing. */
+export type Approach = Want | 'flirt';
 /** One way someone takes something: when it fits them, how much they like it (less than nothing: dislike), and why, as the player would read it (`{given}` and the rest filled in). */
 export interface Reaction {
   when: When;
@@ -116,9 +116,27 @@ export interface DialogueLines {
   /** What someone wants out of life, as the card says it once the player knows ("Wants out of Night City"). */
   dreams: Record<Dream, string>;
   /** Why an exchange went the way it did, on the note after it (`{given}`, `{his}`, `{item}`…): pushed after a no, one question too many, a favorite, a second gift in a day, a mask, a job, walking out, a chop. */
-  notes: { pressed: string; grilled: string; favorite: string; twice: string; masked: string; hired: string; quit: string; chopped: string };
+  notes: { pressed: string; grilled: string; favorite: string; twice: string; masked: string; hired: string; quit: string; chopped: string; date: string; official: string; dumped: string; ended: string; jealous: string };
+  /**
+   * Romance with the player (romance.ts): asked out (yes; not drawn to the player; spoken for,
+   * `{taken}` their `{takenWord}`; not yet; not in a mask); a date (`{item}` ordered for two,
+   * `favorite`, `{here}`); asked to make it official (yes, not yet); dumped by the player; ending
+   * it themselves (`fizzled`: the spark gone, `caught`: once too often); jealous, seeing the
+   * player flirt with `{other}`; and a heart's words for the card.
+   */
+  romance: {
+    ask: { yes: Line[]; notDrawn: Line[]; taken: Line[]; notYet: Line[]; masked: Line[] };
+    date: Line[];
+    official: { yes: Line[]; notYet: Line[] };
+    dumped: Line[];
+    theyEnd: Line[];
+    jealous: Line[];
+    /** On the card, once the player knows someone's type: the way in that wins them over, and someone drawn to no one. */
+    wants: Record<Want, string>;
+    notLooking: string;
+  };
   /** The player's own lines, for the record, by eloquence. */
-  you: { talk: Line[]; askAbout: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[]; work: Line[]; quit: Line[] };
+  you: { talk: Line[]; askAbout: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[]; work: Line[]; quit: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[] };
 }
 
 /** Everything a line can be picked and filled by; `vars.mask` is the word for the mask the player has on, or nothing. */
@@ -435,7 +453,9 @@ export function varsFor(person: Person, world: World, population: Population, co
   const boss = work?.business ? bossOf(work, population) : null;
   const dream = person.gang || person.age >= 18 ? dreamOf(person, world, content) : null;
   const years = Math.max(1, Math.min(person.age - 17, createYears(person.id)));
+  const heart = heartOf(person, world, content, population);
   return {
+    ...heartVars(heart),
     ...pronounsOf(person),
     age: String(person.age),
     home: home?.name ?? '',
@@ -475,6 +495,37 @@ export function varsFor(person: Person, world: World, population: Population, co
     dream: dream ?? '',
     ...(dream ? { [`dream${dream.charAt(0).toUpperCase()}${dream.slice(1)}`]: 'yes' } : {}),
     [districtFlag(person.district)]: 'yes',
+  };
+}
+
+/** Whom a heart is drawn to, in words: "women", "men and anyone who goes by they", "anyone"; nothing for no one. */
+export function drawnWord(drawn: readonly Pronouns[]): string {
+  const has = (p: Pronouns) => drawn.includes(p);
+  if (has('she') && has('he') && has('they')) return 'anyone';
+  const sides = [has('she') ? 'women' : '', has('he') ? 'men' : ''].filter(Boolean).join(' and ');
+  if (has('they')) return sides ? `${sides}, and anyone who goes by they` : 'anyone who goes by they';
+  return sides;
+}
+
+/** The way in that wins someone over, as they'd say it: someone "easy to talk to", "who makes me laugh". */
+export const WANT_WORDS: Record<Want, string> = {
+  chat: 'easy to talk to',
+  compliment: 'with a way with words',
+  joke: 'who makes me laugh',
+  gossip: 'who knows what goes on in this city',
+  care: 'who actually listens',
+};
+
+/** A heart as line variables: `typeWho` (and `TypeWho`, to start a sentence; or `typeNone`), `typeWants`, `typeStyle` (a style's name), and `wants<Way>`. */
+function heartVars(heart: Heart): Record<string, string> {
+  const who = drawnWord(heart.drawnTo);
+  return {
+    typeWho: who,
+    TypeWho: capitalize(who),
+    typeNone: who ? '' : 'yes',
+    typeWants: WANT_WORDS[heart.wants],
+    typeStyle: heart.style ? capitalize(heart.style) : '',
+    [`wants${capitalize(heart.wants)}`]: 'yes',
   };
 }
 

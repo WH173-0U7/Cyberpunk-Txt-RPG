@@ -56,6 +56,12 @@ const bladeDrawn: When = { needs: ['blade'] };
 const bluntDrawn: When = { needs: ['blunt'] };
 const armed: When = { needs: ['weapon'] };
 const unarmed: When = { lacks: ['weapon'] };
+// The heart: whom they're drawn to, spoken for, seeing the player, sweet on them, the player's look their type.
+const hasType: When = { needs: ['typeWho'] };
+const noType: When = { needs: ['typeNone'] };
+const spokenFor: When = { needs: ['taken'] };
+const yours: When = { needs: ['withYou'] };
+const notDrawn: When = { lacks: ['drawn'] };
 // What happened between people lately, and what the speaker was to it (life.ts): theirs, a relative's, their gang's doing, or heard of.
 const news = (kind: string, role: string, ...more: When[]): When => both({ needs: [`news${kind}`, `news${role}`] }, ...more);
 // The moment: the player drunk, the speaker grieving, one question too many, a question they're touchy about or glad of, a street name to give.
@@ -672,6 +678,22 @@ export const LINES: DialogueLines = {
   ],
 
   facts: {
+    type: [
+      only('Me? {TypeWho}. Someone {typeWants}.', hasType),
+      only('Honestly? I go for {typeWho}. Someone {typeWants}, mostly.', hasType),
+      only('{TypeWho}. And someone {typeWants}: that\'s the main thing.', hasType),
+      only('A little {typeStyle} on someone does it for me. That, and someone {typeWants}.', both(hasType, { needs: ['typeStyle'] })),
+      only('I like {typeWho}. Bonus points for {typeStyle}.', both(hasType, { needs: ['typeStyle'] })),
+      only('My type? {TypeWho}. Someone {typeWants}. I don\'t have time for much else.', both(corpo, hasType)),
+      only('Ha. {TypeWho}. Someone {typeWants} who can hold their own.', both(ganger, hasType)),
+      only('At my age? {TypeWho}, still. Someone {typeWants}.', both(elder, hasType)),
+      only('Oh, um. {TypeWho}? Someone {typeWants}. Why, who\'s asking?', both(young, hasType)),
+      only("{TypeWho}. But I'm spoken for, so it's academic.", both(hasType, spokenFor)),
+      loud("You're asking? You know my type. You're looking at it.", both(hasType, yours), 4),
+      only('Nobody, really. Never been my thing.', noType),
+      only("Not looking. Not that way. Never have been.", noType),
+      only("I'm not wired for that, {choom}. Never was.", noType),
+    ],
     name: [
       "{name}. Don't wear it out.",
       'People call me {given}.',
@@ -1111,6 +1133,16 @@ export const LINES: DialogueLines = {
     // Asked about someone.
     only('Why were you asking about my {memWord} {memWho}?', { needs: ['memAsked', 'memWord'] }),
     only('Still looking for {memWho}?', { needs: ['memAsked'] }),
+    // The heart.
+    only('That night at {memPlace}. I keep thinking about it.', { needs: ['memDate', 'memPlace'] }),
+    only('{memPlace}, {memAgo}. Do it again soon?', { needs: ['memDate', 'memPlace'] }),
+    vague('I had a good time the other night.', { needs: ['memDate'] }),
+    only('You dumped me {memAgo}. And now you want to chat?', { needs: ['memDumped'] }),
+    only("I'm over you. Mostly. Don't push it.", { needs: ['memDumped'] }),
+    loud('Still not over how you ended it. Just so you know.', { needs: ['memDumped', 'memAgain'] }, 3),
+    only("I saw you with {memWho}. Don't pretend.", { needs: ['memCheated', 'memWho'] }),
+    only('{memWho}? Really? In front of me?', { needs: ['memCheated', 'memWho'] }),
+    vague('I know what I saw.', { needs: ['memCheated'] }),
   ],
 
   barred: ["{work} won't serve you. Not after what you did to their people.", 'The counter at {work} closes the moment they see your face.'],
@@ -1149,6 +1181,10 @@ export const LINES: DialogueLines = {
       label: 'Tastes',
       lines: [loud("What's good to eat? I'm starving. Are you?", sloshed), only('What do you eat?', blunt), only("What do you eat when it's been a day?", easy), only("Best thing to eat in {district}? I'll buy, you pick.", smooth)],
     },
+    type: {
+      label: 'Type',
+      lines: [loud("What's your type? Asking for a friend.", sloshed), only("What's your type?", blunt), only('So what kind of person catches your eye?', easy), only("Tell me who catches your eye, and I'll tell you who you are.", smooth)],
+    },
     hates: {
       label: 'Enemies',
       lines: [loud("Who d'you hate? I hate stairs.", sloshed), only('Who do you hate?', blunt), only('Who do you hate around here?', easy), only("Everybody's got one crew they'd cross the street for. Yours?", smooth)],
@@ -1156,6 +1192,50 @@ export const LINES: DialogueLines = {
   },
 
   approaches: {
+    flirt: {
+      label: 'Flirt',
+      you: [
+        only('"Come here often?"', blunt),
+        only('"You\'re cute."', blunt),
+        only('"So. You single?"', blunt),
+        only('"I\'ve been looking for a reason to talk to you. This is it."', easy),
+        only('"Buy you a drink sometime?"', easy),
+        only('"Is it me, or did {here} just get a lot more interesting?"', both(easy, { needs: ['here'] })),
+        only('"I\'d say something smooth, but you\'d see right through it. So: hi. You\'re lovely."', smooth),
+        only('"A city of a million lights, and somehow I keep looking at you."', smooth),
+        only('"Tell me to go away and I will. I\'d rather you didn\'t."', smooth),
+        loud('"Missed you."', yours, 4),
+        loud('"You\'re... wow. Okay. Hi."', sloshed, 3),
+      ],
+      liked: [
+        'Ha. Smooth. Keep going.',
+        "You're trouble. I like trouble.",
+        "Okay. You've got my attention.",
+        only('Well, now. Look at you.', warm),
+        only('Careful. I might start to like you.', hard),
+        only('Stop. No, keep going.', chatty),
+        only('You clean up nice. That {typeStyle} suits you.', { needs: ['yourType', 'typeStyle'] }),
+        only("Ha. You've got nerve, {choom}.", ganger),
+        only('Oh, you\'re sweet. Go on.', young),
+        only('A flirt, at my age. Go on, then.', elder),
+        loud('Missed you too.', yours, 4),
+        loud("You know you don't have to win me over anymore. Do it anyway.", yours, 3),
+      ],
+      flat: ['Ha. Okay.', 'Uh-huh.', "Cute. I'm busy.", only('Hm.', quiet), only('Is that a line?', corpo), only('Nice try.', hard), only('Sure, {choom}.', ganger)],
+      disliked: [
+        'Not happening.',
+        "I'm going to pretend you didn't say that.",
+        only("I've got a {takenWord}. {taken}. So, no.", both(spokenFor, { needs: ['takenWord'] })),
+        only("You're not my type. Not even close.", notDrawn),
+        only('Wrong tree, {choom}.', notDrawn),
+        only('Not with a {mask} on, no.', masked),
+        only('Do I look like I\'m in the mood?', hot),
+        only("Not while I'm working.", busy),
+        only("You're drunk. Go home.", sloshed),
+        only('Back off.', hard),
+        only('Keep it professional.', corpo),
+      ],
+    },
     compliment: {
       label: 'Compliment',
       you: [
@@ -1299,6 +1379,77 @@ export const LINES: DialogueLines = {
     legend: 'Wants to be a legend',
   },
 
+  romance: {
+    ask: {
+      yes: [
+        "Yeah. Yeah, okay. I'd like that.",
+        'Took you long enough. Yes.',
+        only("I was hoping you'd ask. Yes.", warm),
+        only('A date. With me. ...Sure. Why not.', hard),
+        only("Ha! Yes. Don't make me regret it.", ganger),
+        only("I'll make the time. Yes.", corpo),
+        only('Yes! I mean. Yes. Cool.', young),
+        only('At my age? ...Go on, then. Yes.', elder),
+        only('Yes. You know where I am of an evening: {hangout}.', { needs: ['hangout'] }),
+      ],
+      notDrawn: [
+        "That's sweet. But you're not who I go for.",
+        'I like you. Just not like that.',
+        only("Sorry, {choom}. You're not what I go for.", ganger),
+        only("I don't really do that. With anyone.", noType),
+        only('Not my thing. Never has been.', noType),
+      ],
+      taken: [
+        "I'm with {taken}. You know that, right?",
+        only("I've got a {takenWord}. {taken}. So no.", { needs: ['takenWord'] }),
+        only('{taken} would kill you. Then me. No.', ganger),
+      ],
+      notYet: [
+        'Slow down. I barely know you.',
+        'Ask me again when I know more than your face.',
+        only('Maybe. Not yet.', warm),
+        only("I don't go out with people I don't trust.", { stance: ['neutral', 'wary', 'cold'] }),
+        only('Buy me a drink first. Talk to me. Then ask.', drinking),
+        only('Not at work. And not yet.', busy),
+      ],
+      masked: ['Take the {mask} off and ask me again.', "I don't go out with a {mask}."],
+    },
+    date: [
+      'This was nice. Really nice.',
+      "Same time next week? I'm not asking, I'm telling.",
+      only('You ordered me {item}? You remembered.', { needs: ['favorite'] }),
+      only('{item}. My favorite. Who told you?', { needs: ['favorite'] }),
+      only("Nobody's taken me anywhere in a long time. Thank you.", kind),
+      only("I don't usually do this. I'm glad I did.", hard),
+      only("You're good company, you know that?", warm),
+      only('Ha, look at us. Like something out of a braindance.', young),
+      only('A whole evening and nobody got shot. Preem.', ganger),
+      only("I should be working. I'm not sorry.", corpo),
+    ],
+    official: {
+      yes: ["Official? Yeah. I'm yours, then.", 'I was going to ask you the same thing.', only('Us. I like the sound of that.', warm), only("Don't make me regret this. ...I won't, will I.", hard)],
+      notYet: ["Let's not rush it.", 'Ask me again after a few more nights out.', only('Give it time. I want to be sure.', warm)],
+    },
+    dumped: ['Wow. Okay. Okay.', "You're serious. Fine. Go.", only("I knew it. I knew you'd do this.", hard), only('Get out of my sight.', hot), only('...Right. I hope it was worth it.', warm), only("You don't just walk away from a {member}.", both(ganger, { needs: ['member'] }))],
+    theyEnd: [
+      only("We need to talk. This isn't working. It's over.", { needs: ['fizzled'] }),
+      only("I don't feel it anymore. I'm sorry. We're done.", { needs: ['fizzled'] }),
+      only("You're never around. I'm done waiting.", { needs: ['fizzled'] }),
+      only("I saw you with {other}. More than once. We're done.", { needs: ['caught', 'other'] }),
+      only('Don\'t. I know about {other}. It\'s over.', { needs: ['caught', 'other'] }),
+      only("You think I'm blind? {other}? We're finished.", { needs: ['caught', 'other'] }),
+      vague("It's over between us.", {}),
+    ],
+    jealous: [
+      '{given} sees you flirting with {other}. {His} face goes very still.',
+      '{given} watches you lean in toward {other}, and sets {his} drink down hard.',
+      only('{given}, from across the room: "Having fun?"', hot),
+      only("{given} looks at {other}, then at you, and says nothing. That's worse.", quiet),
+    ],
+    wants: { chat: 'Falls for an easy talker', compliment: 'Weak for a way with words', joke: 'Falls for a laugh', gossip: 'Likes someone in the know', care: 'Likes someone who listens' },
+    notLooking: 'Not looking for anyone',
+  },
+
   notes: {
     pressed: 'Pushed after a no',
     grilled: 'Tired of all the questions',
@@ -1308,6 +1459,11 @@ export const LINES: DialogueLines = {
     hired: 'Took you on',
     quit: 'You walked out',
     chopped: 'Business done together',
+    date: 'A night out together',
+    official: "It's official",
+    dumped: 'You ended it',
+    ended: '{given} ended it',
+    jealous: 'Saw you flirting with {other}',
   },
 
   you: {
@@ -1349,6 +1505,18 @@ export const LINES: DialogueLines = {
       only('"Put me to work. I\'ll earn my keep before you notice I\'m here."', smooth),
     ],
     quit: ['"I\'m done here."', '"Find someone else. I quit."', only('"It\'s been real. I\'m moving on."', smooth)],
+    askOut: [
+      only('"Go out with me."', blunt),
+      only('"Dinner. You and me. Say yes."', blunt),
+      only('"Want to get out of here sometime? Just us."', easy),
+      only('"Let me buy you dinner sometime."', easy),
+      only('"I\'d like to take you somewhere. Good lights, bad music. Interested?"', smooth),
+      only('"Let me take you out. Properly."', smooth),
+      loud('"We should... go out. Yeah?"', sloshed, 3),
+    ],
+    date: ['You order two {item}.', 'Two {item}, and a table in the corner.', only('"Two {item}. On me."', smooth)],
+    official: [only('"We\'re together. Right?"', blunt), only('"So. Are we a thing? Officially?"', easy), only('"I want this to be real. You and me."', smooth)],
+    endIt: [only('"This isn\'t working. I\'m done."', blunt), only('"We need to talk. I think we should stop."', easy), only('"You deserve someone who\'s all in. That\'s not me. I\'m sorry."', smooth)],
     chop: [
       only('"Chop this."', blunt),
       only('"Crack this chip."', blunt),

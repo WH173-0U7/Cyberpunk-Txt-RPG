@@ -6,6 +6,7 @@ import type { InebriationState } from './inebriation';
 import type { JobState } from './jobs';
 import type { LifeState } from './life';
 import type { Memory } from './memory';
+import type { Romance, You } from './romance';
 import type { SkillState } from './skills';
 import type { SocietyState } from './society';
 import type { Item, ItemKind, Leg, MapState, Point, Trip, Wallet, Whereabouts, World } from './types';
@@ -42,6 +43,8 @@ export interface Progress {
   job: JobState | null;
   /** The people's own days so far (null: none lived yet). */
   life: LifeState | null;
+  /** The pronouns the player goes by (missing or null: a save from before; they go by they). */
+  you?: You | null;
 }
 
 /** What a save takes from a game in progress (a `Game` has all of it). */
@@ -59,6 +62,7 @@ export interface SaveSource {
   readonly charismaSaved: SkillState;
   readonly jobSaved: JobState | null;
   readonly lifeSaved: LifeState;
+  readonly youSaved: You;
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -95,6 +99,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     charisma: { ...game.charismaSaved },
     job: game.jobSaved ? { ...game.jobSaved } : null,
     life: game.lifeSaved,
+    you: { ...game.youSaved },
     savedAt: now,
   };
 }
@@ -135,12 +140,14 @@ export function readSave(raw: unknown): SaveData | null {
     energy: isEnergy(save.energy) ? save.energy : null,
     inebriation: isInebriation(save.inebriation) ? save.inebriation : null,
     // And before there were people to deal with, nobody knew the player (and before they could be known of, no one was).
-    society: isSociety(save.society) ? { ...save.society, known: knownOf(save.society.known), links: save.society.links ?? {}, memories: memoriesOf(save.society.memories) } : null,
+    society: isSociety(save.society) ? { ...save.society, known: knownOf(save.society.known), links: save.society.links ?? {}, memories: memoriesOf(save.society.memories), romance: romanceOf(save.society.romance) } : null,
     charisma: isSkill(save.charisma) ? save.charisma : null,
     // And before there was work, the player had none.
     job: isJob(save.job) ? save.job : null,
     // And before the people had days of their own, none had passed.
     life: isLife(save.life) ? save.life : null,
+    // And before the player said who they are, they went by they.
+    you: isYou(save.you) ? save.you : null,
     savedAt: save.savedAt,
   };
 }
@@ -153,12 +160,12 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, life } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, life, you } = save;
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null, life };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null, life, you: you ?? null };
 }
 
 function isItem(value: unknown): value is Item {
@@ -179,6 +186,19 @@ function isItem(value: unknown): value is Item {
     (item.weapon === undefined || typeof item.weapon === 'string') &&
     (item.loaded === undefined || (Number.isInteger(item.loaded) && (item.loaded as number) >= 0))
   );
+}
+
+function isYou(value: unknown): value is You {
+  const you = value as Record<string, unknown> | null;
+  return typeof you === 'object' && you !== null && (you.pronouns === 'she' || you.pronouns === 'he' || you.pronouns === 'they');
+}
+
+/** Who the player is seeing, if it makes sense; else no one. */
+function romanceOf(value: unknown): Romance | null {
+  const r = value as Record<string, unknown> | null;
+  if (typeof r !== 'object' || r === null) return null;
+  if (typeof r.with !== 'string' || (r.stage !== 'dating' && r.stage !== 'together') || !isNumber(r.since) || !isNumber(r.lastDateAt) || !Number.isInteger(r.dates) || (r.dates as number) < 0) return null;
+  return { with: r.with, stage: r.stage, since: r.since, dates: r.dates as number, lastDateAt: r.lastDateAt };
 }
 
 function isMoney(value: unknown): value is Money {
