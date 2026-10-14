@@ -5,11 +5,14 @@ export interface SettingsView {
   seed: string;
   /** What starting over would lose, e.g. "Mapped 3/14 · €$ 47". */
   progress: string;
+  /** Which build this is: "Stable build 0.1.0 (a283362)", or the beta. */
+  build: string;
 }
 
 export interface SettingsElements extends OverlayElements {
   seed: HTMLElement;
   progress: HTMLElement;
+  build: HTMLElement;
   restart: HTMLButtonElement;
   erase: HTMLButtonElement;
   confirm: HTMLElement;
@@ -68,6 +71,7 @@ export class Settings {
   render(view: SettingsView): void {
     this.els.seed.textContent = `Seed ${view.seed}`;
     this.els.progress.textContent = view.progress;
+    this.els.build.textContent = view.build;
   }
 
   /** Shows the question for a dangerous choice, or puts it away (null). */

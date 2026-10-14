@@ -2305,6 +2305,13 @@ button {
   font-size: 12px;
   line-height: 1.5;
 }
+.settings-build {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
 .settings-actions {
   display: grid;
   gap: 8px;

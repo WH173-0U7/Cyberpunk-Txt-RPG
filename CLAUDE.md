@@ -349,4 +349,9 @@ npm run build
   footprint and height. A building's name, category and business can change freely (each
   part of a name takes one random draw); moving or resizing buildings needs the same bump.
 - `TRAVEL.timeScale` in `src/data/travel.ts` is 60 while testing; 1 is real time.
-- Merging to `main` deploys to GitHub Pages (https://wh173-0u7.github.io/Cyberpunk-Txt-RPG/).
+- Two builds live on GitHub Pages: the stable release at the root
+  (https://wh173-0u7.github.io/Cyberpunk-Txt-RPG/, from `main`) and the beta under `/beta/`
+  (from `beta`, built with `CHANNEL=beta`: its own save key, "Beta build" in Settings). Pull
+  requests go to `beta`; a push to either branch rebuilds both and deploys. A release is `beta`
+  merged into `main` and tagged `vX.Y.Z` (bump `version` in `package.json` with it): the tag
+  publishes a GitHub Release. `__CHANNEL__` and `__BUILD__` are the build-time defines.
