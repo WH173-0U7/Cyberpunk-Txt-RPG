@@ -1,19 +1,58 @@
 name: Release
 
-# Tagging `main` as vX.Y.Z publishes a GitHub Release: the notes since the last tag and the
-# built site as a zip, for anyone who wants to host that version themselves.
+# A stable release: `main` tagged vX.Y.Z, and a GitHub Release with the notes since the last
+# one and the built site as a zip, for anyone who wants to host that version themselves.
+# Run it from the Actions tab (or `gh workflow run Release -f version=0.2.0`): it tags the
+# head of `main` itself, since only the workflow's token may push tags here. A tag pushed by
+# hand publishes the same way.
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The version to release from main, e.g. 0.1.0 (tagged v0.1.0)'
+        required: true
+        type: string
   push:
     tags: ['v*']
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Dispatched: the release is the head of main, whatever branch the run was started from.
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+
+      - name: Name the release
+        id: tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="v${VERSION#v}"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Tag main
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Night City Terminal $TAG"
+          git push origin "refs/tags/$TAG"
 
       - uses: actions/setup-node@v4
         with:
@@ -25,12 +64,15 @@ jobs:
       - run: npm run build
         env:
           CHANNEL: stable
-          BUILD_SHA: ${{ github.sha }}
+          BUILD_SHA: ${{ steps.tag.outputs.sha }}
 
       - name: Zip the site
-        run: (cd dist && zip -qr "../night-city-terminal-${GITHUB_REF_NAME}.zip" .)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: (cd dist && zip -qr "../night-city-terminal-$TAG.zip" .)
 
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "Night City Terminal $GITHUB_REF_NAME" --generate-notes "night-city-terminal-${GITHUB_REF_NAME}.zip"
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: gh release create "$TAG" --target "${{ steps.tag.outputs.sha }}" --title "Night City Terminal $TAG" --generate-notes "night-city-terminal-$TAG.zip"
