@@ -3,6 +3,7 @@ import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
 import { outfit, type GearContent } from '../src/engine/carry';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
+import { ARMS } from '../src/data/weapons';
 import { MONEY } from '../src/data/money';
 import { LINES } from '../src/data/dialogue';
 import { PEOPLE } from '../src/data/people';
@@ -53,7 +54,7 @@ const world: World = {
   welcomeBack: 'hello again',
   layout: { avenues: [20, 50, 80], streets: [20, 50, 80], coast: null },
   buildings: [
-    { id: 'b-shop', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Gun shop', category: 'firearms', business: 'gun-shop', name: 'Test Guns', floors: 3, x: 30, y: 21, w: 4, h: 4 },
+    { id: 'b-shop', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Cyberware outlet', category: 'cyberware', business: 'cyberware-outlet', name: 'Test Chrome', floors: 3, x: 30, y: 21, w: 4, h: 4 },
     { id: 'b-park', block: 'B2', district: 'test', kind: 'park', kindLabel: 'Park', category: 'public', business: null, name: 'Test Park', floors: 0, x: 30, y: 51, w: 6, h: 6 },
     { id: 'b-noodle', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Noodle bar', category: 'food', business: 'noodle-bar', name: 'Test Noodles', floors: 2, x: 36, y: 21, w: 4, h: 4 },
     { id: 'b-bank', block: 'B1', district: 'test', kind: 'shops', kindLabel: 'Bank', category: 'services', business: 'bank', name: 'EuroBank', floors: 2, x: 42, y: 21, w: 4, h: 4 },
@@ -1024,7 +1025,7 @@ describe('Game', () => {
 
     it("sells clothing off a store's rack at its tier, to wear from the inventory, the pockets' contents and the wallet moving over", () => {
       // The gun shop stands in for Stylishly: an everyday rack with a chain's stock and a bag.
-      const racked: GearContent = { ...GEAR, racks: { ...GEAR.racks, 'gun-shop': GEAR.racks.stylishly! }, quality: { ...GEAR.quality, 'gun-shop': 'everyday' } };
+      const racked: GearContent = { ...GEAR, racks: { ...GEAR.racks, 'cyberware-outlet': GEAR.racks.stylishly! }, quality: { ...GEAR.quality, 'cyberware-outlet': 'everyday' } };
       const taco = { id: 'taco', kind: 'consumable' as const, name: 'Taco', count: 1, in: 'jacket' };
       const game = new Game(world, { ...RULES, gear: racked }, { ...progressInside('b-shop', 32, 20, [taco]), money: { bills: 400, coins: 0, account: 0 } });
       game.start(T0);
@@ -1153,7 +1154,7 @@ describe('Game', () => {
     });
 
     it('sells bags at a store with a rack, which are more pockets', () => {
-      const rack: GearContent = { ...tiny, racks: { 'gun-shop': ['duffel-bag', 'belt-pouch'] } };
+      const rack: GearContent = { ...tiny, racks: { 'cyberware-outlet': ['duffel-bag', 'belt-pouch'] } };
       const { game, take, outputs } = inside('b-shop', 32, 20, { gear: rack });
       const menu = game.menu();
       expect(menu?.kind).toBe('gear');
@@ -1215,7 +1216,7 @@ describe('Game', () => {
 
     it('takes a transfer where the counter does, and cash where it does not', () => {
       // A rack of gear takes a transfer when the account covers it; a neighborhood noodle bar wants cash.
-      const rack: GearContent = { ...GEAR, racks: { 'gun-shop': ['belt-pouch'] } };
+      const rack: GearContent = { ...GEAR, racks: { 'cyberware-outlet': ['belt-pouch'] } };
       const banked = new Game(world, { ...RULES, startingEddies: 100, gear: rack }, { ...progressInside('b-shop', 32, 20), money: { bills: 5, coins: 0, account: 200 } });
       banked.start(T0);
       const pouch = banked.menu()?.items[0];
@@ -1362,7 +1363,7 @@ describe('Game', () => {
       expect(cook.game.chop(cook.worker.id, 'credchip-1', cook.now)).toBe(false);
 
       // Clean, the chip pays where a transfer is taken (the chip before the account), and not where cash is wanted.
-      const rack: GearContent = { ...GEAR, racks: { 'gun-shop': ['belt-pouch'] } };
+      const rack: GearContent = { ...GEAR, racks: { 'cyberware-outlet': ['belt-pouch'] } };
       const clean: Item = { ...hot(90), locked: false };
       const shop = new Game(world, { ...RULES, startingEddies: 0, gear: rack }, { ...progressInside('b-shop', 32, 20, [clean]), money: { bills: 0, coins: 0, account: 50 } });
       shop.start(T0);
@@ -1876,6 +1877,115 @@ describe('Game', () => {
           expect(game.standingWith(worker.id, now)?.web.find((l) => l.person.id === other.id)?.kind).toBe('spouse');
           expect(game.describe(other.id)?.named).toBe(true);
         });
+      });
+    });
+
+    describe('weapons', () => {
+      // The test chrome shop racks guns for these: a store of the gun shop's kind, at the everyday tier.
+      const armory: GearContent = {
+        ...GEAR,
+        racks: { 'cyberware-outlet': ['holster', 'gun-case', 'messenger-bag'] },
+        quality: { 'cyberware-outlet': 'everyday' },
+        arms: { ...ARMS, stores: { 'cyberware-outlet': { guns: 8, ammo: true } } },
+      };
+      const rich = (rules: Partial<GameRules> = {}, items: Progress['items'] = []) => {
+        const game = new Game(world, { ...RULES, startingEddies: 100, gear: armory, ...rules }, { ...progressInside('b-shop', 32, 20, items), money: { bills: 0, coins: 0, account: 20_000 } });
+        game.start(T0);
+        const { take, outputs } = record(game);
+        return { game, take, outputs };
+      };
+      const lexington: Item = { id: 'lexington-1', kind: 'weapon', weapon: 'lexington', name: 'M-10AF Lexington', count: 1, in: 'jacket', loaded: 0 };
+
+      it('racks a store\'s guns first, then a box of each kind of round, then what carries them', () => {
+        const { game } = rich();
+        const menu = game.menu();
+        expect(menu?.kind).toBe('gear');
+        const kinds = menu?.items.map((i) => i.kind) ?? [];
+        expect(kinds.filter((k) => k === 'weapon')).toHaveLength(8);
+        expect(kinds.filter((k) => k === 'ammo')).toHaveLength(4);
+        expect(kinds.indexOf('ammo')).toBeGreaterThan(kinds.lastIndexOf('weapon'));
+        expect(kinds.indexOf('gear')).toBeGreaterThan(kinds.lastIndexOf('ammo'));
+        // Everyday stores stock everyday and cheap guns, never the tower's smart guns; the same store always has the same rack.
+        for (const item of menu?.items.filter((i) => i.kind === 'weapon') ?? []) expect(['everyday', 'poverty']).toContain(ARMS.weapons[item.id]?.quality);
+        expect(rich().game.menu()).toEqual(menu);
+        const box = menu?.items.find((i) => i.id === 'handgun-ammo');
+        expect(box?.detail).toMatch(/Box of 50/);
+      });
+
+      it('sells a gun empty, into a pocket, and a box of rounds by the box, which loads it and comes back out', () => {
+        const { game, take, outputs } = rich({ gear: { ...armory, arms: { ...ARMS, weapons: { lexington: ARMS.weapons.lexington! }, stores: { 'cyberware-outlet': { guns: 1, ammo: true } } } } });
+        expect(game.menu()?.items[0]?.id).toBe('lexington');
+        expect(game.buy('lexington')).toBe(true);
+        const gun = game.inventory.find((i) => i.kind === 'weapon');
+        expect(gun).toMatchObject({ weapon: 'lexington', loaded: 0, count: 1 });
+        expect(outputs(take()).at(-1)?.text).toMatch(/Empty: it takes Handgun Ammo/);
+        // Nothing to load it with yet.
+        expect(game.canLoad(gun!.id)).toEqual({ load: false, unload: false });
+        expect(game.load(gun!.id)).toBe(false);
+        expect(game.buy('handgun-ammo')).toBe(true);
+        expect(game.inventory.find((i) => i.kind === 'ammo')).toMatchObject({ id: 'handgun-ammo', count: 50 });
+        expect(game.canLoad(gun!.id)).toEqual({ load: true, unload: false });
+        const before = game.carry().grams;
+        expect(game.load(gun!.id)).toBe(true);
+        expect(game.inventory.find((i) => i.id === gun!.id)?.loaded).toBe(20);
+        expect(game.inventory.find((i) => i.kind === 'ammo')?.count).toBe(30);
+        // The rounds weigh the same in the gun as loose.
+        expect(game.carry().grams).toBe(before);
+        expect(game.armed()).toMatchObject({ short: 'Lexington', gun: true, loaded: 20, magazine: 20 });
+        expect(game.canLoad(gun!.id)).toEqual({ load: false, unload: true });
+        expect(game.load(gun!.id)).toBe(false);
+        expect(game.unload(gun!.id)).toBe(true);
+        expect(game.inventory.find((i) => i.id === gun!.id)?.loaded).toBe(0);
+        expect(game.inventory.filter((i) => i.kind === 'ammo').reduce((n, i) => n + i.count, 0)).toBe(50);
+        // Loose rounds drop all at once.
+        take();
+        expect(game.drop('handgun-ammo')).toBe(true);
+        expect(game.inventory.some((i) => i.kind === 'ammo')).toBe(false);
+        expect(outputs(take())[0]?.text).toMatch(/50 rounds/);
+      });
+
+      it('wants a bag for a long gun, and puts it in one', () => {
+        const ajax = { ...armory, arms: { ...ARMS, weapons: { ajax: ARMS.weapons.ajax! }, stores: { 'cyberware-outlet': { guns: 1 } } } };
+        const { game } = rich({ gear: ajax });
+        expect(game.canBuy('ajax')).toMatch(/too long for a pocket/);
+        expect(game.buy('ajax')).toBe(false);
+        expect(game.buy('messenger-bag')).toBe(true);
+        expect(game.canBuy('ajax')).toBeNull();
+        expect(game.buy('ajax')).toBe(true);
+        const bag = game.gearSaved.find((p) => p.kind === 'messenger-bag');
+        expect(game.inventory.find((i) => i.weapon === 'ajax')?.in).toBe(bag?.id);
+      });
+
+      it('keeps a holster for weapons, and a sealed gun loaded and beyond reloading', () => {
+        const cheap = { ...armory, arms: { ...ARMS, weapons: { 'slaught-o-matic': ARMS.weapons['slaught-o-matic']! }, stores: { 'cyberware-outlet': { guns: 1, ammo: true } } } };
+        const { game } = rich({ gear: cheap });
+        expect(game.buy('holster')).toBe(true);
+        const holster = game.gearSaved.find((p) => p.kind === 'holster');
+        // A box of rounds is no weapon: it goes in a pocket, never the holster.
+        expect(game.buy('handgun-ammo')).toBe(true);
+        expect(game.inventory.find((i) => i.kind === 'ammo')?.in).not.toBe(holster?.id);
+        expect(game.buy('slaught-o-matic')).toBe(true);
+        const gun = game.inventory.find((i) => i.weapon === 'slaught-o-matic');
+        expect(gun?.loaded).toBe(36);
+        expect(game.canLoad(gun!.id)).toEqual({ load: false, unload: false });
+        expect(game.unload(gun!.id)).toBe(false);
+        expect(game.load(gun!.id)).toBe(false);
+      });
+
+      it('robs with the gun on the player, and the line says so', () => {
+        for (let day = 0; day < 14; day++) {
+          const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
+          const game = new Game(world, { ...RULES, startingEddies: 100 }, progressInside('b-noodle', 38, 20, [{ ...lexington, loaded: 20 }]));
+          game.start(now);
+          const worker = game.peopleHere(now).find((p) => p.person.job.building === 'b-noodle');
+          if (!worker) continue;
+          expect(game.armed()?.short).toBe('Lexington');
+          expect(game.rob(worker.person.id, now)).toBe(true);
+          const said = game.conversation(worker.person.id).filter((e) => e.who === 'you').map((e) => e.text);
+          expect(said.join(' ')).toContain('Lexington');
+          return;
+        }
+        throw new Error('nobody at the noodle bar');
       });
     });
   });

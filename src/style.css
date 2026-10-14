@@ -2259,7 +2259,9 @@ button {
   font-size: 10px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  /* "Food · ×2 carried" moves to its own line whole rather than breaking in the middle. */
+}
+/* "Food", "×2 carried": each part moves to the next line whole rather than breaking in the middle. */
+.shop-item-part {
   white-space: nowrap;
 }
 .shop-item-note {

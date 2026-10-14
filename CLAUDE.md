@@ -46,10 +46,10 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 
 ## The inventory
 
-Everything the player owns is in a pocket of something worn; food, drink, credchips and
-clothing are the items so far:
+Everything the player owns is in a pocket of something worn; food, drink, credchips,
+clothing, weapons and ammo are the items so far:
 
-- An `Item` has a `kind` (`ItemKind`: weapon, attachment, cyberware, quickhack, clothing,
+- An `Item` has a `kind` (`ItemKind`: weapon, ammo, attachment, cyberware, quickhack, clothing,
   consumable, shard, credchip, junk, component, after the wiki's 2077 item types plus the
   2020 credchip), a name, a count and the pocket it's `in`. `Game.inventory` is what the player carries, saved as `items`;
   `Game.gearSaved` is their pockets, saved as `gear`. Giving and taking items goes in
@@ -111,10 +111,31 @@ clothing are the items so far:
 - A store with a rack (`GEAR.racks`, by business id) gets a `Menu` of kind `gear` from
   `Game.menu()`, priced by the store's quality like food; buying gear adds a pocket (worn,
   `in: null`). `Game.canBuy(id)` says why not (barred, short, no room) so the shop can.
+- Weapons and ammo: `src/engine/weapons.ts` is the engine, `src/data/weapons.ts` the canon
+  and the numbers (`ARMS`, on `GEAR.arms`). Every weapon is a real, non-iconic 2077 weapon
+  from the wiki (its name without the maker, the maker, the class, Power/Tech/Smart, the
+  magazine as the wiki's ammo capacity), with our weight, price, note and store tier; the
+  TCG's cards have no shop weapons yet. The ammo is the wiki's four kinds by item id
+  (`handgun-ammo`, `shotgun-ammo`, `heavy-ammo`, `sniper-ammo`), the class saying which a
+  gun takes; rounds are carried loose (`perSlot` to a slot, `grams` each, sold by the
+  `box`). A weapon is an `Item` of kind `weapon`, one each (`newWeaponId`, count 1), naming
+  its model in `weapon`, with its rounds in `loaded` (they weigh with it in `itemGrams`). A
+  class marked `long` (rifles, shotguns, the katana, the bat…) fits only a `PocketKind` with
+  `long` (the messenger bag, duffel, backpack, the gun case); a pocket kind with `only`
+  takes only those item kinds (the holster, the gun case). `ARMS.stores` is what each
+  weapon store stocks (by business id): `stockFor` draws its guns or blades from `tiers`
+  for its quality (a step up with `up`, the gunsmith) on the store's own stream; `Game`'s
+  rack lists them first at their own price, then a box of each round priced like a bag,
+  then `GEAR.racks`. `Game.canLoad(id)`, `load(id)` and `unload(id)` move rounds between
+  the stacks and a magazine (a `disposable` gun is sold loaded and sealed); `Game.armed()`
+  is what `drawWeapon` would pull (a loaded gun, then any gun, then a blade), which `rob`
+  uses (`ARMS.rob`, the share of courage it takes to fight back against each) and names in
+  its lines (`weapon`, `gun`, `blade`, `blunt` in the vars). Shooting, damage, attachments
+  and people's own weapons hang off the same pieces when they come.
 - `src/data/items.ts` names each kind and says what goes in it (the order items are listed
   in within a pocket). Real items take their names and details from the wiki and the TCG.
 - `src/ui/inventory.ts` shows a page at a time: the outfit (a row per slot, then the bags),
-  or inside one pocket (its pockets' load, the items in it with Eat/Drink/Wear/Drop, the
+  or inside one pocket (its pockets' load, the items in it with Eat/Drink/Wear/Load/Unload/Drop, the
   pockets inside it as rows that open, and figures for the bills and the coins). `main.ts`
   keeps the path of pockets opened; what using or wearing something does is `Game`'s
   business. Weight has no effect on the player yet; `Game.carry()` has the total for when it

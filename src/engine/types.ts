@@ -144,11 +144,11 @@ export interface Building {
 
 /**
  * The kinds of item in Night City, sorted the way the Cyberpunk Wiki sorts 2077's: weapons,
- * attachments and mods, cyberware, quickhacks, clothing, consumables, shards, junk and
- * crafting components; and credchips, the wiki's 2020 chips of eurodollars, which 2077's
- * list has no slot for.
+ * ammunition, attachments and mods, cyberware, quickhacks, clothing, consumables, shards,
+ * junk and crafting components; and credchips, the wiki's 2020 chips of eurodollars, which
+ * 2077's list has no slot for.
  */
-export type ItemKind = 'weapon' | 'attachment' | 'cyberware' | 'quickhack' | 'clothing' | 'consumable' | 'shard' | 'credchip' | 'junk' | 'component';
+export type ItemKind = 'weapon' | 'ammo' | 'attachment' | 'cyberware' | 'quickhack' | 'clothing' | 'consumable' | 'shard' | 'credchip' | 'junk' | 'component';
 
 /** Something the player carries: what it is, and how many of it. */
 export interface Item {
@@ -164,6 +164,10 @@ export interface Item {
   locked?: boolean;
   /** For clothing carried rather than worn: which garment it is (a kind in `GEAR.kinds`). */
   gear?: string;
+  /** For a weapon: which one it is (a weapon in `src/data/weapons.ts`). Each is its own item, with its own id. */
+  weapon?: string;
+  /** For a gun: the rounds in its magazine, which weigh with it. */
+  loaded?: number;
 }
 
 /** Flavor text that plays while the player is idle, optionally firing an effect. */

@@ -339,6 +339,7 @@ describe('dialogue', () => {
           item: 'Taco',
           take: '12',
           haul: '12 €$ and a credchip with 80 €$ on it',
+          ...rng.pick([{ weapon: '', gun: '', blade: '', blunt: '' }, { weapon: 'Lexington', gun: 'yes', blade: '', blunt: '' }, { weapon: 'katana', gun: '', blade: 'yes', blunt: '' }, { weapon: 'bat', gun: '', blade: '', blunt: 'yes' }]),
           balance: '120',
           cut: '30',
           left: '90',

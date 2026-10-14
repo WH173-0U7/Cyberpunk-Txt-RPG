@@ -50,6 +50,12 @@ const loyal: When = { traits: { loyalty: 'high' } };
 // The moment: a mask on the player, or a face.
 const masked: When = { needs: ['mask'] };
 const bare: When = { lacks: ['mask'] };
+// What the player pulls in a robbery: a gun, a blade, a club, or nothing but their hands.
+const gunDrawn: When = { needs: ['gun'] };
+const bladeDrawn: When = { needs: ['blade'] };
+const bluntDrawn: When = { needs: ['blunt'] };
+const armed: When = { needs: ['weapon'] };
+const unarmed: When = { lacks: ['weapon'] };
 // What happened between people lately, and what the speaker was to it (life.ts): theirs, a relative's, their gang's doing, or heard of.
 const news = (kind: string, role: string, ...more: When[]): When => both({ needs: [`news${kind}`, `news${role}`] }, ...more);
 // The moment: the player drunk, the speaker grieving, one question too many, a question they're touchy about or glad of, a street name to give.
@@ -939,12 +945,21 @@ export const LINES: DialogueLines = {
       '{given} hands it over, eyes burning. {haul}.',
       only('{given} hands it over, eyes on the {mask}. {haul}, and no face to remember.', masked),
       only('You take {haul} off {given}. All {he} gets of you is the {mask}.', masked),
+      only('Eyes on the {weapon}, {given} empties {his} pockets. {haul}.', gunDrawn),
+      only('{given} looks down the {weapon} and doesn\'t argue. {haul}.', gunDrawn),
+      only('{given} keeps {his} eyes on the {weapon} and hands it over. {haul}.', both(armed, { lacks: ['gun'] })),
     ],
-    nothing: ['{given} turns out empty pockets. "Already been done this week."', 'Nothing on {given} worth taking. {He} laughs, which is worse.'],
+    nothing: [
+      '{given} turns out empty pockets. "Already been done this week."',
+      'Nothing on {given} worth taking. {He} laughs, which is worse.',
+      only('{given} turns out empty pockets, staring at the {weapon}. "That\'s it. That\'s all there is."', armed),
+    ],
     fought: [
       '{given} fights back. You get {haul} and a split lip.',
       only('It takes a struggle. {haul}, and {given} marks your face for later.', bare),
       only('It takes a struggle. {haul}, and {given} gets a hand on the {mask} but not under it.', masked),
+      only('{given} grabs for the {weapon}. It takes a struggle, but you come away with it and {haul}.', armed),
+      only('{given} bets you won\'t use the {weapon}, and swings. You get {haul} and a bruise to remember {him} by.', gunDrawn),
     ],
   },
 
@@ -1313,7 +1328,18 @@ export const LINES: DialogueLines = {
     askAbout: [only('"You know {other}?"', blunt), only('"{other}. Ring a bell?"', easy), only('"What can you tell me about {other}?"', easy), only('"Friend of mine, {other}. Thought you two might have crossed paths."', smooth)],
     gift: ['You hand over {item}.', '"Here. {item}. On me."', only('"Had a feeling you\'d want this. {item}."', smooth)],
     insult: ['"Nice face. Who chewed it?"', '"Your whole family\'s a waste of chrome."', '"Everyone around here says you\'re nothing. They\'re right."'],
-    rob: ['You pull a blade. "Eddies. Now."', '"Hand it over. All of it."', 'You get in close. "Pockets. Slowly."'],
+    rob: [
+      only('You draw the {weapon}. "Eddies. Now."', gunDrawn),
+      only('The {weapon} comes up, level with {his} chest. "All of it."', gunDrawn),
+      only('You let {him} see the {weapon}. "Hand it over. Slowly."', gunDrawn),
+      only('You pull the {weapon}. "Eddies. Now."', bladeDrawn),
+      only('The {weapon} catches the light. "Pockets. Slowly."', bladeDrawn),
+      only('You heft the {weapon}. "Hand it over."', bluntDrawn),
+      only('You tap the {weapon} against your palm. "Pockets. Now."', bluntDrawn),
+      only('You get in close, fists ready. "Pockets. Slowly."', unarmed),
+      only('"Hand it over. All of it." You crowd {him} so there\'s nowhere to go.', unarmed),
+      only('You grab {his} collar. "Eddies. Now."', unarmed),
+    ],
     work: [
       only('"You hiring?"', blunt),
       only('"Give me a job."', blunt),

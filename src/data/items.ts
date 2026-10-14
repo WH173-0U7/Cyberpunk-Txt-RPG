@@ -6,6 +6,7 @@ import type { ItemKind } from '../engine/types';
  */
 export const ITEM_KINDS: Record<ItemKind, { label: string; hint: string }> = {
   weapon: { label: 'Weapons', hint: 'Guns, blades, blunt weapons and throwables.' },
+  ammo: { label: 'Ammo', hint: 'Rounds, loose by the box: handgun, shotgun, heavy and sniper.' },
   attachment: { label: 'Attachments & mods', hint: 'Scopes, muzzles and weapon mods.' },
   cyberware: { label: 'Cyberware', hint: 'Implants, waiting on a ripperdoc to fit them.' },
   quickhack: { label: 'Quickhacks', hint: 'Programs for a cyberdeck.' },

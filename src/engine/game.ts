@@ -12,6 +12,7 @@ import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, typ
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
 import { dreamOf, generatePeople, handleOf, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type PeopleContent, type Person, type Population, type Spot, type Tie, type TieKind } from './people';
 import { createRng } from './rng';
+import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
 import { freshSkill, gainXp, skillStatus, type SkillRules, type SkillState, type SkillStatus } from './skills';
 import {
   applyIncident,
@@ -435,9 +436,9 @@ export class Game {
     return { grams: totalGrams(this.pockets, this.items, this.money, gear, food.dishes), pockets: loads(this.pockets, this.items, this.money, gear, food.dishes) };
   }
 
-  /** The pocket with room for one of something, if any. */
-  private pocketFor(item: Pick<Item, 'id' | 'kind'>): string | null {
-    return placeFor(this.pockets, this.items, this.money, item, 1, this.rules.gear, this.rules.food.dishes);
+  /** The pocket with room for one of something (or `count`, all together), if any. */
+  private pocketFor(item: Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | 'loaded'>, count = 1): string | null {
+    return placeFor(this.pockets, this.items, this.money, item, count, this.rules.gear, this.rules.food.dishes);
   }
 
   /**
@@ -472,15 +473,27 @@ export class Game {
     return menuFor(this.world, at, this.rules.food) ?? (this.inside ? this.rack(this.inside) : null);
   }
 
-  /** A store's rack of bags and belts, priced by how good a store it is. */
+  /** A store's rack: garments at their own price, bags priced by how good a store it is; at a weapon store, its guns or blades at their own price and boxes of rounds priced like the bags. */
   private rack(building: Building): Menu | null {
     const { gear, food } = this.rules;
-    const key = building.business && gear.racks[building.business] ? building.business : null;
-    const ids = key ? gear.racks[key] : undefined;
-    if (!key || !ids?.length) return null;
+    const key = building.business && (gear.racks[building.business] || gear.arms.stores[building.business]) ? building.business : null;
+    if (!key) return null;
+    const ids = gear.racks[key] ?? [];
+    const stock = gear.arms.stores[key];
     // A clothing store sells at its tier; a store with only bags on the rack prices them the way its district eats.
     const quality = gear.quality[key] ?? drawQuality(this.world, building);
     const venue: Venue = { id: building.id, name: building.name, district: building.district, kindLabel: building.kindLabel, quality, chain: false };
+    // The weapons first, then the rounds, then whatever carries them.
+    const arms = stock ? stockFor(this.world.seed, building.id, quality, stock, gear.arms) : [];
+    const weapons = arms.flatMap((id): MenuItem[] => {
+      const weapon = gear.arms.weapons[id];
+      if (!weapon) return [];
+      const detail = [weaponDetail(weapon, gear.arms), weapon.magazine ? `${weapon.magazine} rounds` : '', gear.arms.classes[weapon.class]?.long ? 'Needs a bag' : ''].filter(Boolean).join(' · ');
+      return [{ id, name: weapon.name, note: weapon.note, kind: 'weapon', price: weapon.price, detail }];
+    });
+    const ammo = stock?.ammo
+      ? Object.entries(gear.arms.ammo).map(([id, a]): MenuItem => ({ id, name: a.name, note: a.note, kind: 'ammo', price: priceFor(a.price, quality, food), detail: `Box of ${a.box} · ${a.for}` }))
+      : [];
     const items = ids.flatMap((id): MenuItem[] => {
       const kind = gear.kinds[id];
       if (!kind?.price) return [];
@@ -491,7 +504,8 @@ export class Game {
       }
       return [{ id, name: kind.name, note: kind.note ?? '', kind: 'gear' as const, price: priceFor(kind.price, quality, food) }];
     });
-    return { venue, items, kind: 'gear' };
+    const all = [...weapons, ...ammo, ...items];
+    return all.length ? { venue, items: all, kind: 'gear' } : null;
   }
 
   /** Whether the player can pay for something on the menu here: in cash, or by transfer where the counter takes one. */
@@ -506,9 +520,20 @@ export class Game {
     return this.canPay(amount, this.rules.money.transfers.ncart);
   }
 
-  /** What buying something off a menu puts in a pocket: a dish, or a garment to wear later. */
-  private protoFor(item: MenuItem): Pick<Item, 'id' | 'kind' | 'gear'> {
-    return item.kind === 'clothing' ? { id: item.id, kind: 'clothing', gear: item.id } : { id: item.id, kind: 'consumable' };
+  /** What buying something off a menu puts in a pocket: a dish, a garment to wear later, a weapon (its magazine full only if it's sold loaded), or a box of rounds. */
+  private protoFor(item: MenuItem): Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | 'loaded'> {
+    if (item.kind === 'clothing') return { id: item.id, kind: 'clothing', gear: item.id };
+    if (item.kind === 'weapon') {
+      const weapon = this.rules.gear.arms.weapons[item.id];
+      return { id: item.id, kind: 'weapon', weapon: item.id, ...(weapon && isGun(weapon, this.rules.gear.arms) ? { loaded: weapon.disposable ? (weapon.magazine ?? 0) : 0 } : {}) };
+    }
+    if (item.kind === 'ammo') return { id: item.id, kind: 'ammo' };
+    return { id: item.id, kind: 'consumable' };
+  }
+
+  /** How many of something one purchase is: a box of rounds, else one. */
+  private boxOf(item: MenuItem): number {
+    return item.kind === 'ammo' ? (this.rules.gear.arms.ammo[item.id]?.box ?? 1) : 1;
   }
 
   /** Why the player can't buy something here, or null if they can: it isn't for sale, they're barred, short of eddies, or out of room. */
@@ -519,7 +544,13 @@ export class Game {
     const barred = this.barred(now);
     if (barred) return barred;
     if (!this.canPay(item.price, this.takesTransfers(menu))) return this.shortBy(item.name, item.price, this.takesTransfers(menu));
-    if (item.kind !== 'gear' && !this.pocketFor(this.protoFor(item))) return `No room for ${item.name}: your pockets are full. Eat something, or drop something.`;
+    if (item.kind !== 'gear' && !this.pocketFor(this.protoFor(item), this.boxOf(item))) {
+      const proto = this.protoFor(item);
+      // Something long wants a bag that takes it, and the pockets of your clothes never will.
+      if (isLong(proto, this.rules.gear.arms)) return `No room for the ${item.name}: it's too long for a pocket. It wants a bag with room: a messenger bag, a backpack, a duffel or a gun case.`;
+      if (item.kind === 'ammo') return `No room for a box of ${item.name}: a box wants a slot with room for its weight. Drop something, or carry a bag.`;
+      return `No room for ${item.name}: your pockets are full. Eat something, or drop something.`;
+    }
     return null;
   }
 
@@ -539,13 +570,25 @@ export class Game {
     if (item.kind === 'gear') {
       this.pockets.push({ id: newPocketId(item.id, this.pockets), kind: item.id, in: null });
       this.say(`Bought a ${item.name.toLowerCase()} for ${item.price} €$. More room.`, 'system');
+    } else if (item.kind === 'weapon') {
+      // Each weapon is its own thing, with its own magazine.
+      const proto = this.protoFor(item);
+      const weapon = this.rules.gear.arms.weapons[item.id];
+      const pocket = this.pocketFor(proto) ?? undefined;
+      this.items.push({ ...proto, id: newWeaponId(item.id, this.items), name: item.name, count: 1, in: pocket });
+      const rounds = weapon ? ammoFor(weapon, this.rules.gear.arms) : null;
+      const where = this.pockets.find((p) => p.id === pocket);
+      const whereName = where ? this.rules.gear.kinds[where.kind]?.name.toLowerCase() : '';
+      const tail = !weapon || !rounds ? '' : weapon.disposable ? ` It comes loaded: ${weapon.magazine} rounds, and no reloading it.` : ` Empty: it takes ${this.rules.gear.arms.ammo[rounds]?.name ?? 'ammo'}, loaded from the inventory.`;
+      this.say(`Bought the ${item.name} for ${item.price} €$${whereName ? `, into your ${whereName}` : ''}.${tail}`, 'system');
     } else {
       const proto = this.protoFor(item);
-      const pocket = this.pocketFor(proto) ?? undefined;
+      const count = this.boxOf(item);
+      const pocket = this.pocketFor(proto, count) ?? undefined;
       const owned = this.items.find((i) => i.id === item.id && i.kind === proto.kind && i.in === pocket);
-      if (owned) owned.count++;
-      else this.items.push({ id: item.id, kind: proto.kind, name: item.name, count: 1, in: pocket, ...(proto.gear ? { gear: proto.gear } : {}) });
-      this.say(`Bought ${item.name} for ${item.price} €$.${proto.gear ? ' Put it on from the inventory.' : ''}`, 'system');
+      if (owned) owned.count += count;
+      else this.items.push({ id: item.id, kind: proto.kind, name: item.name, count, in: pocket, ...(proto.gear ? { gear: proto.gear } : {}) });
+      this.say(item.kind === 'ammo' ? `Bought a box of ${item.name} for ${item.price} €$: ${count} rounds.` : `Bought ${item.name} for ${item.price} €$.${proto.gear ? ' Put it on from the inventory.' : ''}`, 'system');
     }
     this.events.emit('walletChanged', this.wallet);
     this.events.emit('inventoryChanged', this.inventory);
@@ -657,12 +700,121 @@ export class Game {
     return null;
   }
 
-  /** Drops one of something carried, for good: room for something else. False if there's none. */
+  /** Drops one of something carried, for good: room for something else; loose rounds go all at once. False if there's none. */
   drop(id: string): boolean {
     const item = this.items.find((i) => i.id === id);
     if (!item) return false;
-    this.takeOne(item);
-    this.say(`You drop the ${item.name}.`);
+    if (item.kind === 'ammo') {
+      this.items.splice(this.items.indexOf(item), 1);
+      this.say(`You drop ${item.count} ${item.count === 1 ? 'round' : 'rounds'} of ${item.name}.`);
+    } else {
+      this.takeOne(item);
+      this.say(`You drop the ${item.name}.`);
+    }
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  // ───────────── Weapons ─────────────
+
+  /** The weapon the player would pull on someone, and how it stands: a loaded gun before an empty one, any gun before a blade. Null when they carry none. */
+  armed(): { id: string; name: string; short: string; gun: boolean; loaded: number; magazine: number } | null {
+    const drawn = drawWeapon(this.items, this.rules.gear.arms);
+    if (!drawn) return null;
+    return { id: drawn.item.id, name: drawn.weapon.name, short: drawn.weapon.short, gun: drawn.gun, loaded: drawn.item.loaded ?? 0, magazine: drawn.weapon.magazine ?? 0 };
+  }
+
+  /** What can be done with a weapon carried: load it (there are rounds for it and room in the magazine), or unload it. Neither for a blade, or a gun sold sealed. */
+  canLoad(id: string): { load: boolean; unload: boolean } {
+    const arms = this.rules.gear.arms;
+    const item = this.items.find((i) => i.id === id && i.kind === 'weapon');
+    const weapon = item ? weaponOf(item, arms) : null;
+    const ammo = weapon ? ammoFor(weapon, arms) : null;
+    if (!item || !weapon || !ammo || weapon.disposable) return { load: false, unload: false };
+    const loaded = item.loaded ?? 0;
+    return { load: loaded < (weapon.magazine ?? 0) && this.items.some((i) => i.kind === 'ammo' && i.id === ammo), unload: loaded > 0 };
+  }
+
+  /**
+   * Loads a gun from the rounds carried for it: as many as its magazine takes and the
+   * pockets have, the ones in its own pocket first. The rounds weigh with the gun once
+   * they're in it, so it takes from another pocket only as many as its own will bear. A
+   * gun sold sealed takes none.
+   */
+  load(id: string): boolean {
+    const arms = this.rules.gear.arms;
+    const item = this.items.find((i) => i.id === id && i.kind === 'weapon');
+    const weapon = item ? weaponOf(item, arms) : null;
+    const ammoId = weapon ? ammoFor(weapon, arms) : null;
+    if (!item || !weapon || !ammoId) return false;
+    const ammo = arms.ammo[ammoId];
+    const magazine = weapon.magazine ?? 0;
+    const loaded = item.loaded ?? 0;
+    if (weapon.disposable) {
+      this.say(`The ${weapon.short} is sealed: there is no reloading it.`, 'error');
+      return false;
+    }
+    if (loaded >= magazine) {
+      this.say(`The ${weapon.short} is full: ${loaded}/${magazine}.`);
+      return false;
+    }
+    const stacks = this.items.filter((i) => i.kind === 'ammo' && i.id === ammoId).sort((a, b) => Number(b.in === item.in) - Number(a.in === item.in));
+    const have = stacks.reduce((n, stack) => n + stack.count, 0);
+    if (!have) {
+      this.say(`No ${ammo?.name ?? 'ammo'} on you for the ${weapon.short}.`, 'error');
+      return false;
+    }
+    // Rounds already in the gun's pocket weigh the same in the gun; the rest must fit the pocket's weight.
+    const pocket = this.pockets.find((p) => p.id === item.in);
+    const own = stacks.filter((stack) => stack.in === item.in).reduce((n, stack) => n + stack.count, 0);
+    const kind = pocket ? this.rules.gear.kinds[pocket.kind] : undefined;
+    const spare = pocket && kind ? kind.maxGrams - loadOf(pocket, this.pockets, this.items, this.money, this.rules.gear, this.rules.food.dishes).grams : Infinity;
+    const bears = own + Math.max(0, Math.floor(spare / Math.max(1, ammo?.grams ?? 1)));
+    const take = Math.min(magazine - loaded, have, bears);
+    if (take <= 0) {
+      this.say(`The ${kind?.name.toLowerCase() ?? 'pocket'} can't bear the weight of the rounds. Move the ${weapon.short}, or lighten it.`, 'error');
+      return false;
+    }
+    let left = take;
+    for (const stack of stacks) {
+      const from = Math.min(stack.count, left);
+      stack.count -= from;
+      left -= from;
+      if (stack.count <= 0) this.items.splice(this.items.indexOf(stack), 1);
+      if (!left) break;
+    }
+    item.loaded = loaded + take;
+    const short = take < magazine - loaded && take < have ? ` Its ${kind?.name.toLowerCase() ?? 'pocket'} won't bear more.` : take < magazine - loaded ? ` That's all the ${ammo?.name ?? 'ammo'} you had.` : '';
+    this.say(`You load the ${weapon.short}: ${item.loaded}/${magazine}.${short}`, 'system');
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  /** Takes the rounds out of a gun, into a pocket with room for them (one with a stack of them first); as many as fit, if not all. */
+  unload(id: string): boolean {
+    const arms = this.rules.gear.arms;
+    const item = this.items.find((i) => i.id === id && i.kind === 'weapon');
+    const weapon = item ? weaponOf(item, arms) : null;
+    const ammoId = weapon ? ammoFor(weapon, arms) : null;
+    if (!item || !weapon || !ammoId || weapon.disposable || !item.loaded) return false;
+    const rounds = item.loaded;
+    const name = arms.ammo[ammoId]?.name ?? 'ammo';
+    // Weighed out of the gun, then put away (onto a stack of them, where one has room): as many as one pocket will take.
+    item.loaded = 0;
+    const proto = { id: ammoId, kind: 'ammo' as const };
+    let count = rounds;
+    let home = this.pocketFor(proto, count);
+    while (!home && count > 1) home = this.pocketFor(proto, --count);
+    if (!home) {
+      item.loaded = rounds;
+      this.say(`No room on you for the rounds: they stay in the ${weapon.short}.`, 'error');
+      return false;
+    }
+    item.loaded = rounds - count;
+    const stack = this.items.find((i) => i.kind === 'ammo' && i.id === ammoId && i.in === home);
+    if (stack) stack.count += count;
+    else this.items.push({ id: ammoId, kind: 'ammo', name, count, in: home });
+    this.say(count < rounds ? `You take ${count} rounds out of the ${weapon.short}: no room on you for the other ${rounds - count}.` : `You unload the ${weapon.short}: ${count} rounds of ${name} into your pockets.`, 'system');
     this.events.emit('inventoryChanged', this.inventory);
     return true;
   }
@@ -1741,7 +1893,10 @@ export class Game {
     const standing = standingOf(this.society, id, society, timeScale, now);
     const rng = createRng(`${this.world.seed}:${id}:rob:${now}`);
     const emptied = standing.robbedAt && now - standing.robbedAt < (7 * 24 * HOUR) / timeScale;
-    const fought = !emptied && rng.chance(person.traits.courage * 0.5);
+    // What the player pulls on them: fewer fight back against a gun (loaded or not; they can't tell), more against a blade, most against bare hands.
+    const arms = this.rules.gear.arms;
+    const drawn = drawWeapon(this.items, arms);
+    const fought = !emptied && rng.chance(person.traits.courage * (drawn ? (drawn.gun ? arms.rob.gun : arms.rob.melee) : arms.rob.bare));
     const wanted = emptied ? 0 : Math.round(person.eddies * rng.range(0.4, 0.8) * (fought ? 0.5 : 1));
     // Their credchip too, if they carry one and there's a slot for it: it comes locked, and wants chopping before any of it is yours.
     const chipWanted = emptied ? 0 : person.chip;
@@ -1755,7 +1910,8 @@ export class Game {
     const take = bills + coins;
     const speaker = this.speakerFor(person, stance, doing, now);
     const haul = [take ? `${take} €$` : '', chip ? `a credchip with ${chip} €$ on it` : ''].filter(Boolean).join(' and ');
-    speaker.vars = { ...speaker.vars, take: String(take), haul };
+    const cut = drawn && !drawn.gun ? arms.classes[drawn.weapon.class]?.cut : undefined;
+    speaker.vars = { ...speaker.vars, take: String(take), haul, weapon: drawn?.weapon.short ?? '', gun: drawn?.gun ? 'yes' : '', blade: cut === 'blade' ? 'yes' : '', blunt: cut === 'blunt' ? 'yes' : '' };
     const mask = this.masked();
     const before = this.snapshot(person, now);
     const fallout = this.incident('robbery', person, take + chip, now);
