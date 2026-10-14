@@ -16,35 +16,33 @@
         <div class="hud-bar">
           <span id="hud-path">NCNET://</span>
           <span class="hud-right">
-            <span id="hud-weather"></span>
             <span id="hud-clock"></span>
           </span>
         </div>
         <h1 id="hud-sign" class="sign"></h1>
         <div id="energy" class="energy" role="meter" aria-label="Energy" aria-valuemin="0">
-          <span class="energy-label" aria-hidden="true">Energy</span>
           <span class="energy-bar" aria-hidden="true"><span id="energy-fill" class="energy-fill"></span></span>
-          <span id="energy-value" class="energy-value" aria-hidden="true"></span>
         </div>
         <button id="status-toggle" class="status-toggle" type="button" aria-expanded="false" aria-controls="status" title="Status">
           <span id="status-summary" class="status-summary"></span>
           <span class="status-chevron" aria-hidden="true"></span>
         </button>
-        <dl id="status" class="status" hidden></dl>
+        <dl id="status" class="status" hidden>
+          <div id="status-foot" class="status-row status-foot">
+            <dt>System</dt>
+            <dd><button id="settings-toggle" class="status-link" type="button" aria-controls="settings" aria-expanded="false">Settings</button></dd>
+          </div>
+        </dl>
       </header>
 
       <section id="map" class="map panel" aria-label="City map">
         <div class="map-head">
+          <span id="save-status" class="save-status" title="Your progress saves on this device as you go."></span>
+          <!-- The one button up here: your pockets, with your cash on it. -->
           <button id="inventory-toggle" class="head-button" type="button" aria-controls="inventory" aria-expanded="false" aria-label="Inventory" title="Inventory (I)">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z" /></svg>
-            <span>Inventory</span>
+            <span id="wallet" class="wallet"></span>
           </button>
-          <button id="settings-toggle" class="head-button is-icon" type="button" aria-controls="settings" aria-expanded="false" aria-label="Settings" title="Settings">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.6" /><path d="M8 1v2.4M8 12.6V15M1 8h2.4M12.6 8H15M3 3l1.7 1.7M11.3 11.3 13 13M3 13l1.7-1.7M11.3 4.7 13 3" /></svg>
-          </button>
-          <span class="map-title">City grid</span>
-          <span id="wallet" class="wallet"></span>
-          <span id="save-status" class="save-status" title="Your progress saves on this device as you go."></span>
         </div>
         <div id="map-stage" class="map-stage">
           <canvas id="map-city" class="map-city" aria-hidden="true"></canvas>
@@ -55,13 +53,8 @@
           <nav id="map-nodes" class="map-nodes" aria-label="Places you know about"></nav>
           <div id="map-player" class="player" aria-hidden="true"><span class="player-mark"></span></div>
           <div id="transmissions" class="transmissions" aria-hidden="true"></div>
-          <div id="map-zoom" class="map-zoom" role="group" aria-label="Map zoom">
-            <button id="zoom-in" class="zoom-button" type="button" aria-label="Zoom in" title="Zoom in">
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M2 8h12" /></svg>
-            </button>
-            <button id="zoom-out" class="zoom-button" type="button" aria-label="Zoom out" title="Zoom out">
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h12" /></svg>
-            </button>
+          <!-- Pinch, scroll or tap a block to zoom; this shows only once you've wandered off yourself. -->
+          <div id="map-zoom" class="map-zoom">
             <button id="zoom-home" class="zoom-button" type="button" aria-label="Find yourself on the map" title="Find yourself">
               <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5" /><path d="M8 0.5v3M8 12.5v3M0.5 8h3M12.5 8h3" /></svg>
             </button>
@@ -186,10 +179,6 @@
             <button id="act-leave" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
           </div>
           <button id="place-close" class="icon-btn place-close" type="button" aria-label="Back to where you are" hidden></button>
-        </div>
-        <div class="map-foot">
-          <span id="map-progress" class="map-stat"></span>
-          <span id="map-coords"></span>
         </div>
       </section>
 

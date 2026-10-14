@@ -179,30 +179,16 @@ button {
   color: var(--secondary);
 }
 
-/* Energy, under the sign: a segment per point, electric cyan */
+/* Energy, under the sign: a bar with a segment per point, electric cyan, and no words (the status line under it has the figures) */
 .energy {
   --energy: #00f0ff;
   --segments: 10;
-  display: grid;
-  grid-template-columns: auto minmax(60px, 1fr) auto;
-  align-items: center;
-  gap: 4px 10px;
   max-width: 520px;
   margin-top: 8px;
-  color: color-mix(in srgb, var(--energy) 70%, var(--muted));
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-.energy-label {
-  color: var(--energy);
-  font-family: var(--font-display);
-  font-weight: 700;
-  text-shadow: 0 0 8px color-mix(in srgb, var(--energy) 60%, transparent);
 }
 .energy-bar {
   position: relative;
+  display: block;
   height: 10px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--energy) 45%, transparent);
@@ -229,18 +215,6 @@ button {
   );
   pointer-events: none;
 }
-.energy-value {
-  min-width: 4ch;
-  color: #fff;
-  font-family: var(--font-display);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-align: right;
-}
-.energy.is-empty .energy-value {
-  color: var(--danger);
-}
-
 /* ── Status: one line under the energy bar, and everything else about the player behind it ── */
 .status-toggle {
   display: flex;
@@ -324,6 +298,41 @@ button {
 .status-row.is-warn dd {
   color: #ff6ad5;
   text-shadow: 0 0 8px rgba(255, 106, 213, 0.6);
+}
+/* The way into the settings, last in the drop-down: a link with room for a thumb */
+.status-foot dt,
+.status-foot dd {
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+}
+.status-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin: -6px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.status-link::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-top: -1px;
+  border-right: 1.5px solid currentColor;
+  border-top: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+.status-link:hover,
+.status-link:focus-visible {
+  color: #fff;
+  text-shadow: 0 0 8px var(--glow);
 }
 
 .sign {
@@ -511,7 +520,7 @@ button {
 
 .map {
   display: grid;
-  grid-template-rows: auto minmax(240px, 1fr) auto auto;
+  grid-template-rows: auto minmax(240px, 1fr) auto;
   min-width: 0;
   min-height: 0;
 }
@@ -524,60 +533,20 @@ button {
   grid-row: 3;
   grid-column: 1;
 }
-.map-foot {
-  grid-row: 4;
-  grid-column: 1;
-}
 
-.map-head,
-.map-foot {
+/* The strip over the map: the save light and the one button, your pockets with your cash on it */
+.map-head {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
   padding: 7px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
   color: color-mix(in srgb, var(--primary) 65%, var(--muted));
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-}
-.map-head {
-  border-bottom: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
-  /* Its own width decides what fits (below), so it can never push the map wider than the screen. */
-  container-type: inline-size;
-}
-/* Short of room, the title goes first, then the inventory button's label. */
-@container (max-width: 560px) {
-  .map-title {
-    display: none;
-  }
-}
-@container (max-width: 450px) {
-  .head-button span {
-    display: none;
-  }
-  .head-button {
-    padding-inline: 8px;
-  }
-}
-.map-foot {
-  justify-content: space-between;
-  border-top: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
-  font-size: 10px;
-  opacity: 0.75;
-}
-
-.map-title {
-  color: var(--primary);
-  font-family: var(--font-display);
-  font-weight: 800;
-  letter-spacing: 0.24em;
-  text-shadow: 0 0 8px var(--glow);
-}
-
-.map-stat {
-  color: var(--secondary);
-  white-space: nowrap;
 }
 
 /* Opens the inventory over the map */
@@ -609,13 +578,6 @@ button {
   stroke: currentColor;
   stroke-width: 1.6;
 }
-.head-button.is-icon {
-  padding-inline: 7px;
-}
-.head-button.is-icon svg {
-  width: 14px;
-  height: 14px;
-}
 .head-button:hover,
 .head-button:focus-visible,
 .head-button.is-open {
@@ -623,10 +585,8 @@ button {
   text-shadow: 0 0 8px #ffd84d;
 }
 
-/* Eddies, and whether the NCART pass is running */
+/* Eddies, on the inventory button, and whether the NCART pass is running */
 .wallet {
-  margin-left: auto;
-  color: #ffd84d;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -678,14 +638,16 @@ button {
   cursor: grabbing;
 }
 
-/* Zoom buttons in the corner of the map */
+/* The way back to yourself, in the corner of the map: only once you've wandered off the screen (pinch, scroll or tap a block to zoom) */
 .map-zoom {
   position: absolute;
   right: 10px;
   bottom: 10px;
   z-index: 3;
+  display: none;
+}
+.map-zoom.is-away {
   display: grid;
-  gap: 6px;
 }
 
 .zoom-button {

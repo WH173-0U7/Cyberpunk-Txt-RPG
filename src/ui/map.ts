@@ -1,6 +1,6 @@
 import { blockAt } from '../engine/buildings';
 import { streetPath } from '../engine/generate';
-import { districtAt, seaTest } from '../engine/geography';
+import { seaTest } from '../engine/geography';
 import { pathLength, pathUpTo } from '../engine/streets';
 import { tripProgress } from '../engine/travel';
 import type { Building, District, Location, MapState, Point, Station, Trip, World } from '../engine/types';
@@ -62,11 +62,8 @@ export interface MapElements {
   nodes: HTMLElement;
   sweep: HTMLElement;
   player: HTMLElement;
-  progress: HTMLElement;
-  coords: HTMLElement;
+  /** The corner button that finds the player, shown once they're out of view. */
   controls: HTMLElement;
-  zoomIn: HTMLButtonElement;
-  zoomOut: HTMLButtonElement;
   zoomHome: HTMLButtonElement;
 }
 
@@ -150,8 +147,6 @@ export class CityMap {
       },
       true,
     );
-    els.zoomIn.addEventListener('click', () => this.zoomBy(2));
-    els.zoomOut.addEventListener('click', () => this.zoomBy(0.5));
     els.zoomHome.addEventListener('click', () => this.centerOnPlayer());
   }
 
@@ -533,7 +528,7 @@ export class CityMap {
 
   private render(): void {
     const { world, state } = this;
-    const { stage, progress } = this.els;
+    const { stage } = this.els;
     this.width = stage.clientWidth;
     this.height = stage.clientHeight;
     if (!world || !state || !this.width || !this.height) return;
@@ -554,8 +549,6 @@ export class CityMap {
     this.drawRoutes(world, state);
     this.drawMarkers(world, state, labelBoxes);
     this.placePlayer();
-    progress.textContent = `Mapped ${state.visited.size}/${Object.keys(world.locations).length}`;
-    this.updateReadout(world);
     this.updateControls();
   }
 
@@ -666,23 +659,13 @@ export class CityMap {
     finish();
   }
 
-  /** The footer says what you're looking at: the whole city, or which block is in the middle. */
-  private updateReadout(world: World): void {
-    const { coords } = this.els;
-    if (this.scaleAt(this.camera.zoom) < PICK_SCALE) {
-      coords.textContent = 'City view · Tap a block';
-      return;
-    }
-    const center = { x: this.camera.x, y: this.camera.y };
-    const block = blockAt(world.layout, center);
-    const district = districtAt(Object.values(world.districts), center);
-    coords.textContent = block ? `Block ${block.address}${district ? ` · ${district.name}` : ''}` : 'Street view';
-  }
-
+  /** The way back to the player shows only while they're off the screen (or nearly). */
   private updateControls(): void {
-    const { zoomIn, zoomOut } = this.els;
-    zoomIn.disabled = this.camera.zoom >= MAX_ZOOM - 0.01;
-    zoomOut.disabled = this.camera.zoom <= MIN_ZOOM + 0.01;
+    const here = this.playerAt();
+    const q = here ? this.project(here) : null;
+    const edge = 28;
+    const away = !q || q.x < edge || q.y < edge || q.x > this.width - edge || q.y > this.height - edge;
+    this.els.controls.classList.toggle('is-away', away);
   }
 
   private controlsBox(): Box {
