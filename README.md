@@ -1,7 +1,9 @@
 # Cyberpunk-Txt-RPG
 Game designed to be within the universe of cyberpunk 2077, text based RPG, with in depth mechanics.
 
-**▶ Play it: https://wh173-0u7.github.io/Cyberpunk-Txt-RPG/** (updates automatically on every merge to `main`)
+**▶ Play it: https://wh173-0u7.github.io/Cyberpunk-Txt-RPG/** (the stable release, from `main`)
+
+**▶ Try the beta: https://wh173-0u7.github.io/Cyberpunk-Txt-RPG/beta/** (the next version, from `beta`; it keeps a save of its own, so it never touches the stable game's)
 
 It runs in the browser so the text can be surrounded by neon glow, CRT scanlines, glitch effects,
 weather particles and screen effects that react to what's happening in the game.
@@ -21,7 +23,13 @@ Other scripts:
 |---|---|
 | `npm test` | Runs the unit tests (game logic, plus checks on 500 generated cities) |
 | `npm run typecheck` | Checks the TypeScript for errors |
-| `npm run build` | Builds a static site into `dist/` that can be hosted anywhere (e.g. GitHub Pages) |
+| `npm run build` | Builds a static site into `dist/` that can be hosted anywhere (e.g. GitHub Pages); `CHANNEL=beta` builds the beta, with its own save |
+
+Branches and releases: new work goes to `beta` by pull request, and a push to `beta` or `main`
+rebuilds both sites (the beta under `/beta/`, the stable release at the root) and deploys them.
+When the beta is good, merge `beta` into `main` and tag it `vX.Y.Z`: the tag publishes a GitHub
+Release with the notes since the last one and the built site as a zip. Settings says which build
+you're on.
 
 ## Playing
 

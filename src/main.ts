@@ -167,6 +167,7 @@ const settings = new Settings(
     close: $<HTMLButtonElement>('#settings-close'),
     seed: $('#settings-seed'),
     progress: $('#settings-progress'),
+    build: $('#settings-build'),
     restart: $<HTMLButtonElement>('#settings-restart'),
     erase: $<HTMLButtonElement>('#settings-erase'),
     confirm: $('#settings-confirm'),
@@ -953,6 +954,7 @@ function showSettings(): void {
     seed: game.world.seed.toUpperCase(),
     // A no-break space keeps the eddies sign with its number.
     progress: `Right now you've mapped ${mapped} of ${places} places and have €$\u00a0${game.wallet.eddies} on you${game.wallet.account ? ` and €$\u00a0${game.wallet.account} in the bank` : ''}.`,
+    build: `${__CHANNEL__ === 'beta' ? 'Beta' : 'Stable'} build ${__BUILD__}${__CHANNEL__ === 'beta' ? ' · its own save, apart from the stable game' : ''}`,
   });
 }
 

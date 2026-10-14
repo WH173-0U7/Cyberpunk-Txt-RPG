@@ -1,6 +1,7 @@
 import type { SaveData } from '../engine/save';
 
-const KEY = 'night-city-terminal/save';
+/** The beta keeps a save of its own, so trying the next version never touches the stable game's. */
+const KEY = __CHANNEL__ === 'beta' ? 'night-city-terminal/beta/save' : 'night-city-terminal/save';
 
 /**
  * The one save on this device, kept in the browser's local storage. Storage can be missing or

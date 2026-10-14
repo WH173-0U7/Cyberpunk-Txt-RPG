@@ -1,17 +1,19 @@
 name: Test, build and deploy
 
+# Two builds live on GitHub Pages: the stable release at the root, from `main`, and the beta
+# under /beta/, from `beta`, with its own save. A push to either rebuilds both and deploys.
 on:
   push:
-    branches: [main]
+    branches: [main, beta]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# One run per branch; PR runs replace each other, deploys always finish.
+# PR runs replace each other; deploys queue up one after another and always finish.
 concurrency:
-  group: pages-${{ github.ref }}
+  group: ${{ github.event_name == 'pull_request' && github.ref || 'pages' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -28,15 +30,57 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build # typecheck + production build into dist/
+        env:
+          CHANNEL: ${{ github.ref == 'refs/heads/beta' && 'beta' || 'stable' }}
 
-      - if: github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v3
+  site:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
         with:
-          path: dist
+          ref: main
+          path: stable
+
+      # The beta branch may not exist yet; then the site is the stable release alone.
+      - id: beta
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          ref: beta
+          path: beta
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: stable/package-lock.json
+
+      - name: Build the stable release (the root)
+        working-directory: stable
+        run: |
+          npm ci
+          BUILD_SHA="$(git rev-parse HEAD)" CHANNEL=stable npm run build
+          mkdir -p ../site
+          cp -R dist/. ../site/
+
+      - name: Build the beta (/beta/)
+        if: steps.beta.outcome == 'success'
+        working-directory: beta
+        run: |
+          npm ci
+          BUILD_SHA="$(git rev-parse HEAD)" CHANNEL=beta npm run build
+          mkdir -p ../site/beta
+          cp -R dist/. ../site/beta/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
 
   deploy:
-    if: github.ref == 'refs/heads/main'
-    needs: build
+    if: github.event_name != 'pull_request'
+    needs: site
     runs-on: ubuntu-latest
     permissions:
       pages: write
