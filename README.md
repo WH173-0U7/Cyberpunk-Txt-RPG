@@ -109,6 +109,15 @@ own.
   in their pocket. They keep hours on your phone's clock: home at night, work by day (with
   days off), their hangout in the evening, out on the streets in between. Inside a building
   or at a place, **People** lists who's there and what they're doing; tap one for their card.
+- **An economy**: the eddies move while you're away. Payday is Friday, when everyone draws a
+  week's money (a gang's members from the gang's chest, filled by the cut it takes from the
+  storefronts on its turf), and every day living takes some back; most evenings the chatty go
+  out and spend at their hangouts, so people are flush on Friday night and short by Thursday,
+  and a robbery pays accordingly. Every storefront keeps books: walk-in trade, its regulars,
+  what you buy there, against rent, staff and the gang's cut. A week in the red and the place
+  is struggling (the boss won't hire, a shift pays a quarter less); a good week and it's
+  thriving (a quarter more). The panel inside says how trade is, and people talk about being
+  broke, flush, run off their feet or standing in an empty shop.
 - **Getting on with people**: **Talk** gets a greeting that depends on how they feel about
   you and how well they know you (a stranger, someone who saw you yesterday, a regular, a
   face they haven't seen in days), then something about their life, and builds rapport a

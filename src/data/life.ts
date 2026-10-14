@@ -1,4 +1,5 @@
 import type { LifeRules } from '../engine/life';
+import { ECONOMY } from './economy';
 
 /**
  * How the people's days go without the player. In every district, each day, a few things
@@ -7,8 +8,8 @@ import type { LifeRules } from '../engine/life';
  * nerve against a gang they hate, or rival crews), two regulars become friends one in four,
  * and a hot temper ends a friendship one in twelve; two things a day at most in one district.
  * The loser of a fight stays home two to four days. A shakedown takes a fifth to a half of
- * what the worker has, a robbery most of it, and people earn it back at fifteen percent of
- * what they started with a day. The city remembers two weeks of it and talks about one; after
+ * what the worker has, a robbery most of it, and people earn it back the way the economy pays
+ * them (`economy.ts`). The city remembers two weeks of it and talks about one; after
  * the game was closed a month at most is lived through. The scenes are what pairs of people
  * are seen doing at the same place, by what they are to each other.
  */
@@ -18,7 +19,7 @@ export const LIFE: LifeRules = {
   hurtDays: [2, 4],
   shakedown: [0.2, 0.5],
   robbery: [0.4, 0.8],
-  recover: 0.15,
+  economy: ECONOMY,
   keepDays: 14,
   newsDays: 7,
   catchUpDays: 30,

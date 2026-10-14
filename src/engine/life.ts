@@ -1,3 +1,5 @@
+import { economyDay, type EconomyRules, type Till } from './economy';
+import type { Quality } from './food';
 import { INVERSE, tiesOf, type Clock, type Person, type Population, type Spot, type Tie, type TieKind } from './people';
 import { createRng, type Rng } from './rng';
 import type { World } from './types';
@@ -9,8 +11,9 @@ import type { World } from './types';
  * crews go at it, and the loser is laid up at home for days; two regulars of the same bar
  * become friends; a hot temper ends a friendship. What happens is written down (`LifeEvent`)
  * and changes the people for good (eddies, who hates whom, who is tied to whom, who is laid
- * up), so the city the player comes back to has moved on; and the people talk about it. On
- * top of that, wherever the player is, the people there are seen with each other: a couple
+ * up), so the city the player comes back to has moved on; and the people talk about it.
+ * Under it all the eddies move (`economy.ts`): payday, evenings out, the tills, the gangs'
+ * cut. On top of that, wherever the player is, the people there are seen with each other: a couple
  * sharing a table, a crew holding court, a ganger leaning on the cook. Everything here is
  * drawn from the seed and the day, so a city's days are the same whenever they're lived
  * through; the numbers are in `src/data/life.ts`.
@@ -51,8 +54,8 @@ export interface LifeRules {
   /** A shakedown's take and a robbery's, as shares of what the victim has. */
   shakedown: [number, number];
   robbery: [number, number];
-  /** The share of what they started with that someone earns back a day. */
-  recover: number;
+  /** How the eddies move: wages, spending, the tills and the gangs' cut. */
+  economy: EconomyRules;
   /** Days the city remembers something; days people still bring it up. */
   keepDays: number;
   newsDays: number;
@@ -80,10 +83,13 @@ export interface LifeState {
   /** Friendships made (one direction; the other is implied) and broken (`a|b`, both directions). */
   made: Tie[];
   broken: string[];
+  /** Every storefront's books, by building id; every gang's treasury. */
+  tills: Record<string, Till>;
+  treasuries: Record<string, number>;
 }
 
 export function freshLife(): LifeState {
-  return { day: -1, nextId: 1, events: [], eddies: {}, hurt: {}, hates: {}, made: [], broken: [] };
+  return { day: -1, nextId: 1, events: [], eddies: {}, hurt: {}, hates: {}, made: [], broken: [], tills: {}, treasuries: {} };
 }
 
 const FAMILY: TieKind[] = ['spouse', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew', 'kin'];
@@ -118,17 +124,19 @@ export function applyLife(population: Population, state: LifeState): void {
 
 /**
  * Lives the days since the last one lived, up to today (and at most `catchUpDays` of them),
- * changing the people as it goes. `base` is what everyone started with in eddies, for
- * earning it back. Returns the events of those days.
+ * changing the people as it goes: the day's eddies first (wages, evenings out, the tills),
+ * then what happens between people. `base` is what everyone started with in eddies, which
+ * sets their wages; `tier` is the tier a place runs at, for what an evening there costs;
+ * `turf` is who collects in a district, and their shares, for the gangs' cut. Returns the events of those days.
  */
-export function liveUntil(world: World, population: Population, state: LifeState, rules: LifeRules, base: ReadonlyMap<string, number>, today: number, seed: string): LifeEvent[] {
+export function liveUntil(world: World, population: Population, state: LifeState, rules: LifeRules, base: ReadonlyMap<string, number>, today: number, seed: string, tier: (spot: Spot) => Quality, turf: (district: string) => Array<[string, number]>): LifeEvent[] {
   if (state.day >= today) return [];
   const from = state.day < 0 ? today - 1 : Math.max(state.day + 1, today - rules.catchUpDays + 1);
   const happened: LifeEvent[] = [];
   for (let day = from; day <= today; day++) {
     const rng = createRng(`${seed}:life:${day}`);
-    recover(population, state, rules, base);
     for (const id of Object.keys(state.hurt)) if ((state.hurt[id] as number) < day) delete state.hurt[id];
+    economyDay({ world, population, state, rules: rules.economy, tier, turf, base, seed, day, rng });
     for (const district of Object.keys(world.districts)) happened.push(...liveDay(world, population, state, rules, district, day, rng));
     state.day = day;
   }
@@ -141,18 +149,6 @@ export function liveUntil(world: World, population: Population, state: LifeState
   return happened;
 }
 
-/** A day's earnings: everyone short of what they started with gets a share of it back. */
-function recover(population: Population, state: LifeState, rules: LifeRules, base: ReadonlyMap<string, number>): void {
-  for (const id of Object.keys(state.eddies)) {
-    const was = base.get(id);
-    const person = population.people.find((p) => p.id === id);
-    if (was === undefined || !person) continue;
-    if (person.eddies >= was) continue;
-    person.eddies = Math.min(was, Math.round(person.eddies + was * rules.recover));
-    state.eddies[id] = person.eddies;
-    if (person.eddies === was) delete state.eddies[id];
-  }
-}
 
 /** One district's day: a few of the things that can happen between its people, by chance, where the people for them exist. */
 function liveDay(world: World, population: Population, state: LifeState, rules: LifeRules, district: string, day: number, rng: Rng): LifeEvent[] {

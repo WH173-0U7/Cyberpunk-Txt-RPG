@@ -285,6 +285,10 @@ describe('dialogue', () => {
           mask: rng.chance(0.3) ? 'gas mask' : '',
           title: 'dish pit',
           pay: '24',
+          broke: rng.chance(0.2) ? 'yes' : '',
+          flush: rng.chance(0.2) ? 'yes' : '',
+          slow: rng.chance(0.2) ? 'yes' : '',
+          brisk: rng.chance(0.2) ? 'yes' : '',
         };
         const speaker: Speaker = {
           person: p,
