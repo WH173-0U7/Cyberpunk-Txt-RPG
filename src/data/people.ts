@@ -251,6 +251,27 @@ export const PEOPLE: PeopleContent = {
   more: { staff: 0.6, perHome: [0, 1], tall: 1, megabuilding: 3, gangs: 1 },
   // Credchips (the wiki's 2020 chips of eurodollars): corpos nearly always carry one with real money on it; the street often, with less; gangers deal in cash.
   chips: { corpo: { chance: 0.8, range: [80, 500] }, gang: { chance: 0.2, range: [20, 120] }, street: { chance: 0.45, range: [15, 150] } },
+  // Street names: made up, checked against the wiki so none is a canon character's (and none a canon weapon or perk). Most gangers go by one, some on the street, corpos never.
+  handles: {
+    pool: ['Static', 'Rust', 'Glitch', 'Ripsaw', 'Neon', 'Patch', 'Moth', 'Voltage', 'Gutter', 'Pinball', 'Saint', 'Crow', 'Tinsel', 'Kilo', 'Slick', 'Fuse', 'Smoke', 'Knuckles', 'Spook', 'Wire', 'Sparks', 'Nickel', 'Hex', 'Rivet', 'Socket', 'Cinder', 'Vandal', 'Jinx', 'Echo', 'Pixel', 'Bones', 'Gauge', 'Torque', 'Flux', 'Taser', 'Mojo', 'Sugar', 'Diesel', 'Grit', 'Solder', 'Ozone', 'Lag', 'Gremlin', 'Ratchet', 'Nails'],
+    chance: { gang: 0.7, street: 0.2, corpo: 0 },
+  },
+  // What people want out of life, by who'd want it: the young want chrome, fame and out; gangers rank and wheels; corpos the ladder; elders a quiet life; anyone with an enemy, payback.
+  dreams: {
+    out: { street: 3, young: 3, corpo: 1, elder: 1 },
+    chrome: { young: 3, gang: 3, street: 2 },
+    shop: { street: 2, elder: 1 },
+    family: { street: 2, corpo: 1, elder: 1 },
+    wheels: { young: 2, gang: 2, street: 1 },
+    trauma: { street: 2, corpo: 1, elder: 2 },
+    fame: { young: 3, street: 1 },
+    ladder: { corpo: 6 },
+    payback: { hater: 4 },
+    quiet: { elder: 3, street: 1 },
+    retire: { elder: 3, corpo: 1 },
+    rank: { gang: 4 },
+    legend: { gang: 1, young: 1, street: 1 },
+  },
   hangouts: ['bar', 'club', 'noodle', 'diner', 'restaurant', 'market', 'pachinko', 'boardwalk', 'plaza', 'rooftop', 'street', 'dollhouse', 'docks', 'shrine', 'park', 'mall', 'hotel', 'nomad_camp', 'gas_station', 'junkyard', 'food', 'nightlife', 'entertainment'],
   traitLines: {
     warmth: { high: 'Easy to like.', low: 'Keeps everyone at arm\'s length.' },

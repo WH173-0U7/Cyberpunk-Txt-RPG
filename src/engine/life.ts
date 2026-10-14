@@ -78,6 +78,8 @@ export interface LifeRules {
   recruitAge: number;
   /** Days the big things are remembered and talked about, where that's longer than everything else (`keepDays`, `newsDays`). */
   lasting: Partial<Record<LifeKind, number>>;
+  /** Days someone grieves a relative who died: quieter, closed up, in no mood for jokes. */
+  griefDays: number;
   /** A shakedown's take and a robbery's, as shares of what the victim has. */
   shakedown: [number, number];
   robbery: [number, number];

@@ -37,6 +37,7 @@ export const LIFE: LifeRules = {
   jobless: ['between jobs', 'day laborer'],
   recruitAge: 25,
   lasting: { death: 45, wedding: 30, joined: 21 },
+  griefDays: 14,
   shakedown: [0.2, 0.5],
   robbery: [0.4, 0.8],
   economy: ECONOMY,

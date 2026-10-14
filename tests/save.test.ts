@@ -190,7 +190,9 @@ describe('saving', () => {
     const again = new Game(world, rules, progress);
     expect(again.charisma()).toMatchObject({ level: 3, xp: 12 });
     expect(again.knownPeople().map((p) => p.id)).toEqual([someone.id]);
-    expect(again.describe(someone.id)).toMatchObject({ name: someone.name, named: true });
+    // Introduced, they go by their street name too, if they have one.
+    expect(again.describe(someone.id)).toMatchObject({ named: true });
+    expect(again.describe(someone.id)?.name.replace(/ "[^"]+"/, '')).toBe(someone.name);
     expect(again.conversation(someone.id)).toEqual([{ at: now, who: 'you', text: 'Hey.' }]);
     // A save from before facts and the log were kept: the person is known, with neither.
     const bare = readSave(JSON.parse(JSON.stringify({ ...saved, society: { ...society, known: { [someone.id]: { met: true, seen: false, told: false } } } })));

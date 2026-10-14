@@ -18,7 +18,7 @@ import { blockAt } from './engine/buildings';
 import { Game, type Presence, streetSpot } from './engine/game';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu, Quality } from './engine/food';
-import { kinWord, type Question } from './engine/dialogue';
+import { kinWord, type Approach, type Question } from './engine/dialogue';
 import type { InebriationStatus } from './engine/inebriation';
 import { randomSeed } from './engine/rng';
 import { createSave, readSave, resume, savedSeed, type Progress } from './engine/save';
@@ -291,6 +291,12 @@ const people = new People(
       if (action !== 'talk') picker = null;
       factsOpen = false;
       actOn(action, id);
+    },
+    onTalk: (id, approach) => {
+      lastActivity = performance.now();
+      picker = null;
+      factsOpen = false;
+      game.talk(id, Date.now(), approach as Approach);
     },
     onGift: (id, itemId) => {
       lastActivity = performance.now();
@@ -918,7 +924,8 @@ function showPeople(): void {
             // A hot chip can be put to a netrunner the player can tell is one; the label says what it holds and what they'd keep.
             chops: present && game.canChop(shown.id) ? hot.map((c) => ({ id: c.id, label: `€$ ${c.balance ?? 0} chip · cut ${chipCut(c.balance ?? 0, MONEY)}` })) : [],
             work: present ? game.workWith(shown.id) : null,
-            log: game.conversation(shown.id).map((line) => ({ who: line.who, text: line.text })),
+            approaches: [{ id: 'chat', label: 'Chat' }, ...Object.entries(LINES.approaches).map(([id, a]) => ({ id, label: a.label }))],
+            log: game.conversation(shown.id).map((line) => ({ who: line.who, text: line.text, ...(line.tone ? { tone: line.tone } : {}) })),
           }
         : null,
   });
