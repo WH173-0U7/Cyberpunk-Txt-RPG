@@ -331,8 +331,11 @@ own.
   stores, thrift shops and clothing stores sell bags (**Shop** on the panel): a belt pouch,
   a messenger bag, a duffel bag, a backpack, each more slots and kilos.
 - **Weapons and ammo**: gun shops, gunsmiths, ammo shops and blade shops have a **Shop**
-  too. Every weapon is a real 2077 one from the wiki, with its maker, its class and how many
-  rounds its magazine takes: the Militech M-10AF Lexington, the Budget Arms Carnage, the
+  too. Every weapon is a real 2077 one, checked against its page on the wiki: its name, maker,
+  class, Power, Tech or Smart, how many rounds its magazine takes, and what its note says.
+  Only what the game's vendors sell is on a rack (no crowbars or machetes: those are only
+  ever taken off people), and Dogtown's own guns, Hansen Armory's and the rest sold only
+  there, are in Pacifica's stores: the Militech M-10AF Lexington, the Budget Arms Carnage, the
   Arasaka HJKE-11 Yukimura, the Kang Tao G-58 Dian, the Rostović DB-2 Satara, a katana, a
   baseball bat. Each store stocks a handful at its tier, always the same handful: the cheap
   ones sell Budget Arms, Rostović and secondhand Militech; the luxury ones Arasaka, Kang Tao

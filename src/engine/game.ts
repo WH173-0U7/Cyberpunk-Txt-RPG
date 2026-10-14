@@ -491,7 +491,7 @@ export class Game {
     const quality = gear.quality[key] ?? drawQuality(this.world, building);
     const venue: Venue = { id: building.id, name: building.name, district: building.district, kindLabel: building.kindLabel, quality, chain: false };
     // The weapons first, then the rounds, then whatever carries them.
-    const arms = stock ? stockFor(this.world.seed, building.id, quality, stock, gear.arms) : [];
+    const arms = stock ? stockFor(this.world.seed, building.id, building.district, quality, stock, gear.arms) : [];
     const weapons = arms.flatMap((id): MenuItem[] => {
       const weapon = gear.arms.weapons[id];
       if (!weapon) return [];
@@ -2258,7 +2258,8 @@ export class Game {
     const speaker = this.speakerFor(person, stance, doing, now);
     const haul = [take ? `${take} €$` : '', chip ? `a credchip with ${chip} €$ on it` : ''].filter(Boolean).join(' and ');
     const cut = drawn && !drawn.gun ? arms.classes[drawn.weapon.class]?.cut : undefined;
-    speaker.vars = { ...speaker.vars, take: String(take), haul, weapon: drawn?.weapon.short ?? '', gun: drawn?.gun ? 'yes' : '', blade: cut === 'blade' ? 'yes' : '', blunt: cut === 'blunt' ? 'yes' : '' };
+    // A thrown weapon (a knife, an axe) is a blade in the hand.
+    speaker.vars = { ...speaker.vars, take: String(take), haul, weapon: drawn?.weapon.short ?? '', gun: drawn?.gun ? 'yes' : '', blade: cut === 'blade' || cut === 'thrown' ? 'yes' : '', blunt: cut === 'blunt' ? 'yes' : '' };
     const mask = this.masked();
     const before = this.snapshot(person, now);
     const fallout = this.incident('robbery', person, take + chip, now);

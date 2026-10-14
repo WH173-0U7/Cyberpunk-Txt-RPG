@@ -113,9 +113,16 @@ clothing, weapons and ammo are the items so far:
   `in: null`). `Game.canBuy(id)` says why not (barred, short, no room) so the shop can.
 - Weapons and ammo: `src/engine/weapons.ts` is the engine, `src/data/weapons.ts` the canon
   and the numbers (`ARMS`, on `GEAR.arms`). Every weapon is a real, non-iconic 2077 weapon
-  from the wiki (its name without the maker, the maker, the class, Power/Tech/Smart, the
-  magazine as the wiki's ammo capacity), with our weight, price, note and store tier; the
-  TCG's cards have no shop weapons yet. The ammo is the wiki's four kinds by item id
+  checked against its own wiki page: the infobox's title (the name without the maker),
+  manufacturer, type (our class), technology (Power/Tech/Smart; for melee the wiki's Blade,
+  Blunt or Thrown, our class's `cut`) and ammo capacity (the magazine, the game's number when
+  the page's prose disagrees). Its note says only what the page says of it (characteristics,
+  database entry, intrinsic), in our words; its store tier follows what the page says of its
+  price and market. `tests/weapons.test.ts` pins each one's infobox facts (`CANON`): a new
+  weapon goes in there from its page too. A weapon no vendor sells in the game (enemy drops
+  only, or not to be had) is `sold: false`, on no rack; one the wiki has sold only in some
+  districts has `where` (Dogtown's, in Pacifica; the Senkoh LX downtown). The TCG's Gear has
+  no shop weapons yet (cyberware, gadgets, and Satori, which is iconic). The ammo is the wiki's four kinds by item id
   (`handgun-ammo`, `shotgun-ammo`, `heavy-ammo`, `sniper-ammo`), the class saying which a
   gun takes; rounds are carried loose (`perSlot` to a slot, `grams` each, sold by the
   `box`). A weapon is an `Item` of kind `weapon`, one each (`newWeaponId`, count 1), naming

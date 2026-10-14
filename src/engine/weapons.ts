@@ -43,9 +43,15 @@ export interface WeaponClassInfo {
   grams: number;
   /** Too long for a pocket: it goes in a bag that takes one. */
   long?: boolean;
-  /** For a melee weapon: does it cut or hit. */
-  cut?: 'blade' | 'blunt';
+  /** For a melee weapon, the wiki's kind of it: a blade, a blunt weapon, or one made to be thrown (knives and axes). */
+  cut?: MeleeKind;
 }
+
+/** The wiki's three kinds of 2077 melee weapon. */
+export type MeleeKind = 'blade' | 'blunt' | 'thrown';
+
+/** How the wiki names each kind of melee weapon. */
+export const MELEE_LABEL: Record<MeleeKind, string> = { blade: 'Blade', blunt: 'Blunt', thrown: 'Throwable' };
 
 /** The wiki's three kinds of 2077 gun. */
 export type WeaponTech = 'Power' | 'Tech' | 'Smart';
@@ -69,6 +75,10 @@ export interface WeaponKind {
   note: string;
   /** Sold loaded and never reloaded: when it's empty, it's junk. */
   disposable?: boolean;
+  /** False for a weapon no vendor sells in the game (enemy drops, or one that can't be had at all): it's real, but on no rack. */
+  sold?: boolean;
+  /** The districts whose stores sell it, when the wiki has it sold only there (Dogtown's own guns, in Pacifica); anywhere if not said. */
+  where?: string[];
 }
 
 /** One of the wiki's four kinds of ammo: what a round weighs, how many share a slot, and how it's sold. */
@@ -136,19 +146,20 @@ export function weaponGrams(weapon: WeaponKind, arms: ArmsContent): number {
   return weapon.grams ?? arms.classes[weapon.class]?.grams ?? 1000;
 }
 
-/** "Pistol · Militech · Power"; "Axe · Militech", or "Blade" for a knife that is just a knife. */
+/** "Pistol · Militech · Power"; "Axe · Militech · Throwable", or just "Throwable" for a knife called Knife. */
 export function weaponDetail(weapon: WeaponKind, arms: ArmsContent): string {
   const info = arms.classes[weapon.class];
-  const label = info?.label === weapon.name && info.cut ? (info.cut === 'blade' ? 'Blade' : 'Blunt') : info?.label;
-  return [label, weapon.maker, weapon.tech].filter(Boolean).join(' · ');
+  if (!info?.cut) return [info?.label, weapon.maker, weapon.tech].filter(Boolean).join(' · ');
+  return [info.label === weapon.name ? '' : info.label, weapon.maker, MELEE_LABEL[info.cut]].filter(Boolean).join(' · ');
 }
 
 /**
  * The weapons on a store's rack, by id: `count` of the guns (or the melee weapons) its tier
- * stocks, drawn for the store on its own stream, so the same store always has the same rack,
- * and listed by class, then price.
+ * stocks, of those vendors sell (and, for one sold only in some districts, only there), drawn
+ * for the store on its own stream, so the same store always has the same rack, and listed by
+ * class, then price.
  */
-export function stockFor(seed: string, building: string, quality: Quality, stock: ArmsStock, arms: ArmsContent): string[] {
+export function stockFor(seed: string, building: string, district: string, quality: Quality, stock: ArmsStock, arms: ArmsContent): string[] {
   const tiers = new Set(arms.tiers[quality]);
   if (stock.up) for (const t of arms.tiers[quality === 'poverty' ? 'everyday' : 'luxury']) tiers.add(t);
   const order = Object.keys(arms.classes);
@@ -156,7 +167,7 @@ export function stockFor(seed: string, building: string, quality: Quality, stock
   for (const [kind, count] of [['guns', stock.guns ?? 0], ['melee', stock.melee ?? 0]] as const) {
     if (!count) continue;
     const pool = Object.entries(arms.weapons)
-      .filter(([, weapon]) => tiers.has(weapon.quality) && isGun(weapon, arms) === (kind === 'guns'))
+      .filter(([, weapon]) => weapon.sold !== false && (!weapon.where || weapon.where.includes(district)) && tiers.has(weapon.quality) && isGun(weapon, arms) === (kind === 'guns'))
       .map(([id]) => id);
     const rng = createRng(`${seed}:arms:${building}:${kind}`);
     out.push(...rng.shuffle(pool).slice(0, count));
