@@ -353,5 +353,6 @@ npm run build
   (https://wh173-0u7.github.io/Cyberpunk-Txt-RPG/, from `main`) and the beta under `/beta/`
   (from `beta`, built with `CHANNEL=beta`: its own save key, "Beta build" in Settings). Pull
   requests go to `beta`; a push to either branch rebuilds both and deploys. A release is `beta`
-  merged into `main` and tagged `vX.Y.Z` (bump `version` in `package.json` with it): the tag
-  publishes a GitHub Release. `__CHANNEL__` and `__BUILD__` are the build-time defines.
+  merged into `main`, then the **Release** workflow run with the version (bump `version` in
+  `package.json` with it): it tags `main` `vX.Y.Z` and publishes a GitHub Release (only the
+  workflow's token may push tags). `__CHANNEL__` and `__BUILD__` are the build-time defines.
