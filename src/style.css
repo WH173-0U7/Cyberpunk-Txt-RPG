@@ -1901,8 +1901,11 @@ button {
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
-/* What you know, on one line until tapped */
+/* What you know, on one line until tapped: then all of it, and their web in the transcript's place */
 .person-facts {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   width: 100%;
   padding: 0;
   border: 0;
@@ -1912,13 +1915,30 @@ button {
   font-size: 11px;
   line-height: 1.5;
   text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   cursor: pointer;
 }
-.person-facts.is-open {
+.person-facts-text {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.person-facts::after {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 4px 2px 0;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+.person-facts.is-open .person-facts-text {
   white-space: normal;
+}
+.person-facts.is-open::after {
+  margin-bottom: -2px;
+  transform: rotate(225deg);
 }
 /* The web, in the transcript's place while it's open: the graph scales to what's left of the card */
 .person-web-box {
@@ -2010,7 +2030,7 @@ button {
   fill: var(--muted);
   font-size: 9px;
 }
-/* The transcript: your lines after a prompt, theirs under their name */
+/* The transcript: your lines after a prompt mark, theirs bare */
 .person-log {
   display: grid;
   flex: 1;
@@ -2047,6 +2067,9 @@ button {
 }
 .person-log-line.is-you .person-log-text {
   color: #ffd84d;
+}
+.person-log-line.is-them {
+  grid-template-columns: 1fr;
 }
 .person-log-line.is-them .person-log-text {
   color: #fff;
