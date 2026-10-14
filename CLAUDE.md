@@ -205,6 +205,23 @@ it needs no generator bump. The pieces:
   and the People overlay says "eating Wontons · arguing with a woman in Mox colors". A new
   kind of thing that can happen between people is another `LifeKind` with a chance, a roll
   in `liveDay`, and news lines for every side it can be told from (the dialogue sweep checks).
+- The eddies move too (`src/engine/economy.ts`, numbers in `src/data/economy.ts`, under
+  `LIFE.economy`): `economyDay` runs first in every lived day. Each person pays a day's
+  living (a share of what they started with, plus a little of what they hold) and, some
+  evenings, an outing at their hangout at its tier's price, which lands in that storefront's
+  till; on payday (Friday) everyone draws a week's money (`wageOf`: a share of what they
+  started with, so a robbery yields what it did), a gang's members half from rackets and the
+  rest from the gang's treasury. Every storefront takes a day's walk-in trade (drawn once per
+  place, swinging daily) plus what the player bought there (`Till.pending`, from `Game.buy`),
+  and pays rent, its staff (`staffCostOf`, the boss more) and the gangs' cut (`turfFrom` the
+  people data's turf, by share). A till keeps a week of nets; `healthOf` reads it as
+  thriving, steady or struggling once a week is on the books, which `Game.trade(building)`
+  gives the UI (the line inside, the status row), scales the player's shift pay
+  (`economy.pay`) and makes a struggling boss refuse to hire (`LINES.work.broke`). The
+  speaker's vars `broke`/`flush` (against what they started with) and `slow`/`brisk` (their
+  workplace's books) fit money talk with `needs`. The tills and treasuries are part of the
+  `life` save. Anything new that moves eddies between people and places goes in
+  `economyDay`; anything that reads them goes through `Game.trade` or the vars.
 - Gangs are canon (wiki): keep their turf, looks and rivalries true to it. Names are made
   up in each community's style and must never be a real character's (`tests/people.test.ts`
   checks a few).

@@ -2,6 +2,7 @@ import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState } from './carry';
+import { tillOf, tradeAt, turfFrom, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
 import { answer, compose, deflect, describeStranger, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, moodOf, openness, openTopics, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
@@ -519,6 +520,8 @@ export class Game {
       return false;
     }
     this.pay(item.price, this.takesTransfers(menu));
+    // Spent at a storefront, it's in the till when the day is lived.
+    if (this.inside?.business && menu.venue.id === this.inside.id) tillOf(this.life.tills, this.inside.id).pending += item.price;
     if (item.kind === 'gear') {
       this.pockets.push({ id: newPocketId(item.id, this.pockets), kind: item.id, in: null });
       this.say(`Bought a ${item.name.toLowerCase()} for ${item.price} €$. More room.`, 'system');
@@ -778,7 +781,7 @@ export class Game {
     const clock = this.clockAt(now);
     const here = this.inside?.id === building.id;
     const blocked = !here ? 'away' : job.lastShiftDay === clock.day ? 'done' : !shiftOpen(clock.hour, this.rules.jobs) ? 'closed' : null;
-    return { building, boss: bossOf(building, this.population), rung, next: nextRung(job, ladder), trust: job.trust, shifts: job.shifts, pay: shiftPay(rung, this.tierOf(building), this.rules.jobs), here, blocked };
+    return { building, boss: bossOf(building, this.population), rung, next: nextRung(job, ladder), trust: job.trust, shifts: job.shifts, pay: this.shiftPayAt(rung, building), here, blocked };
   }
 
   /** The tier a storefront runs at: its menu's, its rack's, or drawn the way its district eats. */
@@ -820,7 +823,7 @@ export class Game {
     const { society, timeScale, lines, jobs } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);
     const bottom = (ladderFor(runs, jobs) as Rung[])[0] as Rung;
-    const pay = shiftPay(bottom, this.tierOf(runs), jobs);
+    const pay = this.shiftPayAt(bottom, runs);
     const speaker = this.speakerFor(person, stance, doing, now);
     speaker.vars = { ...speaker.vars, title: bottom.title.toLowerCase(), work: runs.name, pay: String(pay) };
     const rng = createRng(`${this.world.seed}:${id}:hire:${standing.asks}`);
@@ -833,6 +836,10 @@ export class Game {
       this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
     } else if (this.masked()) {
       this.speech(person, line(lines.work.masked, speaker, rng), now);
+    } else if (this.trade(runs).health === 'struggling') {
+      // A place in the red takes nobody on, whatever the boss thinks of the player.
+      this.speech(person, line(lines.work.broke, speaker, rng), now);
+      refused.hire = now;
     } else if (this.pressing(standing, 'hire', now)) {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
@@ -898,7 +905,7 @@ export class Game {
         if (canPromote(job, ladder, stance, jobs)) {
           job.rung += 1;
           const up = rungOf(job, ladder);
-          const raise = shiftPay(up, this.tierOf(building), jobs);
+          const raise = this.shiftPayAt(up, building);
           speaker.vars = { ...speaker.vars, title: up.title.toLowerCase(), work: building.name, pay: String(raise) };
           this.speech(boss, compose(lines.work.promote, speaker, lines, rng, { opener: false }), now);
           this.say(`You're moved up: ${up.title.toLowerCase()} at ${building.name}, ${raise} €$ a shift.`, 'system');
@@ -988,8 +995,30 @@ export class Game {
   private live(now: number): void {
     const today = this.clockAt(now).day;
     if (this.life.day >= today) return;
-    const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed);
+    const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed, (spot) => this.tierOfSpot(spot), turfFrom(this.rules.people.turf));
     if (happened.length) this.events.emit('societyChanged', { people: [] });
+  }
+
+  /** The tier a place runs at, for what an evening there costs, remembered per place. */
+  private readonly tiers = new Map<string, Quality>();
+  private tierOfSpot(spot: Spot): Quality {
+    const key = `${spot.kind}:${spot.id}`;
+    const known = this.tiers.get(key);
+    if (known) return known;
+    const at = spot.kind === 'building' ? this.world.buildings.find((b) => b.id === spot.id) : this.world.locations[spot.id];
+    const tier: Quality = !at ? 'everyday' : spot.kind === 'building' ? this.tierOf(at as Building) : (menuFor(this.world, at, this.rules.food)?.venue.quality ?? drawQuality(this.world, at));
+    this.tiers.set(key, tier);
+    return tier;
+  }
+
+  /** How a storefront is doing on its last week's books, and the line that says so inside. */
+  trade(building: Building): { health: Health; line: string } {
+    return tradeAt(building, this.population, this.life.tills, this.tierOf(building), this.rules.life.economy);
+  }
+
+  /** What a shift pays the player at a storefront: its rung by its tier, and more or less by how the place is doing. */
+  private shiftPayAt(rung: Rung, building: Building): number {
+    return Math.max(1, Math.round(shiftPay(rung, this.tierOf(building), this.rules.jobs) * this.rules.life.economy.pay[this.trade(building).health]));
   }
 
   /** What someone would bring up about what happened between people lately, as the variables their lines are filled by; nothing when there's no news. */
@@ -1200,8 +1229,22 @@ export class Game {
       districtGood: districtRep >= 10 ? 'yes' : '',
       districtBad: districtRep <= -10 ? 'yes' : '',
       mask: this.masked()?.word ?? '',
+      ...this.meansVars(person),
     };
     return { person, voice, mood: moodOf(doing), stance, history: historyOf(standing, timeScale, now), eloquence: eloquenceOf(this.charismaState.level), vars };
+  }
+
+  /** How someone is fixed (`broke`, `flush`: against what they started with) and how the place they work is doing (`slow`, `brisk`), as line variables. */
+  private meansVars(person: Person): Record<string, string> {
+    const base = this.baseEddies.get(person.id) ?? person.eddies;
+    const work = person.job.building ? this.world.buildings.find((b) => b.id === person.job.building) : undefined;
+    const health = work?.business ? this.trade(work).health : 'steady';
+    return {
+      broke: person.eddies < base * 0.3 ? 'yes' : '',
+      flush: person.eddies > base * 1.6 ? 'yes' : '',
+      slow: health === 'struggling' ? 'yes' : '',
+      brisk: health === 'thriving' ? 'yes' : '',
+    };
   }
 
   /** A line of someone's: on the feed under their name, and on their record. */

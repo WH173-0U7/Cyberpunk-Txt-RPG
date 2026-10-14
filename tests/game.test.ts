@@ -9,6 +9,7 @@ import { PEOPLE } from '../src/data/people';
 import { CHARISMA } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
 import { LIFE } from '../src/data/life';
+import { freshLife } from '../src/engine/life';
 import { openness } from '../src/engine/dialogue';
 import { bossOf } from '../src/engine/jobs';
 import { newsFor } from '../src/engine/life';
@@ -16,7 +17,7 @@ import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
 import { freshSociety } from '../src/engine/society';
 import type { TravelRules } from '../src/engine/travel';
-import type { GameEvents, Item, Location, Whereabouts, World } from '../src/engine/types';
+import type { Building, GameEvents, Item, Location, Whereabouts, World } from '../src/engine/types';
 
 // A small city on a 3×3 grid of streets:
 //
@@ -1551,6 +1552,44 @@ describe('Game', () => {
         }
         throw new Error(`the boss of ${building} is never in`);
       }
+
+      /** A week of books for a storefront: a day's net, seven times. */
+      const books = (building: string, net: number) => ({ life: { ...freshLife(), tills: { [building]: { days: Array.from({ length: 7 }, () => net), pending: 0 } } } });
+
+      it('reads a place by its books: a week in the red pays less and takes nobody on, a good week pays more', () => {
+        const noodle = world.buildings.find((b) => b.id === 'b-noodle') as Building;
+        // Fresh books: steady, the plain rate.
+        const plain = withBoss('b-noodle', 38, 20);
+        expect(plain.game.trade(noodle)).toEqual({ health: 'steady', line: LIFE.economy.trade.steady });
+        // In the red: the boss won't hire, whatever they think of the player.
+        const { game, now, boss, take, outputs } = withBoss('b-noodle', 38, 20, books('b-noodle', -40));
+        expect(game.trade(noodle).health).toBe('struggling');
+        take();
+        expect(game.askForWork(boss.id, now)).toBe(true);
+        expect(game.jobStatus(now)).toBeNull();
+        const refusal = game.conversation(boss.id).at(-1);
+        expect(refusal?.who).toBe('them');
+        expect(LINES.work.broke.map((l) => (typeof l === 'string' ? l : l.text).replace(/\{[a-z]+\}/gi, '')).some((t) => refusal?.text.includes(t.split(' ').slice(0, 3).join(' ')))).toBe(true);
+        expect(outputs(take()).some((o) => /You work at/.test(o.text))).toBe(false);
+        // Doing well: the same job pays a quarter more.
+        const good = withBoss('b-noodle', 38, 20, books('b-noodle', 400));
+        expect(good.game.trade(noodle).health).toBe('thriving');
+        expect(good.game.askForWork(good.boss.id, good.now)).toBe(true);
+        expect(good.game.jobStatus(good.now)?.pay).toBe(Math.round(24 * LIFE.economy.pay.thriving));
+        const bad = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside('b-noodle', 38, 20), ...books('b-noodle', -40), job: { building: 'b-noodle', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 } });
+        bad.start(now);
+        expect(bad.jobStatus(now)?.pay).toBe(Math.round(24 * LIFE.economy.pay.struggling));
+      });
+
+      it('puts what the player spends at a storefront in its till, for the day to be lived', () => {
+        const { game } = inside('b-noodle', 38, 20);
+        const dish = game.menu()?.items.find((i) => i.kind === 'food');
+        if (!dish) throw new Error('Nothing on the menu');
+        expect(game.buy(dish.id)).toBe(true);
+        expect(game.buy(dish.id)).toBe(true);
+        // Starting the game lived the last days' books already; what the player spent waits for the next.
+        expect(game.lifeSaved.tills['b-noodle']?.pending).toBe(dish.price * 2);
+      });
 
       it('takes the player on at the bottom of the ladder when the boss will, pays a shift a day into the account, and moves them up on trust', () => {
         const { game, now, boss, take, outputs } = withBoss('b-noodle', 38, 20);

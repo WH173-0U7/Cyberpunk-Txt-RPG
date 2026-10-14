@@ -214,7 +214,8 @@ function isLife(value: unknown): value is LifeState {
   const l = value as Record<string, unknown> | null;
   if (typeof l !== 'object' || l === null) return false;
   const record = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v);
-  return Number.isInteger(l.day) && Number.isInteger(l.nextId) && Array.isArray(l.events) && record(l.eddies) && record(l.hurt) && record(l.hates) && Array.isArray(l.made) && Array.isArray(l.broken);
+  const optional = (v: unknown) => v === undefined || record(v);
+  return Number.isInteger(l.day) && Number.isInteger(l.nextId) && Array.isArray(l.events) && record(l.eddies) && record(l.hurt) && record(l.hates) && Array.isArray(l.made) && Array.isArray(l.broken) && optional(l.tills) && optional(l.treasuries);
 }
 
 function isJob(value: unknown): value is JobState {
