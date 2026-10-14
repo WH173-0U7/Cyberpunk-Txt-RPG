@@ -43,7 +43,8 @@ own.
 
 - **City map**: a street grid of city blocks, desert and coastline, tinted by district.
   Unexplored areas sit under heavy fog. It only lifts along the streets you actually walk
-  and a little way around places you've been; riding the NCART doesn't clear it. Arriving
+  (the block either side, so nothing stays hidden for good) and around places you've been;
+  riding the NCART doesn't clear it. Arriving
   somewhere reveals the places its routes lead to, and walking past a place turns it up
   (their markers show through the fog). Uncovered ground never pops out of the dark: the
   fog lights up and thins like smoke, thin wisps first and thick ones last, with swirling

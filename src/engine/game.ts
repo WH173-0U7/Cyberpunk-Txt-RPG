@@ -70,8 +70,13 @@ import type {
 /** The fog lifts in square cells this many map units across (a couple of building widths). */
 export const CELL = 2;
 export const CELLS = Math.ceil(100 / CELL);
-/** Walking lifts the fog this far either side of the player, in map units: the street and the buildings along it. */
-const SIGHT = 2.5;
+/**
+ * Walking lifts the fog this far either side of the player, in map units: the street and the
+ * block along it. Blocks run up to 9.5 across, so the deepest fog cell sits 5 from a street;
+ * this reaches it with the walk's 1.5-unit stride to spare, and nothing stays under the fog
+ * for good.
+ */
+const SIGHT = 5.5;
 const DAY = 86_400_000;
 
 /** The fog cell a map point falls in. */
