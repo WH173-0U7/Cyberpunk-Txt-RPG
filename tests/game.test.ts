@@ -14,10 +14,10 @@ import { freshLife, newsFor, tieKey } from '../src/engine/life';
 import { FAMILY, openness } from '../src/engine/dialogue';
 import { bossOf } from '../src/engine/jobs';
 import { memoriesOf } from '../src/engine/memory';
-import { dreamOf, handleOf, tiesOf, type Person } from '../src/engine/people';
+import { dreamOf, handleOf, tiesOf, type Person, type Pronouns } from '../src/engine/people';
 import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
-import { freshSociety } from '../src/engine/society';
+import { freshSociety, type SocietyState } from '../src/engine/society';
 import type { TravelRules } from '../src/engine/travel';
 import type { Building, GameEvents, Item, Location, Whereabouts, World } from '../src/engine/types';
 
@@ -1986,6 +1986,146 @@ describe('Game', () => {
           return;
         }
         throw new Error('nobody at the noodle bar');
+      });
+    });
+
+    describe('romance', () => {
+      // Hearts drawn to everyone, or to no one, so a test knows where it stands.
+      const hearts = (to: Pronouns[]) => ({ ...PEOPLE, hearts: { ...PEOPLE.hearts, drawn: { she: [{ to, weight: 1 }], he: [{ to, weight: 1 }], they: [{ to, weight: 1 }] } } });
+      const everyone = hearts(['she', 'he', 'they']);
+      /** Someone the player knows by name, likes, and has a spark with. */
+      const sweetOn = (id: string, now: number, spark: number, romance: SocietyState['romance'] = null): SocietyState => ({
+        ...freshSociety(),
+        standings: { [id]: { met: true, rapport: 60, grudge: 0, at: now, talks: 0, lastTalkAt: 0, gifts: 0, lastGiftAt: 0, robbedAt: 0, asks: 0, refused: {}, spark } },
+        known: { [id]: { met: true, seen: true, told: false, facts: ['name'], log: [] } },
+        romance,
+      });
+      /** Whether someone is with no one: no spouse, no one they're seeing. */
+      const free = (game: Game, id: string) => !tiesOf(game.population, id).some((t) => t.kind === 'spouse' || t.kind === 'partner');
+      /** An evening at the noodle bar, with someone free there who doesn't work there. */
+      function evening(progress: (id: string, now: number) => Partial<Progress> = () => ({}), rules: Partial<GameRules> = {}) {
+        for (let day = 0; day < 21; day++) {
+          for (const hour of [18, 19, 20, 21, 22, 23]) {
+            const now = Date.UTC(2077, 9, 12, hour, 5) + day * 24 * HOUR;
+            const probe = new Game(world, { ...RULES, people: everyone, ...rules }, progressInside('b-noodle', 38, 20));
+            probe.start(now);
+            const guest = probe.peopleHere(now).find((p) => p.person.job.building !== 'b-noodle' && p.person.age >= 18 && free(probe, p.person.id));
+            if (!guest) continue;
+            const game = new Game(world, { ...RULES, startingEddies: 400, people: everyone, ...rules }, { ...progressInside('b-noodle', 38, 20), ...progress(guest.person.id, now) });
+            game.start(now);
+            return { game, now, guest: guest.person, ...record(game) };
+          }
+        }
+        throw new Error('nobody out at the noodle bar of an evening');
+      }
+
+      it('sparks someone drawn to you with a flirt, and nobody who is not', () => {
+        const { game, now, guest } = evening((id, at) => ({ society: sweetOn(id, at, 30) }));
+        expect(game.talk(guest.id, now, 'flirt')).toBe(true);
+        expect(game.standingWith(guest.id, now)?.standing.spark).toBeGreaterThan(30);
+        expect(game.conversation(guest.id).at(-1)).toMatchObject({ who: 'note', text: expect.stringMatching(/♥ \+/) });
+        // Drawn to no one: no spark, and the note says why; asked out, a no.
+        const cold = evening((id, at) => ({ society: sweetOn(id, at, 30) }), { people: hearts([]) });
+        expect(cold.game.talk(cold.guest.id, cold.now, 'flirt')).toBe(true);
+        expect(cold.game.standingWith(cold.guest.id, cold.now)?.standing.spark).toBe(30);
+        expect(cold.game.conversation(cold.guest.id).at(-1)?.text).toMatch(/Not drawn to you/);
+        expect(cold.game.romanceWith(cold.guest.id, cold.now)).toEqual(['askOut']);
+        expect(cold.game.askOut(cold.guest.id, cold.now)).toBe(true);
+        expect(cold.game.romance(cold.now)).toBeNull();
+      });
+
+      it('goes by the pronouns the player picks: only those drawn to them are', () => {
+        const { game, now, guest } = evening((id, at) => ({ society: sweetOn(id, at, 30) }), { people: hearts(['she']) });
+        expect(game.pronouns).toBe('they');
+        game.talk(guest.id, now, 'flirt');
+        expect(game.standingWith(guest.id, now)?.standing.spark).toBe(30);
+        expect(game.conversation(guest.id).at(-1)?.text).toMatch(/Not drawn to you/);
+        game.setPronouns('she');
+        expect(game.youSaved).toEqual({ pronouns: 'she' });
+        expect(game.askOut(guest.id, now)).toBe(true);
+        expect(game.romance(now)?.id).toBe(guest.id);
+      });
+
+      it('asks out, takes out of an evening, makes it official, and ends it', () => {
+        const { game, now, guest, take, outputs } = evening((id, at) => ({ society: sweetOn(id, at, 40) }));
+        expect(game.romanceWith(guest.id, now)).toEqual(['askOut']);
+        expect(game.askOut(guest.id, now)).toBe(true);
+        expect(game.romance(now)).toMatchObject({ id: guest.id, stage: 'dating', dates: 0 });
+        expect(game.romanceWith(guest.id, now)).toEqual(['date', 'official', 'end']);
+        expect(game.describe(guest.id, now)?.lines[0]).toBe('Seeing you · 0 dates');
+        // Too soon to make it official.
+        expect(game.makeOfficial(guest.id, now)).toBe(true);
+        expect(game.romance(now)?.stage).toBe('dating');
+        take();
+        const cash = game.wallet.eddies + game.wallet.account;
+        const spark = game.standingWith(guest.id, now)?.standing.spark ?? 0;
+        expect(game.date(guest.id, now)).toBe(true);
+        expect(game.wallet.eddies + game.wallet.account).toBeLessThan(cash);
+        expect(game.romance(now)?.dates).toBe(1);
+        expect(game.standingWith(guest.id, now)?.standing.spark).toBeGreaterThan(spark);
+        expect(memoriesOf(game.societySaved, guest.id, SOCIETY.memory, RULES.timeScale, now).some((m) => m.kind === 'date' && m.what === 'Test Noodles')).toBe(true);
+        // Once a night.
+        expect(game.date(guest.id, now + MINUTE)).toBe(false);
+        expect(outputs(take()).at(-1)?.text).toMatch(/tonight already/);
+        // Ended: it hurts, and they remember.
+        expect(game.endRomance(now + MINUTE)).toBe(true);
+        expect(game.romance(now)).toBeNull();
+        const after = game.standingWith(guest.id, now + MINUTE)?.standing;
+        expect(after?.grudge).toBeGreaterThan(0);
+        expect(after?.spark).toBe(0);
+        expect(memoriesOf(game.societySaved, guest.id, SOCIETY.memory, RULES.timeScale, now + MINUTE).some((m) => m.kind === 'dumped')).toBe(true);
+      });
+
+      it('makes it official after enough dates and spark, and dates only of an evening, somewhere with a menu', () => {
+        const going = (id: string, at: number) => ({ society: sweetOn(id, at, 60, { with: id, stage: 'dating' as const, since: at, dates: SOCIETY.romance.official.dates, lastDateAt: 0 }) });
+        const { game, now, guest } = evening(going);
+        expect(game.makeOfficial(guest.id, now)).toBe(true);
+        expect(game.romance(now)?.stage).toBe('together');
+        expect(game.romanceWith(guest.id, now)).toEqual(['date', 'end']);
+        // Not in the morning.
+        const morning = evening(going, { society: { ...SOCIETY, romance: { ...SOCIETY.romance, date: { ...SOCIETY.romance.date, from: 3, to: 4 } } } });
+        expect(morning.game.date(morning.guest.id, morning.now)).toBe(false);
+        expect(morning.outputs(morning.take()).at(-1)?.text).toMatch(/evening thing/);
+      });
+
+      it('stings the one you are seeing when you flirt in front of them, and twice is once too often', () => {
+        // Seeing the noodle bar's worker, with someone else there to flirt with.
+        for (let day = 0; day < 14; day++) {
+          const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
+          const probe = new Game(world, { ...RULES, people: everyone }, progressInside('b-noodle', 38, 20));
+          probe.start(now);
+          const here = probe.peopleHere(now);
+          const partner = here.find((p) => p.person.job.building === 'b-noodle')?.person;
+          const other = here.find((p) => p.person.id !== partner?.id && p.person.age >= 18)?.person;
+          if (!partner || !other) continue;
+          const society = sweetOn(partner.id, now, 50, { with: partner.id, stage: 'dating', since: now, dates: 1, lastDateAt: 0 });
+          const game = new Game(world, { ...RULES, people: everyone }, { ...progressInside('b-noodle', 38, 20), society });
+          game.start(now);
+          expect(game.talk(other.id, now, 'flirt')).toBe(true);
+          const stung = game.standingWith(partner.id, now)?.standing;
+          expect(stung?.spark).toBeLessThan(50);
+          expect(memoriesOf(game.societySaved, partner.id, SOCIETY.memory, RULES.timeScale, now).find((m) => m.kind === 'cheated')?.about).toBe(other.id);
+          // Again, after the talk cooldown: twice, and the next time they talk, they end it.
+          const later = now + 2 * HOUR;
+          expect(game.talk(other.id, later, 'flirt')).toBe(true);
+          expect(game.peopleHere(later).some((p) => p.person.id === partner.id), 'still at work two hours on').toBe(true);
+          expect(game.talk(partner.id, later)).toBe(true);
+          expect(game.romance(later)).toBeNull();
+          expect(game.conversation(partner.id).at(-1)?.text).toMatch(/ended it/);
+          return;
+        }
+        throw new Error('never two people at the noodle bar');
+      });
+
+      it('knows someone\'s type once asked, and saves who the player goes by and who they see', () => {
+        const probe = atWork('b-noodle', 38, 20);
+        const society = sweetOn(probe.worker.id, probe.now, 30, { with: probe.worker.id, stage: 'together', since: probe.now, dates: 4, lastDateAt: 0 });
+        society.known[probe.worker.id] = { met: true, seen: true, told: false, facts: ['name', 'type'], log: [] };
+        const { game, worker } = atWork('b-noodle', 38, 20, { society, you: { pronouns: 'he' } }, { people: everyone });
+        expect(game.describe(worker.id)?.facts.type).toMatch(/^Into anyone · /);
+        expect(game.describe(worker.id)?.lines[0]).toBe('Together with you · 4 dates');
+        expect(game.pronouns).toBe('he');
+        expect(game.romance(probe.now)).toMatchObject({ id: worker.id, stage: 'together', dates: 4 });
       });
     });
   });

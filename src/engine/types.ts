@@ -3,6 +3,7 @@ import type { InebriationStatus } from './inebriation';
 import type { SkillStatus } from './skills';
 import type { JobStatus } from './jobs';
 import type { Quality } from './food';
+import type { You } from './romance';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -295,5 +296,7 @@ export type GameEvents = {
   charismaChanged: SkillStatus;
   /** The player got a job, worked a shift, moved up, quit or was let go (null: no job now). */
   jobChanged: JobStatus | null;
+  /** The player changed the pronouns they go by. */
+  youChanged: You;
   fx: { effect: FxName };
 };

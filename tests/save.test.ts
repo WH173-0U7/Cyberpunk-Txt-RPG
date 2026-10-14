@@ -15,7 +15,7 @@ import { TRAVEL } from '../src/data/travel';
 import { Game } from '../src/engine/game';
 import { GENERATOR_VERSION, generateWorld } from '../src/engine/generate';
 import { hashSeed } from '../src/engine/rng';
-import { createSave, readSave, resume, savedSeed, type SaveData } from '../src/engine/save';
+import { createSave, readSave, resume, savedSeed, type Progress, type SaveData } from '../src/engine/save';
 import type { World } from '../src/engine/types';
 
 const world = generateWorld('7f3a29c1', CITY);
@@ -70,6 +70,26 @@ describe('saving', () => {
     expect(resume(world, save)?.inside).toBe(building.id);
     expect(resume(world, { ...save, inside: 'b-nowhere' })?.inside).toBeNull();
     expect(resume(world, { ...save, where: { ...at, building: null } })?.inside).toBeNull();
+  });
+
+  it('carries who the player goes by and who they see, dropping either if it makes no sense', () => {
+    const { game, now } = played(1);
+    game.setPronouns('she');
+    const id = game.population.people[0]?.id ?? '';
+    const romance = { with: id, stage: 'together' as const, since: now, dates: 3, lastDateAt: now };
+    const saved = { ...saveOf(game, now), society: { ...game.societySaved, romance } };
+    const read = readSave(JSON.parse(JSON.stringify(saved)));
+    expect(read?.you).toEqual({ pronouns: 'she' });
+    expect(read?.society?.romance).toEqual(romance);
+    const resumed = new Game(world, rules, (read && resume(world, read)) ?? undefined);
+    expect(resumed.pronouns).toBe('she');
+    expect(resumed.romance(now)).toMatchObject({ id, stage: 'together', dates: 3 });
+    // Nonsense is dropped: they go by they, and see no one.
+    const odd = readSave(JSON.parse(JSON.stringify({ ...saved, you: { pronouns: 'it' }, society: { ...saved.society, romance: { with: id, stage: 'married', since: now, dates: -1, lastDateAt: 0 } } })));
+    expect(odd?.you).toBeNull();
+    expect(odd?.society?.romance).toBeNull();
+    const { you: _, ...old } = saveOf(game, now);
+    expect(new Game(world, rules, resume(world, readSave(JSON.parse(JSON.stringify(old))) as SaveData) as Progress).pronouns).toBe('they');
   });
 
   it('carries the inventory, dropping anything in it that is not an item', () => {

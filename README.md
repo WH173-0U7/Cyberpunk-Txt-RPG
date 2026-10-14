@@ -130,6 +130,25 @@ own.
   hour); put off, they say nothing more and think a little less of you. Give them food or
   drink from your inventory (their favorite counts double). The card shows where you stand:
   Stranger, Wary, Warm, Friend, Cold, Hostile.
+- **Romance**: everyone has a heart: whom they're drawn to (women, men, anyone who goes by
+  they, everyone, or no one at all), the way in that wins them over (an easy talker, a way
+  with words, a laugh, someone in the know, someone who listens) and the look they go for
+  (one of the wiki's four styles, or none). Ask them **Type** and they'll tell you, and the
+  card keeps it. Say the pronouns you go by in **Settings** (they, unless you change it): who's
+  drawn to you goes by them. **Flirt** (with the other ways in under **Talk**) lands with
+  someone drawn to you and free: it lights a spark (the note says ♥ +5), more if you're
+  dressed the way they like or they're already sweet on you; coming at them the way they like
+  sparks it too, and so does their favorite as a gift. Someone married or seeing someone says
+  so. With enough spark and rapport, and once they feel warmly about you, the **♥** command
+  on their card can **Ask out**. Seeing someone, ♥ takes them on a **Date**: an evening
+  (six till two), somewhere with a menu, not while they're working, once a night; you pay for
+  two of their favorite if it's on the menu (they notice), else the cheapest drink. After
+  three dates and enough spark you can **Make it official**. Spark fades if you don't see
+  them; let it go out and they'll end it. Flirt with someone else in front of them and it
+  stings: twice, and they're done with you. **End it** yourself (to their face, or by message)
+  and it hurts them, and their family and friends think less of you. One at a time: whoever
+  you're seeing won't fall for anyone else in the meantime, and if they die, it's over. The
+  status drop-down's **Heart** row says who, how many dates and the spark.
 - **How it went**: after everything you say or do with someone, a small note in the
   transcript says how it landed, green when it helped and red when it hurt: why ("Likes a
   kind word", "Not in the mood for jokes", "Doesn't like being asked her age", "Tired of all
@@ -201,7 +220,8 @@ own.
   of commands at the bottom, each only when it can be done: **Talk** (unfolds the ways in),
   **Ask** (unfolds the questions and the people you can ask
   about), **Give** (what you carry), **Chop** (a hot credchip, when you can tell they're a
-  netrunner), **Work** (with a boss) and **⋯** (insult, rob). A command's choices show only
+  netrunner), **Work** (with a boss), **♥** (ask out, a date, make it official, end it) and
+  **⋯** (insult, rob). A command's choices show only
   while it's open. While the card is open, what they say stays off the map's feed; it's on
   the card.
 - **Crossing people**: **Insult** someone and they hold it against you (a temper shoves you
@@ -379,10 +399,10 @@ own.
   turn: the wallet shows the bills in it and the chips, each with what's on it and whether
   it's locked. **‹** goes back a level. The strip counts everything and weighs it. The
   button itself is the one thing in the map's header, with your cash on it.
-- **Settings**: the last row of the status drop-down (below). For now that's the save:
-  **Restart this city** puts the same city back to the start, and **Erase save** deletes the
-  save from this device and starts a brand new city. Both ask first, with Cancel as the
-  default.
+- **Settings**: the last row of the status drop-down (below). First **You**: the pronouns
+  you go by (she, he or they), which decides who's drawn to you. Then the save: **Restart this
+  city** puts the same city back to the start, and **Erase save** deletes the save from this
+  device and starts a brand new city. Both ask first, with Cancel as the default.
 - **Getting around**: tap a place, an NCART station, a building, or (zoomed in) any spot on
   a street. The panel shows two ways there:
   - **Walk**: free, along the streets, to anywhere on the map. Tapping the same thing again
@@ -444,7 +464,8 @@ src/
             (inebriation.ts), the people (people.ts: who lives
             here and where they are), what they think of the player and what comes of it
             (society.ts, which also keeps what the player knows of people and of who knows
-            whom), what they say (dialogue.ts), skills that grow with use (skills.ts),
+            whom), what they say (dialogue.ts), romance with the player (romance.ts),
+            skills that grow with use (skills.ts),
             discovery, ambient chatter, the save format. No DOM, fully unit-tested.
   data/     The content the generator builds cities from (city.ts), travel times and
             prices (travel.ts), energy's numbers (energy.ts), the kinds of item the

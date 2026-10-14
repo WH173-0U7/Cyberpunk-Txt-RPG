@@ -1,17 +1,18 @@
 import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
-import { changeRoom, loadOf, loads, newChipId, newPocketId, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState } from './carry';
+import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { tillOf, tradeAt, turfFrom, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
-import { answer, compose, deflect, describeStranger, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
+import { answer, compose, deflect, describeStranger, drawnWord, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
 import { bossAt, bossOf, canPromote, ladderFor, nextRung, rungOf, shiftOpen, shiftPay, type JobRules, type JobState, type JobStatus, type Rung } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
-import { dreamOf, generatePeople, handleOf, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type PeopleContent, type Person, type Population, type Spot, type Tie, type TieKind } from './people';
-import { createRng } from './rng';
+import { dreamOf, drawnTo, generatePeople, handleOf, heartOf, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
+import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
 import { freshSkill, gainXp, skillStatus, type SkillRules, type SkillState, type SkillStatus } from './skills';
 import {
@@ -170,6 +171,7 @@ const HOUR = 3_600_000;
 interface Snapshot {
   rapport: number;
   grudge: number;
+  spark: number;
   stance: Stance;
   level: number;
   xp: number;
@@ -208,6 +210,8 @@ export class Game {
   private job: JobState | null;
   /** The people's own days so far, and what everyone started with in eddies, for earning it back. */
   private life: LifeState;
+  /** The player, as people see them: the pronouns they go by. */
+  private you: You;
   private readonly baseEddies: ReadonlyMap<string, number>;
   /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
   private readonly home: { building: string; bed: boolean } | null = null;
@@ -238,6 +242,8 @@ export class Game {
     applyLife(this.population, this.life);
     this.society = progress?.society ? { ...freshSociety(), ...structuredClone(progress.society) } : freshSociety();
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
+    // Saves from before the player said otherwise go by they.
+    this.you = progress?.you ? { ...progress.you } : { pronouns: 'they' };
     // A job at a place this city doesn't have, or that doesn't hire anymore, is no job.
     const workplace = progress?.job ? world.buildings.find((b) => b.id === progress.job?.building) : undefined;
     this.job = progress?.job && workplace && ladderFor(workplace, rules.jobs) ? { ...progress.job } : null;
@@ -248,6 +254,7 @@ export class Game {
     for (const key of Object.keys(this.society.links)) if (!key.split('|').every((id) => known.has(id))) delete this.society.links[key];
     this.society.threats = this.society.threats.filter((t) => !t.by || known.has(t.by));
     forgetMemories(this.society, known);
+    if (this.society.romance && !known.has(this.society.romance.with)) this.society.romance = null;
     // Pockets of kinds the game no longer has are gone, and with none left the player wears the usual; anything not in a pocket is put away.
     const pockets = (progress?.gear ?? []).filter((p) => p.kind in rules.gear.kinds).map((p) => ({ ...p }));
     this.pockets = pockets.length ? pockets : rules.gear.start.map((p) => ({ ...p }));
@@ -1169,6 +1176,309 @@ export class Game {
     }));
   }
 
+  // ───────────── The heart ─────────────
+
+  /** The player as people see them: the pronouns they go by, for saving. */
+  get youSaved(): You {
+    return { ...this.you };
+  }
+
+  /** The pronouns the player goes by, which decides who's drawn to them. */
+  get pronouns(): Pronouns {
+    return this.you.pronouns;
+  }
+
+  /** Changes the pronouns the player goes by (Settings). */
+  setPronouns(pronouns: Pronouns): void {
+    if (this.you.pronouns === pronouns) return;
+    this.you = { ...this.you, pronouns };
+    this.events.emit('youChanged', this.youSaved);
+  }
+
+  /** Someone's heart: whom they're drawn to, the way in that wins them over, the look they go for. */
+  private heartOf(person: Person): Heart {
+    return heartOf(person, this.world, this.rules.people, this.population);
+  }
+
+  /** Who someone is with, alive, other than the player: their spouse, or someone they're seeing. */
+  private partnerOf(person: Person): { person: Person; kind: TieKind } | null {
+    for (const tie of tiesOf(this.population, person.id)) {
+      if (tie.kind !== 'spouse' && tie.kind !== 'partner') continue;
+      const other = this.person(tie.to);
+      if (other && other.diedOn === undefined) return { person: other, kind: tie.kind };
+    }
+    return null;
+  }
+
+  /** The look the player has on: the style most of what they wear is in. */
+  private styleWorn(): Style | null {
+    const { worn } = outfit(this.pockets, this.rules.gear);
+    const counts = new Map<Style, number>();
+    for (const pocket of Object.values(worn)) {
+      const style = pocket ? this.rules.gear.kinds[pocket.kind]?.style : undefined;
+      if (style) counts.set(style, (counts.get(style) ?? 0) + 1);
+    }
+    let best: Style | null = null;
+    for (const [style, n] of counts) if (!best || n > (counts.get(best) ?? 0)) best = style;
+    return best;
+  }
+
+  /**
+   * Someone's heart as line variables, as it stands with the player: drawn to them (`drawn`,
+   * never for anyone too young), spoken for (`taken`, the name, and `takenWord`), seeing the
+   * player (`withYou`, `together`), sweet on them (`sweet`), the player's look their type
+   * (`yourType`).
+   */
+  private heartVars(person: Person, standing: Standing): Record<string, string> {
+    const rules = this.rules.society.romance;
+    const heart = this.heartOf(person);
+    const partner = this.partnerOf(person);
+    const romance = this.society.romance;
+    const mine = romance?.with === person.id;
+    return {
+      drawn: person.age >= rules.adultAt && drawnTo(heart, this.you.pronouns) ? 'yes' : '',
+      taken: partner?.person.given ?? '',
+      takenWord: partner ? kinWord(person, partner.kind, partner.person) : '',
+      withYou: mine ? 'yes' : '',
+      together: mine && romance?.stage === 'together' ? 'yes' : '',
+      sweet: (standing.spark ?? 0) >= rules.sweetAt ? 'yes' : '',
+      yourType: heart.style && this.styleWorn() === heart.style ? 'yes' : '',
+    };
+  }
+
+  /** Who the player is seeing, if anyone: who, how far along, since when, how many dates, and the spark. */
+  romance(now: number): { id: string; name: string; stage: RomanceStage; since: number; dates: number; spark: number } | null {
+    const romance = this.society.romance;
+    const person = romance ? this.person(romance.with) : undefined;
+    if (!romance || !person) return null;
+    const spark = Math.round(standingOf(this.society, person.id, this.rules.society, this.rules.timeScale, now).spark ?? 0);
+    return { id: person.id, name: this.describe(person.id, now)?.name ?? person.name, stage: romance.stage, since: romance.since, dates: romance.dates, spark };
+  }
+
+  /**
+   * What the heart command offers with someone: asking them out (someone here the player
+   * knows by name, old enough, while the player is seeing no one); with the one the player
+   * is seeing, a date and making it official (both here) and ending it (anywhere).
+   */
+  romanceWith(id: string, now: number): RomanceMove[] {
+    const person = this.person(id);
+    if (!person || person.diedOn !== undefined) return [];
+    const romance = this.society.romance;
+    const here = Boolean(this.isHere(id, now));
+    if (romance?.with === id) return [...(here ? (['date'] as const) : []), ...(here && romance.stage === 'dating' ? (['official'] as const) : []), 'end'];
+    if (romance || !here || person.age < this.rules.society.romance.adultAt || !knowledgeOf(this.society, id).facts.includes('name')) return [];
+    return ['askOut'];
+  }
+
+  /**
+   * Asks someone here out. A yes takes someone drawn to the player, free, warm or better, with
+   * enough spark and rapport; a no says why (not drawn to the player, spoken for, not yet, or
+   * not in a mask), and asking again within the talk cooldown is pressing.
+   */
+  askOut(id: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    if (!here) return false;
+    const { person, stance, doing } = here;
+    const { society, timeScale, lines } = this.rules;
+    const rules = society.romance;
+    const current = this.society.romance;
+    if (current) {
+      if (current.with !== id) this.say(`You're seeing ${this.person(current.with)?.given ?? 'someone'}.`, 'error');
+      return false;
+    }
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const before = this.snapshot(person, now);
+    learnOf(this.society, id, 'met');
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const rng = createRng(`${this.world.seed}:${id}:askOut:${standing.talks}:${standing.asks}`);
+    this.logged(id, 'you', line(lines.you.askOut, speaker, rng), now);
+    const refused = { ...standing.refused };
+    let rapport = 0;
+    let spark = 0;
+    let why = '';
+    if (speaker.mood === 'asleep' || stance === 'hostile') {
+      this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
+    } else if (this.pressing(standing, 'askOut', now)) {
+      this.speech(person, line(lines.pressed, speaker, rng), now);
+      rapport = -society.openness.press;
+      why = lines.notes.pressed;
+    } else {
+      const masked = Boolean(this.masked());
+      const yes = !masked && speaker.vars.drawn && !speaker.vars.taken && standing.spark !== undefined && standing.spark >= rules.ask.spark && standing.rapport >= rules.ask.rapport && rules.ask.stances.includes(stance);
+      const pool = masked ? lines.romance.ask.masked : !speaker.vars.drawn ? lines.romance.ask.notDrawn : speaker.vars.taken ? lines.romance.ask.taken : yes ? lines.romance.ask.yes : lines.romance.ask.notYet;
+      this.speech(person, compose(pool, speaker, lines, rng, { opener: false }), now);
+      if (yes) {
+        this.society.romance = freshRomance(id, now);
+        spark = rules.ask.yes;
+        this.say(`You're seeing ${person.given} now. Take ${pronounsOf(person).him} out of an evening: ♥ on ${pronounsOf(person).his} card, somewhere with a menu.`, 'system');
+      } else {
+        refused.askOut = now;
+        why = masked ? lines.notes.masked : '';
+      }
+    }
+    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport, spark }, society, timeScale, now);
+    this.noteFeedback(person, before, now, why, speaker.vars);
+    this.events.emit('societyChanged', { people: [id] });
+    return true;
+  }
+
+  /**
+   * Takes the one the player is seeing out, here and now: an evening, somewhere with a menu,
+   * the player paying for two of what they like if it's on it (else the cheapest drink). Once a
+   * day; worth spark and rapport, and more when it's their favorite.
+   */
+  date(id: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    const romance = this.society.romance;
+    if (!here || romance?.with !== id) return false;
+    const { person, stance, doing } = here;
+    const { society, timeScale, lines, food } = this.rules;
+    const rules = society.romance;
+    const menu = this.menu();
+    const clock = this.clockAt(now);
+    const speaker = this.speakerFor(person, stance, doing, now);
+    if (!menu || menu.kind !== 'food' || !menu.items.length) {
+      this.say(`Not here: take ${person.given} somewhere with a menu. A bar, a diner, a noodle place.`, 'error');
+      return false;
+    }
+    if (!dateHour(clock.hour, rules)) {
+      this.say(`A date's an evening thing: from ${rules.date.from}:00 till ${String(rules.date.to).padStart(2, '0')}:00.`, 'error');
+      return false;
+    }
+    if (speaker.vars.atWork) {
+      this.say(`${person.given} is working. Come back when ${pronounsOf(person).he} ${person.pronouns === 'they' ? "aren't" : "isn't"}.`, 'error');
+      return false;
+    }
+    if (romance.lastDateAt && this.clockAt(romance.lastDateAt).day === clock.day) {
+      this.say(`You've been out with ${person.given} tonight already.`, 'error');
+      return false;
+    }
+    // What they like, if it's on; else the cheapest drink; else the cheapest thing.
+    const liked = menu.items.find((i) => i.id === person.likes.drink || i.id === person.likes.dish);
+    const drinks = menu.items.filter((i) => i.kind === 'drink' || i.kind === 'alcohol').sort((a, b) => a.price - b.price);
+    const order = liked ?? drinks[0] ?? [...menu.items].sort((a, b) => a.price - b.price)[0];
+    if (!order) return false;
+    const price = order.price * 2;
+    const transfers = this.takesTransfers(menu);
+    if (!this.canPay(price, transfers)) {
+      this.say(this.shortBy(`Two ${order.name}`, price, transfers), 'error');
+      return false;
+    }
+    const before = this.snapshot(person, now);
+    this.pay(price, transfers);
+    if (this.inside?.business && menu.venue.id === this.inside.id) tillOf(this.life.tills, this.inside.id).pending += price;
+    const favorite = Boolean(liked);
+    speaker.vars = { ...speaker.vars, item: order.name, favorite: favorite ? 'yes' : '' };
+    const rng = createRng(`${this.world.seed}:${id}:date:${romance.dates}`);
+    this.logged(id, 'you', line(lines.you.date, speaker, rng), now);
+    this.speech(person, compose(lines.romance.date, speaker, lines, rng, { opener: false }), now);
+    romance.dates += 1;
+    romance.lastDateAt = now;
+    changeStanding(this.society, id, { met: true, spark: rules.date.spark + (favorite ? rules.date.favorite : 0), rapport: rules.date.rapport, lastTalkAt: now }, society, timeScale, now);
+    this.remember(id, { kind: 'date', at: now, what: menu.venue.name }, now);
+    if (favorite) learnFact(this.society, id, food.dishes.find((d) => d.id === order.id)?.kind === 'food' ? 'likes' : 'drinks');
+    this.noteFeedback(person, before, now, [lines.notes.date, favorite ? lines.notes.favorite : ''].filter(Boolean).join(' · '), speaker.vars);
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('societyChanged', { people: [id] });
+    return true;
+  }
+
+  /** Asks the one the player is seeing to make it official: a yes after enough dates and spark, from someone who feels warmly. */
+  makeOfficial(id: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    const romance = this.society.romance;
+    if (!here || romance?.with !== id || romance.stage !== 'dating') return false;
+    const { person, stance, doing } = here;
+    const { society, timeScale, lines } = this.rules;
+    const rules = society.romance;
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const before = this.snapshot(person, now);
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const rng = createRng(`${this.world.seed}:${id}:official:${romance.dates}:${standing.asks}`);
+    this.logged(id, 'you', line(lines.you.official, speaker, rng), now);
+    const yes = romance.dates >= rules.official.dates && (standing.spark ?? 0) >= rules.official.spark && rules.ask.stances.includes(stance);
+    this.speech(person, compose(yes ? lines.romance.official.yes : lines.romance.official.notYet, speaker, lines, rng, { opener: false }), now);
+    if (yes) {
+      romance.stage = 'together';
+      changeStanding(this.society, id, { rapport: rules.official.rapport }, society, timeScale, now);
+    }
+    this.noteFeedback(person, before, now, yes ? lines.notes.official : '', speaker.vars);
+    this.events.emit('societyChanged', { people: [id] });
+    return true;
+  }
+
+  /** Ends it with the one the player is seeing: to their face if they're here, by message if not. It hurts them, and their people think less of the player. */
+  endRomance(now: number): boolean {
+    const romance = this.society.romance;
+    const person = romance ? this.person(romance.with) : undefined;
+    if (!romance || !person) return false;
+    const { society, timeScale, lines } = this.rules;
+    const rules = society.romance;
+    const here = this.isHere(person.id, now);
+    const before = this.snapshot(person, now);
+    const speaker = this.speakerFor(person, here?.stance ?? this.stanceOf(person, now), here?.doing ?? '', now);
+    const rng = createRng(`${this.world.seed}:${person.id}:end:${romance.since}`);
+    this.society.romance = null;
+    if (here) {
+      this.logged(person.id, 'you', line(lines.you.endIt, speaker, rng), now);
+      this.speech(person, compose(lines.romance.dumped, speaker, lines, rng, { opener: false }), now);
+    } else {
+      this.logged(person.id, 'you', `You message ${person.given}: it's over.`, now);
+      this.say(`You message ${person.given}: it's over.`, 'system');
+    }
+    const standing = standingOf(this.society, person.id, society, timeScale, now);
+    changeStanding(this.society, person.id, { rapport: -rules.dumped.rapport, grudge: rules.dumped.grudge, spark: -(standing.spark ?? 0) }, society, timeScale, now);
+    this.remember(person.id, { kind: 'dumped', at: now }, now);
+    // Their people take their side.
+    const touched = [person.id];
+    for (const tie of tiesOf(this.population, person.id)) {
+      if (!FAMILY.includes(tie.kind) && tie.kind !== 'friend') continue;
+      changeStanding(this.society, tie.to, { rapport: -Math.round(rules.dumped.kin * (society.closeness[tie.kind] ?? 0)) }, society, timeScale, now);
+      touched.push(tie.to);
+    }
+    this.noteFeedback(person, before, now, lines.notes.dumped, speaker.vars);
+    this.events.emit('societyChanged', { people: touched });
+    return true;
+  }
+
+  /** Whether the one the player is seeing ends it now: the spark gone, or the player caught flirting once too often. Says so if they do. */
+  private theyEndIt(person: Person, speaker: Speaker, rng: Rng, now: number): boolean {
+    const { society, timeScale, lines } = this.rules;
+    const rules = society.romance;
+    const standing = standingOf(this.society, person.id, society, timeScale, now);
+    const cheated = memoryOf(this.society, person.id, 'cheated', society.memory, timeScale, now);
+    const caught = Boolean(cheated && cheated.times >= rules.cheats);
+    const fizzled = (standing.spark ?? 0) < rules.endAt;
+    if (!caught && !fizzled) return false;
+    const before = this.snapshot(person, now);
+    const other = caught && cheated?.about ? this.person(cheated.about) : undefined;
+    const vars = { ...speaker.vars, fizzled: caught ? '' : 'yes', caught: caught ? 'yes' : '', other: other?.given ?? '' };
+    this.speech(person, compose(lines.romance.theyEnd, { ...speaker, vars }, lines, rng, { opener: false }), now);
+    this.society.romance = null;
+    changeStanding(this.society, person.id, { met: true, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
+    this.say(`${person.given} ended it.`, 'system');
+    this.noteFeedback(person, before, now, lines.notes.ended, vars);
+    this.events.emit('societyChanged', { people: [person.id] });
+    return true;
+  }
+
+  /** The one the player is seeing, here, seeing them flirt with someone else: it stings, and they remember. */
+  private jealous(other: Person, now: number): void {
+    const romance = this.society.romance;
+    const partner = romance && romance.with !== other.id ? this.isHere(romance.with, now) : undefined;
+    if (!partner) return;
+    const { society, timeScale, lines } = this.rules;
+    const rules = society.romance;
+    const before = this.snapshot(partner.person, now);
+    const speaker = this.speakerFor(partner.person, partner.stance, partner.doing, now);
+    speaker.vars = { ...speaker.vars, other: other.given };
+    const rng = createRng(`${this.world.seed}:${partner.person.id}:jealous:${now}`);
+    this.narrate(partner.person, line(lines.romance.jealous, speaker, rng), now, 'error');
+    changeStanding(this.society, partner.person.id, { spark: -rules.jealous.spark, rapport: -rules.jealous.rapport, grudge: rules.jealous.grudge }, society, timeScale, now);
+    this.remember(partner.person.id, { kind: 'cheated', at: now, about: other.id }, now);
+    this.noteFeedback(partner.person, before, now, lines.notes.jealous, speaker.vars);
+  }
+
   // ───────────── The people's own days ─────────────
 
   /** The people's own days so far, for saving. */
@@ -1180,8 +1490,17 @@ export class Game {
   private live(now: number): void {
     const today = this.clockAt(now).day;
     if (this.life.day >= today) return;
-    const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed, (spot) => this.tierOfSpot(spot), turfFrom(this.rules.people.turf), this.rules.people);
-    if (happened.length) this.events.emit('societyChanged', { people: [] });
+    // Whoever the player is seeing is no one else's to fall for.
+    const spokenFor = new Set(this.society.romance ? [this.society.romance.with] : []);
+    const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed, (spot) => this.tierOfSpot(spot), turfFrom(this.rules.people.turf), this.rules.people, spokenFor);
+    // Seeing someone who has died: word reaches the player, and it's over.
+    const partner = this.society.romance ? this.person(this.society.romance.with) : undefined;
+    if (partner?.diedOn !== undefined) {
+      this.society.romance = null;
+      learnFact(this.society, partner.id, 'dead');
+      this.say(`Word reaches you: ${partner.given} is dead.`, 'error');
+    }
+    if (happened.length || partner?.diedOn !== undefined) this.events.emit('societyChanged', { people: partner ? [partner.id] : [] });
   }
 
   /** The tier a place runs at, for what an evening there costs, remembered per place. */
@@ -1273,6 +1592,7 @@ export class Game {
       memItem: dish?.name ?? '',
       memFavorite: dish && (dish.id === person.likes.dish || dish.id === person.likes.drink) ? 'yes' : '',
       memTitle: memory.kind === 'promoted' || memory.kind === 'quit' ? (memory.what ?? '') : '',
+      memPlace: memory.kind === 'date' ? (memory.what ?? '') : '',
     };
   }
 
@@ -1284,7 +1604,7 @@ export class Game {
   /** Where the player stands with someone right now, for telling them after an exchange what it did. */
   private snapshot(person: Person, now: number): Snapshot {
     const s = standingOf(this.society, person.id, this.rules.society, this.rules.timeScale, now);
-    return { rapport: s.rapport, grudge: s.grudge, stance: this.stanceOf(person, now), level: this.charismaState.level, xp: this.charismaState.xp };
+    return { rapport: s.rapport, grudge: s.grudge, spark: s.spark ?? 0, stance: this.stanceOf(person, now), level: this.charismaState.level, xp: this.charismaState.xp };
   }
 
   /** How many questions in a row this one makes, and how many of those are past the free ones. */
@@ -1305,17 +1625,19 @@ export class Game {
     const after = this.snapshot(person, now);
     const rapport = Math.round(after.rapport - before.rapport);
     const grudge = Math.round(after.grudge - before.grudge);
+    const spark = Math.round(after.spark - before.spark);
     const rank: Record<Stance, number> = { hostile: 0, cold: 1, wary: 2, neutral: 3, warm: 4, friend: 5 };
     const parts: string[] = [];
     if (why) parts.push(finish(why, { ...pronounsOf(person), given: person.given, ...vars }));
     if (rapport) parts.push(`Rapport ${rapport > 0 ? '+' : '−'}${Math.abs(rapport)}`);
     if (grudge > 0) parts.push(`Grudge +${grudge}`);
+    if (spark) parts.push(`♥ ${spark > 0 ? '+' : '−'}${Math.abs(spark)}`);
     if (after.level > before.level) parts.push(`Charisma Lv ${after.level}`);
     else if (after.xp > before.xp) parts.push(`Charisma +${after.xp - before.xp} XP`);
     if (after.stance !== before.stance) parts.push(`${STANCE_LABEL[before.stance]} → ${STANCE_LABEL[after.stance]}`);
     if (!parts.length) return;
-    const worse = rapport < 0 || grudge > 0 || rank[after.stance] < rank[before.stance];
-    const better = !worse && (rapport > 0 || rank[after.stance] > rank[before.stance]);
+    const worse = rapport < 0 || grudge > 0 || spark < 0 || rank[after.stance] < rank[before.stance];
+    const better = !worse && (rapport > 0 || spark > 0 || rank[after.stance] > rank[before.stance]);
     this.logged(person.id, 'note', parts.join(' · '), now, better ? 'good' : worse ? 'bad' : 'even');
   }
 
@@ -1401,11 +1723,24 @@ export class Game {
     if (k.facts.includes('nature')) facts.nature = person.bio.split('. ').slice(1, 2).join('').replace(/\.$/, '');
     if (k.facts.includes('dead') && person.diedOn !== undefined) facts.dead = `Died ${this.agoWord(this.clockAt(now).day - person.diedOn)}`;
     if (k.facts.includes('dream')) facts.dream = this.rules.lines.dreams[dreamOf(person, this.world, people)];
-    const order: Fact[] = ['dead', 'job', 'age', 'home', 'likes', 'drinks', 'hates', 'dream', 'nature'];
+    if (k.facts.includes('type')) facts.type = this.typeLine(person);
+    const order: Fact[] = ['dead', 'job', 'age', 'home', 'likes', 'drinks', 'hates', 'type', 'dream', 'nature'];
     // Introduced, they go by their street name too, if they have one.
     const handle = handleOf(person, this.world, people);
     const name = handle ? `${person.given} "${handle}" ${person.name.slice(person.given.length + 1)}` : person.name;
-    return { name: named ? name : describeStranger(person, people), named, facts, lines: order.map((f) => facts[f]).filter((line): line is string => Boolean(line)) };
+    // Seeing the player: that first.
+    const romance = this.society.romance?.with === id ? this.society.romance : null;
+    const heart = romance ? `${romance.stage === 'together' ? 'Together with you' : 'Seeing you'} · ${romance.dates} ${romance.dates === 1 ? 'date' : 'dates'}` : '';
+    return { name: named ? name : describeStranger(person, people), named, facts, lines: [heart, ...order.map((f) => facts[f])].filter((line): line is string => Boolean(line)) };
+  }
+
+  /** Someone's type, as the card says it: whom they're drawn to, what wins them over, the look they like. */
+  private typeLine(person: Person): string {
+    const heart = this.heartOf(person);
+    const who = drawnWord(heart.drawnTo);
+    if (!who) return this.rules.lines.romance.notLooking;
+    const style = heart.style ? this.rules.gear.styleLabels[heart.style] : '';
+    return [`Into ${who}`, this.rules.lines.romance.wants[heart.wants], style ? `Likes ${style}` : ''].filter(Boolean).join(' · ');
   }
 
   /** What has passed between the player and a person, oldest first. */
@@ -1508,6 +1843,7 @@ export class Game {
       mask: this.masked()?.word ?? '',
       ...this.meansVars(person),
       ...this.momentVars(person, now),
+      ...this.heartVars(person, standing),
     };
     return { person, voice, mood: moodOf(doing), stance, history: historyOf(standing, timeScale, now), eloquence: eloquenceOf(this.charismaState.level), vars };
   }
@@ -1596,6 +1932,8 @@ export class Game {
       this.events.emit('societyChanged', { people: [id] });
       return true;
     }
+    // Seeing the player, and done with it.
+    if (this.society.romance?.with === id && this.theyEndIt(person, speaker, rng, now)) return true;
     this.speech(person, line(lines.greeting, speaker, rng), now);
     let topic: Topic | null = null;
     const learned = [id];
@@ -1663,7 +2001,14 @@ export class Game {
     // A chat is worth a little, by their warmth (less with the cold), and more or less by how they took the way it started; put off, it's worth nothing but the offense.
     const base = Math.round(society.talk.base * (0.6 + person.traits.warmth * 0.8) * (stance === 'cold' ? 0.4 : 1) * this.charisma().bonus);
     const gain = (how && reaction.score < 0 ? 0 : base) + Math.round(reaction.score * society.reactions.rapport);
-    changeStanding(this.society, id, { met: true, rapport: gain, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
+    // A flirt that lands with someone drawn to the player, and free, sparks something (one that doesn't, puts it out a little); so does the way in they fall for.
+    const free = !speaker.vars.taken || speaker.vars.withYou;
+    const drawn = Boolean(speaker.vars.drawn) && free && !aired;
+    const romance = society.romance;
+    const spark = !drawn ? 0 : approach === 'flirt' ? (reaction.score > 0 ? reaction.score * romance.flirt : -romance.miss) : approach === this.heartOf(person).wants && reaction.score > 0 ? romance.wants : 0;
+    changeStanding(this.society, id, { met: true, rapport: gain, spark, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
+    // Flirting in front of the one the player is seeing.
+    if (approach === 'flirt') this.jealous(person, now);
     // Getting on with someone counts for a little with their people.
     if (person.gang) changeRep(this.society, `gang:${person.gang}`, 1, society, timeScale, now);
     changeRep(this.society, `district:${person.district}`, 0.5, society, timeScale, now);
@@ -1844,7 +2189,9 @@ export class Game {
     this.logged(id, 'you', line(lines.you.gift, speaker, rng), now);
     this.speech(person, compose(favorite ? lines.gift.favorite : lines.gift.thanks, speaker, lines, rng, { opener: false }), now);
     if (favorite) learnFact(this.society, id, dish.id === person.likes.dish ? 'likes' : 'drinks');
-    changeStanding(this.society, id, { met: true, rapport: gain, gifts: standing.gifts + 1, lastGiftAt: now }, society, timeScale, now);
+    // Their favorite, from someone they're drawn to: a spark too.
+    const sparked = favorite && speaker.vars.drawn && (!speaker.vars.taken || speaker.vars.withYou) ? society.romance.gift : 0;
+    changeStanding(this.society, id, { met: true, rapport: gain, spark: sparked, gifts: standing.gifts + 1, lastGiftAt: now }, society, timeScale, now);
     this.remember(id, { kind: 'gift', at: now, what: dish.id }, now);
     // They tell their people: a good word goes round.
     const heard = passGoodWord(this.society, this.population, person, gain, society, timeScale, now);

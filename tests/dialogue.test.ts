@@ -296,7 +296,7 @@ describe('dialogue', () => {
       expect(needs(l).filter((n) => kinds.some((k) => n === `news${k}`)), text(l)).toHaveLength(1);
       expect(needs(l).filter((n) => roles.some((r) => n === `news${r}`)), text(l)).toHaveLength(1);
     }
-    const memories = ['Wronged', 'Heard', 'Saw', 'Settled', 'Gift', 'GoodWord', 'Hired', 'Promoted', 'Quit', 'Fired', 'Chopped', 'Asked'];
+    const memories = ['Wronged', 'Heard', 'Saw', 'Settled', 'Gift', 'GoodWord', 'Hired', 'Promoted', 'Quit', 'Fired', 'Chopped', 'Asked', 'Date', 'Dumped', 'Cheated'];
     for (const l of LINES.memory) expect(needs(l).filter((n) => memories.some((k) => n === `mem${k}`)), text(l)).toHaveLength(1);
   });
 
@@ -358,6 +358,12 @@ describe('dialogue', () => {
           enemyHere: p.hates && rng.chance(0.3) ? 'Valentinos' : '',
           grilled: rng.chance(0.2) ? 'yes' : '',
           ...(rng.chance(0.3) ? (rng.chance(0.5) ? { touchy: 'yes' } : { keen: 'yes' }) : {}),
+          // The heart, as it stands with the player: drawn to them, spoken for, seeing them, sweet on them, their look.
+          drawn: rng.chance(0.6) ? 'yes' : '',
+          ...(rng.chance(0.3) ? { taken: 'Rosa', takenWord: rng.pick(['wife', 'husband', 'girlfriend', 'partner']) } : {}),
+          ...(rng.chance(0.2) ? { withYou: 'yes', together: rng.chance(0.5) ? 'yes' : '' } : {}),
+          sweet: rng.chance(0.3) ? 'yes' : '',
+          yourType: rng.chance(0.2) ? 'yes' : '',
         };
         const speaker: Speaker = {
           person: p,
@@ -396,6 +402,22 @@ describe('dialogue', () => {
           for (const pool of [how.liked, how.flat, how.disliked]) check(compose(pool, speaker, LINES, rng, { opener: false }), `${about} approach ${how.label}`);
           lines += 6;
         }
+        // Romance: every answer to being asked out, a date (their favorite or not), making it official, being dumped, ending it, jealousy.
+        const romance = LINES.romance;
+        for (const pool of [romance.ask.yes, romance.ask.notDrawn, romance.ask.taken, romance.ask.notYet, romance.official.yes, romance.official.notYet, romance.dumped]) {
+          check(compose(pool, { ...speaker, vars: { ...vars, taken: vars.taken || 'Rosa' } }, LINES, rng, { opener: false }), `${about} romance pool`);
+        }
+        check(line(romance.ask.masked, { ...speaker, vars: { ...vars, mask: 'balaclava' } }, rng), `${about} romance masked`);
+        for (const favorite of ['yes', '']) check(compose(romance.date, { ...speaker, vars: { ...vars, item: 'Sake', favorite } }, LINES, rng, { opener: false }), `${about} date ${favorite}`);
+        for (const end of [{ fizzled: 'yes', caught: '', other: '' }, { fizzled: '', caught: 'yes', other: 'Ana' }, { fizzled: '', caught: 'yes', other: '' }]) {
+          check(compose(romance.theyEnd, { ...speaker, vars: { ...vars, ...end } }, LINES, rng, { opener: false }), `${about} they end it ${JSON.stringify(end)}`);
+        }
+        check(line(romance.jealous, { ...speaker, vars: { ...vars, other: 'Ana' } }, rng), `${about} jealous`);
+        for (const eloquence of eloquences) {
+          for (const pool of [LINES.you.askOut, LINES.you.official, LINES.you.endIt]) check(line(pool, { ...speaker, eloquence }, rng), `${about} you romance ${eloquence}`);
+          check(line(LINES.you.date, { ...speaker, eloquence, vars: { ...vars, item: 'Sake' } }, rng), `${about} you date ${eloquence}`);
+        }
+        lines += 25;
         // Asked about someone of theirs, by what they are to them.
         for (const tieFlag of ['tieFamily', 'tieFriend', 'tieCrew', 'tieWork']) {
           check(compose(LINES.ask.knows, { ...speaker, vars: { ...vars, other: 'Ana', otherHe: 'she', otherHim: 'her', word: 'cousin', [tieFlag]: 'yes' } }, LINES, rng), `${about} ask knows ${tieFlag}`);

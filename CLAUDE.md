@@ -228,12 +228,12 @@ it needs no generator bump. The pieces:
   `fits`): each `Reaction` that fits adds its `by` (two rapport a point, 0.4 openness) and the
   strongest says why. `asked` is per question (a stranger put off by being asked where they
   live, a ganger glad to run down rivals); `approach` is per way of starting a chat
-  (`Approach`: chat, compliment, joke, gossip, care; `Game.talk(id, now, approach)`, with
+  (`Approach`: chat, compliment, joke, gossip, care, flirt; `Game.talk(id, now, approach)`, with
   `LINES.approaches` for the player's line and the liked/flat/disliked reply). The
   speaker's `touchy`/`keen` vars let answers show it. A new thing to react to is another list
   there and a pool of lines.
 - After every exchange (`talk`, `ask`, `askFact`, `gift`, `insult`, `rob`, `chop`,
-  `askForWork`, `quit`) `Game`'s private `noteFeedback` writes a `note` on the record (a
+  `askForWork`, `quit`, `askOut`, `date`, `makeOfficial`, `endRomance`) `Game`'s private `noteFeedback` writes a `note` on the record (a
   `LogEntry` with `who: 'note'` and a `tone`): the reasons (`LINES.notes`, a reaction's
   why), rapport and grudge moved, charisma XP or the level, and the stance if it changed,
   from a `snapshot` taken before. Anything new done with a person takes a snapshot first and
@@ -298,12 +298,42 @@ it needs no generator bump. The pieces:
 - Gangs are canon (wiki): keep their turf, looks and rivalries true to it. Names are made
   up in each community's style and must never be a real character's (`tests/people.test.ts`
   checks a few).
+- People have hearts and the player can win one (`src/engine/romance.ts`, numbers in
+  `SOCIETY.romance`). `heartOf(person)` (people.ts, on its own stream, from `PEOPLE.hearts`)
+  is whom they're drawn to by pronouns (none at all for a few; a spouse always), the way in
+  that wins them over (`wants`, one of the chat approaches) and the look they go for (a
+  `Style`, or none); `varsFor` puts it in `typeWho`/`TypeWho`/`typeNone`, `typeWants`,
+  `typeStyle` and `wants<Way>`, and the `type` question asks it (the `type` fact, on the
+  card as `typeLine`). The player's own pronouns are `Game.you` (saved as `you`, set in
+  Settings with `setPronouns`, the `youChanged` event; old saves go by they). `Game`'s
+  private `heartVars` adds to the speaker `drawn` (never for anyone under `adultAt`),
+  `taken`/`takenWord` (their spouse or partner, alive), `withYou`, `together`, `sweet`
+  (`sweetAt` spark) and `yourType` (the style most of the player's clothes are in). How
+  taken someone is with the player is `Standing.spark` (fading by `fadePerDay`, through
+  `changeStanding` like the rest): a flirt that lands with someone drawn to the player and
+  free is `flirt` a point of reaction (one that doesn't costs `miss`), the way in they want
+  `wants`, their favorite as a gift `gift`; the note says `♥ +n`. Who the player is seeing
+  is `SocietyState.romance` (`Romance`: who, `dating` or `together`, since, dates, the last
+  date). `Game.romanceWith(id, now)` is what the card's ♥ offers (`RomanceMove`); `askOut`
+  (a yes takes `drawn`, free, warm or better, `ask.spark` and `ask.rapport`; pressing like any
+  ask), `date` (an evening by `date.from`/`to`, somewhere with a food menu, not at their work,
+  once a clock day, paying for two of their favorite if it's on, else the cheapest drink),
+  `makeOfficial` (`official.dates` and `official.spark`) and `endRomance` (the `dumped`
+  numbers, with their people by closeness). Flirting in front of the one the player is seeing
+  is `jealous` (a `cheated` memory); they end it themselves on the next talk when the spark
+  is under `endAt` or they've caught the player `cheats` times (`LINES.romance.theyEnd`,
+  `fizzled`/`caught`). One at a time: `liveUntil` takes the player's partner as `spokenFor`,
+  so life never pairs them off, and pairs only people drawn to each other; a partner who dies
+  ends it. Lines are `LINES.romance`, `LINES.approaches.flirt`, `LINES.you.askOut`/`date`/
+  `official`/`endIt`, and memory lines for `date`, `dumped` and `cheated`.
 - `src/ui/people.ts` is the overlay (a `MapOverlay` off the panel's **People** action); the
   game decides who is here and what the actions do. A person's card is deliberately spare:
   a header whose facts line unfolds (`factsOpen`) into everything known and their web, in
   the transcript's place; the transcript (your lines after a `›`, theirs bare, the notes
   small and colored by tone); one command row (Talk, which unfolds the ways in, Ask, Give,
-  Chop, Work, `⋯` for the hostile acts, each only when it can be done)
+  Chop, Work, ♥ for the heart's moves, `⋯` for the hostile acts, each only when it can be
+  done; ♥ shows on the card of the one the player is seeing even when they're not here, to
+  end it by message)
   whose choices (`Picker`) unfold only while open; keep new things to do with a person
   behind a command, not as another row, and new things to know behind the facts line. Lines
   a person says use the `talk` tone, which the feed skips while the card is open.
@@ -421,9 +451,9 @@ panel's buttons share their row (`flex: 1`) with one-line labels, so keep subtit
 
 ## Settings
 
-`src/ui/settings.ts` is the settings overlay. It only looks after the save for now: restart
-this city, or erase the save and start a new one, each asking first. New options go in it
-as their own groups.
+`src/ui/settings.ts` is the settings overlay: **You** (the pronouns the player goes by, three
+choices, `onPronouns`), then the save: restart this city, or erase the save and start a new
+one, each asking first. New options go in it as their own groups.
 
 ## Checks before a PR
 

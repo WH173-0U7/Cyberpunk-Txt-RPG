@@ -175,9 +175,11 @@ const settings = new Settings(
     confirmText: $('#settings-confirm-text'),
     confirmYes: $<HTMLButtonElement>('#settings-confirm-yes'),
     confirmNo: $<HTMLButtonElement>('#settings-confirm-no'),
+    pronouns: $('#settings-pronouns'),
   },
   () => showSettings(),
   {
+    onPronouns: (pronouns) => game.setPronouns(pronouns),
     onRestart: () => startOver(game.world.seed, 'Progress reset. This city starts over from the beginning.'),
     onErase: () => {
       saveSlot.clear();
@@ -316,6 +318,17 @@ const people = new People(
       lastActivity = performance.now();
       factsOpen = false;
       game.ask(id, aboutId, Date.now());
+    },
+    onHeart: (id, move) => {
+      lastActivity = performance.now();
+      picker = null;
+      factsOpen = false;
+      const now = Date.now();
+      if (move === 'askOut') game.askOut(id, now);
+      else if (move === 'date') game.date(id, now);
+      else if (move === 'official') game.makeOfficial(id, now);
+      else game.endRomance(now);
+      showPeople();
     },
   },
   reducedMotion,
@@ -860,6 +873,7 @@ function showStatus(now: number): void {
   const drunk = game.inebriation(now);
   const mask = game.masked();
   const armed = game.armed();
+  const heart = game.romance(now);
   const job = game.jobStatus(now);
   const pass = wallet.passUntil > now;
   const refill = energy.nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(energy.nextPointAt - now)}`;
@@ -872,6 +886,7 @@ function showStatus(now: number): void {
     { label: 'Charisma', value: `Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP` },
     { label: 'Eddies', value: `€$ ${wallet.eddies} on you${wallet.account ? ` · €$ ${wallet.account} banked` : ''}${wallet.chips ? ` · €$ ${wallet.chips} on chips` : ''}` },
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
+    { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
     { label: 'Work', value: job ? `${job.rung.title} at ${job.building.name} · ${job.shifts} ${job.shifts === 1 ? 'shift' : 'shifts'}${job.next ? ` · trust ${job.trust}, ${job.next.title.toLowerCase()} at ${job.next.at}` : ' · top of the ladder'} · trade ${game.trade(job.building).health}` : 'No job' },
     ...(condition ? [{ label: 'Condition', value: condition, tone: 'warn' as const }] : []),
     ...(mask ? [{ label: 'Mask', value: `${mask.name} · nobody knows your face`, tone: 'warn' as const }] : []),
@@ -963,7 +978,9 @@ function showPeople(): void {
             // A hot chip can be put to a netrunner the player can tell is one; the label says what it holds and what they'd keep.
             chops: present && game.canChop(shown.id) ? hot.map((c) => ({ id: c.id, label: `€$ ${c.balance ?? 0} chip · cut ${chipCut(c.balance ?? 0, MONEY)}` })) : [],
             work: present ? game.workWith(shown.id) : null,
-            approaches: [{ id: 'chat', label: 'Chat' }, ...Object.entries(LINES.approaches).map(([id, a]) => ({ id, label: a.label }))],
+            heart: game.romanceWith(shown.id, now),
+            // Chat first, a flirt last.
+            approaches: [{ id: 'chat', label: 'Chat' }, ...Object.entries(LINES.approaches).sort(([a], [b]) => Number(a === 'flirt') - Number(b === 'flirt')).map(([id, a]) => ({ id, label: a.label }))],
             log: game.conversation(shown.id).map((line) => ({ who: line.who, text: line.text, ...(line.tone ? { tone: line.tone } : {}) })),
           }
         : null,
@@ -1003,6 +1020,7 @@ function showSettings(): void {
     // A no-break space keeps the eddies sign with its number.
     progress: `Right now you've mapped ${mapped} of ${places} places and have €$\u00a0${game.wallet.eddies} on you${game.wallet.account ? ` and €$\u00a0${game.wallet.account} in the bank` : ''}.`,
     build: `${__CHANNEL__ === 'beta' ? 'Beta' : 'Stable'} build ${__BUILD__}${__CHANNEL__ === 'beta' ? ' · its own save, apart from the stable game' : ''}`,
+    pronouns: game.pronouns,
   });
 }
 
@@ -1133,6 +1151,11 @@ function wire(g: Game): void {
 
   g.events.on('charismaChanged', () => {
     if (people.overlay.isOpen) showPeople();
+    queueSave();
+  });
+
+  g.events.on('youChanged', () => {
+    if (settings.overlay.isOpen) showSettings();
     queueSave();
   });
 

@@ -9,7 +9,7 @@ import { healthOf, staffCostOf, turfFrom, weekdayOf } from '../src/engine/econom
 import { bossOf } from '../src/engine/jobs';
 import { drawQuality, menuFor, type Quality } from '../src/engine/food';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, tieKey, type LifeEvent } from '../src/engine/life';
-import { generatePeople, INVERSE, tiesOf, whereIs, type Person, type Population, type Spot } from '../src/engine/people';
+import { drawnTo, generatePeople, heartOf, INVERSE, tiesOf, whereIs, type Person, type Population, type Spot } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 
@@ -28,17 +28,32 @@ function tierIn(world: World): (spot: Spot) => Quality {
 }
 const turf = turfFrom(PEOPLE.turf);
 
-function lived(seed: string, days: number, from = T) {
+function lived(seed: string, days: number, from = T, spokenFor: ReadonlySet<string> = new Set()) {
   const world = generateWorld(seed, CITY);
   const population = generatePeople(world, PEOPLE, FOOD.dishes);
   const base = new Map(population.people.map((p) => [p.id, p.eddies]));
   const state = freshLife();
   const events: LifeEvent[] = [];
-  for (let day = from; day < from + days; day++) events.push(...liveUntil(world, population, state, LIFE, base, day, seed, tierIn(world), turf, PEOPLE));
+  for (let day = from; day < from + days; day++) events.push(...liveUntil(world, population, state, LIFE, base, day, seed, tierIn(world), turf, PEOPLE, spokenFor));
   return { world, population, base, state, events };
 }
 
 describe("the people's own days", () => {
+  it('bring together only people drawn to each other, and never anyone the player is seeing', () => {
+    // Everyone in the first few districts is spoken for, as if the player were seeing them.
+    const world = generateWorld(seeds[0] as string, CITY);
+    const taken = new Set(generatePeople(world, PEOPLE, FOOD.dishes).people.filter((p) => p.district === Object.keys(world.districts)[0]).map((p) => p.id));
+    const { population, events } = lived(seeds[0] as string, 120, T, taken);
+    const romances = events.filter((e) => e.kind === 'romance');
+    expect(romances.length).toBeGreaterThan(0);
+    for (const e of romances) {
+      const [a, b] = e.who.map((id) => population.people.find((p) => p.id === id) as Person);
+      expect(drawnTo(heartOf(a as Person, world, PEOPLE, population), (b as Person).pronouns), `${a?.name} → ${b?.name}`).toBe(true);
+      expect(drawnTo(heartOf(b as Person, world, PEOPLE, population), (a as Person).pronouns), `${b?.name} → ${a?.name}`).toBe(true);
+      for (const id of e.who) expect(taken.has(id), id).toBe(false);
+    }
+  });
+
   it('are the same days every time for a seed, and come back onto a fresh population exactly', () => {
     const a = lived('7f3a29c1', 40);
     const b = lived('7f3a29c1', 40);

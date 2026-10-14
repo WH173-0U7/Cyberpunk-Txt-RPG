@@ -2157,6 +2157,17 @@ button {
 .person-chip.is-danger:focus-visible {
   background: color-mix(in srgb, var(--danger) 26%, transparent);
 }
+/* The heart's moves: warm, and apart from the danger red */
+.person-chip.is-heart {
+  --heart: #ff6fae;
+  border-color: color-mix(in srgb, var(--heart) 70%, transparent);
+  background: color-mix(in srgb, var(--heart) 10%, transparent);
+  color: color-mix(in srgb, var(--heart) 60%, #fff);
+}
+.person-chip.is-heart:hover,
+.person-chip.is-heart:focus-visible {
+  background: color-mix(in srgb, var(--heart) 24%, transparent);
+}
 /* The commands, like a prompt line */
 .person-commands {
   display: flex;
@@ -2312,10 +2323,43 @@ button {
   text-transform: none;
 }
 
-/* Settings: for now, looking after the save */
+/* Settings: who you are, and looking after the save */
 .settings-group {
   display: grid;
   gap: 10px;
+}
+.settings-group + .settings-group {
+  margin-top: 18px;
+}
+/* One of a few, picked: the one that's on is lit */
+.settings-choices {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.settings-choice {
+  min-height: 40px;
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.settings-choice:hover,
+.settings-choice:focus-visible {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.settings-choice[aria-pressed='true'] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+  color: #fff;
+  text-shadow: 0 0 8px var(--primary);
 }
 .settings-label {
   margin: 0;
