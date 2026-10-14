@@ -23,8 +23,8 @@ describe('carrying things', () => {
     expect(stackSlots(taco(1), 1, GEAR)).toBe(1);
     expect(stackSlots(taco(2), 2, GEAR)).toBe(1);
     expect(stackSlots(taco(3), 3, GEAR)).toBe(2);
-    expect(stackSlots({ kind: 'shard' }, 10, GEAR)).toBe(1);
-    expect(stackSlots({ kind: 'weapon' }, 2, GEAR)).toBe(2);
+    expect(stackSlots({ id: 'shard-1', kind: 'shard' }, 10, GEAR)).toBe(1);
+    expect(stackSlots({ id: 'knife-1', kind: 'weapon' }, 2, GEAR)).toBe(2);
   });
 
   it('counts the wallet as a slot of the pants, the bills in it as weight, and the coins as a slot and weight of their own', () => {

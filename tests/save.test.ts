@@ -80,17 +80,20 @@ describe('saving', () => {
     const chip = { id: 'credchip-1', kind: 'credchip', name: 'CredChip', count: 1, in: 'wallet', balance: 120, locked: true };
     // Clothing carried says which garment it is.
     const coat = { id: 'worn-punk-coat', kind: 'clothing', name: 'Worn PUNK coat', count: 1, gear: 'worn-punk-coat', in: 'jacket' };
-    const saved = { ...saveOf(game, now), items: [shard, { id: 'x', kind: 'spaceship', name: 'Nope', count: 1 }, { ...shard, count: 0 }, 'junk', chip, { ...chip, id: 'credchip-2', balance: -5 }, { ...chip, id: 'credchip-3', locked: 'yes' }, coat, { ...coat, gear: 7 }] };
+    // A gun says which it is and how many rounds are in it; loose rounds are a stack like anything else.
+    const gun = { id: 'lexington-1', kind: 'weapon', name: 'M-10AF Lexington', count: 1, weapon: 'lexington', loaded: 12, in: 'jacket' };
+    const rounds = { id: 'handgun-ammo', kind: 'ammo', name: 'Handgun Ammo', count: 38, in: 'jacket' };
+    const saved = { ...saveOf(game, now), items: [shard, { id: 'x', kind: 'spaceship', name: 'Nope', count: 1 }, { ...shard, count: 0 }, 'junk', chip, { ...chip, id: 'credchip-2', balance: -5 }, { ...chip, id: 'credchip-3', locked: 'yes' }, coat, { ...coat, gear: 7 }, gun, { ...gun, id: 'lexington-2', loaded: -1 }, { ...gun, id: 'lexington-3', loaded: 1.5 }, { ...gun, id: 'lexington-4', weapon: 3 }, rounds] };
     const read = readSave(JSON.parse(JSON.stringify(saved)));
-    expect(read?.items).toEqual([shard, chip, coat]);
+    expect(read?.items).toEqual([shard, chip, coat, gun, rounds]);
     const { items: _, ...old } = saveOf(game, now);
     expect(readSave(JSON.parse(JSON.stringify(old)))?.items).toEqual([]);
 
     const progress = read && resume(world, read);
     if (!progress) throw new Error('no progress');
     const resumed = new Game(world, rules, progress);
-    // The shard said no pocket: it's put away in the jacket. The chip stays in the wallet, the coat where it was.
-    expect(resumed.inventory).toEqual([{ ...shard, in: 'jacket' }, chip, coat]);
+    // The shard said no pocket: it's put away where there's room, the pants (the gun and its rounds fill the jacket). The chip stays in the wallet, the rest where they were.
+    expect(resumed.inventory).toEqual([{ ...shard, in: 'pants' }, chip, coat, gun, rounds]);
     expect(read?.gear).toEqual(GEAR.start);
     // A save from before pockets has none: the player wears the usual.
     const { items: _i, gear: _g, ...older } = saveOf(game, now);

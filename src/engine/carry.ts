@@ -1,6 +1,7 @@
 import type { Dish, Quality } from './food';
 import type { Money } from './money';
 import type { Item, ItemKind } from './types';
+import { type ArmsContent, isLong, weaponGrams, weaponOf } from './weapons';
 
 /** Where a garment is worn, after the wiki's 2077 clothing slots. */
 export type Slot = 'head' | 'face' | 'outer' | 'inner' | 'legs' | 'feet';
@@ -46,6 +47,10 @@ export interface PocketKind {
   note?: string;
   /** For a garment that hides the face (a gas mask, a ballistic mask, a balaclava, a menpō): the word for it. Glasses and goggles don't. */
   mask?: string;
+  /** For a bag: it takes something long, a rifle or a katana, which no pocket of a garment does. */
+  long?: boolean;
+  /** The only kinds of thing it takes, for a holster or a gun case. */
+  only?: ItemKind[];
 }
 
 /** A pocket the player has: which kind it is, and where it sits (worn, or in another pocket). */
@@ -62,6 +67,8 @@ export interface GearContent {
   gramsPerCoin: number;
   /** What a thing of each kind weighs and how many share a slot, unless the thing says otherwise. */
   items: Record<ItemKind, { grams: number; perSlot: number }>;
+  /** Weapons and ammo: what each weighs, how many rounds share a slot, which are too long for a pocket (src/data/weapons.ts). */
+  arms: ArmsContent;
   /** Grams by kind of dish, unless the dish says its own. */
   dish: Record<Dish['kind'], number>;
   kinds: Record<string, PocketKind>;
@@ -111,8 +118,8 @@ export interface PocketLoad extends PocketState {
   over: boolean;
 }
 
-/** What one of something weighs, in grams: a dish its own, a garment what it weighs on you, anything else by its kind. */
-export function itemGrams(item: Pick<Item, 'id' | 'kind' | 'gear'>, gear: GearContent, dishes: Dish[]): number {
+/** What one of something weighs, in grams: a dish its own, a garment what it weighs on you, a gun with the rounds in it, a round of ammo by its kind, anything else by its kind. */
+export function itemGrams(item: Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | 'loaded'>, gear: GearContent, dishes: Dish[]): number {
   if (item.kind === 'consumable') {
     const dish = dishes.find((d) => d.id === item.id);
     if (dish) return dish.grams ?? gear.dish[dish.kind];
@@ -120,6 +127,17 @@ export function itemGrams(item: Pick<Item, 'id' | 'kind' | 'gear'>, gear: GearCo
   if (item.kind === 'clothing') {
     const kind = gear.kinds[item.gear ?? item.id];
     if (kind) return kind.grams;
+  }
+  if (item.kind === 'weapon') {
+    const weapon = weaponOf(item, gear.arms);
+    if (weapon) {
+      const ammo = gear.arms.ammo[gear.arms.classes[weapon.class]?.ammo ?? ''];
+      return weaponGrams(weapon, gear.arms) + (item.loaded ?? 0) * (ammo?.grams ?? 0);
+    }
+  }
+  if (item.kind === 'ammo') {
+    const ammo = gear.arms.ammo[item.id];
+    if (ammo) return ammo.grams;
   }
   return gear.items[item.kind]?.grams ?? 250;
 }
@@ -137,9 +155,10 @@ export function outfit(pockets: PocketState[], gear: GearContent): { worn: Parti
   return { worn, bags };
 }
 
-/** How many slots a stack of `count` of something takes. */
-export function stackSlots(item: Pick<Item, 'kind'>, count: number, gear: GearContent): number {
-  const perSlot = Math.max(1, gear.items[item.kind]?.perSlot ?? 1);
+/** How many slots a stack of `count` of something takes: so many rounds of ammo to a slot by their kind, anything else by its kind. */
+export function stackSlots(item: Pick<Item, 'id' | 'kind'>, count: number, gear: GearContent): number {
+  const ammo = item.kind === 'ammo' ? gear.arms.ammo[item.id] : undefined;
+  const perSlot = Math.max(1, ammo?.perSlot ?? gear.items[item.kind]?.perSlot ?? 1);
   return Math.ceil(Math.max(0, count) / perSlot);
 }
 
@@ -175,11 +194,13 @@ export function loadOf(pocket: PocketState, pockets: PocketState[], items: Item[
   return { slots, grams: Math.round(grams) };
 }
 
-/** Whether `count` more of something fit in a pocket, joining a stack of it already there if there is one. A wallet takes credchips in its card slots, and nothing else. */
-export function fits(pocket: PocketState, pockets: PocketState[], items: Item[], money: Cash, item: Pick<Item, 'id' | 'kind' | 'gear'>, count: number, gear: GearContent, dishes: Dish[]): boolean {
+/** Whether `count` more of something fit in a pocket, joining a stack of it already there if there is one. A wallet takes credchips in its card slots, and nothing else; a holster takes only what it's for; something long goes only in a bag that takes it. */
+export function fits(pocket: PocketState, pockets: PocketState[], items: Item[], money: Cash, item: Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | 'loaded'>, count: number, gear: GearContent, dishes: Dish[]): boolean {
   const kind = kindOf(pocket, gear);
   if (kind.holds !== undefined) return item.kind === 'credchip' && chipsIn(pocket, items) + count <= (kind.chips ?? 0);
   if (kind.slots <= 0) return false;
+  if (kind.only && !kind.only.includes(item.kind)) return false;
+  if (!kind.long && isLong(item, gear.arms)) return false;
   const load = loadOf(pocket, pockets, items, money, gear, dishes);
   const stack = items.find((i) => i.id === item.id && i.in === pocket.id);
   const slotsAfter = load.slots - (stack ? stackSlots(item, stack.count, gear) : 0) + stackSlots(item, (stack?.count ?? 0) + count, gear);
@@ -188,7 +209,7 @@ export function fits(pocket: PocketState, pockets: PocketState[], items: Item[],
 }
 
 /** The pocket to put `count` of something in: the wallet for a credchip while it has a card slot free; else one already holding some of it if that has room, else the first with room. Null when nothing fits. */
-export function placeFor(pockets: PocketState[], items: Item[], money: Cash, item: Pick<Item, 'id' | 'kind' | 'gear'>, count: number, gear: GearContent, dishes: Dish[]): string | null {
+export function placeFor(pockets: PocketState[], items: Item[], money: Cash, item: Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | 'loaded'>, count: number, gear: GearContent, dishes: Dish[]): string | null {
   const roomy = pockets.filter((p) => fits(p, pockets, items, money, item, count, gear, dishes));
   const wallet = item.kind === 'credchip' ? roomy.find((p) => kindOf(p, gear).holds !== undefined) : undefined;
   const same = roomy.find((p) => items.some((i) => i.id === item.id && i.in === p.id));

@@ -50,6 +50,15 @@ function check(game: Game, about: string): void {
     expect(item.in && ids.has(item.in), `${about}: ${item.id} is in ${item.in}, which there is no such pocket as`).toBe(true);
     if (item.kind === 'credchip') expect(item.balance ?? -1, `${about}: ${item.id} balance`).toBeGreaterThanOrEqual(0);
     if (item.kind === 'clothing') expect(item.gear && GEAR.kinds[item.gear], `${about}: ${item.id} gear`).toBeTruthy();
+    // A weapon is one it says, its magazine never past full; something long only in a bag that takes it; rounds of a kind there is.
+    if (item.kind === 'weapon') {
+      const weapon = GEAR.arms.weapons[item.weapon ?? ''];
+      expect(weapon, `${about}: ${item.id} weapon`).toBeTruthy();
+      expect(item.count, `${about}: ${item.id} is one`).toBe(1);
+      expect(item.loaded ?? 0, `${about}: ${item.id} loaded`).toBeLessThanOrEqual(weapon?.magazine ?? 0);
+      if (weapon && GEAR.arms.classes[weapon.class]?.long) expect(GEAR.kinds[pockets.find((p) => p.id === item.in)?.kind ?? '']?.long, `${about}: ${item.id} in ${item.in}`).toBe(true);
+    }
+    if (item.kind === 'ammo') expect(GEAR.arms.ammo[item.id], `${about}: ${item.id} ammo`).toBeTruthy();
   }
   for (const p of pockets) expect(p.in === null || ids.has(p.in), `${about}: pocket ${p.id} is in ${p.in}`).toBe(true);
   // One garment per slot, always dressed in the four a new player gets, the wallet somewhere with slots.
@@ -94,7 +103,7 @@ describe('playing badly', () => {
     for (const seed of seeds) {
       const world = generateWorld(seed, CITY);
       const rng = createRng(`fuzz:${seed}`);
-      const stores = world.buildings.filter((b) => b.business && ['food', 'clothing', 'commodity', 'services'].includes(b.category));
+      const stores = world.buildings.filter((b) => b.business && ['food', 'clothing', 'commodity', 'services', 'firearms', 'melee'].includes(b.category));
       let progress: Progress = {
         where: { ...streetSpot(world.locations[world.start] ?? { x: 50, y: 50 }), place: world.start },
         visited: [world.start],
@@ -135,9 +144,13 @@ describe('playing badly', () => {
           } else if (roll < 0.5) {
             const worn = game.gearSaved.filter((p) => p.in === null);
             game.takeOff(rng.pick(worn)!.id);
-          } else if (roll < 0.58) {
+          } else if (roll < 0.55) {
             const carried = game.inventory;
             if (carried.length) game.drop(rng.pick(carried)!.id);
+          } else if (roll < 0.58) {
+            const guns = game.inventory.filter((i) => i.kind === 'weapon');
+            const gun = guns.length ? rng.pick(guns)! : null;
+            if (gun) rng.chance(0.7) ? game.load(gun.id) : game.unload(gun.id);
           } else if (roll < 0.66) {
             const food = game.inventory.filter((i) => i.kind === 'consumable');
             if (food.length) game.consume(rng.pick(food)!.id, now);

@@ -206,7 +206,8 @@ own.
   the card.
 - **Crossing people**: **Insult** someone and they hold it against you (a temper shoves you
   into the wall, which costs energy); **Rob** them and you take a share of their eddies, and
-  their credchip if they carry one (locked to them: see **Eddies**). Every
+  their credchip if they carry one (locked to them: see **Eddies**); a weapon on you makes
+  them likelier to hand it over (see **Weapons and ammo**). Every
   such thing spreads: the victim holds a grudge, so do their spouse, parents, children,
   siblings, cousins, friends, crew and coworkers (by how close they are and how loyal), and
   their people a little; anyone who saw it talks. The victim's gang thinks less of you (its
@@ -309,6 +310,25 @@ own.
   pocket with room for it, or the counter says so: eat something, or **Drop** it. General
   stores, thrift shops and clothing stores sell bags (**Shop** on the panel): a belt pouch,
   a messenger bag, a duffel bag, a backpack, each more slots and kilos.
+- **Weapons and ammo**: gun shops, gunsmiths, ammo shops and blade shops have a **Shop**
+  too. Every weapon is a real 2077 one from the wiki, with its maker, its class and how many
+  rounds its magazine takes: the Militech M-10AF Lexington, the Budget Arms Carnage, the
+  Arasaka HJKE-11 Yukimura, the Kang Tao G-58 Dian, the Rostović DB-2 Satara, a katana, a
+  baseball bat. Each store stocks a handful at its tier, always the same handful: the cheap
+  ones sell Budget Arms, Rostović and secondhand Militech; the luxury ones Arasaka, Kang Tao
+  and Tsunami smart guns; a gunsmith reaches a tier above its own. Ammo is the wiki's four
+  kinds (Handgun Ammo for pistols, revolvers and SMGs; Shotgun Ammo; Heavy Ammo for rifles
+  and LMGs; Sniper Ammo), sold by the box and carried loose by the round, so many to a slot
+  and so many grams each: fifty handgun rounds are a slot and 600 g, twenty-five shells a
+  kilo. A gun is sold empty: **Load** in the inventory fills its magazine from the rounds on
+  you (they weigh the same in the gun), **Unload** takes them back out. The Slaught-O-Matic
+  comes loaded and sealed, and can't be reloaded. A pistol or a knife goes in a pocket; a
+  rifle, a shotgun, a katana or a bat is too long for one, and wants a bag that takes it (a
+  messenger bag, a backpack, a duffel) or the gun shop's **gun case**; an LMG is too heavy
+  for anything but a duffel or the case. A **holster** carries one handgun or knife off your
+  pockets. What you'd pull on someone is in the status drop-down (**Armed**): a loaded gun
+  before an empty one (nobody can tell), any gun before a blade. Rob someone with a gun and
+  few will fight back; with a blade, more; with bare hands, the brave ones.
 - **Clothes**: you're dressed head to toe but the head, in the wiki's six slots (head, face,
   outer torso, inner torso, legs, feet), and every garment is a real piece of 2077 clothing
   from the wiki in one of its four styles (Entropism, Kitsch, Neomilitarism, Neokitsch),
@@ -420,14 +440,16 @@ effects layer decides how that should look:
 src/
   engine/   Game rules and state: the city generator, the NCART network, street routes,
             trip planning on the real clock, the wallet and pass, energy (energy.ts),
-            menus (food.ts), drink (inebriation.ts), the people (people.ts: who lives
+            menus (food.ts), weapons and what stores stock them (weapons.ts), drink
+            (inebriation.ts), the people (people.ts: who lives
             here and where they are), what they think of the player and what comes of it
             (society.ts, which also keeps what the player knows of people and of who knows
             whom), what they say (dialogue.ts), skills that grow with use (skills.ts),
             discovery, ambient chatter, the save format. No DOM, fully unit-tested.
   data/     The content the generator builds cities from (city.ts), travel times and
             prices (travel.ts), energy's numbers (energy.ts), the kinds of item the
-            inventory sorts by (items.ts), what there is to eat (food.ts), the stages
+            inventory sorts by (items.ts), what there is to eat (food.ts), the guns,
+            blades and ammo (weapons.ts), the stages
             of being drunk (inebriation.ts), the people's names, gangs, jobs and lines
             (people.ts), how grudges and reputations work (society.ts) and charisma's
             numbers (skills.ts).

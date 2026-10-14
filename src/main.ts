@@ -30,6 +30,8 @@ import { ScreenFx } from './fx/screen';
 import { applyTheme, resolveTheme } from './fx/theme';
 import { WeatherFx } from './fx/weather';
 import { ITEM_KINDS } from './data/items';
+import { ARMS, ARMS_BLURBS } from './data/weapons';
+import { isGun, weaponDetail, weaponOf } from './engine/weapons';
 import { formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
 import { Hud, WEATHER_LABEL } from './ui/hud';
 import { EnergyMeter } from './ui/energy';
@@ -146,7 +148,7 @@ const inventory = new Inventory(
       inventoryPath.pop();
       showInventory();
     },
-    onUse: (id) => consume(id),
+    onUse: (id) => use(id),
     onDrop: (id) => drop(id),
     onWear: (id) => wear(id),
     onTakeOff: (id) => {
@@ -621,7 +623,17 @@ function menuAction(menu: Menu): PanelAction {
 
 /** What the panel says about the place's menu or rack. */
 function menuBlurb(menu: Menu): string {
-  if (menu.kind === 'gear') return menu.items.some((i) => i.kind === 'clothing') ? GEAR.blurbs[menu.venue.quality] : GEAR.blurbs.bags;
+  if (menu.kind === 'gear') {
+    const weapons = menu.items.filter((i) => i.kind === 'weapon');
+    const guns = weapons.filter((i) => {
+      const weapon = ARMS.weapons[i.id];
+      return weapon ? isGun(weapon, ARMS) : false;
+    });
+    if (guns.length) return ARMS_BLURBS[menu.venue.quality];
+    if (weapons.length) return ARMS_BLURBS.blades;
+    if (menu.items.some((i) => i.kind === 'ammo')) return ARMS_BLURBS.ammo;
+    return menu.items.some((i) => i.kind === 'clothing') ? GEAR.blurbs[menu.venue.quality] : GEAR.blurbs.bags;
+  }
   return FOOD.blurbs[menu.venue.chain ? 'chain' : menu.venue.quality];
 }
 
@@ -717,7 +729,7 @@ function showInventory(): void {
     use: useLabel(item),
     wear: item.kind === 'clothing' && Boolean(item.gear),
     weight: formatGrams(item.count * itemGrams(item, GEAR, FOOD.dishes)),
-    detail: item.kind === 'credchip' ? `€$ ${item.balance ?? 0}${item.locked ? ' · locked' : ''}` : item.kind === 'clothing' && item.gear ? [tier(GEAR.kinds[item.gear]), GEAR.kinds[item.gear]?.mask ? 'Hides your face' : ''].filter(Boolean).join(' · ') || undefined : undefined,
+    detail: itemDetail(item, tier),
   });
   // What a new player comes dressed in stays on (it gets swapped); anything else worn, a hat or face wear, can come off.
   const required = new Set(GEAR.start.map((p) => GEAR.kinds[p.kind]?.slot));
@@ -772,7 +784,8 @@ function showInventory(): void {
   }
   inventory.render({
     weight: formatGrams(grams),
-    count: items.reduce((n, item) => n + item.count, 0),
+    // Loose rounds are one thing, however many.
+    count: items.reduce((n, item) => n + (item.kind === 'ammo' ? 1 : item.count), 0),
     page,
   });
 }
@@ -784,14 +797,37 @@ function formatGrams(grams: number, kilos = false): string {
 }
 
 /** What using an item is called: food is eaten, the rest drunk. Nothing else can be used yet. */
+/** A word on something carried: a credchip's balance and lock, a garment's brand and style, a weapon's class and magazine, what a round is for. */
+function itemDetail(item: Item, tier: (p: { brand?: string; style?: PocketLoad['style']; quality?: Quality } | undefined) => string): string | undefined {
+  if (item.kind === 'credchip') return `€$ ${item.balance ?? 0}${item.locked ? ' · locked' : ''}`;
+  if (item.kind === 'clothing' && item.gear) return [tier(GEAR.kinds[item.gear]), GEAR.kinds[item.gear]?.mask ? 'Hides your face' : ''].filter(Boolean).join(' · ') || undefined;
+  const weapon = weaponOf(item, ARMS);
+  // A gun by its class and what's in it (the maker is on the rack); a blade by its class and maker.
+  if (weapon && isGun(weapon, ARMS)) return [ARMS.classes[weapon.class]?.label, `${item.loaded ?? 0}/${weapon.magazine ?? 0}`, weapon.disposable ? 'sealed' : ''].filter(Boolean).join(' · ');
+  if (weapon) return weaponDetail(weapon, ARMS);
+  if (item.kind === 'ammo') return ARMS.ammo[item.id]?.for;
+  return undefined;
+}
+
+/** What can be done with something from the inventory: eat a dish, drink a drink, load a gun or unload it. */
 function useLabel(item: Item): string | undefined {
+  if (item.kind === 'weapon') {
+    const can = game.canLoad(item.id);
+    return can.load ? 'Load' : can.unload ? 'Unload' : undefined;
+  }
   const dish = item.kind === 'consumable' ? FOOD.dishes.find((d) => d.id === item.id) : undefined;
   return dish ? (dish.kind === 'food' ? 'Eat' : 'Drink') : undefined;
 }
 
-/** Eats or drinks something from the inventory. */
-function consume(id: string): void {
+/** Uses something from the inventory: eats or drinks it, or loads or unloads a gun. */
+function use(id: string): void {
   lastActivity = performance.now();
+  const item = game.inventory.find((i) => i.id === id);
+  if (item?.kind === 'weapon') {
+    if (game.canLoad(id).load) game.load(id);
+    else game.unload(id);
+    return;
+  }
   game.consume(id, Date.now());
 }
 
@@ -823,6 +859,7 @@ function showStatus(now: number): void {
   const wallet = game.wallet;
   const drunk = game.inebriation(now);
   const mask = game.masked();
+  const armed = game.armed();
   const job = game.jobStatus(now);
   const pass = wallet.passUntil > now;
   const refill = energy.nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(energy.nextPointAt - now)}`;
@@ -838,6 +875,7 @@ function showStatus(now: number): void {
     { label: 'Work', value: job ? `${job.rung.title} at ${job.building.name} · ${job.shifts} ${job.shifts === 1 ? 'shift' : 'shifts'}${job.next ? ` · trust ${job.trust}, ${job.next.title.toLowerCase()} at ${job.next.at}` : ' · top of the ladder'} · trade ${game.trade(job.building).health}` : 'No job' },
     ...(condition ? [{ label: 'Condition', value: condition, tone: 'warn' as const }] : []),
     ...(mask ? [{ label: 'Mask', value: `${mask.name} · nobody knows your face`, tone: 'warn' as const }] : []),
+    { label: 'Armed', value: armed ? `${armed.name}${armed.gun ? ` · ${armed.loaded}/${armed.magazine}` : ''}` : 'Nothing but your hands' },
     ...game.reputation(now).map((r) => ({ label: r.label, value: `${r.value > 0 ? '+' : '−'}${Math.abs(r.value)}`, tone: (r.value < 0 ? 'bad' : 'good') as 'bad' | 'good' })),
     { label: 'Mapped', value: `${game.mapState.visited.size} of ${Object.keys(game.world.locations).length} places` },
     { label: 'Weather', value: WEATHER_LABEL[skyNow] },
@@ -856,7 +894,8 @@ function showShop(): void {
   const { items } = menu;
   // Stacks of the same thing in different pockets count together.
   const carried = new Map<string, number>();
-  for (const item of game.inventory) carried.set(item.id, (carried.get(item.id) ?? 0) + item.count);
+  // A weapon counts by its model, each one its own item; rounds by the round.
+  for (const item of game.inventory) carried.set(item.weapon ?? item.id, (carried.get(item.weapon ?? item.id) ?? 0) + item.count);
   const barred = game.barred(Date.now());
   shop.render({
     kicker: qualityLabel(menu),
@@ -950,7 +989,8 @@ function buyFromShop(id: string): void {
   const before = game.wallet;
   const bought = !why && game.buy(id);
   const how = bought && game.wallet.account < before.account ? 'by transfer' : bought && game.wallet.chips < before.chips ? 'by chip' : 'in cash';
-  shopStatus = why ?? (bought ? `Bought ${item.name} for ${item.price} €$ ${how} · €$ ${game.wallet.eddies} on you${game.wallet.account ? `, €$ ${game.wallet.account} banked` : ''}` : '');
+  const what = item.kind === 'ammo' ? `a box of ${item.name} (${ARMS.ammo[item.id]?.box ?? 0} rounds)` : item.name;
+  shopStatus = why ?? (bought ? `Bought ${what} for ${item.price} €$ ${how} · €$ ${game.wallet.eddies} on you${game.wallet.account ? `, €$ ${game.wallet.account} banked` : ''}` : '');
   showShop();
 }
 
