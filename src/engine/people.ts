@@ -59,9 +59,19 @@ export interface PeopleContent {
   chips: Record<'corpo' | 'gang' | 'street', { chance: number; range: [number, number] }>;
   /** Kinds of place people go to in the evening. */
   hangouts: string[];
+  /** Street names (made up, never a canon character's), and the chance of one for a ganger, for anyone else on the street, and for a corpo. */
+  handles: { pool: string[]; chance: Record<'gang' | 'street' | 'corpo', number> };
+  /** What people want out of life, each weighted by the kinds of people who'd want it. */
+  dreams: Record<Dream, Partial<Record<Walk, number>>>;
   /** One line each, picked by a person's strongest trait. */
   traitLines: Record<keyof Traits, { high: string; low: string }>;
 }
+
+/** What someone wants out of life: out of Night City, new chrome, a place of their own, a family, wheels, a Trauma Team card, fame, the corporate ladder, payback, a quiet life, to retire, to move up in their gang, or to be a legend. */
+export type Dream = 'out' | 'chrome' | 'shop' | 'family' | 'wheels' | 'trauma' | 'fame' | 'ladder' | 'payback' | 'quiet' | 'retire' | 'rank' | 'legend';
+
+/** The walks of life a dream is weighed by: someone can be several (a young ganger who hates a rival gang). */
+export type Walk = 'gang' | 'corpo' | 'street' | 'elder' | 'young' | 'hater';
 
 export interface Traits {
   warmth: number;
@@ -391,6 +401,32 @@ export function peopleAt(population: Population, world: World, spot: Spot, clock
     if (where && where.spot.kind === spot.kind && where.spot.id === spot.id) found.push({ person, doing: where.doing });
   }
   return found;
+}
+
+/** Whether someone works for a corporation: in a tower, or with a corporate title. */
+export function isCorpo(person: Person, world: World): boolean {
+  const work = person.job.building ? world.buildings.find((b) => b.id === person.job.building) : undefined;
+  return work?.kind === 'tower' || /analyst|manager|executive|consultant/i.test(person.job.role);
+}
+
+/** Someone's street name, if they go by one: most gangers do, a few others on the street, corpos never. Drawn on its own stream, so the people stay who they are. */
+export function handleOf(person: Person, world: World, content: PeopleContent): string | null {
+  const rng = createRng(`${person.id}:handle`);
+  const chance = person.gang ? content.handles.chance.gang : isCorpo(person, world) ? content.handles.chance.corpo : content.handles.chance.street;
+  return rng.chance(chance) && content.handles.pool.length ? rng.pick(content.handles.pool) : null;
+}
+
+/** What someone wants out of life, weighed by who they are. Drawn on its own stream; a life that changes them (joining a gang) can change it. */
+export function dreamOf(person: Person, world: World, content: PeopleContent): Dream {
+  const walks: Walk[] = [];
+  if (person.gang) walks.push('gang');
+  else if (isCorpo(person, world)) walks.push('corpo');
+  else walks.push('street');
+  if (person.age >= 56) walks.push('elder');
+  if (person.age <= 25) walks.push('young');
+  if (person.hates && !person.gang) walks.push('hater');
+  const weighted = (Object.entries(content.dreams) as Array<[Dream, Partial<Record<Walk, number>>]>).map(([dream, by]) => [dream, walks.reduce((n, w) => n + (by[w] ?? 0), 0)] as [Dream, number]).filter(([, w]) => w > 0);
+  return (pickWeighted(createRng(`${person.id}:dream`), weighted) as Dream | null) ?? 'quiet';
 }
 
 export function gangOf(person: Person, content: PeopleContent): GangContent | null {

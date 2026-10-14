@@ -1,4 +1,4 @@
-import type { Stance } from '../engine/society';
+import { STANCE_LABEL as STANCES, type Stance } from '../engine/society';
 import { MapOverlay, type OverlayElements } from './overlay';
 
 export interface PersonRowView {
@@ -24,12 +24,14 @@ export interface WebNodeView {
 }
 
 export interface LogLineView {
-  who: 'you' | 'them';
+  who: 'you' | 'them' | 'note';
   text: string;
+  /** For a note: whether it went well, badly, or neither. */
+  tone?: 'good' | 'bad' | 'even';
 }
 
 /** Which set of choices is unfolded under the conversation, if any. */
-export type Picker = 'ask' | 'give' | 'chop' | 'work' | 'more' | null;
+export type Picker = 'talk' | 'ask' | 'give' | 'chop' | 'work' | 'more' | null;
 
 export interface PersonCardView {
   id: string;
@@ -48,6 +50,8 @@ export interface PersonCardView {
   web: WebNodeView[];
   webHint: string;
   picker: Picker;
+  /** Ways to start a chat: just talking, a compliment, a joke… */
+  approaches: Array<{ id: string; label: string }>;
   /** Things to ask them about themselves. */
   questions: Array<{ fact: string; label: string }>;
   /** People the player knows of, to ask this person about. */
@@ -93,6 +97,8 @@ export interface PeopleHandlers {
   /** A person was picked from the list, or (null) the list was gone back to. */
   onSelect(id: string | null): void;
   onAction(action: PersonAction, id: string): void;
+  /** The player started a chat a particular way. */
+  onTalk(id: string, approach: string): void;
   onGift(id: string, itemId: string): void;
   /** The player asked a person to chop a locked credchip. */
   onChop(id: string, chipId: string): void;
@@ -103,14 +109,7 @@ export interface PeopleHandlers {
   onPicker(picker: Picker): void;
 }
 
-export const STANCE_LABEL: Record<Stance, string> = {
-  hostile: 'Hostile',
-  cold: 'Cold',
-  wary: 'Wary',
-  neutral: 'Stranger',
-  warm: 'Warm',
-  friend: 'Friend',
-};
+export const STANCE_LABEL: Record<Stance, string> = STANCES;
 
 /**
  * Who's here, over the map: a list of everyone at the place the player is, and one person's
@@ -137,11 +136,11 @@ export class People {
     // Everything on the card goes through one listener: commands, the choices they unfold, names in the web.
     els.card.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
-      const button = target?.closest<HTMLElement>('[data-cmd], [data-fact], [data-about], [data-item], [data-chip], [data-action], [data-open]');
+      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-about], [data-item], [data-chip], [data-action], [data-open]');
       if (!button) return;
-      const { cmd, fact, about, item, chip, action, open, id } = button.dataset;
-      if (cmd === 'talk' && id) handlers.onAction('talk', id);
-      else if (cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'more') handlers.onPicker(cmd);
+      const { cmd, approach, fact, about, item, chip, action, open, id } = button.dataset;
+      if (cmd === 'talk' || cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'more') handlers.onPicker(cmd);
+      else if (approach && id) handlers.onTalk(id, approach);
       else if (fact && id) handlers.onQuestion(id, fact);
       else if (about && id) handlers.onAsk(id, about);
       else if (item && id) handlers.onGift(id, item);
@@ -157,7 +156,7 @@ export class People {
     els.reputation.replaceChildren(...view.reputation.map((line) => el('span', 'people-rep-item', line)));
     els.reputation.hidden = view.reputation.length === 0;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'fact', 'about', 'item', 'chip', 'action', 'open', 'id'].includes(key)) : undefined;
+    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'approach', 'fact', 'about', 'item', 'chip', 'action', 'open', 'id'].includes(key)) : undefined;
     const focusedId = active?.dataset.id;
     if (view.card) {
       els.list.hidden = true;
@@ -198,8 +197,9 @@ export class People {
     cardLog.replaceChildren(
       ...(card.log.length
         ? card.log.map((line) => {
-            const li = el('li', `person-log-line is-${line.who}`);
+            const li = el('li', `person-log-line is-${line.who}${line.tone ? ` is-${line.tone}` : ''}`);
             if (line.who === 'you') li.append(el('span', 'person-log-who', '›'));
+            else if (line.who === 'note') li.append(el('span', 'sr-only', 'How it went: '));
             else li.append(el('span', 'sr-only', `${card.name.split(' ')[0] ?? card.name}: `));
             li.append(el('span', 'person-log-text', line.text));
             return li;
@@ -210,7 +210,9 @@ export class People {
 
     // The choices the open command unfolds, if any.
     const picker: HTMLElement[] = [];
-    if (card.here && card.picker === 'ask') {
+    if (card.here && card.picker === 'talk') {
+      picker.push(...card.approaches.map((a) => chip(a.label, { id: card.id, approach: a.id }, 'person-chip')));
+    } else if (card.here && card.picker === 'ask') {
       if (card.questions.length) picker.push(...card.questions.map((q) => chip(q.label, { id: card.id, fact: q.fact }, 'person-chip')));
       if (card.askAbout.length) picker.push(el('span', 'person-gifts-label', 'About'), ...card.askAbout.map((a) => chip(a.name, { id: card.id, about: a.id }, 'person-chip')));
     } else if (card.here && card.picker === 'give') {
@@ -228,7 +230,7 @@ export class People {
     // One row of commands; what isn't possible isn't shown, and someone who isn't here gets none.
     const commands: Array<{ cmd: string; label: string; active?: boolean; quiet?: boolean }> = card.here
       ? [
-          { cmd: 'talk', label: 'Talk' },
+          { cmd: 'talk', label: 'Talk', active: card.picker === 'talk' },
           ...(card.questions.length || card.askAbout.length ? [{ cmd: 'ask', label: 'Ask', active: card.picker === 'ask' }] : []),
           ...(card.gifts.length ? [{ cmd: 'give', label: 'Give', active: card.picker === 'give' }] : []),
           ...(card.chops.length ? [{ cmd: 'chop', label: 'Chop', active: card.picker === 'chop' }] : []),

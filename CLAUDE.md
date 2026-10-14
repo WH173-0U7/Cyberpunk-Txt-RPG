@@ -186,12 +186,37 @@ it needs no generator bump. The pieces:
   things people can say are new pools (or new `When` conditions), never new code paths; a
   new variable goes in `varsFor` or `speakerFor` and is guarded with `needs`/`lacks`.
   `tests/dialogue.test.ts` sweeps whole cities for holes (`{...}` left unfilled, empty
-  lines), so a pool that can come up empty for some speaker fails there.
+  lines), so a pool that can come up empty for some speaker fails there. Combine conditions
+  with `both` (it adds `needs`/`lacks` up; it never replaces them). Personality comes through
+  the vars: a gang's own slang (`gangLexicon`, over the gang voice), a street name
+  (`handleOf`, on its own stream: most gangers, a few others, corpos never; checked against
+  the wiki so none is canon), what they want out of life (`dreamOf`, `dream<Kind>`, the
+  `dream` topic and a `dream` fact), the `views` topic on the corps and the city, their age
+  bracket, their home, their hangout, their boss and years at work, their district
+  (`inWatson`…). Loosely-fitting lines can be `vague` (they give way to ones that say more).
 - Whether someone answers is `openness` (engine) with the numbers in `SOCIETY.openness`:
   stance, charisma level and traits against the cost of what's asked (`Asked`: a fact, a
-  topic, or `chop`, a favor), less `openness.mask` while the player is masked. A no is
-  written on their `Standing.refused`; asking again within the talk cooldown is pressing and
-  costs rapport. Anything new the player can want from someone gets a cost there.
+  topic, or `chop`, a favor), less `openness.mask` while the player is masked, and moved by
+  the `Moment` (`momentOf`: a drink in hand, a shift on, questions piling up past
+  `grill.free` within `grill.minutes`, the gang they hate in the room, grief, the small
+  hours, a drunk player; numbers in `openness.moment`). A no is written on their
+  `Standing.refused`; asking again within the talk cooldown is pressing and costs rapport;
+  `Standing.lastAskAt`/`sitting` count questions in a row. Anything new the player can want
+  from someone gets a cost there.
+- People like and dislike things (`SOCIETY.reactions`, evaluated by `reactionTo` with
+  `fits`): each `Reaction` that fits adds its `by` (two rapport a point, 0.4 openness) and the
+  strongest says why. `asked` is per question (a stranger put off by being asked where they
+  live, a ganger glad to run down rivals); `approach` is per way of starting a chat
+  (`Approach`: chat, compliment, joke, gossip, care; `Game.talk(id, now, approach)`, with
+  `LINES.approaches` for the player's line and the liked/flat/disliked reply). The
+  speaker's `touchy`/`keen` vars let answers show it. A new thing to react to is another list
+  there and a pool of lines.
+- After every exchange (`talk`, `ask`, `askFact`, `gift`, `insult`, `rob`, `chop`,
+  `askForWork`, `quit`) `Game`'s private `noteFeedback` writes a `note` on the record (a
+  `LogEntry` with `who: 'note'` and a `tone`): the reasons (`LINES.notes`, a reaction's
+  why), rapport and grudge moved, charisma XP or the level, and the stance if it changed,
+  from a `snapshot` taken before. Anything new done with a person takes a snapshot first and
+  notes after.
 - A mask (`Game.masked()`) changes three things, all through what's already there. An
   incident done masked is written with its `mask` (the garment kind), `pinned: false` and
   `where` (the scene: spot, hour and mask, from `Game`'s private `scene()`), and
@@ -255,8 +280,9 @@ it needs no generator bump. The pieces:
 - `src/ui/people.ts` is the overlay (a `MapOverlay` off the panel's **People** action); the
   game decides who is here and what the actions do. A person's card is deliberately spare:
   a header whose facts line unfolds (`factsOpen`) into everything known and their web, in
-  the transcript's place; the transcript (your lines after a `›`, theirs bare); one command
-  row (Talk, Ask, Give, Chop, Work, `⋯` for the hostile acts, each only when it can be done)
+  the transcript's place; the transcript (your lines after a `›`, theirs bare, the notes
+  small and colored by tone); one command row (Talk, which unfolds the ways in, Ask, Give,
+  Chop, Work, `⋯` for the hostile acts, each only when it can be done)
   whose choices (`Picker`) unfold only while open; keep new things to do with a person
   behind a command, not as another row, and new things to know behind the facts line. Lines
   a person says use the `talk` tone, which the feed skips while the card is open.

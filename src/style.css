@@ -2074,6 +2074,31 @@ button {
 .person-log-line.is-them .person-log-text {
   color: #fff;
 }
+/* How an exchange went: small and set apart, in the good color when it helped and the danger color when it hurt. */
+.person-log-line.is-note {
+  grid-template-columns: 1fr;
+  margin: -2px 0 2px;
+  padding-left: 10px;
+  border-left: 2px solid var(--muted);
+}
+.person-log-line.is-note .person-log-text {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+}
+.person-log-line.is-note.is-good {
+  border-left-color: var(--primary);
+}
+.person-log-line.is-note.is-good .person-log-text {
+  color: var(--primary);
+}
+.person-log-line.is-note.is-bad {
+  border-left-color: var(--danger);
+}
+.person-log-line.is-note.is-bad .person-log-text {
+  color: var(--danger);
+}
 .person-log-line.is-empty {
   display: block;
   color: var(--muted);

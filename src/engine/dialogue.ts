@@ -1,4 +1,5 @@
-import { gangOf, pronounsOf, type PeopleContent, type Person, type Population, type Tie, type TieKind, type Traits } from './people';
+import { bossOf } from './jobs';
+import { dreamOf, gangOf, handleOf, pronounsOf, type Dream, type PeopleContent, type Person, type Population, type Tie, type TieKind, type Traits } from './people';
 import type { Rng } from './rng';
 import type { Asked, Fact, OpennessRules, Stance, Standing } from './society';
 import type { World } from './types';
@@ -21,10 +22,18 @@ export type Mood = 'busy' | 'easy' | 'eating' | 'drinking' | 'court' | 'home' | 
 export type History = 'first' | 'recent' | 'regular' | 'long';
 /** The player's way with words, in three sizes. */
 export type Eloquence = 'blunt' | 'easy' | 'smooth';
-/** What a chat can turn to; `news` is what happened between people lately (life.ts). */
-export type Topic = 'job' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news';
+/** What a chat can turn to; `news` is what happened between people lately (life.ts), `dream` what they want out of life, `views` what they make of the corps, the badges and the city. */
+export type Topic = 'job' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views';
+/** How the player starts a chat: just talking, a compliment, a joke, asking what's the word, or asking how they're holding up. People take each by who they are and how they're doing. */
+export type Approach = 'chat' | 'compliment' | 'joke' | 'gossip' | 'care';
+/** One way someone takes something: when it fits them, how much they like it (less than nothing: dislike), and why, as the player would read it (`{given}` and the rest filled in). */
+export interface Reaction {
+  when: When;
+  by: number;
+  why: string;
+}
 /** What the player can ask someone about themselves. */
-export type Question = Exclude<Fact, 'nature' | 'drinks' | 'dead'>;
+export type Question = Exclude<Fact, 'nature' | 'drinks' | 'dream' | 'dead'>;
 export type Reply = 'answer' | 'deflect' | 'refuse';
 
 /** When a fragment fits: everything given must hold. */
@@ -57,6 +66,8 @@ export type Line = string | Fragment;
 export interface DialogueLines {
   /** Slang by voice: what `{choom}`, `{gonk}`, `{preem}`, `{eddies}`, `{badges}`, `{delta}`, `{scop}`, `{hey}`, `{yeah}` and `{nah}` come out as. */
   lexicon: Record<Voice, Record<string, string>>;
+  /** Slang by gang, over the gang voice's: how a Valentino or a Voodoo Boy says `{choom}` or `{hey}`. */
+  gangLexicon: Record<string, Record<string, string>>;
   /** Said before an answer, sometimes: by what they're doing, how they feel, how they talk. */
   openers: Line[];
   /** Said after a chat or an answer, sometimes: by who they are. */
@@ -100,6 +111,12 @@ export interface DialogueLines {
   masked: { barred: Line[]; recognized: Line[] };
   /** The player's questions: a short label for the button, and how they put it, by eloquence. */
   questions: Record<Question, { label: string; lines: Line[] }>;
+  /** Ways to start a chat besides just talking: a short label for the chip, how the player puts it, and how it lands (liked, taken in stride, disliked). */
+  approaches: Record<Exclude<Approach, 'chat'>, { label: string; you: Line[]; liked: Line[]; flat: Line[]; disliked: Line[] }>;
+  /** What someone wants out of life, as the card says it once the player knows ("Wants out of Night City"). */
+  dreams: Record<Dream, string>;
+  /** Why an exchange went the way it did, on the note after it (`{given}`, `{his}`, `{item}`…): pushed after a no, one question too many, a favorite, a second gift in a day, a mask, a job, walking out, a chop. */
+  notes: { pressed: string; grilled: string; favorite: string; twice: string; masked: string; hired: string; quit: string; chopped: string };
   /** The player's own lines, for the record, by eloquence. */
   you: { talk: Line[]; askAbout: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[]; work: Line[]; quit: Line[] };
 }
@@ -230,14 +247,50 @@ export function compose(pool: Line[], speaker: Speaker, lines: DialogueLines, rn
  * loyal they are; who they hate, the less nerve they have; a hot chip, the less greedy), and
  * less again for a mask on the player: nobody opens up to a face they can't see.
  */
-export function openness(asked: Asked, stance: Stance, level: number, traits: Traits, rules: OpennessRules, masked = false): number {
+export function openness(asked: Asked, stance: Stance, level: number, traits: Traits, rules: OpennessRules, masked = false, moment: Moment = {}): number {
   let score = rules.stance[stance] + (level - 1) * rules.perLevel - rules.cost[asked];
   if (masked) score -= rules.mask;
   score += (traits.chatty - 0.5) * rules.traits.chatty + (traits.warmth - 0.5) * rules.traits.warmth;
   if (asked === 'kin') score -= (traits.loyalty - 0.5) * rules.traits.loyalty;
   if (asked === 'hates') score += (traits.courage - 0.5) * rules.traits.courage;
   if (asked === 'chop') score += (traits.greed - 0.5) * rules.traits.greed;
+  // The moment: a drink in hand, a shift on, a mouthful; questions piling up; the gang they hate in the room; grief; the small hours; a drunk asking.
+  const m = rules.moment;
+  const work = asked === 'job' || asked === 'here' || asked === 'hire' || asked === 'chop';
+  if (moment.mood === 'drinking') score += m.drinking;
+  if (moment.mood === 'busy' && !work) score -= m.busy;
+  if (moment.mood === 'eating' && !work) score -= m.eating;
+  score -= (moment.grilled ?? 0) * m.grilled;
+  if (moment.enemyHere && asked === 'hates') score -= m.enemy * (1.5 - traits.courage);
+  if (moment.grieving) score -= m.grieving;
+  if (moment.late && asked === 'home') score -= m.late;
+  if (moment.drunk && stance !== 'warm' && stance !== 'friend') score -= m.drunk;
   return Math.round(score * 100) / 100;
+}
+
+/** What the moment brings to a question: what they're doing, how many questions in a row past the free ones, the gang they hate here, grief, the small hours, a drunk player. */
+export interface Moment {
+  mood?: Mood;
+  grilled?: number;
+  enemyHere?: boolean;
+  grieving?: boolean;
+  late?: boolean;
+  drunk?: boolean;
+}
+
+/** The moment, as a speaker's variables say it. */
+export function momentOf(speaker: Speaker, grilled = 0): Moment {
+  const { vars } = speaker;
+  return { mood: speaker.mood, grilled, enemyHere: Boolean(vars.enemyHere), grieving: Boolean(vars.grief), late: Boolean(vars.late), drunk: Boolean(vars.youDrunk) };
+}
+
+/** How someone takes something (a question, a way of starting a chat): every reaction that fits them adds up; the strongest one the right way says why. Zero, and no why, when nothing fits or it cancels out. */
+export function reactionTo(reactions: Reaction[] | undefined, speaker: Speaker): { score: number; why: string } {
+  const fitting = (reactions ?? []).filter((r) => fits(r.when, speaker));
+  const score = fitting.reduce((n, r) => n + r.by, 0);
+  if (!score) return { score: 0, why: '' };
+  const strongest = fitting.filter((r) => Math.sign(r.by) === Math.sign(score)).sort((a, b) => Math.abs(b.by) - Math.abs(a.by))[0];
+  return { score, why: strongest ? finish(strongest.why, speaker.vars) : '' };
 }
 
 /** What comes of an openness: an answer for sure at `answerAt`, a flat no below `deflectAt`, and in between a chance of either, or a non-answer. */
@@ -247,7 +300,7 @@ export function replyTo(score: number, rules: OpennessRules, rng: Rng): Reply {
   return rng.chance((score - rules.deflectAt) / (rules.answerAt - rules.deflectAt)) ? 'answer' : 'deflect';
 }
 
-const TOPICS: Topic[] = ['district', 'life', 'here', 'job', 'likes', 'hates', 'kin', 'rumor', 'news'];
+const TOPICS: Topic[] = ['district', 'life', 'here', 'job', 'likes', 'hates', 'kin', 'rumor', 'news', 'dream', 'views'];
 
 /** What someone will bring up on their own: the topics they're open about, as of this chat. */
 export function openTopics(speaker: Speaker, level: number, rules: OpennessRules, rng: Rng, reveal: boolean): Topic[] {
@@ -259,14 +312,20 @@ export function openTopics(speaker: Speaker, level: number, rules: OpennessRules
     if (topic === 'here' && !vars.here) continue;
     if (topic === 'rumor' && !['gangGood', 'gangBad', 'districtGood', 'districtBad'].some((key) => vars[key])) continue;
     if (topic === 'news' && !vars.news) continue;
-    if (replyTo(openness(topic, speaker.stance, level, person.traits, rules, Boolean(vars.mask)), rules, rng) === 'answer') open.push(topic);
+    if (topic === 'dream' && !vars.dream) continue;
+    if (replyTo(openness(topic, speaker.stance, level, person.traits, rules, Boolean(vars.mask), momentOf(speaker)), rules, rng) === 'answer') open.push(topic);
   }
   return open;
 }
 
-/** Something about their life, on one of the topics on the table (their people, and what happened lately, twice as likely), or a brush-off when there's nothing they'll say. */
-export function smallTalk(speaker: Speaker, topics: Topic[], lines: DialogueLines, rng: Rng): { said: string; topic: Topic | null } {
-  const pool = topics.flatMap((t) => (t === 'kin' || t === 'news' ? [t, t] : [t]));
+/**
+ * Something about their life, on one of the topics on the table (their people, and what
+ * happened lately, twice as likely; what was asked for, `prefer`, when it's on the table at
+ * all), or a brush-off when there's nothing they'll say.
+ */
+export function smallTalk(speaker: Speaker, topics: Topic[], lines: DialogueLines, rng: Rng, prefer: Topic[] = []): { said: string; topic: Topic | null } {
+  const wanted = topics.filter((t) => prefer.includes(t));
+  const pool = wanted.length ? wanted : topics.flatMap((t) => (t === 'kin' || t === 'news' ? [t, t] : [t]));
   const topic = pool.length ? rng.pick(pool) : null;
   const said = topic ? compose(lines.topics[topic], speaker, lines, rng, { opener: false }) : '';
   return said ? { said, topic } : { said: line(lines.brushOff, speaker, rng), topic: null };
@@ -348,7 +407,18 @@ export function finish(template: string, vars: Record<string, string>): string {
 /** Family, and the one they're seeing: the people a line about their people names. */
 export const FAMILY: TieKind[] = ['spouse', 'partner', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew', 'kin'];
 
-/** Everything a template can mention about a person, and the one relative (`kin`) a line about family would name (`kinDead` when they're gone). */
+/** The variable a district's own lines need: `inWatson`, `inCityCenter`… */
+export function districtFlag(id: string): string {
+  return `in${id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')}`;
+}
+
+/**
+ * Everything a template can mention about a person, and the one relative (`kin`) a line about
+ * family would name (`kinDead` when they're gone): who they are, where they work and for whom
+ * and how long, where they live and in what, where they go of an evening, their street name,
+ * how old they are (`ageYoung`, `ageOld`, `ageElder`), what they want out of life
+ * (`dream`, `dream<Kind>`), and which district is theirs (`inWatson`…).
+ */
 export function varsFor(person: Person, world: World, population: Population, content: PeopleContent, dishes: Array<{ id: string; name: string }>, kin?: Tie): Record<string, string> {
   const gang = gangOf(person, content);
   const district = world.districts[person.district];
@@ -360,6 +430,11 @@ export function varsFor(person: Person, world: World, population: Population, co
   const home = person.home ? world.buildings.find((b) => b.id === person.home) : undefined;
   const dish = dishes.find((d) => d.id === person.likes.dish)?.name ?? 'something hot';
   const drink = dishes.find((d) => d.id === person.likes.drink)?.name ?? 'something cold';
+  const hangout = person.likes.hangout;
+  const evening = hangout ? (hangout.kind === 'building' ? world.buildings.find((b) => b.id === hangout.id)?.name : world.locations[hangout.id]?.name) : undefined;
+  const boss = work?.business ? bossOf(work, population) : null;
+  const dream = person.gang || person.age >= 18 ? dreamOf(person, world, content) : null;
+  const years = Math.max(1, Math.min(person.age - 17, createYears(person.id)));
   return {
     ...pronounsOf(person),
     age: String(person.age),
@@ -385,7 +460,29 @@ export function varsFor(person: Person, world: World, population: Population, co
     kinWord: kin && kinPerson ? kinWord(person, kin.kind, kinPerson) : '',
     kinWork: kinWork?.name ?? (kinPerson ? kinPerson.job.role : ''),
     kinDead: kinPerson?.diedOn !== undefined ? 'yes' : '',
+    handle: handleOf(person, world, content) ?? '',
+    ageYoung: person.age <= 25 ? 'yes' : '',
+    ageOld: person.age >= 45 ? 'yes' : '',
+    ageElder: person.age >= 56 ? 'yes' : '',
+    homeMega: home?.kind === 'megabuilding' ? 'yes' : '',
+    homeShack: home?.kind === 'shack' ? 'yes' : '',
+    homeFloors: home && home.floors > 1 ? String(home.floors) : '',
+    hangout: evening ?? '',
+    isBoss: boss?.id === person.id ? 'yes' : '',
+    bossName: boss && boss.id !== person.id ? boss.given : '',
+    workYears: work ? String(years) : '',
+    jobless: !person.gang && !person.job.building && /between jobs/i.test(person.job.role) ? 'yes' : '',
+    dream: dream ?? '',
+    ...(dream ? { [`dream${dream.charAt(0).toUpperCase()}${dream.slice(1)}`]: 'yes' } : {}),
+    [districtFlag(person.district)]: 'yes',
   };
+}
+
+/** How many years someone has been at the work they do, drawn for them (up to fifteen). */
+function createYears(id: string): number {
+  let h = 0;
+  for (const c of `${id}:years`) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return 1 + (h % 15);
 }
 
 function capitalize(text: string): string {

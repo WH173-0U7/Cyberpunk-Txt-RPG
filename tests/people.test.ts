@@ -3,7 +3,7 @@ import { CITY } from '../src/data/city';
 import { FOOD } from '../src/data/food';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
-import { generatePeople, INVERSE, isNetrunner, peopleAt, whereIs, type Population, type TieKind } from '../src/engine/people';
+import { dreamOf, generatePeople, handleOf, INVERSE, isCorpo, isNetrunner, peopleAt, whereIs, type Population, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 
@@ -144,5 +144,33 @@ describe('the people', () => {
   it('never names anyone after a real character', () => {
     const real = ['Jackie Welles', 'Judy Alvarez', 'Panam Palmer', 'Johnny Silverhand', 'Sebastián Ibarra', 'Solomon Reed', 'Kurt Hansen', 'Wakako Okada', 'Viktor Vektor'];
     for (const { population } of cities) for (const p of population.people) expect(real).not.toContain(p.name);
+    // Nor gives anyone a canon character's street name, or a canon weapon's or perk's (checked on the wiki).
+    const canon = ['Lucky', 'Rook', 'Hammer', 'Bolt', 'Jackie', 'Johnny', 'Panam', 'Judy', 'Dex', 'Brick', 'Nix', 'Rogue', 'Smasher', 'Placide', 'Skippy', 'Royce', 'Dum Dum', 'Sasquatch', 'T-Bug', 'Spider', 'Takemura'];
+    for (const handle of PEOPLE.handles.pool) expect(canon, handle).not.toContain(handle);
+  });
+
+  it('gives most gangers a street name and corpos none, and everyone something to want out of life, the same every time', () => {
+    for (const { world, population } of cities.slice(0, 20)) {
+      for (const p of population.people) {
+        const handle = handleOf(p, world, PEOPLE);
+        expect(handleOf(p, world, PEOPLE)).toBe(handle);
+        if (handle) expect(PEOPLE.handles.pool).toContain(handle);
+        if (isCorpo(p, world)) expect(handle, p.name).toBeNull();
+        const dream = dreamOf(p, world, PEOPLE);
+        expect(dreamOf(p, world, PEOPLE)).toBe(dream);
+        // A corpo climbs, a ganger doesn't; nobody in a gang wants to climb a corp, nobody outside one wants rank in it.
+        if (dream === 'ladder') expect(p.gang, p.name).toBeNull();
+        if (dream === 'rank') expect(p.gang, p.name).not.toBeNull();
+        if (dream === 'payback') expect(p.hates, p.name).not.toBeNull();
+      }
+    }
+    const all = cities.flatMap(({ world, population }) => population.people.map((p) => ({ p, world })));
+    const gangers = all.filter(({ p }) => p.gang);
+    const named = gangers.filter(({ p, world }) => handleOf(p, world, PEOPLE)).length / gangers.length;
+    expect(named).toBeGreaterThan(0.6);
+    expect(named).toBeLessThan(0.8);
+    const corpos = all.filter(({ p, world }) => isCorpo(p, world));
+    expect(corpos.filter(({ p, world }) => dreamOf(p, world, PEOPLE) === 'ladder').length / corpos.length).toBeGreaterThan(0.4);
+    expect(new Set(all.map(({ p, world }) => dreamOf(p, world, PEOPLE))).size).toBe(Object.keys(PEOPLE.dreams).length);
   });
 });

@@ -39,6 +39,8 @@ export interface JobRules {
   rapport: number;
   /** Reputation with the place a shift is worth. */
   rep: number;
+  /** Rapport lost with the boss for walking out. */
+  quit: number;
   /** How the boss has to feel about the player to move them up. */
   promoteAt: Stance[];
 }

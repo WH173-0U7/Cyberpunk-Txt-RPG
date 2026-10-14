@@ -118,12 +118,33 @@ own.
   is struggling (the boss won't hire, a shift pays a quarter less); a good week and it's
   thriving (a quarter more). The panel inside says how trade is, and people talk about being
   broke, flush, run off their feet or standing in an empty shop.
-- **Getting on with people**: **Talk** gets a greeting that depends on how they feel about
-  you and how well they know you (a stranger, someone who saw you yesterday, a regular, a
-  face they haven't seen in days), then something about their life, and builds rapport a
-  little each time (not twice in an hour). Give them food or drink from your inventory
-  (their favorite counts double). The card shows where you stand: Stranger, Wary, Warm,
-  Friend, Cold, Hostile.
+- **Getting on with people**: **Talk** unfolds the ways in: **Chat** (safe: nobody minds,
+  the chatty like it), **Compliment**, **Joke**, **Gossip** or **How are you?**, and each
+  lands by who they are. A compliment pleases the warm and the young and falls flat with the
+  hard, the suspicious and a corpo; a joke lands with the chatty and the drinking, not with a
+  temper, someone at work or someone grieving; gossip with the chatty, not the loyal or the
+  nervous; asking how they're holding up means most to the grieving and the broke, and reads
+  as pity to the hard and to anyone in a gang. How well you put it counts (charisma: blunt,
+  easy, smooth). You get a greeting that depends on how they feel about you and how well they
+  know you, their reply, then something about their life, and rapport (not twice in an
+  hour); put off, they say nothing more and think a little less of you. Give them food or
+  drink from your inventory (their favorite counts double). The card shows where you stand:
+  Stranger, Wary, Warm, Friend, Cold, Hostile.
+- **How it went**: after everything you say or do with someone, a small note in the
+  transcript says how it landed, green when it helped and red when it hurt: why ("Likes a
+  kind word", "Not in the mood for jokes", "Doesn't like being asked her age", "Tired of all
+  the questions"), what it did to their regard for you and any grudge, the charisma it
+  earned (or the level reached), and their stance if it moved ("Stranger → Warm").
+- **Personality**: most gangers go by a street name (Static, Rust, Moth…), and so do a few
+  others, and once introduced the card shows it. Each gang talks its own way: the Valentinos'
+  Spanish, the Voodoo Boys' Kreyòl, the Tyger Claws' Japanese, the Mox calling you "hon",
+  BARGHEST calling you "civvie". People want something out of life (out of Night City, new
+  chrome, a place of their own, a Trauma Team card, the corner office, payback, a quiet life,
+  to be a legend at the Afterlife) and tell you once they're talking, and the card keeps it.
+  They have views on Arasaka, the NCPD and Trauma Team, talk about their own district by
+  canon (Kabuki's lanterns, the Tyger Claws ruling Japantown by night, Rancho Coronado's
+  identical houses, Pacifica off the city's map), their boss and their years at the job, the
+  relative they lost. Drunk, your own lines slur, and people notice.
 - **How people talk**: nobody reads off a list. Every line is put together on the spot from
   fragments: an opener now and then (someone at the stove says "Hang on", someone three
   drinks in says "Pull up a stool"), the thing itself, and an aside that depends on who they
@@ -153,7 +174,13 @@ own.
   their name, and whatever they talk about (their work, what they eat, who they hate); a
   few chats and you have their measure. **Ask** them the rest (Name, Work, Age, Home,
   Tastes, Enemies); they answer, give a non-answer, or refuse, by how they feel about you,
-  your charisma and what the question asks of them. Watching tells you things too: open **People** inside a
+  your charisma and what the question asks of them, and the moment: a drink loosens tongues,
+  someone at work or eating has less time, a fourth question in a row wears on them, nobody
+  says who they hate with that gang in the room (unless they've the nerve), the grieving
+  close up, nobody gives out their address at three in the morning, and nobody trusts a
+  drunk. Some questions people mind (a stranger asked where they live, someone older asked
+  their age) and some they love (food; a ganger asked about rivals), and the answer shows
+  it. Watching tells you things too: open **People** inside a
   shop and its workers are plainly its workers, at night in an apartment block its
   residents plainly live there, and someone eating is eating what they like. Their card
   lists what you know and nothing else.
@@ -170,8 +197,9 @@ own.
   as you know, how they feel about you, what they're doing; what you know of them folded to
   one line: tap it and all of it unfolds, with their web in the transcript's place until you
   tap again or say something), the transcript filling the rest (your lines after a `›`,
-  theirs bare, newest at the bottom), and one row of commands at the bottom, each only when
-  it can be done: **Talk**, **Ask** (unfolds the questions and the people you can ask
+  theirs bare, the notes on how it went small and colored, newest at the bottom), and one row
+  of commands at the bottom, each only when it can be done: **Talk** (unfolds the ways in),
+  **Ask** (unfolds the questions and the people you can ask
   about), **Give** (what you carry), **Chop** (a hot credchip, when you can tell they're a
   netrunner), **Work** (with a boss) and **⋯** (insult, rob). A command's choices show only
   while it's open. While the card is open, what they say stays off the map's feed; it's on

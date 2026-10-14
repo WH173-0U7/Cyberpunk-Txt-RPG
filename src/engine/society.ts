@@ -1,3 +1,4 @@
+import type { Approach, Reaction } from './dialogue';
 import { remember, type Memory, type MemoryRules } from './memory';
 import { INVERSE, tiesOf, type Person, type Population, type TieKind } from './people';
 import type { Rng } from './rng';
@@ -27,10 +28,23 @@ export interface Standing {
   asks: number;
   /** When they last wouldn't say, by what was asked (`age`, `home`, `about:<id>`…): asking again soon is pressing. */
   refused: Record<string, number>;
+  /** When the player last asked them something, and how many questions in a row that makes (one after another, within `openness.grill.minutes`). */
+  lastAskAt?: number;
+  sitting?: number;
 }
 
+/** What each stance is called where the player can see it. */
+export const STANCE_LABEL: Record<Stance, string> = {
+  hostile: 'Hostile',
+  cold: 'Cold',
+  wary: 'Wary',
+  neutral: 'Stranger',
+  warm: 'Warm',
+  friend: 'Friend',
+};
+
 /** Something the player can want from someone: a fact about them, a topic, their people, (`chop`) their hands on a stolen credchip, or (`hire`) a job at the place they run. */
-export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'chop' | 'hire';
+export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views' | 'chop' | 'hire';
 
 /**
  * How ready people are to tell the player things: a base by how they feel, a step per level
@@ -49,6 +63,16 @@ export interface OpennessRules {
   deflectAt: number;
   /** Rapport lost for asking again soon after a no. */
   press: number;
+  /**
+   * The moment, as it moves people: a few drinks loosen tongues, being busy or eating tightens
+   * them (on anything but their work); every question past `grill.free` in a row costs this
+   * much more; someone from the gang they hate being right here costs this much on who they
+   * hate (less the braver they are); grief costs on everything; the small hours on where they
+   * live; a drunk player with anyone short of warm.
+   */
+  moment: { drinking: number; busy: number; eating: number; grilled: number; enemy: number; grieving: number; late: number; drunk: number };
+  /** Questions in a row: the first `free` are fine; within `minutes` (on the game's clock) of the last, each one past that costs `rapport` and openness. */
+  grill: { free: number; minutes: number; rapport: number };
 }
 
 /** A reputation, as last written down; it recovers toward nothing since. */
@@ -94,17 +118,18 @@ export interface Threat {
 export type KnownHow = 'seen' | 'told' | 'asked';
 
 /** Something about a person that takes asking (or watching, or being told) to know; `dead`, that they are, takes being told. */
-export type Fact = 'name' | 'job' | 'age' | 'home' | 'likes' | 'drinks' | 'hates' | 'nature' | 'dead';
+export type Fact = 'name' | 'job' | 'age' | 'home' | 'likes' | 'drinks' | 'hates' | 'nature' | 'dream' | 'dead';
 
-/** One line of what passed between the player and a person. */
+/** One line of what passed between the player and a person; a `note` is how it went down (rapport, charisma, their stance, and why), `tone` whether that was good for the player. */
 export interface LogEntry {
   at: number;
-  who: 'you' | 'them';
+  who: 'you' | 'them' | 'note';
   text: string;
+  tone?: 'good' | 'bad' | 'even';
 }
 
 /** Lines kept per person. */
-export const LOG_CAP = 24;
+export const LOG_CAP = 40;
 
 /** What the player knows of a person: met them, seen them about, or heard of them; which of their facts; and what's been said. */
 export interface Knowledge {
@@ -190,6 +215,12 @@ export interface SocietyRules {
   openness: OpennessRules;
   /** What people remember of the player, how long, and what they bring up (memory.ts). */
   memory: MemoryRules;
+  /**
+   * What people like and don't like being asked, and how they take each way of starting a
+   * chat: each reaction that fits the speaker (dialogue.ts `fits`) adds its `by`, worth
+   * `rapport` a point, and the strongest says why.
+   */
+  reactions: { rapport: number; openness: number; asked: Partial<Record<Asked, Reaction[]>>; approach: Record<Approach, Reaction[]> };
 }
 
 export function freshSociety(): SocietyState {
@@ -230,9 +261,9 @@ export function learnFact(state: SocietyState, id: string, fact: Fact): boolean 
 }
 
 /** Keeps a line of what was said, the last `LOG_CAP` per person. */
-export function logLine(state: SocietyState, id: string, who: LogEntry['who'], text: string, now: number): void {
+export function logLine(state: SocietyState, id: string, who: LogEntry['who'], text: string, now: number, tone?: LogEntry['tone']): void {
   const k = knowledgeOf(state, id);
-  state.known[id] = { ...k, log: [...k.log, { at: now, who, text }].slice(-LOG_CAP) };
+  state.known[id] = { ...k, log: [...k.log, { at: now, who, text, ...(tone ? { tone } : {}) }].slice(-LOG_CAP) };
 }
 
 export function linkKey(a: string, b: string): string {
