@@ -202,8 +202,21 @@ describe('saving', () => {
     const { known: _k, links: _l, ...society0 } = game.societySaved;
     const oldRead = readSave(JSON.parse(JSON.stringify({ ...old, society: society0 })));
     expect(oldRead?.charisma).toBeNull();
-    expect(oldRead?.society).toMatchObject({ known: {}, links: {} });
+    expect(oldRead?.society).toMatchObject({ known: {}, links: {}, memories: {} });
     expect(readSave({ ...saved, charisma: { level: 0, xp: 1 } })?.charisma).toBeNull();
+  });
+
+  it('carries what people remember of the player, and forgets what it cannot read', () => {
+    const { game, now } = played(1);
+    const someone = game.population.people[0];
+    if (!someone) throw new Error('no people');
+    const memory = { kind: 'wronged' as const, at: now, what: 'robbery', amount: 30, times: 1, said: 0 };
+    const society = { ...game.societySaved, memories: { [someone.id]: [memory, { kind: 'gift', at: 'yesterday' }], nobody: 'x' } };
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), society })));
+    expect(read?.society?.memories).toEqual({ [someone.id]: [memory] });
+    const progress = read && resume(world, read);
+    if (!progress) throw new Error('no progress');
+    expect(new Game(world, rules, progress).societySaved.memories).toEqual({ [someone.id]: [memory] });
   });
 
   it('ignores anything that is not a save it understands', () => {

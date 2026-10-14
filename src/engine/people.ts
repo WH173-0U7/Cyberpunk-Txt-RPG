@@ -98,9 +98,14 @@ export interface Person {
   bio: string;
   /** The clock day until which they're laid up at home, after losing a fight (see life.ts). */
   hurtUntil?: number;
+  /** The clock day they died, if they have (see life.ts): they're nowhere from then on. */
+  diedOn?: number;
+  /** The clock day they were taken on at the storefront they work at now, if it isn't where they started: never its boss. */
+  hiredOn?: number;
 }
 
-export type TieKind = 'spouse' | 'sibling' | 'cousin' | 'parent' | 'child' | 'uncle' | 'nephew' | 'kin' | 'friend' | 'crew' | 'coworker';
+/** Family by birth and marriage; `partner` is someone they're seeing (life.ts: a romance, before any wedding); then friends, crew and coworkers. */
+export type TieKind = 'spouse' | 'partner' | 'sibling' | 'cousin' | 'parent' | 'child' | 'uncle' | 'nephew' | 'kin' | 'friend' | 'crew' | 'coworker';
 
 /** `to` is `from`'s `kind`: their parent, their friend. Stored both ways (the parent's side says "child"). */
 export interface Tie {
@@ -136,6 +141,7 @@ const WORK_KINDS = new Set(['tower', 'factory', 'warehouse']);
 /** What `from` is to `to`, given what `to` is to `from`. */
 export const INVERSE: Record<TieKind, TieKind> = {
   spouse: 'spouse',
+  partner: 'partner',
   sibling: 'sibling',
   cousin: 'cousin',
   parent: 'child',
@@ -357,6 +363,8 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
   const at = (spot: Spot | null, doing: string) => (spot ? { spot, doing } : null);
   const outLate = person.gang ? 0.45 : person.traits.chatty * 0.3;
 
+  // The dead are nowhere.
+  if (person.diedOn !== undefined && day >= person.diedOn) return null;
   // Laid up: home all day, nursing it.
   if (person.hurtUntil !== undefined && day <= person.hurtUntil) return at(home, hour < 6 || hour >= 23 ? 'at home, asleep' : 'at home, laid up');
   if (hour < 6) return rng.chance(outLate) && hangout ? at(hangout, hangingOut(person, world, hangout, dishes)) : at(home, 'at home, asleep');
