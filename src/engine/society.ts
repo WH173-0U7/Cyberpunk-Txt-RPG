@@ -134,12 +134,14 @@ export interface LogEntry {
 /** Lines kept per person. */
 export const LOG_CAP = 40;
 
-/** What the player knows of a person: met them, seen them about, or heard of them; which of their facts; and what's been said. */
+/** What the player knows of a person: met them, seen them about, or heard of them; which of their facts, and which of those they said themselves (`said`); and what's been said. */
 export interface Knowledge {
   met: boolean;
   seen: boolean;
   told: boolean;
   facts: Fact[];
+  /** The facts they told the player themselves: asked one of these again, they've said it already. */
+  said?: Fact[];
   log: LogEntry[];
 }
 
@@ -265,6 +267,19 @@ export function learnFact(state: SocietyState, id: string, fact: Fact): boolean 
   if (k.facts.includes(fact)) return false;
   state.known[id] = { ...k, facts: [...k.facts, fact] };
   return true;
+}
+
+/** Writes down a fact the player heard from the person themselves, so asking it again is asking twice. True if that's news. */
+export function heardFrom(state: SocietyState, id: string, fact: Fact): boolean {
+  const news = learnFact(state, id, fact);
+  const k = knowledgeOf(state, id);
+  if (!(k.said ?? []).includes(fact)) state.known[id] = { ...k, said: [...(k.said ?? []), fact] };
+  return news;
+}
+
+/** Whether they told the player this themselves (known some other way, they haven't). */
+export function saidBy(state: SocietyState, id: string, fact: Fact): boolean {
+  return (state.known[id]?.said ?? []).includes(fact);
 }
 
 /** Keeps a line of what was said, the last `LOG_CAP` per person. */

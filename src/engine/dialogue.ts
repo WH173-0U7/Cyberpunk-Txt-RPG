@@ -73,6 +73,8 @@ export interface DialogueLines {
   /** Said after a chat or an answer, sometimes: by who they are. */
   tails: Line[];
   greeting: Line[];
+  /** Their name, said the first time it comes up: after a greeting, or an answer to something else (`{given}`, `{name}`, `{handle}`). */
+  introduce: Line[];
   topics: Record<Topic, Line[]>;
   /** From someone with nothing they'll bring up. */
   brushOff: Line[];
@@ -418,7 +420,8 @@ export function fill(template: string, vars: Record<string, string>): string {
 
 /** Filled in, tidied, and each sentence starting with a capital. */
 export function finish(template: string, vars: Record<string, string>): string {
-  const text = fill(template, vars).replace(/\s+/g, ' ').trim();
+  // A name that ends in its own mark ("Got Escargot?") takes no full stop after it.
+  const text = fill(template, vars).replace(/\s+/g, ' ').trim().replace(/([?!])\.(?!\.)/g, '$1');
   return text.replace(/(^|[.!?…]["”]?\s+)(\p{Ll})/gu, (_, before: string, letter: string) => before + letter.toUpperCase());
 }
 
