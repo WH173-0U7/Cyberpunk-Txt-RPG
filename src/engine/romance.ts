@@ -28,6 +28,8 @@ export interface Romance {
   since: number;
   dates: number;
   lastDateAt: number;
+  /** Times they've caught the player flirting with someone else, this time round. */
+  caught?: number;
 }
 
 /** What can be done about the heart with someone: ask them out, take them out, make it official, end it. */

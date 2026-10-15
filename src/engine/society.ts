@@ -485,7 +485,8 @@ function cascade(state: SocietyState, population: Population, incident: Incident
   const spread = (from: Person, amount: number, depth: number, seen: Set<string>) => {
     for (const t of tiesOf(population, from.id)) {
       const other = people.get(t.to);
-      if (!other || seen.has(other.id)) continue;
+      // The dead hear nothing, pass nothing on, and come for no one.
+      if (!other || other.diedOn !== undefined || seen.has(other.id)) continue;
       const felt = amount * rules.closeness[t.kind] * (0.5 + other.traits.loyalty / 2);
       add(other, felt);
       if (depth > 1) spread(other, felt * rules.gossip, depth - 1, new Set([...seen, other.id]));

@@ -112,9 +112,9 @@ export function canPromote(job: JobState, ladder: Rung[], stance: Stance, rules:
   return Boolean(next) && job.trust >= (next as Rung).at && rules.promoteAt.includes(stance);
 }
 
-/** Whether a shift can start at this hour. */
+/** Whether a shift can start at this hour: from the first of `hours` up to, not into, the last. */
 export function shiftOpen(hour: number, rules: JobRules): boolean {
-  return hour >= rules.hours[0] && hour <= rules.hours[1];
+  return hour >= rules.hours[0] && hour < rules.hours[1];
 }
 
 /** A shift's pay at a place of some tier, in whole eddies. */

@@ -1,0 +1,1361 @@
+{
+ "version": 2,
+ "generator": 3,
+ "seed": "7f3a29c1",
+ "where": {
+  "x": 21.099999999999998,
+  "y": 38.78,
+  "place": null,
+  "station": null,
+  "building": "b-C6-4"
+ },
+ "visited": [
+  "heywood-3"
+ ],
+ "discovered": [
+  "badlands-1",
+  "heywood-1",
+  "heywood-3"
+ ],
+ "explored": [],
+ "eddies": 207,
+ "passUntil": 0,
+ "trip": null,
+ "inside": "b-C6-4",
+ "items": [
+  {
+   "id": "wontons",
+   "kind": "consumable",
+   "name": "Wontons",
+   "count": 1,
+   "in": "jacket"
+  },
+  {
+   "id": "rammmmen",
+   "kind": "consumable",
+   "name": "RaMMMMen",
+   "count": 1,
+   "in": "jacket"
+  },
+  {
+   "id": "galician-pierogi",
+   "kind": "consumable",
+   "name": "Galician Pierogi",
+   "count": 1,
+   "in": "jacket"
+  },
+  {
+   "id": "credchip-1",
+   "kind": "credchip",
+   "name": "CredChip",
+   "count": 1,
+   "in": "wallet",
+   "balance": 91,
+   "locked": true
+  }
+ ],
+ "gear": [
+  {
+   "id": "tank",
+   "kind": "tank",
+   "in": null
+  },
+  {
+   "id": "jacket",
+   "kind": "jacket",
+   "in": null
+  },
+  {
+   "id": "pants",
+   "kind": "pants",
+   "in": null
+  },
+  {
+   "id": "high-tops",
+   "kind": "high-tops",
+   "in": null
+  },
+  {
+   "id": "wallet",
+   "kind": "wallet",
+   "in": "pants"
+  }
+ ],
+ "money": {
+  "bills": 204,
+  "coins": 3,
+  "account": 0
+ },
+ "energy": {
+  "current": 0,
+  "level": 1,
+  "xp": 0,
+  "updatedAt": 3401366400000
+ },
+ "inebriation": {
+  "units": 0,
+  "updatedAt": 0
+ },
+ "society": {
+  "standings": {
+   "bao-liu": {
+    "met": true,
+    "rapport": -14,
+    "grudge": 55,
+    "at": 3401280000000,
+    "talks": 1,
+    "lastTalkAt": 3401265600000,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 3401280000000,
+    "asks": 0,
+    "refused": {}
+   },
+   "dao-kim": {
+    "met": true,
+    "rapport": -10,
+    "grudge": 42,
+    "at": 3401280000000,
+    "talks": 1,
+    "lastTalkAt": 3401272800000,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "min-liu": {
+    "met": false,
+    "rapport": -19,
+    "grudge": 56,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "ji-woo-liu": {
+    "met": false,
+    "rapport": -16,
+    "grudge": 47,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "dao-liu": {
+    "met": false,
+    "rapport": -15,
+    "grudge": 0,
+    "at": 3401366400000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "skye-hale": {
+    "met": false,
+    "rapport": -2,
+    "grudge": 5,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "kazuo-kobayashi": {
+    "met": false,
+    "rapport": -2,
+    "grudge": 7,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "quinn-hale": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 4,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "hana-kim": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 4,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "cody-hale": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 3,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "mason-murphy": {
+    "met": false,
+    "rapport": -7,
+    "grudge": 21,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "dao-tran": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 3,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "thanh-kim": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 2,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "jun-truong": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 4,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "hao-kim": {
+    "met": false,
+    "rapport": -5,
+    "grudge": 14,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "kendra-mercer": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 4,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "kendra-sullivan": {
+    "met": false,
+    "rapport": -7,
+    "grudge": 21,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "derek-sullivan": {
+    "met": false,
+    "rapport": -2,
+    "grudge": 6,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "kyle-sullivan": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 4,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "dez-hale": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 3,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "hyun-huang": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 2,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "yun-zhou": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 2,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "clint-murphy": {
+    "met": false,
+    "rapport": -7,
+    "grudge": 20,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "derek-murphy": {
+    "met": false,
+    "rapport": -2,
+    "grudge": 6,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "linh-choi": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 3,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "quyen-choi": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 2,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "mason-hayes": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 3,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "lan-choi": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 2,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "li-pham": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 2,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "min-choi": {
+    "met": false,
+    "rapport": 0,
+    "grudge": 1,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "jiro-kimura": {
+    "met": false,
+    "rapport": -2,
+    "grudge": 6,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "kaede-kobayashi": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 3,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "dieudonne-saint-fleur": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 2,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "mio-sasaki": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 2,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "mei-kim": {
+    "met": false,
+    "rapport": -8,
+    "grudge": 23,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "wei-kim": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 4,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "min-kim": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 3,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "shun-kato": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 4,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "brianna-novak": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 3,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "li-choi": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 2,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "lena-foster": {
+    "met": false,
+    "rapport": -8,
+    "grudge": 25,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "monique-foster": {
+    "met": false,
+    "rapport": -2,
+    "grudge": 6,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "casey-foster": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 3,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "quinn-foster": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 3,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "ying-choi": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 3,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "yuna-takahashi": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 4,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   },
+   "monique-hale": {
+    "met": false,
+    "rapport": -1,
+    "grudge": 2,
+    "at": 3401280000000,
+    "talks": 0,
+    "lastTalkAt": 0,
+    "gifts": 0,
+    "lastGiftAt": 0,
+    "robbedAt": 0,
+    "asks": 0,
+    "refused": {}
+   }
+  },
+  "rep": {
+   "district:watson": {
+    "value": -11,
+    "at": 3401280000000
+   },
+   "business:b-C6-4": {
+    "value": -33,
+    "at": 3401280000000
+   }
+  },
+  "incidents": [
+   {
+    "at": 3401280000000,
+    "kind": "robbery",
+    "victim": "bao-liu",
+    "witnesses": [
+     "dao-kim"
+    ],
+    "district": "watson",
+    "took": 104,
+    "id": 1
+   }
+  ],
+  "threats": [],
+  "nextId": 3,
+  "known": {
+   "bao-liu": {
+    "met": true,
+    "seen": false,
+    "told": false,
+    "facts": [
+     "name",
+     "likes",
+     "drinks"
+    ],
+    "log": [
+     {
+      "at": 3401265600000,
+      "who": "you",
+      "text": "\"What's up.\""
+     },
+     {
+      "at": 3401265600000,
+      "who": "them",
+      "text": "Hey. Don't know you."
+     },
+     {
+      "at": 3401265600000,
+      "who": "them",
+      "text": "All I want after a shift is Dark Chocolate and quiet. You buying? Then we keep talking."
+     },
+     {
+      "at": 3401280000000,
+      "who": "you",
+      "text": "You pull a blade. \"Eddies. Now.\""
+     },
+     {
+      "at": 3401280000000,
+      "who": "them",
+      "text": "It takes a struggle. 13 \u20ac$ and a credchip with 91 \u20ac$ on it, and Bao marks your face for later."
+     }
+    ]
+   },
+   "dao-kim": {
+    "met": true,
+    "seen": false,
+    "told": false,
+    "facts": [
+     "name"
+    ],
+    "log": [
+     {
+      "at": 3401272800000,
+      "who": "you",
+      "text": "\"Got a minute?\""
+     },
+     {
+      "at": 3401272800000,
+      "who": "them",
+      "text": "Yeah? What do you need."
+     },
+     {
+      "at": 3401272800000,
+      "who": "them",
+      "text": "Hyun got jumped today. Maelstrom, people say."
+     }
+    ]
+   },
+   "hyun-lam": {
+    "met": false,
+    "seen": false,
+    "told": true,
+    "facts": [
+     "name"
+    ],
+    "log": []
+   },
+   "dao-liu": {
+    "met": false,
+    "seen": false,
+    "told": false,
+    "facts": [],
+    "log": [
+     {
+      "at": 3401366400000,
+      "who": "them",
+      "text": "Dao Liu and two friends catch up with you at Outside Neon Dumpling House. They take 176 \u20ac$ and leave you in the gutter."
+     }
+    ]
+   }
+  },
+  "links": {}
+ },
+ "charisma": {
+  "level": 1,
+  "xp": 4
+ },
+ "job": null,
+ "life": {
+  "day": 39371,
+  "nextId": 30,
+  "events": [
+   {
+    "id": 1,
+    "day": 39365,
+    "kind": "fallout",
+    "who": [
+     "shawna-garrett",
+     "dez-dawson"
+    ],
+    "gang": null,
+    "district": "watson",
+    "took": 0,
+    "where": {
+     "kind": "building",
+     "id": "b-E5-2"
+    }
+   },
+   {
+    "id": 2,
+    "day": 39366,
+    "kind": "fight",
+    "who": [
+     "paloma-mendoza",
+     "camila-fuentes"
+    ],
+    "gang": "valentinos",
+    "district": "heywood",
+    "took": 0,
+    "where": {
+     "kind": "building",
+     "id": "b-G8-5"
+    }
+   },
+   {
+    "id": 3,
+    "day": 39366,
+    "kind": "shakedown",
+    "who": [
+     "kazuo-yoshida",
+     "casey-sullivan"
+    ],
+    "gang": "mox",
+    "district": "watson",
+    "took": 6,
+    "where": {
+     "kind": "building",
+     "id": "b-B1-4"
+    }
+   },
+   {
+    "id": 4,
+    "day": 39366,
+    "kind": "robbery",
+    "who": [
+     "xiu-ng",
+     "hyun-lam"
+    ],
+    "gang": "maelstrom",
+    "district": "watson",
+    "took": 14,
+    "where": null
+   },
+   {
+    "id": 5,
+    "day": 39366,
+    "kind": "shakedown",
+    "who": [
+     "celeste-aldridge",
+     "ren-yoshida"
+    ],
+    "gang": "tyger_claws",
+    "district": "westbrook",
+    "took": 6,
+    "where": {
+     "kind": "building",
+     "id": "b-K2-4"
+    }
+   },
+   {
+    "id": 6,
+    "day": 39366,
+    "kind": "fight",
+    "who": [
+     "kaede-abe",
+     "mariko-sasaki"
+    ],
+    "gang": null,
+    "district": "westbrook",
+    "took": 0,
+    "where": {
+     "kind": "building",
+     "id": "b-J3-5"
+    }
+   },
+   {
+    "id": 7,
+    "day": 39367,
+    "kind": "friends",
+    "who": [
+     "tomas-mendoza",
+     "paloma-cordero"
+    ],
+    "gang": null,
+    "district": "heywood",
+    "took": 0,
+    "where": {
+     "kind": "building",
+     "id": "b-H11-1"
+    }
+   },
+   {
+    "id": 8,
+    "day": 39367,
+    "kind": "robbery",
+    "who": [
+     "yuna-takahashi",
+     "kendra-garrett"
+    ],
+    "gang": "tyger_claws",
+    "district": "watson",
+    "took": 29,
+    "where": {
+     "kind": "building",
+     "id": "b-E5-1"
+    }
+   },
+   {
+    "id": 9,
+    "day": 39367,
+    "kind": "robbery",
+    "who": [
+     "alvaro-ortega",
+     "widline-fils-aime"
+    ],
+    "gang": "animals",
+    "district": "pacifica",
+    "took": 17,
+    "where": {
+     "kind": "location",
+     "id": "pacifica-1"
+    }
+   },
+   {
+    "id": 10,
+    "day": 39367,
+    "kind": "robbery",
+    "who": [
+     "laurent-falk",
+     "julian-schreiber"
+    ],
+    "gang": "tyger_claws",
+    "district": "westbrook",
+    "took": 8,
+    "where": {
+     "kind": "building",
+     "id": "b-M4-1"
+    }
+   },
+   {
+    "id": 11,
+    "day": 39367,
+    "kind": "fight",
+    "who": [
+     "laurent-falk",
+     "shun-yoshida"
+    ],
+    "gang": "tyger_claws",
+    "district": "westbrook",
+    "took": 0,
+    "where": {
+     "kind": "building",
+     "id": "b-K4-2"
+    }
+   },
+   {
+    "id": 12,
+    "day": 39368,
+    "kind": "shakedown",
+    "who": [
+     "kyle-whitaker",
+     "joaquin-villanueva"
+    ],
+    "gang": "valentinos",
+    "district": "heywood",
+    "took": 25,
+    "where": {
+     "kind": "building",
+     "id": "b-F10-4"
+    }
+   },
+   {
+    "id": 13,
+    "day": 39368,
+    "kind": "fight",
+    "who": [
+     "kyle-whitaker",
+     "valentina-castillo"
+    ],
+    "gang": "valentinos",
+    "district": "heywood",
+    "took": 0,
+    "where": {
+     "kind": "building",
+     "id": "b-F13-1"
+    }
+   },
+   {
+    "id": 14,
+    "day": 39368,
+    "kind": "shakedown",
+    "who": [
+     "kai-truong",
+     "jin-truong"
+    ],
+    "gang": "tyger_claws",
+    "district": "watson",
+    "took": 12,
+    "where": {
+     "kind": "building",
+     "id": "b-G3-2"
+    }
+   },
+   {
+    "id": 15,
+    "day": 39368,
+    "kind": "robbery",
+    "who": [
+     "diego-aguilar",
+     "nico-morales"
+    ],
+    "gang": "animals",
+    "district": "pacifica",
+    "took": 36,
+    "where": {
+     "kind": "building",
+     "id": "b-B11-5"
+    }
+   },
+   {
+    "id": 16,
+    "day": 39368,
+    "kind": "robbery",
+    "who": [
+     "sebastian-brandt",
+     "ilse-falk"
+    ],
+    "gang": "tyger_claws",
+    "district": "westbrook",
+    "took": 24,
+    "where": {
+     "kind": "building",
+     "id": "b-I5-2"
+    }
+   },
+   {
+    "id": 17,
+    "day": 39368,
+    "kind": "fight",
+    "who": [
+     "laurent-falk",
+     "ren-inoue"
+    ],
+    "gang": "tyger_claws",
+    "district": "westbrook",
+    "took": 0,
+    "where": {
+     "kind": "building",
+     "id": "b-L1-4"
+    }
+   },
+   {
+    "id": 18,
+    "day": 39368,
+    "kind": "fallout",
+    "who": [
+     "troy-brooks",
+     "tomas-pena"
+    ],
+    "gang": null,
+    "district": "badlands",
+    "took": 0,
+    "where": null
+   },
+   {
+    "id": 19,
+    "day": 39369,
+    "kind": "shakedown",
+    "who": [
+     "yuna-takahashi",
+     "ming-kim"
+    ],
+    "gang": "tyger_claws",
+    "district": "watson",
+    "took": 9,
+    "where": {
+     "kind": "building",
+     "id": "b-D2-6"
+    }
+   },
+   {
+    "id": 20,
+    "day": 39369,
+    "kind": "fight",
+    "who": [
+     "dana-foster",
+     "nathalie-baptiste"
+    ],
+    "gang": "voodoo_boys",
+    "district": "pacifica",
+    "took": 0,
+    "where": {
+     "kind": "location",
+     "id": "pacifica-4"
+    }
+   },
+   {
+    "id": 21,
+    "day": 39369,
+    "kind": "robbery",
+    "who": [
+     "rupert-jansen",
+     "lena-walsh"
+    ],
+    "gang": "tyger_claws",
+    "district": "westbrook",
+    "took": 91,
+    "where": {
+     "kind": "building",
+     "id": "b-M5-1"
+    }
+   },
+   {
+    "id": 22,
+    "day": 39370,
+    "kind": "robbery",
+    "who": [
+     "paloma-mendoza",
+     "diego-escobedo"
+    ],
+    "gang": "valentinos",
+    "district": "heywood",
+    "took": 8,
+    "where": {
+     "kind": "building",
+     "id": "b-F10-2"
+    }
+   },
+   {
+    "id": 23,
+    "day": 39370,
+    "kind": "friends",
+    "who": [
+     "hao-zhou",
+     "jiro-kimura"
+    ],
+    "gang": null,
+    "district": "watson",
+    "took": 0,
+    "where": {
+     "kind": "building",
+     "id": "b-B1-4"
+    }
+   },
+   {
+    "id": 24,
+    "day": 39370,
+    "kind": "shakedown",
+    "who": [
+     "ketly-michel",
+     "mackenson-louis"
+    ],
+    "gang": "barghest",
+    "district": "pacifica",
+    "took": 14,
+    "where": {
+     "kind": "building",
+     "id": "b-D11-1"
+    }
+   },
+   {
+    "id": 25,
+    "day": 39370,
+    "kind": "robbery",
+    "who": [
+     "wesley-saint-fleur",
+     "ana-morales"
+    ],
+    "gang": "voodoo_boys",
+    "district": "pacifica",
+    "took": 14,
+    "where": null
+   },
+   {
+    "id": 26,
+    "day": 39370,
+    "kind": "friends",
+    "who": [
+     "kenji-sato",
+     "mariko-hayashi"
+    ],
+    "gang": null,
+    "district": "westbrook",
+    "took": 0,
+    "where": {
+     "kind": "building",
+     "id": "b-I5-1"
+    }
+   },
+   {
+    "id": 27,
+    "day": 39371,
+    "kind": "shakedown",
+    "who": [
+     "kyle-whitaker",
+     "joaquin-villanueva"
+    ],
+    "gang": "valentinos",
+    "district": "heywood",
+    "took": 16,
+    "where": {
+     "kind": "building",
+     "id": "b-F10-4"
+    }
+   },
+   {
+    "id": 28,
+    "day": 39371,
+    "kind": "friends",
+    "who": [
+     "quinn-cole",
+     "mateo-aguilar"
+    ],
+    "gang": null,
+    "district": "heywood",
+    "took": 0,
+    "where": {
+     "kind": "building",
+     "id": "b-G8-1"
+    }
+   },
+   {
+    "id": 29,
+    "day": 39371,
+    "kind": "fight",
+    "who": [
+     "mateo-quintero",
+     "stanley-baptiste"
+    ],
+    "gang": "voodoo_boys",
+    "district": "pacifica",
+    "took": 0,
+    "where": {
+     "kind": "building",
+     "id": "b-D8-6"
+    }
+   }
+  ],
+  "eddies": {
+   "kazuo-yoshida": 63,
+   "xiu-ng": 45,
+   "celeste-aldridge": 42,
+   "kendra-garrett": 37,
+   "yuna-takahashi": 56,
+   "alvaro-ortega": 46,
+   "laurent-falk": 95,
+   "kyle-whitaker": 98,
+   "kai-truong": 49,
+   "nico-morales": 51,
+   "diego-aguilar": 93,
+   "ilse-falk": 44,
+   "sebastian-brandt": 124,
+   "ming-kim": 19,
+   "lena-walsh": 172,
+   "rupert-jansen": 130,
+   "diego-escobedo": 13,
+   "paloma-mendoza": 103,
+   "mackenson-louis": 62,
+   "ketly-michel": 86,
+   "ana-morales": 18,
+   "wesley-saint-fleur": 76,
+   "joaquin-villanueva": 47
+  },
+  "hurt": {
+   "ren-inoue": 39371,
+   "nathalie-baptiste": 39372,
+   "stanley-baptiste": 39375
+  },
+  "hates": {
+   "casey-sullivan": "mox",
+   "ren-yoshida": "tyger_claws",
+   "kendra-garrett": "tyger_claws",
+   "widline-fils-aime": "animals",
+   "joaquin-villanueva": "valentinos",
+   "jin-truong": "tyger_claws",
+   "nico-morales": "animals",
+   "ilse-falk": "tyger_claws",
+   "ming-kim": "tyger_claws",
+   "diego-escobedo": "valentinos"
+  },
+  "made": [
+   {
+    "from": "tomas-mendoza",
+    "to": "paloma-cordero",
+    "kind": "friend"
+   },
+   {
+    "from": "hao-zhou",
+    "to": "jiro-kimura",
+    "kind": "friend"
+   },
+   {
+    "from": "kenji-sato",
+    "to": "mariko-hayashi",
+    "kind": "friend"
+   },
+   {
+    "from": "quinn-cole",
+    "to": "mateo-aguilar",
+    "kind": "friend"
+   }
+  ],
+  "broken": [
+   "dez-dawson|shawna-garrett",
+   "tomas-pena|troy-brooks"
+  ]
+ },
+ "savedAt": 3401712000000
+}

@@ -1,7 +1,7 @@
 import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
-import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
+import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { tillOf, tradeAt, turfFrom, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
@@ -372,7 +372,9 @@ export class Game {
         return true;
       }
     }
-    const room = changeRoom(this.pockets, this.items, this.money, this.rules.gear, this.rules.food.dishes);
+    // The coins go first, so the room for change is what's left once they're out of the pocket.
+    const spent = { ...this.money, coins: this.money.coins - Math.min(this.money.coins, price) };
+    const room = changeRoom(this.pockets, this.items, spent, this.rules.gear, this.rules.food.dishes);
     const paid = payCash(this.money, price, this.rules.money, room);
     if (!paid) return false;
     this.money = paid.money;
@@ -465,7 +467,9 @@ export class Game {
   /** Puts away anything not in a pocket the player has: where it fits, or, failing that, the first pocket, overfull. */
   private stow(): void {
     const ids = new Set(this.pockets.map((p) => p.id));
-    const fallback = this.pockets.find((p) => p.in === null && !this.rules.gear.kinds[p.kind]?.holds) ?? this.pockets[0];
+    // Failing room anywhere, the roomiest thing worn takes it (never a tank top with no pockets).
+    const worn = this.pockets.filter((p) => p.in === null && this.rules.gear.kinds[p.kind]?.holds === undefined);
+    const fallback = [...worn].sort((a, b) => (this.rules.gear.kinds[b.kind]?.slots ?? 0) - (this.rules.gear.kinds[a.kind]?.slots ?? 0))[0] ?? this.pockets[0];
     for (const item of [...this.items]) {
       if (item.in && ids.has(item.in)) continue;
       const others = this.items.filter((i) => i !== item);
@@ -571,12 +575,13 @@ export class Game {
       this.say(why, 'error');
       return false;
     }
-    this.pay(item.price, this.takesTransfers(menu));
-    // Spent at a storefront, it's in the till when the day is lived.
-    if (this.inside?.business && menu.venue.id === this.inside.id) tillOf(this.life.tills, this.inside.id).pending += item.price;
+    // What's bought goes in its pocket before it's paid for, so the change only comes back where there's room left for it.
+    const pockets = [...this.pockets];
+    const items = this.items.map((i) => ({ ...i }));
+    let bought: string;
     if (item.kind === 'gear') {
       this.pockets.push({ id: newPocketId(item.id, this.pockets), kind: item.id, in: null });
-      this.say(`Bought a ${item.name.toLowerCase()} for ${item.price} €$. More room.`, 'system');
+      bought = `Bought a ${item.name.toLowerCase()} for ${item.price} €$. More room.`;
     } else if (item.kind === 'weapon') {
       // Each weapon is its own thing, with its own magazine.
       const proto = this.protoFor(item);
@@ -587,7 +592,7 @@ export class Game {
       const where = this.pockets.find((p) => p.id === pocket);
       const whereName = where ? this.rules.gear.kinds[where.kind]?.name.toLowerCase() : '';
       const tail = !weapon || !rounds ? '' : weapon.disposable ? ` It comes loaded: ${weapon.magazine} rounds, and no reloading it.` : ` Empty: it takes ${this.rules.gear.arms.ammo[rounds]?.name ?? 'ammo'}, loaded from the inventory.`;
-      this.say(`Bought the ${item.name} for ${item.price} €$${whereName ? `, into your ${whereName}` : ''}.${tail}`, 'system');
+      bought = `Bought the ${item.name} for ${item.price} €$${whereName ? `, into your ${whereName}` : ''}.${tail}`;
     } else {
       const proto = this.protoFor(item);
       const count = this.boxOf(item);
@@ -595,21 +600,29 @@ export class Game {
       const owned = this.items.find((i) => i.id === item.id && i.kind === proto.kind && i.in === pocket);
       if (owned) owned.count += count;
       else this.items.push({ id: item.id, kind: proto.kind, name: item.name, count, in: pocket, ...(proto.gear ? { gear: proto.gear } : {}) });
-      this.say(item.kind === 'ammo' ? `Bought a box of ${item.name} for ${item.price} €$: ${count} rounds.` : `Bought ${item.name} for ${item.price} €$.${proto.gear ? ' Put it on from the inventory.' : ''}`, 'system');
+      bought = item.kind === 'ammo' ? `Bought a box of ${item.name} for ${item.price} €$: ${count} rounds.` : `Bought ${item.name} for ${item.price} €$.${proto.gear ? ' Put it on from the inventory.' : ''}`;
     }
+    if (!this.pay(item.price, this.takesTransfers(menu))) {
+      this.pockets.splice(0, this.pockets.length, ...pockets);
+      this.items.splice(0, this.items.length, ...items);
+      return false;
+    }
+    // Spent at a storefront, it's in the till when the day is lived.
+    if (this.inside?.business && menu.venue.id === this.inside.id) tillOf(this.life.tills, this.inside.id).pending += item.price;
+    this.say(bought, 'system');
     this.events.emit('walletChanged', this.wallet);
     this.events.emit('inventoryChanged', this.inventory);
     return true;
   }
 
   /**
-   * Puts on a garment carried in a pocket. What was worn in that slot comes off and goes in a
+   * Puts on a garment carried in a pocket (`from`, when there's one in more than one). What was worn in that slot comes off and goes in a
    * pocket with room (or stays where you stand, if there is none); whatever was in its
    * pockets, the wallet included, moves to pockets with room first, or the swap is off.
    */
-  wear(itemId: string, now = Date.now()): boolean {
+  wear(itemId: string, now = Date.now(), from?: string): boolean {
     const { gear, food } = this.rules;
-    const item = this.items.find((i) => i.id === itemId && i.kind === 'clothing');
+    const item = this.items.find((i) => i.id === itemId && i.kind === 'clothing' && (from === undefined || i.in === from));
     const kind = item?.gear ? gear.kinds[item.gear] : undefined;
     if (!item?.gear || !kind?.slot) return false;
     const current = this.pockets.find((p) => p.in === null && gear.kinds[p.kind]?.slot === kind.slot);
@@ -626,10 +639,16 @@ export class Game {
     const moving = current ? items.filter((i) => i.in === current.id) : [];
     const inner = current ? pockets.filter((p) => p.in === current.id) : [];
     for (const i of moving) delete i.in;
-    // The pockets inside it (the wallet) need a slot somewhere worn, the new garment first.
+    // The pockets inside it (the wallet) need a slot and the weight for them somewhere worn, the new garment first; never a holster or a gun case.
     for (const p of inner) {
       p.in = null;
-      const home = [fresh, ...pockets].find((q) => q !== p && q.in === null && (gear.kinds[q.kind]?.slots ?? 0) > loadOf(q, pockets, items, this.money, gear, food.dishes).slots);
+      const grams = pocketGrams(p, pockets, items, this.money, gear, food.dishes);
+      const home = [fresh, ...pockets].find((q) => {
+        const k = gear.kinds[q.kind];
+        if (q === p || q.in !== null || !k || k.only || k.holds !== undefined) return false;
+        const load = loadOf(q, pockets, items, this.money, gear, food.dishes);
+        return k.slots > load.slots && load.grams + grams <= k.maxGrams;
+      });
       if (!home) {
         this.say(`Nowhere to move the ${gear.kinds[p.kind]?.name.toLowerCase() ?? p.kind} that's in your ${currentKind?.name ?? 'pockets'}. Make room first.`, 'error');
         return false;
@@ -644,6 +663,12 @@ export class Game {
         return false;
       }
       this.putAway(items, i, home);
+    }
+    // The loose change rides in whatever's on the legs: new legwear has to bear it.
+    const freshLoad = loadOf(fresh, pockets, items, this.money, gear, food.dishes);
+    if (kind.change && this.money.coins > 0 && freshLoad.grams > kind.maxGrams) {
+      this.say(`The ${kind.name} won't bear the weight of your coins (${this.money.coins} €$). Change them for bills at a bank first.`, 'error');
+      return false;
     }
     let left = '';
     if (current && currentKind) {
@@ -707,9 +732,9 @@ export class Game {
     return null;
   }
 
-  /** Drops one of something carried, for good: room for something else; loose rounds go all at once. False if there's none. */
-  drop(id: string): boolean {
-    const item = this.items.find((i) => i.id === id);
+  /** Drops one of something carried (from the pocket `from`, when it's in more than one), for good: room for something else; loose rounds go all at once. False if there's none. */
+  drop(id: string, from?: string): boolean {
+    const item = this.items.find((i) => i.id === id && (from === undefined || i.in === from));
     if (!item) return false;
     if (item.kind === 'ammo') {
       this.items.splice(this.items.indexOf(item), 1);
@@ -842,7 +867,7 @@ export class Game {
     const put = cash(this.money);
     const { money, fee } = toAccount(this.money, this.rules.money);
     this.money = money;
-    this.say(`Deposited ${put} €$${fee ? `, less ${fee} €$ for counting the coins` : ''}. €$ ${money.account} in the bank.`, 'system');
+    this.say(`Deposited ${put} €$${fee ? `, less ${fee} €$ for counting the coins` : ''}. ${money.account} €$ in the bank.`, 'system');
     this.events.emit('walletChanged', this.wallet);
     return true;
   }
@@ -853,7 +878,7 @@ export class Game {
     const room = walletRoom(this.pockets, this.money, this.rules.gear);
     const money = fromAccount(this.money, amount);
     if (!money) {
-      this.say(`There isn't ${amount} €$ in the account: €$ ${this.money.account}.`, 'error');
+      this.say(`There isn't ${amount} €$ in the account: ${this.money.account} €$.`, 'error');
       return false;
     }
     if (amount > room) {
@@ -861,7 +886,7 @@ export class Game {
       return false;
     }
     this.money = money;
-    this.say(`Withdrew ${amount} €$ in bills. €$ ${money.account} left in the bank.`, 'system');
+    this.say(`Withdrew ${amount} €$ in bills. ${money.account} €$ left in the bank.`, 'system');
     this.events.emit('walletChanged', this.wallet);
     return true;
   }
@@ -900,7 +925,7 @@ export class Game {
     for (const chip of clean) this.items.splice(this.items.indexOf(chip), 1);
     this.money = { ...this.money, account: this.money.account + sum };
     const back = locked ? ` The teller slides the ${locked === 1 ? 'other one' : 'others'} back: not in your name.` : '';
-    this.say(`Banked ${clean.length === 1 ? 'the chip' : `${clean.length} chips`}: ${sum} €$ into the account. €$ ${this.money.account} in the bank.${back}`, 'system');
+    this.say(`Banked ${clean.length === 1 ? 'the chip' : `${clean.length} chips`}: ${sum} €$ into the account. ${this.money.account} €$ in the bank.${back}`, 'system');
     this.events.emit('walletChanged', this.wallet);
     this.events.emit('inventoryChanged', this.inventory);
     return true;
@@ -913,11 +938,12 @@ export class Game {
   }
 
   /**
-   * Eats or drinks one of something carried. False if there's none, or it isn't for eating.
+   * Eats or drinks one of something carried (from the pocket `from`, when it's in more than
+   * one). False if there's none, or it isn't for eating.
    * Food and soft drinks do nothing yet; alcohol goes to the head.
    */
-  consume(id: string, now: number): boolean {
-    const item = this.items.find((i) => i.id === id && i.kind === 'consumable');
+  consume(id: string, now: number, from?: string): boolean {
+    const item = this.items.find((i) => i.id === id && i.kind === 'consumable' && (from === undefined || i.in === from));
     const dish = item ? this.rules.food.dishes.find((d) => d.id === id) : undefined;
     if (!item || !dish) return false;
     this.takeOne(item);
@@ -1311,9 +1337,9 @@ export class Game {
         this.society.romance = freshRomance(id, now);
         spark = rules.ask.yes;
         this.say(`You're seeing ${person.given} now. Take ${pronounsOf(person).him} out of an evening: ♥ on ${pronounsOf(person).his} card, somewhere with a menu.`, 'system');
-      } else {
+      } else if (!masked) {
+        // A no to a mask is a no to the mask: asked again bare-faced, it isn't pressing.
         refused.askOut = now;
-        why = masked ? lines.notes.masked : '';
       }
     }
     changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport, spark }, society, timeScale, now);
@@ -1337,6 +1363,8 @@ export class Game {
     const menu = this.menu();
     const clock = this.clockAt(now);
     const speaker = this.speakerFor(person, stance, doing, now);
+    // Asked out by someone they're done with, they say so.
+    if (this.theyEndIt(person, speaker, createRng(`${this.world.seed}:${id}:date:${romance.dates}:end`), now)) return true;
     if (!menu || menu.kind !== 'food' || !menu.items.length) {
       this.say(`Not here: take ${person.given} somewhere with a menu. A bar, a diner, a noodle place.`, 'error');
       return false;
@@ -1349,8 +1377,15 @@ export class Game {
       this.say(`${person.given} is working. Come back when ${pronounsOf(person).he} ${person.pronouns === 'they' ? "aren't" : "isn't"}.`, 'error');
       return false;
     }
-    if (romance.lastDateAt && this.clockAt(romance.lastDateAt).day === clock.day) {
+    // One a night, by the clock: a night runs past midnight, so the small hours count as the evening before.
+    const nightOf = (c: { hour: number; day: number }) => (c.hour < rules.date.to ? c.day - 1 : c.day);
+    if (romance.lastDateAt && nightOf(this.clockAt(romance.lastDateAt)) === nightOf(clock)) {
       this.say(`You've been out with ${person.given} tonight already.`, 'error');
+      return false;
+    }
+    const barred = this.barred(now);
+    if (barred) {
+      this.say(barred, 'error');
       return false;
     }
     // What they like, if it's on; else the cheapest drink; else the cheapest thing.
@@ -1392,9 +1427,10 @@ export class Game {
     const { society, timeScale, lines } = this.rules;
     const rules = society.romance;
     const standing = standingOf(this.society, id, society, timeScale, now);
-    const before = this.snapshot(person, now);
     const speaker = this.speakerFor(person, stance, doing, now);
     const rng = createRng(`${this.world.seed}:${id}:official:${romance.dates}:${standing.asks}`);
+    if (this.theyEndIt(person, speaker, rng, now)) return true;
+    const before = this.snapshot(person, now);
     this.logged(id, 'you', line(lines.you.official, speaker, rng), now);
     const yes = romance.dates >= rules.official.dates && (standing.spark ?? 0) >= rules.official.spark && rules.ask.stances.includes(stance);
     this.speech(person, compose(yes ? lines.romance.official.yes : lines.romance.official.notYet, speaker, lines, rng, { opener: false }), now);
@@ -1441,21 +1477,24 @@ export class Game {
     return true;
   }
 
-  /** Whether the one the player is seeing ends it now: the spark gone, or the player caught flirting once too often. Says so if they do. */
+  /** Whether the one the player is seeing ends it now: the spark gone, turned against the player, or the player caught flirting once too often this time round. Says so if they do. */
   private theyEndIt(person: Person, speaker: Speaker, rng: Rng, now: number): boolean {
     const { society, timeScale, lines } = this.rules;
     const rules = society.romance;
+    const romance = this.society.romance;
+    if (romance?.with !== person.id || speaker.mood === 'asleep') return false;
     const standing = standingOf(this.society, person.id, society, timeScale, now);
     const cheated = memoryOf(this.society, person.id, 'cheated', society.memory, timeScale, now);
-    const caught = Boolean(cheated && cheated.times >= rules.cheats);
-    const fizzled = (standing.spark ?? 0) < rules.endAt;
+    const caught = (romance.caught ?? 0) >= rules.cheats;
+    const fizzled = (standing.spark ?? 0) < rules.endAt || speaker.stance === 'hostile';
     if (!caught && !fizzled) return false;
     const before = this.snapshot(person, now);
     const other = caught && cheated?.about ? this.person(cheated.about) : undefined;
     const vars = { ...speaker.vars, fizzled: caught ? '' : 'yes', caught: caught ? 'yes' : '', other: other?.given ?? '' };
     this.speech(person, compose(lines.romance.theyEnd, { ...speaker, vars }, lines, rng, { opener: false }), now);
     this.society.romance = null;
-    changeStanding(this.society, person.id, { met: true, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
+    // Done with the player, the spark's gone with it.
+    changeStanding(this.society, person.id, { met: true, talks: standing.talks + 1, lastTalkAt: now, spark: -(standing.spark ?? 0) }, society, timeScale, now);
     this.say(`${person.given} ended it.`, 'system');
     this.noteFeedback(person, before, now, lines.notes.ended, vars);
     this.events.emit('societyChanged', { people: [person.id] });
@@ -1466,12 +1505,15 @@ export class Game {
   private jealous(other: Person, now: number): void {
     const romance = this.society.romance;
     const partner = romance && romance.with !== other.id ? this.isHere(romance.with, now) : undefined;
-    if (!partner) return;
+    if (!partner || !romance) return;
     const { society, timeScale, lines } = this.rules;
     const rules = society.romance;
-    const before = this.snapshot(partner.person, now);
     const speaker = this.speakerFor(partner.person, partner.stance, partner.doing, now);
+    // Asleep, they never saw it.
+    if (speaker.mood === 'asleep') return;
+    const before = this.snapshot(partner.person, now);
     speaker.vars = { ...speaker.vars, other: other.given };
+    romance.caught = (romance.caught ?? 0) + 1;
     const rng = createRng(`${this.world.seed}:${partner.person.id}:jealous:${now}`);
     this.narrate(partner.person, line(lines.romance.jealous, speaker, rng), now, 'error');
     changeStanding(this.society, partner.person.id, { spark: -rules.jealous.spark, rapport: -rules.jealous.rapport, grudge: rules.jealous.grudge }, society, timeScale, now);
@@ -1556,6 +1598,7 @@ export class Game {
       newsTook: String(event.took),
       newsWhere: where ?? '',
       newsHe: pronouns.he,
+      newsS: pronouns.s,
       newsHim: pronouns.him,
       newsHis: pronouns.his,
       newsWon: won ? 'yes' : '',
@@ -1769,6 +1812,20 @@ export class Game {
     this.events.emit('charismaChanged', this.charisma());
   }
 
+  /** A chain by its sign: what its outlets' names share ("Buck-A-Slice Japantown", "Buck-A-Slice Kabuki"), or its one outlet's name. */
+  private chainName(business: string): string {
+    const names = this.world.buildings.filter((b) => b.business === business).map((b) => b.name.split(' '));
+    const [first, ...rest] = names;
+    if (!first) return business;
+    let words = first.length;
+    for (const name of rest) {
+      let same = 0;
+      while (same < Math.min(words, name.length) && name[same] === first[same]) same++;
+      words = same;
+    }
+    return first.slice(0, Math.max(1, words)).join(' ');
+  }
+
   /** The player's reputations that stand at anything, worst first. */
   reputation(now: number): Reputation[] {
     const { society, timeScale, people } = this.rules;
@@ -1781,7 +1838,7 @@ export class Game {
       if (kind === 'gang') label = people.gangs[id]?.name ?? id;
       else if (kind === 'district') label = this.world.districts[id]?.name ?? id;
       else if (kind === 'business') label = this.world.buildings.find((b) => b.id === id)?.name ?? id;
-      else if (kind === 'chain') label = `${this.rules.food.fixed[id] ? 'every ' : ''}${this.world.buildings.find((b) => b.business === id)?.business ?? id}`;
+      else if (kind === 'chain') label = `${this.rules.food.fixed[id] ? 'every ' : ''}${this.chainName(id)}`;
       out.push({ key, label, value });
     }
     return out.sort((a, b) => a.value - b.value);
@@ -1921,6 +1978,8 @@ export class Game {
     speaker.vars = { ...speaker.vars, ...this.newsVars(person, now) };
     const how = approach === 'chat' ? null : lines.approaches[approach];
     this.logged(id, 'you', line(how ? how.you : lines.you.talk, speaker, rng), now);
+    // Seeing the player, and done with it (turned against them, too).
+    if (this.theyEndIt(person, speaker, rng, now)) return true;
     if (speaker.mood === 'asleep' || stance === 'hostile') {
       this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
       changeStanding(this.society, id, { met: true }, society, timeScale, now);
@@ -1932,8 +1991,6 @@ export class Game {
       this.events.emit('societyChanged', { people: [id] });
       return true;
     }
-    // Seeing the player, and done with it.
-    if (this.society.romance?.with === id && this.theyEndIt(person, speaker, rng, now)) return true;
     this.speech(person, line(lines.greeting, speaker, rng), now);
     let topic: Topic | null = null;
     const learned = [id];
@@ -2070,7 +2127,9 @@ export class Game {
     if (speaker.mood === 'asleep' || stance === 'hostile') {
       this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
     } else if (known && known.kind !== null) {
-      this.speech(person, line(lines.ask.repeat, speaker, rng), now);
+      // Told already they're done with them (heard of the split), they say so; else that they've said.
+      if (known.kind === 'none' && ex) this.speech(person, compose(lines.ask.ex, speaker, lines, rng), now);
+      else this.speech(person, line(lines.ask.repeat, speaker, rng), now);
     } else if (this.pressing(standing, key, now)) {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
@@ -2172,6 +2231,10 @@ export class Game {
     const hadIt = memoriesOf(this.society, id, society.memory, timeScale, now).some((m) => m.kind === 'gift' && m.what === dish.id);
     speaker.vars = { ...speaker.vars, item: dish.name, again: hadIt ? 'yes' : '' };
     const rng = createRng(`${this.world.seed}:${id}:gift:${now}`);
+    if (speaker.mood === 'asleep') {
+      this.narrate(person, line(lines.asleep, speaker, rng), now);
+      return false;
+    }
     if (stance === 'hostile') {
       this.logged(id, 'you', line(lines.you.gift, speaker, rng), now);
       this.narrate(person, line(lines.gift.refuse, speaker, rng), now);
@@ -2210,6 +2273,11 @@ export class Game {
     const { society, timeScale, lines } = this.rules;
     const speaker = this.speakerFor(person, stance, doing, now);
     const rng = createRng(`${this.world.seed}:${id}:insult:${now}`);
+    // Asleep, it's lost on them.
+    if (speaker.mood === 'asleep') {
+      this.narrate(person, line(lines.asleep, speaker, rng), now);
+      return true;
+    }
     const before = this.snapshot(person, now);
     const fallout = this.incident('insult', person, 0, now);
     learnOf(this.society, id, 'met');
@@ -2272,7 +2340,14 @@ export class Game {
     this.logged(id, 'them', outcome, now);
     if (got) {
       this.money = { ...this.money, bills: this.money.bills + bills, coins: this.money.coins + coins };
-      if (chipItem) this.items.push(chipItem);
+      // What's taken is gone from them: less in their pockets, and their chip in yours.
+      person.eddies = Math.max(0, person.eddies - take);
+      this.life.eddies[person.id] = person.eddies;
+      if (chipItem) {
+        person.chip = 0;
+        this.life.chips[person.id] = 0;
+        this.items.push(chipItem);
+      }
       this.say(outcome, 'system');
       if (wanted > take) this.say(`Your pockets won't hold the rest: ${wanted - take} €$ stays with ${person.given}.`, 'system');
       if (chipWanted && !chip) this.say(`No room on you for ${speaker.vars.his} credchip: it stays in ${speaker.vars.his} hand.`, 'system');
@@ -2348,6 +2423,9 @@ export class Game {
           this.items.splice(this.items.indexOf(chip), 1);
           this.say('Nothing left on the chip after the cut. You toss it.', 'system');
         }
+        // Their cut is theirs now.
+        person.eddies += cut;
+        this.life.eddies[person.id] = person.eddies;
         // Watching them work is as good as being told what they do.
         learnFact(this.society, id, 'name');
         learnFact(this.society, id, 'job');
@@ -2456,7 +2534,10 @@ export class Game {
         lost.push(chip);
         take += chip.balance ?? 0;
       }
-      const vars = { ...(by ? this.speakerFor(by, this.stanceOf(by, now), 'killing time', now).vars : {}), gang: gang?.name ?? '', take: String(take), where: this.nameOf(this.where) };
+      // Whoever it is, the player has met them now; named as far as the player knows them, else by their look.
+      if (by) learnOf(this.society, by.id, 'met');
+      const known = by ? this.describe(by.id, now)?.name : undefined;
+      const vars = { ...(by ? this.speakerFor(by, this.stanceOf(by, now), 'killing time', now).vars : {}), ...(known ? { name: known } : {}), gang: gang?.name ?? '', take: String(take), where: this.nameOf(this.where) };
       const rng = createRng(`${this.world.seed}:threat:${threat.id}`);
       this.events.emit('fx', { effect: 'shake' });
       const hit = finish(textOf(rng.pick(by ? lines.revenge.person : lines.revenge.gang)), vars);

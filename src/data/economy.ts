@@ -10,7 +10,8 @@ import type { EconomyRules } from '../engine/economy';
  * counter takes a few dozen a day, a luxury place a couple of hundred) and swings a third
  * either way day to day; against that it pays rent, its staff (the boss near twice a worker)
  * and a cut of its takings to the gangs on its turf, by their share of it. A gang's members
- * make half a wage on rackets of their own and draw a wage from the chest while it lasts. A
+ * make half a wage on rackets of their own and draw a wage from the chest while it lasts, and
+ * after payday a chest keeps four weeks of its members' wages, spending the rest. A
  * week a third clear of its costs is thriving; a week in the red, struggling; thriving pays
  * the player's shift a quarter more, struggling a quarter less, and a struggling boss won't
  * hire.
@@ -30,6 +31,7 @@ export const ECONOMY: EconomyRules = {
   boss: 1.8,
   protection: 0.06,
   rackets: 0.5,
+  chestWeeks: 4,
   thrivingAt: 0.35,
   pay: { thriving: 1.25, steady: 1, struggling: 0.75 },
   trade: {

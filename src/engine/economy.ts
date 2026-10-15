@@ -46,6 +46,8 @@ export interface EconomyRules {
   /** The share of a storefront's takings the gangs on its turf collect; and the share of a wage a gang's member makes on their own rackets, whatever the chest holds. */
   protection: number;
   rackets: number;
+  /** The most a gang's chest holds after payday, in weeks of its members' wages: the rest goes on guns, rides and rent. */
+  chestWeeks: number;
   /** A week's margin over its costs that makes a place thriving; below nothing it's struggling. */
   thrivingAt: number;
   /** What a shift pays the player, by how the place is doing. */
@@ -135,6 +137,8 @@ export function economyDay({ world, population, state, rules, tier, turf, base, 
     till.pending = 0;
   }
   const payday = weekdayOf(day) === rules.payday;
+  // Each gang's wage bill today, for what its chest keeps back.
+  const payroll = new Map<string, number>();
   for (const person of population.people) {
     // The dead neither spend nor earn.
     if (person.diedOn !== undefined) continue;
@@ -156,6 +160,7 @@ export function economyDay({ world, population, state, rules, tier, turf, base, 
     if (payday) {
       const wage = wageOf(started, rules);
       if (person.gang) {
+        payroll.set(person.gang, (payroll.get(person.gang) ?? 0) + wage);
         const chest = state.treasuries[person.gang] ?? 0;
         const paid = Math.min(wage, chest);
         state.treasuries[person.gang] = chest - paid;
@@ -177,6 +182,8 @@ export function economyDay({ world, population, state, rules, tier, turf, base, 
     till.days.push(Math.round(net) || 0);
     if (till.days.length > 7) till.days.splice(0, till.days.length - 7);
   }
+  // Paid out, a chest keeps a few weeks of wages in hand and spends the rest.
+  if (payday) for (const [gang, wages] of payroll) state.treasuries[gang] = Math.min(state.treasuries[gang] ?? 0, wages * rules.chestWeeks);
   for (const gang of Object.keys(state.treasuries)) state.treasuries[gang] = Math.round(state.treasuries[gang] as number) || 0;
 }
 

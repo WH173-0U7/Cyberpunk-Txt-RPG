@@ -45,18 +45,24 @@ export class StatusPanel {
     if (key === this.shown) return;
     this.shown = key;
     this.els.summary.textContent = summary;
-    this.els.list.replaceChildren(
-      ...rows.map((row) => {
-        const item = document.createElement('div');
-        item.className = `status-row${row.tone ? ` is-${row.tone}` : ''}`;
-        const dt = document.createElement('dt');
-        dt.textContent = row.label;
-        const dd = document.createElement('dd');
-        dd.textContent = row.value;
-        item.append(dt, dd);
-        return item;
-      }),
-      ...(this.els.foot ? [this.els.foot] : []),
-    );
+    const items = rows.map((row) => {
+      const item = document.createElement('div');
+      item.className = `status-row${row.tone ? ` is-${row.tone}` : ''}`;
+      const dt = document.createElement('dt');
+      dt.textContent = row.label;
+      const dd = document.createElement('dd');
+      dd.textContent = row.value;
+      item.append(dt, dd);
+      return item;
+    });
+    // The rows change under the foot, which never leaves the page: focus on the Settings link stays put through a tick.
+    const { foot, list } = this.els;
+    if (!foot) {
+      list.replaceChildren(...items);
+      return;
+    }
+    if (foot.parentElement !== list) list.append(foot);
+    for (const old of [...list.children]) if (old !== foot) old.remove();
+    foot.before(...items);
   }
 }

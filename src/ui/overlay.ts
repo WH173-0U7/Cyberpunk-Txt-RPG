@@ -13,6 +13,8 @@ export interface OverlayElements {
  */
 export class MapOverlay {
   private static current: MapOverlay | null = null;
+  /** What an open overlay covers (the map and the panel): out of reach of taps, keys and screen readers while it's open. */
+  static behind: HTMLElement[] = [];
   /** Whatever opened it, which gets focus back when it closes. */
   private opener: HTMLElement | null = null;
 
@@ -51,6 +53,7 @@ export class MapOverlay {
     this.onOpen();
     const { root, toggle, close } = this.els;
     root.hidden = false;
+    for (const el of MapOverlay.behind) el.inert = true;
     toggle?.setAttribute('aria-expanded', 'true');
     toggle?.classList.add('is-open');
     close.focus({ preventScroll: true });
@@ -73,6 +76,7 @@ export class MapOverlay {
     const { root, toggle } = this.els;
     const hadFocus = root.contains(document.activeElement);
     root.hidden = true;
+    if (!MapOverlay.current) for (const el of MapOverlay.behind) el.inert = false;
     toggle?.setAttribute('aria-expanded', 'false');
     toggle?.classList.remove('is-open');
     // Only take focus back if it was inside, so closing never steals it from the panel.

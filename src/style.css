@@ -217,6 +217,7 @@ button {
 }
 /* ── Status: one line under the energy bar, and everything else about the player behind it ── */
 .status-toggle {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -234,6 +235,12 @@ button {
   text-transform: uppercase;
   text-align: left;
   cursor: pointer;
+}
+/* A thumb's worth of room above and below the one thin line, without the header growing */
+.status-toggle::before {
+  content: '';
+  position: absolute;
+  inset: -8px -4px;
 }
 .status-summary {
   overflow: hidden;
@@ -309,8 +316,8 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 32px;
-  margin: -6px 0;
+  min-height: 36px;
+  margin: -8px 0;
   padding: 0;
   border: 0;
   background: none;
@@ -555,8 +562,8 @@ button {
   flex: none;
   align-items: center;
   gap: 6px;
-  min-height: 26px;
-  padding: 3px 10px 3px 8px;
+  min-height: 32px;
+  padding: 3px 12px 3px 10px;
   border: 1px solid color-mix(in srgb, #ffd84d 70%, transparent);
   background: color-mix(in srgb, #ffd84d 8%, transparent);
   color: #ffd84d;
@@ -1232,10 +1239,10 @@ button {
 }
 .place-close {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 34px;
-  height: 34px;
+  top: 2px;
+  right: 2px;
+  width: 38px;
+  height: 38px;
 }
 .icon-btn::before,
 .icon-btn::after {
@@ -1868,13 +1875,17 @@ button {
 }
 .person-head {
   display: grid;
-  grid-template-columns: auto 1fr;
+  /* The text column never grows past the card for a long facts line. */
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 1px 10px;
   align-items: start;
 }
 .person-back {
   grid-row: 1 / span 3;
   align-self: start;
+  min-width: 36px;
+  min-height: 36px;
+  margin: -6px 0 0 -6px;
   padding: 0 6px;
   border: 0;
   background: none;
@@ -1907,7 +1918,8 @@ button {
   align-items: baseline;
   gap: 8px;
   width: 100%;
-  padding: 0;
+  min-height: 32px;
+  padding: 7px 0;
   border: 0;
   background: none;
   color: color-mix(in srgb, var(--primary) 60%, var(--muted));
@@ -2212,6 +2224,36 @@ button {
   background: color-mix(in srgb, var(--danger) 26%, transparent);
   box-shadow: inset 0 0 0 1px var(--danger);
 }
+/* ♥: a symbol like ⋯, so it takes only its own room and leaves the words theirs */
+.person-cmd.is-heart {
+  --heart: #ff6fae;
+  flex: 0 0 auto;
+  min-width: 44px;
+  border-color: color-mix(in srgb, var(--heart) 70%, transparent);
+  background: color-mix(in srgb, var(--heart) 10%, transparent);
+  color: color-mix(in srgb, var(--heart) 60%, #fff);
+  font-size: 15px;
+  line-height: 1;
+}
+.person-cmd.is-heart:hover,
+.person-cmd.is-heart:focus-visible,
+.person-cmd.is-heart.is-active {
+  background: color-mix(in srgb, var(--heart) 26%, transparent);
+}
+/* Six commands on a small phone: tighter letters, so WORK and TALK fit whole */
+@media (max-width: 400px) {
+  .person-commands {
+    gap: 5px;
+  }
+  .person-cmd {
+    padding-inline: 3px;
+    letter-spacing: 0.06em;
+  }
+  .person-cmd.is-quiet,
+  .person-cmd.is-heart {
+    min-width: 38px;
+  }
+}
 /* A menu over the map: what an eatery sells, with a Buy on each line */
 .action.is-menu {
   border-color: #ffd84d;
@@ -2270,6 +2312,13 @@ button {
   font-size: 10px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+/* A garment's slot and style, a gun's class and magazine: a line of their own under a long name, not wrapped into it */
+.shop-item.is-clothing .shop-item-kind,
+.shop-item.is-weapon .shop-item-kind,
+.shop-item.is-ammo .shop-item-kind {
+  display: block;
+  margin: 2px 0 0;
 }
 /* "Food", "×2 carried": each part moves to the next line whole rather than breaking in the middle. */
 .shop-item-part {
@@ -2792,8 +2841,8 @@ button {
     gap: 4px;
   }
   .zoom-button {
-    width: 34px;
-    height: 34px;
+    width: 36px;
+    height: 36px;
   }
 }
 
@@ -2845,4 +2894,8 @@ button {
   .map-sweep {
     display: none;
   }
+}
+/* Unload: beside Load, quieter */
+.inv-unload {
+  background: transparent;
 }

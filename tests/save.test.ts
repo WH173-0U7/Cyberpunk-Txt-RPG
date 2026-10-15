@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { CITY } from '../src/data/city';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
@@ -269,6 +270,51 @@ describe('saving', () => {
     expect(savedSeed({ version: 1, seed: '7f3a29c1' })).toBe('7f3a29c1');
     expect(savedSeed({ seed: 'nope' })).toBeNull();
     expect(savedSeed(null)).toBeNull();
+  });
+
+  it('drops what it cannot read inside a save rather than stumbling on it', () => {
+    const { game, now } = played(2);
+    game.tick(now + 2 * 24 * 3_600_000);
+    const save = JSON.parse(JSON.stringify(saveOf(game, now)));
+    save.society.known['bao-liu'] = null;
+    save.society.standings['dao-kim'] = 7;
+    save.society.threats.push(null);
+    save.society.incidents.push(null);
+    save.life.events.push(null, { kind: 'robbery' });
+    const read = readSave(save);
+    const progress = read && resume(world, read);
+    if (!progress) throw new Error('the save no longer loads');
+    expect(progress.society?.known['bao-liu']).toBeUndefined();
+    expect(progress.society?.standings['dao-kim']).toBeUndefined();
+    expect(progress.society?.threats.every(Boolean)).toBe(true);
+    expect(progress.life?.events.every((e) => Array.isArray(e.who))).toBe(true);
+    const again = new Game(world, rules, progress);
+    again.start(now);
+    again.tick(now + 24 * 3_600_000);
+    expect(again.peopleHere(now).length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('plays on from a save made by 0.1.0, keeping everything in it', () => {
+    // Saved by the 0.1.0 release after a few days in this city: food and a chip off someone in the jacket and wallet, a robbery or two, the people's days.
+    const old: unknown = JSON.parse(readFileSync(new URL('./fixtures/save-0.1.0.json', import.meta.url), 'utf8'));
+    const save = readSave(old);
+    const progress = save && resume(world, save);
+    if (!save || !progress) throw new Error('the 0.1.0 save no longer loads');
+    const game = new Game(world, rules, progress);
+    let now = save.savedAt ?? T0;
+    game.start(now);
+    expect(game.inventory.map((i) => [i.id, i.in])).toEqual([['wontons', 'jacket'], ['rammmmen', 'jacket'], ['galician-pierogi', 'jacket'], ['credchip-1', 'wallet']]);
+    expect(game.wallet).toMatchObject({ bills: 204, coins: 3, account: 0 });
+    expect(game.youSaved).toEqual({ pronouns: 'they' });
+    expect(game.societySaved.romance).toBeNull();
+    expect(game.standingWith('bao-liu', now)?.stance).toBe('hostile');
+    // Ten days on, and it saves and loads again as it is.
+    for (let day = 0; day < 10; day++) game.tick((now += 24 * 3_600_000));
+    const again = readSave(JSON.parse(JSON.stringify(saveOf(game, now))));
+    const after = again && new Game(world, rules, resume(world, again) ?? undefined);
+    expect(after?.inventory).toEqual(game.inventory);
+    expect(after?.lifeSaved).toEqual(game.lifeSaved);
+    expect(after?.societySaved).toEqual(game.societySaved);
   });
 
   it('picks up exactly where the player left off', () => {

@@ -9,6 +9,8 @@ export interface ShopItemView {
   detail?: string;
   price: number;
   affordable: boolean;
+  /** The counter won't serve the player (what they did here, or a mask). */
+  barred?: boolean;
   /** How many the player already carries. */
   carried: number;
 }
@@ -84,7 +86,7 @@ function row(item: ShopItemView): HTMLElement {
   buy.dataset.id = item.id;
   buy.disabled = !item.affordable;
   buy.append(el('span', 'shop-buy-label', 'Buy'), el('span', 'shop-price', `${item.price} €$`));
-  buy.setAttribute('aria-label', `Buy ${item.name}, ${item.price} eddies${item.affordable ? '' : ', not enough eddies'}`);
+  buy.setAttribute('aria-label', `Buy ${item.name}, ${item.price} eddies${item.affordable ? '' : item.barred ? ", they won't serve you" : ', not enough eddies'}`);
   li.append(text, buy);
   return li;
 }

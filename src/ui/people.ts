@@ -180,11 +180,12 @@ export class People {
       els.empty.textContent = view.empty;
       els.list.replaceChildren(...view.rows.map(row));
     }
-    // Whatever was tapped keeps focus through the redraw.
+    // Whatever was tapped keeps focus through the redraw, found in whichever of the list and the card is showing; a row that opened a card hands it to the card's back.
     if (focused) {
       const [key, value] = focused;
       const selector = key === 'id' ? `[data-id="${value}"]` : `[data-${key}="${value}"]${focusedId ? `[data-id="${focusedId}"]` : ''}`;
-      els.root.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
+      const scope = view.card ? els.card : els.list;
+      (scope.querySelector<HTMLElement>(selector) ?? (view.card ? els.back : null))?.focus({ preventScroll: true });
     }
   }
 
@@ -255,7 +256,7 @@ export class People {
     els.cardCommands.hidden = commands.length === 0;
     els.cardCommands.replaceChildren(
       ...commands.map((c) => {
-        const button = el('button', `person-cmd${c.active ? ' is-active' : ''}${c.quiet ? ' is-quiet' : ''}`, c.label);
+        const button = el('button', `person-cmd${c.active ? ' is-active' : ''}${c.quiet ? ' is-quiet' : ''}${c.cmd === 'heart' ? ' is-heart' : ''}`, c.label);
         button.type = 'button';
         button.dataset.cmd = c.cmd;
         button.dataset.id = card.id;

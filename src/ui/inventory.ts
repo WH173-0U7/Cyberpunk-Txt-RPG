@@ -3,6 +3,8 @@ import { MapOverlay, type OverlayElements } from './overlay';
 /** An item as the inventory shows it: what it is, how many, a word on it, what it weighs, and what can be done with it. */
 export interface InventoryItemView {
   id: string;
+  /** The pocket it's in: the same thing can be in two. */
+  in: string;
   name: string;
   count: number;
   /** What the stack weighs, e.g. "500 g". */
@@ -11,6 +13,8 @@ export interface InventoryItemView {
   detail?: string;
   /** "Eat", "Drink"… Nothing for things that can't be used from here. */
   use?: string;
+  /** A gun with rounds in it that could take more: it can be unloaded as well as loaded. */
+  unload?: boolean;
   /** Clothing carried: it can be put on. */
   wear?: boolean;
 }
@@ -73,11 +77,13 @@ export interface InventoryHandlers {
   onOpen(id: string): void;
   /** Back up a level. */
   onBack(): void;
-  /** The player tapped Eat, Drink… on an item. */
-  onUse(id: string): void;
-  onDrop(id: string): void;
+  /** The player tapped Eat, Drink… on an item, in the pocket it's in. */
+  onUse(id: string, pocket: string): void;
+  /** The player tapped Unload on a gun that could also be loaded. */
+  onUnload(id: string): void;
+  onDrop(id: string, pocket: string): void;
   /** The player tapped Wear on a garment carried. */
-  onWear(id: string): void;
+  onWear(id: string, pocket: string): void;
   /** The player tapped Take off on something worn. */
   onTakeOff(id: string): void;
 }
@@ -100,15 +106,16 @@ export class Inventory {
   ) {
     this.overlay = new MapOverlay(els, onOpen, () => {}, reducedMotion);
     els.sections.addEventListener('click', (e) => {
-      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('[data-open], [data-back], [data-doff], .inv-use, .inv-drop, .inv-wear') : null;
+      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('[data-open], [data-back], [data-doff], .inv-use, .inv-unload, .inv-drop, .inv-wear') : null;
       if (!button) return;
-      const { open, back, doff, id } = button.dataset;
+      const { open, back, doff, id, in: pocket = '' } = button.dataset;
       if (open) this.handlers.onOpen(open);
       else if (back !== undefined) this.handlers.onBack();
       else if (doff) this.handlers.onTakeOff(doff);
-      else if (id && button.classList.contains('inv-drop')) this.handlers.onDrop(id);
-      else if (id && button.classList.contains('inv-wear')) this.handlers.onWear(id);
-      else if (id) this.handlers.onUse(id);
+      else if (id && button.classList.contains('inv-drop')) this.handlers.onDrop(id, pocket);
+      else if (id && button.classList.contains('inv-wear')) this.handlers.onWear(id, pocket);
+      else if (id && button.classList.contains('inv-unload')) this.handlers.onUnload(id);
+      else if (id) this.handlers.onUse(id, pocket);
     });
   }
 
@@ -119,13 +126,14 @@ export class Inventory {
     // a row that opened hands focus to Back, and Back to the first row.
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const wasId = active?.dataset.id;
-    const wasClass = ['inv-drop', 'inv-wear', 'inv-use'].find((c) => active?.classList.contains(c)) ?? 'inv-use';
+    const wasIn = active?.dataset.in;
+    const wasClass = ['inv-drop', 'inv-wear', 'inv-unload', 'inv-use'].find((c) => active?.classList.contains(c)) ?? 'inv-use';
     const wasOpen = active?.dataset.open;
     const wasBack = active?.dataset.back !== undefined;
     const wasDoff = active?.dataset.doff;
     sections.replaceChildren(...(view.page.kind === 'outfit' ? outfitPage(view.page) : pocketPage(view.page)));
     let next: HTMLElement | null = null;
-    if (wasId) next = sections.querySelector<HTMLElement>(`.${wasClass}[data-id="${wasId}"]`);
+    if (wasId) next = sections.querySelector<HTMLElement>(`.${wasClass}[data-id="${wasId}"]${wasIn ? `[data-in="${wasIn}"]` : ''}`) ?? sections.querySelector<HTMLElement>(`[data-id="${wasId}"]`);
     else if (wasOpen) next = sections.querySelector<HTMLElement>('[data-back]') ?? sections.querySelector<HTMLElement>(`[data-open="${wasOpen}"]`);
     else if (wasBack) next = sections.querySelector<HTMLElement>('[data-open]') ?? sections.querySelector<HTMLElement>('[data-back]');
     else if (wasDoff) next = sections.querySelector<HTMLElement>(`[data-doff="${wasDoff}"]`) ?? sections.querySelector<HTMLElement>('[data-open]');
@@ -228,19 +236,30 @@ function itemRow(item: InventoryItemView): HTMLElement {
     const use = el('button', 'inv-use', item.use);
     use.type = 'button';
     use.dataset.id = item.id;
+    use.dataset.in = item.in;
     use.setAttribute('aria-label', `${item.use} ${item.name}`);
     row.append(use);
+  }
+  if (item.unload) {
+    const unload = el('button', 'inv-use inv-unload', 'Unload');
+    unload.type = 'button';
+    unload.dataset.id = item.id;
+    unload.dataset.in = item.in;
+    unload.setAttribute('aria-label', `Unload ${item.name}`);
+    row.append(unload);
   }
   if (item.wear) {
     const wear = el('button', 'inv-wear', 'Wear');
     wear.type = 'button';
     wear.dataset.id = item.id;
+    wear.dataset.in = item.in;
     wear.setAttribute('aria-label', `Wear ${item.name}`);
     row.append(wear);
   }
   const drop = el('button', 'inv-drop', 'Drop');
   drop.type = 'button';
   drop.dataset.id = item.id;
+  drop.dataset.in = item.in;
   drop.setAttribute('aria-label', `Drop ${item.name}${item.detail ? ` (${item.detail})` : ''}`);
   row.append(drop);
   return row;
