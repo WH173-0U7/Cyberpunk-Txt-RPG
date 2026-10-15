@@ -140,12 +140,24 @@ export function readSave(raw: unknown): SaveData | null {
     energy: isEnergy(save.energy) ? save.energy : null,
     inebriation: isInebriation(save.inebriation) ? save.inebriation : null,
     // And before there were people to deal with, nobody knew the player (and before they could be known of, no one was).
-    society: isSociety(save.society) ? { ...save.society, known: knownOf(save.society.known), links: save.society.links ?? {}, memories: memoriesOf(save.society.memories), romance: romanceOf(save.society.romance) } : null,
+    society: isSociety(save.society)
+      ? {
+          ...save.society,
+          // Anything in it that isn't a record of something is dropped rather than tripped over.
+          standings: objectsIn(save.society.standings),
+          incidents: save.society.incidents.filter(isObject),
+          threats: save.society.threats.filter(isObject),
+          known: knownOf(save.society.known),
+          links: save.society.links ?? {},
+          memories: memoriesOf(save.society.memories),
+          romance: romanceOf(save.society.romance),
+        }
+      : null,
     charisma: isSkill(save.charisma) ? save.charisma : null,
     // And before there was work, the player had none.
     job: isJob(save.job) ? save.job : null,
     // And before the people had days of their own, none had passed.
-    life: isLife(save.life) ? save.life : null,
+    life: isLife(save.life) ? { ...save.life, events: save.life.events.filter((e) => isObject(e) && Array.isArray(e.who)) } : null,
     // And before the player said who they are, they went by they.
     you: isYou(save.you) ? save.you : null,
     savedAt: save.savedAt,
@@ -198,7 +210,8 @@ function romanceOf(value: unknown): Romance | null {
   const r = value as Record<string, unknown> | null;
   if (typeof r !== 'object' || r === null) return null;
   if (typeof r.with !== 'string' || (r.stage !== 'dating' && r.stage !== 'together') || !isNumber(r.since) || !isNumber(r.lastDateAt) || !Number.isInteger(r.dates) || (r.dates as number) < 0) return null;
-  return { with: r.with, stage: r.stage, since: r.since, dates: r.dates as number, lastDateAt: r.lastDateAt };
+  const caught = Number.isInteger(r.caught) && (r.caught as number) > 0 ? { caught: r.caught as number } : {};
+  return { with: r.with, stage: r.stage, since: r.since, dates: r.dates as number, lastDateAt: r.lastDateAt, ...caught };
 }
 
 function isMoney(value: unknown): value is Money {
@@ -229,8 +242,17 @@ function isEnergy(value: unknown): value is EnergyState {
 /** What's known of each person, with the facts and the log that older saves don't have. */
 function knownOf(known: SocietyState['known'] | undefined): SocietyState['known'] {
   const out: SocietyState['known'] = {};
-  for (const [id, k] of Object.entries(known ?? {})) out[id] = { ...k, facts: Array.isArray(k.facts) ? k.facts : [], log: Array.isArray(k.log) ? k.log : [] };
+  for (const [id, k] of Object.entries(known ?? {})) if (isObject(k)) out[id] = { ...k, facts: Array.isArray(k.facts) ? k.facts : [], log: Array.isArray(k.log) ? k.log : [] };
   return out;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> & object {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The entries of a record that are records themselves. */
+function objectsIn<T>(record: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).filter(([, v]) => isObject(v)));
 }
 
 /** What people remember of the player, as far as it reads: older saves have none, and anything unreadable is forgotten. */
@@ -259,7 +281,7 @@ function isLife(value: unknown): value is LifeState {
     record(l.hates) &&
     Array.isArray(l.made) &&
     Array.isArray(l.broken) &&
-    [l.tills, l.treasuries, l.jobs, l.gangs, l.dead, l.since].every(optional)
+    [l.chips, l.tills, l.treasuries, l.jobs, l.gangs, l.dead, l.since].every(optional)
   );
 }
 

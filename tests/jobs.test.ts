@@ -28,10 +28,11 @@ describe('work', () => {
       expect(new Set(ladder.map((r) => r.id)).size).toBe(ladder.length);
     }
     const [from, to] = JOBS.hours;
+    // From the opening hour up to the closing one, not into it: nine to five means nothing starts at 5:59.
     expect(shiftOpen(from, JOBS)).toBe(true);
-    expect(shiftOpen(to, JOBS)).toBe(true);
+    expect(shiftOpen(to - 1, JOBS)).toBe(true);
     expect(shiftOpen(from - 1, JOBS)).toBe(false);
-    expect(shiftOpen(to + 1, JOBS)).toBe(false);
+    expect(shiftOpen(to, JOBS)).toBe(false);
     // A luxury place pays more than a secondhand one for the same rung.
     const dishes = JOBS.ladders.food![0]!;
     expect(shiftPay(dishes, 'luxury', JOBS)).toBeGreaterThan(shiftPay(dishes, 'everyday', JOBS));

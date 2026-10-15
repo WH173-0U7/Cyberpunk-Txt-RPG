@@ -429,7 +429,7 @@ describe('dialogue', () => {
           for (const role of ['Mine', 'Kin', 'Ours', 'Heard']) {
             if ((kind === 'Friends' || kind === 'Fallout') && (role === 'Ours' || role === 'Heard')) continue;
             for (const won of ['yes', '']) {
-              const telling: Speaker = { ...speaker, vars: { ...vars, news: 'yes', [`news${kind}`]: 'yes', [`news${role}`]: 'yes', newsWho: 'Ana', newsGang: 'Valentinos', newsWord: 'cousin', newsAgo: 'last night', newsTook: '40', newsWhere: 'The Afterlife', newsHe: 'she', newsHim: 'her', newsHis: 'her', newsWon: won, newsHurt: won ? '' : 'yes' } };
+              const telling: Speaker = { ...speaker, vars: { ...vars, news: 'yes', [`news${kind}`]: 'yes', [`news${role}`]: 'yes', newsWho: 'Ana', newsGang: 'Valentinos', newsWord: 'cousin', newsAgo: 'last night', newsTook: '40', newsWhere: 'The Afterlife', newsHe: 'she', newsS: 's', newsHim: 'her', newsHis: 'her', newsWon: won, newsHurt: won ? '' : 'yes' } };
               check(compose(LINES.topics.news, telling, LINES, rng, { opener: false }), `${about} news ${kind} ${role} ${won ? 'won' : 'lost'}`);
             }
           }
@@ -439,7 +439,7 @@ describe('dialogue', () => {
         const deep = population.people.indexOf(p) % 2 === 0;
         const told = (kind: string, role: string, extra: Record<string, string>) => {
           if (!deep) return;
-          const telling: Speaker = { ...speaker, vars: { ...vars, news: 'yes', [`news${kind}`]: 'yes', [`news${role}`]: 'yes', newsWho: 'Ana', newsGang: 'Valentinos', newsWord: 'cousin', newsAgo: 'last night', newsTook: '0', newsWhere: 'Tom\'s Diner', newsHe: 'she', newsHim: 'her', newsHis: 'her', newsWon: '', newsHurt: '', newsWith: '', newsKilled: '', ...extra } };
+          const telling: Speaker = { ...speaker, vars: { ...vars, news: 'yes', [`news${kind}`]: 'yes', [`news${role}`]: 'yes', newsWho: 'Ana', newsGang: 'Valentinos', newsWord: 'cousin', newsAgo: 'last night', newsTook: '0', newsWhere: 'Tom\'s Diner', newsHe: 'she', newsS: 's', newsHim: 'her', newsHis: 'her', newsWon: '', newsHurt: '', newsWith: '', newsKilled: '', ...extra } };
           check(compose(LINES.topics.news, telling, LINES, rng, { opener: false }), `${about} news ${kind} ${role} ${JSON.stringify(extra)}`);
           lines += 1;
         };

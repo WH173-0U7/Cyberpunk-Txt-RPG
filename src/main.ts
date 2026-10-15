@@ -16,6 +16,7 @@ import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
 import { Game, type Presence, streetSpot } from './engine/game';
+import type { JobStatus } from './engine/jobs';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu, Quality } from './engine/food';
 import { kinWord, type Approach, type Question } from './engine/dialogue';
@@ -70,6 +71,8 @@ const saveStatus = $('#save-status');
 const walletLabel = $('#wallet');
 
 const transmissions = new Transmissions({ root: $('#transmissions'), announcer: $('#announcer') }, registerGlitch, reducedMotion);
+// An overlay over the map puts the map and the panel out of reach until it closes.
+MapOverlay.behind = [$('#map-stage'), $('#place')];
 
 const place = new PlacePanel(
   {
@@ -148,9 +151,10 @@ const inventory = new Inventory(
       inventoryPath.pop();
       showInventory();
     },
-    onUse: (id) => use(id),
-    onDrop: (id) => drop(id),
-    onWear: (id) => wear(id),
+    onUse: (id, pocket) => use(id, pocket),
+    onUnload: (id) => unload(id),
+    onDrop: (id, pocket) => drop(id, pocket),
+    onWear: (id, pocket) => wear(id, pocket),
     onTakeOff: (id) => {
       lastActivity = performance.now();
       game.takeOff(id);
@@ -164,7 +168,6 @@ let inventoryPath: string[] = [];
 const settings = new Settings(
   {
     root: $('#settings'),
-    toggle: $<HTMLButtonElement>('#settings-toggle'),
     close: $<HTMLButtonElement>('#settings-close'),
     seed: $('#settings-seed'),
     progress: $('#settings-progress'),
@@ -341,8 +344,11 @@ let picker: Picker = null;
 
 const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill') });
 const statusPanel = new StatusPanel({ toggle: $<HTMLButtonElement>('#status-toggle'), summary: $('#status-summary'), list: $('#status'), foot: $('#status-foot') });
-// Settings opens from the bottom of the drop-down, which folds away as it does.
-$('#settings-toggle').addEventListener('click', () => statusPanel.toggle(false));
+// Settings opens from the bottom of the drop-down, which folds away as it does: closed, it hands focus back to the drop-down's toggle.
+$('#settings-toggle').addEventListener('click', () => {
+  statusPanel.toggle(false);
+  settings.overlay.show($('#status-toggle'));
+});
 
 let game: Game;
 /** What the player has picked to go to, if anything. */
@@ -389,8 +395,14 @@ function go(mode: TravelMode): void {
   if (!to) return;
   const now = Date.now();
   const plan = game.plan(to, mode, now);
-  if (!plan || !game.go(plan, now)) return;
+  if (!plan) return;
+  // The target goes before the trip starts, so the panel the trip redraws (and reads out) is the trip's, not the target's.
+  const was = target;
   target = null;
+  if (!game.go(plan, now)) {
+    target = was;
+    return;
+  }
   lastActivity = performance.now();
   refresh();
 }
@@ -515,7 +527,7 @@ function walkAction(plan: TripPlan | null): PanelAction {
   const trip = game.currentTrip;
   if (trip?.mode === 'ncart') return { id: 'walk', label: 'Walk', sub: 'NCART trip underway', disabled: true };
   if (!plan) return { id: 'walk', label: 'Walk', disabled: true };
-  return { id: 'walk', label: trip ? 'Walk here instead' : 'Walk', sub: formatMinutes(plan.minutes) };
+  return { id: 'walk', label: trip ? 'Walk here' : 'Walk', sub: formatMinutes(plan.minutes) };
 }
 
 function rideAction(plan: TripPlan | null, now: number): PanelAction {
@@ -589,6 +601,14 @@ function hereView(now: number): PanelView {
  * category of building holds (counters, rooms, people, jobs) gets added to this view as the
  * game grows.
  */
+/** The Work button inside the player's workplace: what a shift pays and costs, or why not now. */
+function workAction(shift: JobStatus, now: number): PanelAction {
+  const masked = Boolean(game.masked());
+  const tired = game.energy(now).current < shift.rung.energy;
+  const why = shift.blocked === 'done' ? 'Done today' : shift.blocked === 'closed' ? `${JOBS.hours[0]}–${JOBS.hours[1]}h` : masked ? 'Not in a mask' : tired ? 'Too tired' : '';
+  return { id: 'work', label: 'Work', sub: why || `${shift.pay} €$, ${shift.rung.energy} energy`, disabled: Boolean(why) };
+}
+
 function insideView(building: Building): PanelView {
   const now = Date.now();
   const menu = game.menu();
@@ -606,10 +626,10 @@ function insideView(building: Building): PanelView {
     description,
     actions: [
       peopleAction(here),
-      ...(menu ? [barred ? { id: 'menu' as const, label: 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []),
+      ...(menu ? [barred ? { id: 'menu' as const, label: menu.kind === 'gear' ? 'Shop' : 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []),
       ...(game.bank() ? [{ id: 'bank' as const, label: 'Bank', sub: `€$ ${game.wallet.account} banked` }] : []),
-      // The player's shift here: what it pays and costs, or why not now.
-      ...(shift ? [{ id: 'work' as const, label: 'Work', sub: shift.blocked === 'done' ? 'Done today' : shift.blocked === 'closed' ? `${JOBS.hours[0]}–${JOBS.hours[1]}h` : `${shift.pay} €$, ${shift.rung.energy} energy`, disabled: Boolean(shift.blocked) }] : []),
+      // The player's shift here: what it pays and costs, or why not now (masked, or too tired, it's refused).
+      ...(shift ? [workAction(shift, now)] : []),
     ],
     // Leaving is the corner button, so the row keeps to what there is to do in here.
     closable: true,
@@ -702,6 +722,8 @@ function showWallet(wallet: Wallet, now: number): void {
   const pass = wallet.passUntil > now;
   walletLabel.textContent = `€$ ${wallet.eddies}${pass ? ' · Pass' : ''}`;
   walletLabel.classList.toggle('has-pass', pass);
+  // The button's name says what's on it, too.
+  $('#inventory-toggle').setAttribute('aria-label', `Inventory, ${wallet.eddies} €$ in cash${pass ? ', NCART pass' : ''}`);
   walletLabel.title = `${wallet.bills} €$ in bills, ${wallet.coins} €$ in coins, ${wallet.account} €$ in the bank${wallet.chips ? `, ${wallet.chips} €$ on chips` : ''}.${pass ? ` NCART monthly pass valid until ${formatDay(wallet.passUntil)}.` : ' Buy an NCART monthly pass at any station.'}`;
 }
 
@@ -737,9 +759,11 @@ function showInventory(): void {
   const tier = (p: { brand?: string; style?: PocketLoad['style']; quality?: Quality } | undefined) => (p ? [p.brand, p.style ? GEAR.styleLabels[p.style] : '', p.quality ? GEAR.labels[p.quality] : ''].filter(Boolean).join(' · ') : '');
   const view = (item: Item): InventoryItemView => ({
     id: item.id,
+    in: item.in ?? '',
     name: item.name,
     count: item.count,
     use: useLabel(item),
+    unload: item.kind === 'weapon' && game.canLoad(item.id).load && game.canLoad(item.id).unload,
     wear: item.kind === 'clothing' && Boolean(item.gear),
     weight: formatGrams(item.count * itemGrams(item, GEAR, FOOD.dishes)),
     detail: itemDetail(item, tier),
@@ -832,8 +856,8 @@ function useLabel(item: Item): string | undefined {
   return dish ? (dish.kind === 'food' ? 'Eat' : 'Drink') : undefined;
 }
 
-/** Uses something from the inventory: eats or drinks it, or loads or unloads a gun. */
-function use(id: string): void {
+/** Uses something from the inventory, from the pocket it was tapped in: eats or drinks it, or loads a gun (or unloads one that's full). */
+function use(id: string, pocket: string): void {
   lastActivity = performance.now();
   const item = game.inventory.find((i) => i.id === id);
   if (item?.kind === 'weapon') {
@@ -841,19 +865,25 @@ function use(id: string): void {
     else game.unload(id);
     return;
   }
-  game.consume(id, Date.now());
+  game.consume(id, Date.now(), pocket || undefined);
 }
 
-/** Drops something from the inventory, to make room. */
-function drop(id: string): void {
+/** Takes the rounds out of a gun that could take more. */
+function unload(id: string): void {
   lastActivity = performance.now();
-  game.drop(id);
+  game.unload(id);
 }
 
-/** Puts on a garment from the inventory. */
-function wear(id: string): void {
+/** Drops something from the inventory, from the pocket it was tapped in, to make room. */
+function drop(id: string, pocket: string): void {
   lastActivity = performance.now();
-  game.wear(id);
+  game.drop(id, pocket || undefined);
+}
+
+/** Puts on a garment from the inventory, from the pocket it was tapped in. */
+function wear(id: string, pocket: string): void {
+  lastActivity = performance.now();
+  game.wear(id, Date.now(), pocket || undefined);
 }
 
 /** How drunk the player is, on the screen; the words are the status drop-down's. */
@@ -917,7 +947,7 @@ function showShop(): void {
     blurb: barred ?? menuBlurb(menu),
     status: shopStatus,
     // Cash, or a transfer where this counter takes one: the game knows which.
-    items: items.map((item) => ({ ...item, affordable: !barred && game.affords(item.id), carried: carried.get(item.id) ?? 0 })),
+    items: items.map((item) => ({ ...item, affordable: !barred && game.affords(item.id), barred: Boolean(barred), carried: carried.get(item.id) ?? 0 })),
   });
 }
 
@@ -1018,7 +1048,7 @@ function showSettings(): void {
   settings.render({
     seed: game.world.seed.toUpperCase(),
     // A no-break space keeps the eddies sign with its number.
-    progress: `Right now you've mapped ${mapped} of ${places} places and have €$\u00a0${game.wallet.eddies} on you${game.wallet.account ? ` and €$\u00a0${game.wallet.account} in the bank` : ''}.`,
+    progress: `Right now you've mapped ${mapped} of ${places} places and have ${game.wallet.eddies}\u00a0€$ on you${game.wallet.account ? ` and ${game.wallet.account}\u00a0€$ in the bank` : ''}.`,
     build: `${__CHANNEL__ === 'beta' ? 'Beta' : 'Stable'} build ${__BUILD__}${__CHANNEL__ === 'beta' ? ' · its own save, apart from the stable game' : ''}`,
     pronouns: game.pronouns,
   });
@@ -1192,11 +1222,18 @@ function begin(world: World, progress?: Progress, notice?: string): void {
  */
 function boot(): void {
   const raw = saveSlot.load();
-  const saved = readSave(raw);
-  const world = saved ? generateWorld(saved.seed, CITY) : null;
-  const progress = saved && world && saved.generator === GENERATOR_VERSION ? resume(world, saved) : null;
-  if (world && progress) {
-    begin(world, progress);
+  try {
+    const saved = readSave(raw);
+    const world = saved ? generateWorld(saved.seed, CITY) : null;
+    const progress = saved && world && saved.generator === GENERATOR_VERSION ? resume(world, saved) : null;
+    if (world && progress) {
+      begin(world, progress);
+      return;
+    }
+  } catch (error) {
+    // A save that reads but won't play is no reason never to start again: the same city, from the top.
+    console.error('The save would not load:', error);
+    begin(generateWorld(savedSeed(raw) ?? randomSeed(), CITY), undefined, "Your save wouldn't load. Night City starts over for you.");
     return;
   }
   // A save from before the game changed how cities (or saves) work: keep the city, start the map over.
@@ -1238,8 +1275,19 @@ function tick(): void {
 document.addEventListener('keydown', (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
   if (event.key === 'i' || event.key === 'I') inventory.overlay.toggle();
-  // Escape closes whatever covers the map first, then lets go of whatever's picked.
-  else if (event.key === 'Escape' && MapOverlay.open) MapOverlay.open.close();
+  // Escape backs out of a person's card to the list, then closes whatever covers the map, then the status drop-down, then lets go of whatever's picked.
+  else if (event.key === 'Escape' && people.overlay.isOpen && personShown) {
+    const was = personShown;
+    personShown = null;
+    factsOpen = false;
+    picker = null;
+    showPeople();
+    (document.querySelector<HTMLElement>(`#people-list [data-id="${was}"]`) ?? $('#people-close')).focus({ preventScroll: true });
+  } else if (event.key === 'Escape' && MapOverlay.open) MapOverlay.open.close();
+  else if (event.key === 'Escape' && statusPanel.isOpen) {
+    statusPanel.toggle(false);
+    $('#status-toggle').focus({ preventScroll: true });
+  }
   else if (event.key === 'Escape' && target) select(null);
   // The map's keys rest while something covers it.
   else if (MapOverlay.open) return;

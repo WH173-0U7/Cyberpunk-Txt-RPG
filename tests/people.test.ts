@@ -3,7 +3,7 @@ import { CITY } from '../src/data/city';
 import { FOOD } from '../src/data/food';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
-import { dreamOf, drawnTo, generatePeople, handleOf, heartOf, INVERSE, isCorpo, isNetrunner, peopleAt, tiesOf, whereIs, type Population, type TieKind } from '../src/engine/people';
+import { dreamOf, drawnTo, generatePeople, handleOf, heartOf, INVERSE, isCorpo, isNetrunner, peopleAt, tiesOf, whereIs, worksNights, type Population, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 
@@ -126,11 +126,19 @@ describe('the people', () => {
       }
       expect(whereIs(person, world, { ...day, hour: 11 }, FOOD.dishes)).toEqual(whereIs(person, world, { ...day, hour: 11 }, FOOD.dishes));
     }
-    // Over a working week, every storefront has its people in by day.
+    // Over a working week, every storefront has its people in by day, and a bar or a club by night.
     for (const shop of world.buildings.filter((b) => b.business)) {
-      const staffed = [1, 2, 3, 4, 5].some((weekday) => peopleAt(population, world, { kind: 'building', id: shop.id }, { hour: 11, weekday, day: 100 + weekday }, FOOD.dishes).length > 0);
+      // (A capsule hotel's night clerk is in by night.)
+      const hours = shop.category === 'nightlife' ? [21] : [11, 21];
+      const staffed = [1, 2, 3, 4, 5].some((weekday) => hours.some((hour) => peopleAt(population, world, { kind: 'building', id: shop.id }, { hour, weekday, day: 100 + weekday }, FOOD.dishes).some((p) => p.person.job.building === shop.id)));
       expect(staffed, `${shop.name} is never open`).toBe(true);
     }
+    // Night work keeps night hours: behind the bar at eleven at night, asleep at eight in the morning.
+    const nights = population.people.filter((p) => worksNights(p, world) && p.job.building && p.home);
+    expect(nights.length).toBeGreaterThan(0);
+    for (const p of nights) expect(whereIs(p, world, { ...day, hour: 8 }, FOOD.dishes)?.doing, p.name).toBe('at home, asleep');
+    const atTheBar = nights.filter((p) => whereIs(p, world, { ...day, hour: 23 }, FOOD.dishes)?.spot.id === p.job.building).length;
+    expect(atTheBar).toBeGreaterThan(nights.length / 2);
     // At night the homes are full and the shops are not.
     const atHome = population.people.filter((p) => p.home && whereIs(p, world, { ...day, hour: 3 }, FOOD.dishes)?.spot.id === p.home).length;
     expect(atHome).toBeGreaterThan(population.people.filter((p) => p.home).length / 2);

@@ -108,6 +108,18 @@ describe('society', () => {
     expect(words.threats).toEqual([]);
   });
 
+  it('leaves the dead out of it: no grudge, no memory, and nobody comes for them', () => {
+    // Mateo dead, Rosa robbed: he's the one who'd have come, and now no one feels it for him.
+    const mourning: Population = { ...pop, people: pop.people.map((p) => (p.id === 'mateo' ? { ...p, diedOn: 1 } : p)) };
+    for (let i = 0; i < 20; i++) {
+      const state = freshSociety();
+      const fallout = applyIncident(state, mourning, { at: T0, kind: 'robbery', victim: 'rosa', witnesses: [], district: 'heywood', took: 30 }, RULES, 1, T0, createRng(`dead-${i}`), links);
+      expect(fallout.affected.some((a) => a.id === 'mateo')).toBe(false);
+      expect(fallout.threats.some((t) => t.by === 'mateo')).toBe(false);
+      expect(memoriesOf(state, 'mateo', RULES.memory, 1, T0)).toEqual([]);
+    }
+  });
+
   it('sends someone with the grudge and the nerve to collect, later, and the gang once it has had enough', () => {
     const state = freshSociety();
     // Mateo: 95% of 55 grudge, courage 0.9 and a temper: he comes.

@@ -53,9 +53,12 @@ clothing, weapons and ammo are the items so far:
   consumable, shard, credchip, junk, component, after the wiki's 2077 item types plus the
   2020 credchip), a name, a count and the pocket it's `in`. `Game.inventory` is what the player carries, saved as `items`;
   `Game.gearSaved` is their pockets, saved as `gear`. Giving and taking items goes in
-  `Game`: `Game.buy(id)` (off a menu or a rack), `Game.consume(id, now)` (eat or drink one),
-  `Game.drop(id)`. Anything new that hands the player an item goes through `pocketFor`
-  (room, or none) and sets `in`; old saves with items in no pocket are put away by `stow`.
+  `Game`: `Game.buy(id)` (off a menu or a rack; what's bought goes in its pocket before it's
+  paid for, so the change only comes back where there's room left), `Game.consume(id, now,
+  from)` (eat or drink one), `Game.drop(id, from)` (`from` is the pocket the row was tapped in:
+  the same thing can be in two). Anything new that hands the player an item goes through
+  `pocketFor` (room, or none) and sets `in`; old saves with items in no pocket are put away
+  by `stow`.
 - `src/engine/carry.ts` is the arithmetic: what a thing weighs (`itemGrams`: by its kind,
   a dish's own `grams`, a garment's own), how many share a slot (`stackSlots`), a pocket's
   load (its stacks, the pockets inside it a slot each, the bills in a wallet and the coins
@@ -88,7 +91,8 @@ clothing, weapons and ammo are the items so far:
   through `Game`'s private `pay(price, transfers)`: a transfer from the account where the
   counter takes one (`MONEY.transfers`: chains, luxury places, racks of gear, the NCART)
   and the account covers it, else cash through `payCash` (coins first, notes of `noteMin`
-  and up, change back in coins as far as `changeRoom` allows); `Game.affords(id)` and
+  and up, change back in coins as far as `changeRoom` allows, measured once the coins paid
+  are out of the pocket); `Game.affords(id)` and
   `affordsFare(amount)` tell the UI what can be paid for, by either. Anything that pays the
   player cash goes through `walletRoom`/`changeRoom` (see `rob`); anything that takes it,
   `takeCash` (bills first). A bank is a building whose business is `bank` (the `EuroBank`
@@ -142,7 +146,8 @@ clothing, weapons and ammo are the items so far:
 - `src/data/items.ts` names each kind and says what goes in it (the order items are listed
   in within a pocket). Real items take their names and details from the wiki and the TCG.
 - `src/ui/inventory.ts` shows a page at a time: the outfit (a row per slot, then the bags),
-  or inside one pocket (its pockets' load, the items in it with Eat/Drink/Wear/Load/Unload/Drop, the
+  or inside one pocket (its pockets' load, the items in it with Eat/Drink/Wear/Load/Unload/Drop,
+  each row carrying the pocket it's in for `Game` (a part-loaded gun gets both Load and Unload), the
   pockets inside it as rows that open, and figures for the bills and the coins). `main.ts`
   keeps the path of pockets opened; what using or wearing something does is `Game`'s
   business. Weight has no effect on the player yet; `Game.carry()` has the total for when it
@@ -166,10 +171,11 @@ it needs no generator bump. The pieces:
   `traits`, `likes` (a dish, a drink, a `hangout` spot), `hates` (a gang) and `eddies`.
   `Tie`s link people both ways: `to` is `from`'s `kind` (spouse, partner, parent, uncle,
   friend, crew, coworker…; `INVERSE` gives the other side), one tie a pair. `whereIs` puts a person somewhere by the clock
-  (`Clock`: hour, weekday, day; the phone's local time, or `rules.clock` in tests); nobody is
+  (`Clock`: hour, weekday, day; the phone's local time, or `rules.clock` in tests; night work,
+  `worksNights`, at a bar, a club or the night desk, runs from six till three); nobody is
   placed on the streets, only in buildings and at places, so `Game.peopleHere(now)` works
   inside a building or at a location.
-- `src/engine/society.ts` is the player's side: `Standing` per person (rapport, grudge,
+- `src/engine/society.ts` is the player's side: `Standing` per person (rapport, and a grudge
   fading on the clock), `Rep` per circle (`gang:`, `district:`, `business:<building id>`,
   `chain:<business id>`), incidents and threats. `applyIncident` is the cascade; add a new
   kind of incident (assault, murder are already named) by giving it a severity in
@@ -264,9 +270,14 @@ it needs no generator bump. The pieces:
   old age; a gang `joined` in a dead member's place) and changing the people as it goes:
   eddies, `hates`, ties (one tie a pair, changed only through `setTie`: `broken` writes off
   a pair's ties from the start, `made` is what they are now), jobs (`LifeState.jobs`, with
-  `Person.hiredOn`, so `bossOf` never makes a hire the boss), gangs, `Person.hurtUntil`
+  `Person.hiredOn`, so `bossOf` never makes a hire the boss), gangs, what's on someone's
+  chip (`LifeState.chips`: a robbery takes the eddies and the chip off the victim for good),
+  `Person.hurtUntil`
   (laid up at home in `whereIs`) and `Person.diedOn` (the dead are nowhere, never live a day
-  or spend a cent, and anyone dead who meant to come collect never comes). The changes are
+  or spend a cent, and anyone dead who meant to come collect never comes; someone who dies in
+  the day's fight is out of the rest of that day, and the dead feel nothing of an incident).
+  Old events are forgotten day by day, so days caught up on at once come out as they would
+  have one at a time (the life test checks a month). The changes are
   the `LifeState` saved as `life`; `applyLife` puts them back onto a population made fresh
   for the seed, so `generatePeople` stays pure and a save brings the same people back.
   `Game` lives the days in `start` and `tick` (`live`), emitting `societyChanged` when
@@ -280,7 +291,8 @@ it needs no generator bump. The pieces:
   was about, and teaches the player the tie as it is now (or the death). Asked about someone
   dead, their people say so (`LINES.ask.dead`); about an ex, they're done with them
   (`LINES.ask.ex`). `scenesAt` pairs the people at a spot by their ties
-  (and a ganger on their turf with the help, rivals with each other) with a phrase from
+  (and a ganger on their turf with the help, who gets the `leanedOn` side of it, rivals with
+  each other) with a phrase from
   `LIFE.scenes`, drawn for the place, the day and the three-hour block; it's `Presence.scene`,
   and the People overlay says "eating Wontons · arguing with a woman in Mox colors". A new
   kind of thing that can happen between people is another `LifeKind` with a chance, a roll
@@ -291,7 +303,8 @@ it needs no generator bump. The pieces:
   evenings, an outing at their hangout at its tier's price, which lands in that storefront's
   till; on payday (Friday) everyone draws a week's money (`wageOf`: a share of what they
   started with, so a robbery yields what it did), a gang's members half from rackets and the
-  rest from the gang's treasury. Every storefront takes a day's walk-in trade (drawn once per
+  rest from the gang's treasury, which keeps `chestWeeks` of its wages after payday and spends
+  the rest. Every storefront takes a day's walk-in trade (drawn once per
   place, swinging daily) plus what the player bought there (`Till.pending`, from `Game.buy`),
   and pays rent, its staff (`staffCostOf`, the boss more) and the gangs' cut (`turfFrom` the
   people data's turf, by share). A till keeps a week of nets; `healthOf` reads it as
@@ -321,15 +334,20 @@ it needs no generator bump. The pieces:
   free is `flirt` a point of reaction (one that doesn't costs `miss`), the way in they want
   `wants`, their favorite as a gift `gift`; the note says `♥ +n`. Who the player is seeing
   is `SocietyState.romance` (`Romance`: who, `dating` or `together`, since, dates, the last
-  date). `Game.romanceWith(id, now)` is what the card's ♥ offers (`RomanceMove`); `askOut`
-  (a yes takes `drawn`, free, warm or better, `ask.spark` and `ask.rapport`; pressing like any
-  ask), `date` (an evening by `date.from`/`to`, somewhere with a food menu, not at their work,
-  once a clock day, paying for two of their favorite if it's on, else the cheapest drink),
+  date, the times they've `caught` the player this time round). `Game.romanceWith(id, now)` is
+  what the card's ♥ offers (`RomanceMove`); `askOut` (a yes takes `drawn`, free, warm or
+  better, `ask.spark` and `ask.rapport`; pressing like any ask, but a no to a mask isn't
+  written down), `date` (an evening by `date.from`/`to`, somewhere with a food menu that
+  would serve the player, not at their work, once a night by the clock (the small hours
+  count as the evening before), paying for two of their favorite if it's on, else the
+  cheapest drink),
   `makeOfficial` (`official.dates` and `official.spark`) and `endRomance` (the `dumped`
   numbers, with their people by closeness). Flirting in front of the one the player is seeing
-  is `jealous` (a `cheated` memory); they end it themselves on the next talk when the spark
-  is under `endAt` or they've caught the player `cheats` times (`LINES.romance.theyEnd`,
-  `fizzled`/`caught`). One at a time: `liveUntil` takes the player's partner as `spokenFor`,
+  is `jealous` (a `cheated` memory, and `caught` once more; not while they're asleep); they
+  end it themselves (`theyEndIt`, on the next talk, date or ask to make it official, whenever
+  they're awake) when the spark is under `endAt`, they've turned hostile, or they've caught
+  the player `cheats` times (`LINES.romance.theyEnd`, `fizzled`/`caught`), and the spark goes
+  with it. Date memories are lines for while it lasts (`withYou`) and for after. One at a time: `liveUntil` takes the player's partner as `spokenFor`,
   so life never pairs them off, and pairs only people drawn to each other; a partner who dies
   ends it. Lines are `LINES.romance`, `LINES.approaches.flirt`, `LINES.you.askOut`/`date`/
   `official`/`endIt`, and memory lines for `date`, `dumped` and `cheated`.
@@ -451,7 +469,8 @@ the action row keeps to three buttons at most and their words fit a phone.
 ## Overlays
 
 Every overlay (`MapOverlay` in `src/ui/overlay.ts`: inventory, settings, people, menu) lies
-over the map and the panel under it, and its header is one `.overlay-strip`: what it is, a
+over the map and the panel under it, which are `inert` while it's open (`MapOverlay.behind`),
+and its header is one `.overlay-strip`: what it is, a
 count or a detail, and the close. Don't put the place's name or district in one; the sign
 above has it. Phone taps need room: chips and commands are at least 36px tall, and the
 panel's buttons share their row (`flex: 1`) with one-line labels, so keep subtitles short.
@@ -460,7 +479,10 @@ panel's buttons share their row (`flex: 1`) with one-line labels, so keep subtit
 
 `src/ui/settings.ts` is the settings overlay: **You** (the pronouns the player goes by, three
 choices, `onPronouns`), then the save: restart this city, or erase the save and start a new
-one, each asking first. New options go in it as their own groups.
+one, each asking first. New options go in it as their own groups. Opened from the foot of the
+status drop-down, it hands focus back to the drop-down's toggle. A save that reads but won't
+play starts the same city over (`boot` in `main.ts`), and `readSave` drops any record inside
+a save that isn't one, rather than trip over it.
 
 ## Checks before a PR
 

@@ -394,7 +394,8 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
   const home: Spot | null = person.home ? { kind: 'building', id: person.home } : null;
   const work: Spot | null = person.job.building ? { kind: 'building', id: person.job.building } : null;
   const hangout = person.likes.hangout;
-  const dayOff = createRng(`${person.id}:${day}:off`).chance(weekday === 0 || weekday === 6 ? 0.5 : 0.12);
+  const offOn = (d: number, wd: number) => createRng(`${person.id}:${d}:off`).chance(wd === 0 || wd === 6 ? 0.5 : 0.12);
+  const dayOff = offOn(day, weekday);
   const at = (spot: Spot | null, doing: string) => (spot ? { spot, doing } : null);
   const outLate = person.gang ? 0.45 : person.traits.chatty * 0.3;
 
@@ -402,6 +403,18 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
   if (person.diedOn !== undefined && day >= person.diedOn) return null;
   // Laid up: home all day, nursing it.
   if (person.hurtUntil !== undefined && day <= person.hurtUntil) return at(home, hour < 6 || hour >= 23 ? 'at home, asleep' : 'at home, laid up');
+  // Night work (a bar, a club, the night desk): from six in the evening till three, asleep till late morning, the afternoon their own.
+  if (work && worksNights(person, world)) {
+    const off = hour < 3 ? offOn(day - 1, (weekday + 6) % 7) : dayOff;
+    if (!off && (hour >= 18 || hour < 3)) return at(work, atWork(person));
+    if (hour >= 3 && hour < 11) return at(home, 'at home, asleep');
+    if (hour >= 11 && hour < 18) {
+      const roll = rng.next();
+      if (roll < 0.35 && hangout) return at(hangout, hangingOut(person, world, hangout, dishes));
+      return roll < 0.75 ? at(home, 'at home') : null;
+    }
+    // A night off is anyone's night.
+  }
   if (hour < 6) return rng.chance(outLate) && hangout ? at(hangout, hangingOut(person, world, hangout, dishes)) : at(home, 'at home, asleep');
   if (hour < 9) return rng.chance(0.5) ? at(home, 'at home') : null;
   if (hour < 18) {
@@ -416,6 +429,17 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
     return rng.chance(0.75) ? at(home, 'at home') : null;
   }
   return rng.chance(0.3) && hangout ? at(hangout, hangingOut(person, world, hangout, dishes)) : at(home, 'at home, asleep');
+}
+
+const buildingsById = new WeakMap<World, Map<string, Building>>();
+
+/** Whether someone works nights: anyone at a bar, a club or a karaoke box, and the night clerks and watchmen. */
+export function worksNights(person: Person, world: World): boolean {
+  if (/\bnight\b/i.test(person.job.role)) return true;
+  if (!person.job.building) return false;
+  let byId = buildingsById.get(world);
+  if (!byId) buildingsById.set(world, (byId = new Map(world.buildings.map((b) => [b.id, b]))));
+  return byId.get(person.job.building)?.category === 'nightlife';
 }
 
 /** Everyone to be found at a spot right now. */
@@ -500,6 +524,10 @@ export function pronounsOf(person: Person): { he: string; him: string; his: stri
 
 function atWork(person: Person): string {
   const role = person.job.role.toLowerCase();
+  if (/bartender|barback/.test(role)) return 'behind the bar';
+  if (/\bdj\b|the mic/.test(role)) return 'on the decks';
+  if (/dancer/.test(role)) return 'on stage';
+  if (/door|coat check/.test(role)) return 'on the door';
   if (/cook|chef|grill/.test(role)) return 'at the stove';
   if (/counter|clerk|cashier|runs/.test(role)) return 'working the counter';
   if (/guard|watch|bouncer|security/.test(role)) return 'on watch';
