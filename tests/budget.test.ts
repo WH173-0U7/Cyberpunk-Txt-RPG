@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHARISMA } from '../src/data/skills';
 import { CITY } from '../src/data/city';
+import { COMBAT } from '../src/data/combat';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
@@ -40,7 +41,7 @@ const BUDGET = {
   save: 30,
 };
 
-const RULES: GameRules = { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, jobs: JOBS, life: LIFE, gear: GEAR, money: MONEY };
+const RULES: GameRules = { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, jobs: JOBS, life: LIFE, gear: GEAR, money: MONEY, combat: COMBAT };
 /** The three biggest cities of sixty seeds, then two ordinary ones. */
 const SEEDS = ['b0a7be72', '0c890e08', '7f3a29c1', '0badc0de', '1c0ffee5'];
 const DAY = 86_400_000;

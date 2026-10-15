@@ -5,6 +5,7 @@ import type { JobStatus } from './jobs';
 import type { Quality } from './food';
 import type { You } from './romance';
 import type { ChromeStatus } from './cyberware';
+import type { FightView, HealthStatus } from './combat';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -310,5 +311,9 @@ export type GameEvents = {
   youChanged: You;
   /** A ripperdoc fitted an implant, or took one out. */
   chromeChanged: ChromeStatus;
+  /** A fight began, went a beat, or ended (null: none to show). */
+  fightChanged: FightView | null;
+  /** The player was hurt (a fight ended). Healing on the clock doesn't fire this; ask `Game.health(now)`. */
+  healthChanged: HealthStatus;
   fx: { effect: FxName };
 };

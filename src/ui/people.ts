@@ -11,7 +11,7 @@ export interface PersonRowView {
   stanceLabel: string;
 }
 
-export type PersonAction = 'talk' | 'insult' | 'rob' | 'hire' | 'quit';
+export type PersonAction = 'talk' | 'insult' | 'rob' | 'attack' | 'hire' | 'quit';
 
 /** Someone the player knows a person to be connected to. */
 export interface WebNodeView {
@@ -235,7 +235,7 @@ export class People {
     } else if (card.picker === 'heart' && card.heart.length) {
       picker.push(...card.heart.map((move) => chip(HEART_LABEL[move], { id: card.id, heart: move }, `person-chip${move === 'end' ? ' is-danger' : ' is-heart'}`)));
     } else if (card.here && card.picker === 'more') {
-      picker.push(chip('Insult', { id: card.id, action: 'insult' }, 'person-chip is-danger'), chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'));
+      picker.push(chip('Insult', { id: card.id, action: 'insult' }, 'person-chip is-danger'), chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'), chip('Attack', { id: card.id, action: 'attack' }, 'person-chip is-danger'));
     }
     els.cardPicker.hidden = picker.length === 0;
     els.cardPicker.replaceChildren(...picker);

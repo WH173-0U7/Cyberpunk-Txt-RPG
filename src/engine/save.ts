@@ -1,6 +1,7 @@
 import { CELLS } from './game';
 import type { PocketState } from './carry';
 import type { Fitted } from './cyberware';
+import type { Meter } from './combat';
 import type { Money } from './money';
 import type { EnergyState } from './energy';
 import type { InebriationState } from './inebriation';
@@ -48,6 +49,9 @@ export interface Progress {
   you?: You | null;
   /** The chrome a ripperdoc has fitted into the player (missing or null: a save from before; none). */
   chrome?: Fitted[] | null;
+  /** The player's health and NCPD heat, as last written down (missing or null: a save from before fighting; well, and nobody looking). */
+  health?: Meter | null;
+  heat?: Meter | null;
 }
 
 /** What a save takes from a game in progress (a `Game` has all of it). */
@@ -67,6 +71,8 @@ export interface SaveSource {
   readonly lifeSaved: LifeState;
   readonly youSaved: You;
   readonly chromeSaved: readonly Fitted[];
+  readonly healthSaved: Meter;
+  readonly heatSaved: Meter;
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -105,6 +111,8 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     life: game.lifeSaved,
     you: { ...game.youSaved },
     chrome: game.chromeSaved.map((f) => ({ ...f })),
+    health: { ...game.healthSaved },
+    heat: { ...game.heatSaved },
     savedAt: now,
   };
 }
@@ -167,6 +175,9 @@ export function readSave(raw: unknown): SaveData | null {
     you: isYou(save.you) ? save.you : null,
     // And before there was chrome, the player had none; an implant that isn't one is dropped.
     chrome: Array.isArray(save.chrome) ? save.chrome.filter(isFitted) : null,
+    // And before there was fighting, the player was well and nobody was looking for them.
+    health: isMeter(save.health) ? save.health : null,
+    heat: isMeter(save.heat) ? save.heat : null,
     savedAt: save.savedAt,
   };
 }
@@ -188,12 +199,12 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, life, you, chrome } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, life, you, chrome, health, heat } = save;
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null, life, you: you ?? null, chrome: chrome ?? null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null };
 }
 
 function isItem(value: unknown): value is Item {
@@ -214,6 +225,11 @@ function isItem(value: unknown): value is Item {
     (item.weapon === undefined || typeof item.weapon === 'string') &&
     (item.loaded === undefined || (Number.isInteger(item.loaded) && (item.loaded as number) >= 0))
   );
+}
+
+function isMeter(value: unknown): value is Meter {
+  const meter = value as Record<string, unknown> | null;
+  return typeof meter === 'object' && meter !== null && isNumber(meter.value) && meter.value >= 0 && isNumber(meter.at);
 }
 
 function isFitted(value: unknown): value is Fitted {

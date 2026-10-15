@@ -10,6 +10,7 @@ import { PEOPLE } from '../src/data/people';
 import { CHARISMA } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
 import { LIFE } from '../src/data/life';
+import { COMBAT } from '../src/data/combat';
 import { freshLife, newsFor, tieKey } from '../src/engine/life';
 import { FAMILY, openness } from '../src/engine/dialogue';
 import { bossOf } from '../src/engine/jobs';
@@ -124,6 +125,7 @@ const RULES: GameRules = {
   charisma: CHARISMA,
   jobs: JOBS,
   life: LIFE,
+  combat: COMBAT,
   gear: GEAR,
   money: MONEY,
   // People's days run on UTC here, whatever machine the tests run on.
@@ -2207,6 +2209,156 @@ describe('Game', () => {
         // Twice is once, and what the game doesn't have is gone.
         expect(again.chromeSaved).toEqual(game.chromeSaved);
         expect(again.chrome()).toMatchObject({ used: 9, capacity: ALL_GEAR.chrome.capacity });
+      });
+    });
+
+    describe('fighting', () => {
+      const lexington: Item = { id: 'lexington-1', kind: 'weapon', weapon: 'lexington', name: 'M-10AF Lexington', count: 1, in: 'jacket', loaded: 20 };
+      /** Rules where every way of fighting always lands this hard, and kills as often as `lethal` says. */
+      const brutal = (damage: number, lethal: number, extra: Partial<typeof COMBAT> = {}) => ({
+        ...COMBAT,
+        classes: Object.fromEntries(Object.entries(COMBAT.classes).map(([k, c]) => [k, { ...c, hit: { reach: 1, close: 1, far: 1 }, damage: [damage, damage] as [number, number], lethal }])) as typeof COMBAT.classes,
+        ...extra,
+      });
+      /** Someone at work at the noodle bar, on a weekday morning, and the game there. */
+      const atTheBar = (progress: Partial<Progress> = {}, combat = COMBAT) => {
+        for (let day = 0; day < 14; day++) {
+          const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
+          if (new Date(now).getUTCDay() % 6 === 0) continue;
+          const game = new Game(world, { ...RULES, combat }, { ...progressInside('b-noodle', 38, 20, [lexington]), money: { bills: 100, coins: 0, account: 0 }, ...progress });
+          game.start(now);
+          const worker = game.peopleHere(now).find((p) => p.person.job.building === 'b-noodle');
+          if (worker) return { game, now, worker: worker.person, ...record(game) };
+        }
+        throw new Error('nobody at the noodle bar');
+      };
+      const fightOut = (game: Game, now: number, move: 'attack' | 'run' | 'talk' | 'cover' = 'attack') => {
+        let t = now;
+        for (let n = 0; n < 30 && game.fighting; n++) game.fightMove(move, (t += 1000));
+        return t;
+      };
+
+      it('is an assault the moment it starts, and a killing writes the dead down for good, with the heat', () => {
+        const { game, now, worker } = atTheBar({}, brutal(500, 1));
+        expect(game.attack(worker.id, now)).toBe(true);
+        expect(game.fighting).toBe(true);
+        expect(game.societySaved.incidents.map((i) => i.kind)).toEqual(['assault']);
+        const view = game.fightView();
+        expect(view).toMatchObject({ beat: 0, range: 'close', you: { arm: 'Lexington' } });
+        expect(view?.moves.map((m) => m.id)).toEqual(['attack', 'advance', 'cover', 'talk', 'run']);
+        // In a fight there's no leaving.
+        expect(game.leave()).toBe(false);
+        const t = fightOut(game, now);
+        expect(game.fightView()?.over).toBe('killed');
+        expect(worker.diedOn).toBe(Math.floor(now / 86_400_000));
+        expect(game.lifeSaved.dead[worker.id]).toBe(worker.diedOn);
+        expect(game.societySaved.incidents.map((i) => i.kind)).toEqual(['assault', 'murder']);
+        expect(game.heat(t).stars).toBeGreaterThanOrEqual(COMBAT.heat.murder);
+        expect(game.heat(t + 30 * 24 * HOUR).stars).toBe(0);
+        // Two rounds a shot from the Lexington.
+        expect(game.inventory.find((i) => i.id === 'lexington-1')?.loaded).toBe(18);
+        game.leaveFight();
+        expect(game.fightView()).toBeNull();
+        expect(game.leave()).toBe(true);
+        // A save brings the dead back dead.
+        const again = new Game(world, { ...RULES, combat: brutal(500, 1) }, { ...progressInside('b-noodle', 38, 20), life: game.lifeSaved, heat: game.heatSaved, health: game.healthSaved });
+        expect(again.population.people.find((p) => p.id === worker.id)?.diedOn).toBe(worker.diedOn);
+        expect(again.heat(t).stars).toBe(game.heat(t).stars);
+      });
+
+      it('lays someone up instead when the blow is not a killing one, and they are gone from here', () => {
+        const { game, now, worker } = atTheBar({}, brutal(500, 0));
+        game.attack(worker.id, now);
+        const t = fightOut(game, now);
+        expect(game.fightView()?.over).toBe('won');
+        expect(worker.hurtUntil).toBeGreaterThan(Math.floor(now / 86_400_000));
+        expect(game.lifeSaved.hurt[worker.id]).toBe(worker.hurtUntil);
+        expect(game.peopleHere(t).some((p) => p.person.id === worker.id)).toBe(false);
+      });
+
+      it('puts the player down and robs them when it goes the other way; a Second Heart gets them up once', () => {
+        const { game, now, worker } = atTheBar({ items: [], health: { value: 5, at: Date.UTC(2077, 9, 12, 11, 0) } }, brutal(10, 0));
+        const had = worker.eddies;
+        game.attack(worker.id, now);
+        const t = fightOut(game, now, 'cover');
+        expect(game.fightView()?.over).toBe('lost');
+        expect(game.wallet.eddies).toBeLessThan(100);
+        expect(worker.eddies).toBe(had + (100 - game.wallet.eddies));
+        expect(game.health(t).current).toBe(1);
+        const hearty = atTheBar({ items: [], chrome: [{ id: 'second-heart', since: 1 }], health: { value: 5, at: Date.UTC(2077, 9, 12, 11, 0) } }, brutal(10, 0));
+        hearty.game.attack(hearty.worker.id, hearty.now);
+        hearty.game.fightMove('cover', hearty.now + 1000);
+        expect(hearty.game.fightView()?.log.join(' ')).toContain('Second Heart');
+        expect(hearty.game.fightView()?.you.hp).toBe(hearty.game.fightView()?.you.max);
+      });
+
+      it('gets away out the door on a run, and ends in words when it is talked down', () => {
+        const run = atTheBar({}, { ...COMBAT, escape: { reach: 1, close: 1, far: 1 }, escapeAdvanced: 1 });
+        run.game.attack(run.worker.id, run.now);
+        fightOut(run.game, run.now, 'run');
+        expect(run.game.fightView()?.over).toBe('fled');
+        expect(run.game.interior).toBeNull();
+        const talk = atTheBar({}, { ...COMBAT, talk: { ...COMBAT.talk, base: 1 } });
+        talk.game.attack(talk.worker.id, talk.now);
+        fightOut(talk.game, talk.now, 'talk');
+        expect(talk.game.fightView()?.over).toBe('talked');
+        expect(talk.worker.diedOn).toBeUndefined();
+      });
+
+      it('freezes the player when the clock runs out, and gives more time with reflexes fitted', () => {
+        const { game, now, worker } = atTheBar();
+        game.attack(worker.id, now);
+        const view = game.fightView()!;
+        expect(view.window).toBe(COMBAT.window);
+        game.tick(view.deadline - 1);
+        expect(game.fightView()?.beat).toBe(0);
+        game.tick(view.deadline + 1);
+        expect(game.fightView()?.beat).toBe(1);
+        expect(game.fightView()?.log.at(-1)).toMatch(/hesitate|Too slow/);
+        const quick = atTheBar({ chrome: [{ id: 'kerenzikov', since: 1 }, { id: 'dynalar-sandevistan', since: 1 }] });
+        quick.game.attack(quick.worker.id, quick.now);
+        expect(quick.game.fightView()?.window).toBe(COMBAT.window + 1500 + 7000);
+      });
+
+      it('fights with chrome in the arms up close, and quickhacks with a deck and the RAM for them', () => {
+        const { game, now, worker } = atTheBar({ items: [{ id: 'short-circuit', kind: 'quickhack', name: 'Short Circuit', count: 1, in: 'jacket' }], chrome: [{ id: 'mantis-blades', since: 1 }, { id: 'paraline', since: 2 }, { id: 'ram-upgrade', since: 3 }] });
+        game.attack(worker.id, now);
+        const view = game.fightView()!;
+        // Across the room, the blades can't reach: fists can't either, so the blades are what to close in with.
+        expect(view.you.arm).toBe('Mantis Blades');
+        expect(view.moves.find((m) => m.id === 'attack')?.enabled).toBe(false);
+        expect(view).toMatchObject({ ram: 6, ramMax: 6, hacks: [{ id: 'short-circuit', ram: 3, enabled: true }] });
+        expect(game.fightMove('hack', now + 1000, 'short-circuit')).toBe(true);
+        expect(game.fightView()?.log.join(' ')).toContain('Short Circuit');
+        expect(game.fightView()?.ram).toBe(6 - 3 + COMBAT.ramPerBeat);
+        // No deck, no hack.
+        const plain = atTheBar({ items: [{ id: 'short-circuit', kind: 'quickhack', name: 'Short Circuit', count: 1, in: 'jacket' }] });
+        plain.game.attack(plain.worker.id, plain.now);
+        expect(plain.game.fightView()?.moves.some((m) => m.id === 'hack')).toBe(false);
+        expect(plain.game.fightMove('hack', plain.now + 1000, 'short-circuit')).toBe(false);
+      });
+
+      it('sells quickhacks at a quickhack dealer, one copy of each', () => {
+        const dealer: World = { ...world, buildings: world.buildings.map((b) => (b.id === 'b-deck' ? { ...b, business: 'quickhack-dealer', kindLabel: 'Quickhack dealer' } : b)) };
+        const game = new Game(dealer, { ...RULES, startingEddies: 100 }, { ...progressInside('b-deck', 26, 20), money: { bills: 0, coins: 0, account: 5000 } });
+        game.start(T0);
+        const menu = game.menu();
+        expect(menu?.items.every((i) => i.kind === 'quickhack')).toBe(true);
+        expect(menu?.items.find((i) => i.id === 'short-circuit')).toMatchObject({ price: 300, detail: 'Combat · 3 RAM' });
+        expect(game.buy('short-circuit', T0)).toBe(true);
+        expect(game.inventory.find((i) => i.kind === 'quickhack')?.id).toBe('short-circuit');
+        expect(game.canBuy('short-circuit', T0)).toContain('already');
+      });
+
+      it('heals on the clock, and carries health and heat through a save', () => {
+        const { game, now, worker } = atTheBar({}, brutal(30, 0));
+        game.attack(worker.id, now);
+        const t = fightOut(game, now, 'cover');
+        const hurt = game.health(t);
+        expect(hurt.current).toBeLessThan(hurt.max);
+        expect(game.health(t + 10 * HOUR).current).toBe(hurt.max);
+        expect(hurt.fullAt).toBeGreaterThan(t);
+        expect(game.healthSaved.value).toBeLessThan(hurt.max);
       });
     });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { CITY } from '../src/data/city';
+import { COMBAT } from '../src/data/combat';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
@@ -21,7 +22,7 @@ import type { World } from '../src/engine/types';
 
 const world = generateWorld('7f3a29c1', CITY);
 const T0 = Date.UTC(2077, 9, 12, 20, 0);
-const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE };
+const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT };
 
 /** Plays a few moves on foot to places next door, letting each trip finish. Returns the game and the time. */
 function played(steps: number): { game: Game; now: number } {
@@ -210,6 +211,24 @@ describe('saving', () => {
     expect(readSave(before)?.chrome).toBeNull();
     expect(new Game(world, rules, resume(world, readSave(before)!)!).chromeSaved).toEqual([]);
     expect(saveOf(game, now).chrome).toEqual([]);
+  });
+
+  it('carries health and NCPD heat, and reads a save from before them as well and unwanted', () => {
+    const { game, now } = played(1);
+    const health = { value: 42, at: now };
+    const heat = { value: 2.5, at: now };
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), health, heat })));
+    expect(read).toMatchObject({ health, heat });
+    const again = new Game(world, rules, resume(world, read!)!);
+    expect(again.health(now).current).toBe(42);
+    expect(again.heat(now).stars).toBe(3);
+    expect(readSave({ ...saveOf(game, now), health: { value: -3, at: now }, heat: 'hot' })).toMatchObject({ health: null, heat: null });
+    const before: Record<string, unknown> = { ...saveOf(game, now) };
+    delete before.health;
+    delete before.heat;
+    const fresh = new Game(world, rules, resume(world, readSave(before)!)!);
+    expect(fresh.health(now)).toMatchObject({ current: COMBAT.health.base, max: COMBAT.health.base, fullAt: null });
+    expect(fresh.heat(now).stars).toBe(0);
   });
 
   it('carries charisma and what the player knows of people, and starts fresh without them', () => {

@@ -374,7 +374,25 @@ own.
   there's room, else the doc keeps it). A ripperdoc fits chrome you carry, or takes chrome
   out, for a fee by how good a clinic it is (**Fit** in the inventory; **Take out** on the
   inventory's **Chrome** page). What's in you is on that page and in the status drop-down.
-  Chrome does nothing yet: what each implant does comes with fighting.
+  Chrome counts in a fight (below).
+- **Quickhacks**: quickhack dealers sell the wiki's combat and control quickhacks (Short
+  Circuit, Overheat, Contagion, Synapse Burnout, Reboot Optics, Weapon Glitch, Cripple
+  Movement, Cyberware Malfunction), each with its canon RAM cost. With a cyberdeck fitted,
+  they're the **Hack** move in a fight.
+- **Fighting**: **Attack** on someone's card (under **⋯**) starts a fight, and it's an
+  assault the moment it does. Each beat you both pick a move at once and they land together:
+  shoot, slash or punch with the best you have for the range, close in, back off, take cover
+  (and reload), quickhack, talk them down, or run. You have seven seconds to choose (more with
+  a Kerenzikov, a lot more with a Sandevistan); out of time, you freeze. Range matters: a
+  blade or a fist wants arm's reach, a shotgun the room, a rifle the street. Sometimes you
+  read what they're about to do, more often if you know their nature. People fight with what
+  they carry: Tyger Claws with katanas, Maelstrom with shotguns and chrome, 6th Street and
+  BARGHEST with rifles, the Animals with their fists; most people carry nothing. Chrome
+  counts: armor, Mantis Blades and Gorilla Arms, a Smart Link for smart guns, a Second Heart.
+  Put someone down and they're laid up for days, or dead (a murder, the whole district hears);
+  a corpo's Trauma Team gets them out alive. Go down yourself and they go through your
+  pockets. Your health comes back on the clock; NCPD heat (stars in the status drop-down)
+  cools off.
 - **Clothes**: you're dressed head to toe but the head, in the wiki's six slots (head, face,
   outer torso, inner torso, legs, feet), and every garment is a real piece of 2077 clothing
   from the wiki in one of its four styles (Entropism, Kitsch, Neomilitarism, Neokitsch),
@@ -487,7 +505,7 @@ src/
   engine/   Game rules and state: the city generator, the NCART network, street routes,
             trip planning on the real clock, the wallet and pass, energy (energy.ts),
             menus (food.ts), weapons and what stores stock them (weapons.ts), cyberware
-            and fitting it (cyberware.ts), drink
+            and fitting it (cyberware.ts), fighting (combat.ts), drink
             (inebriation.ts), the people (people.ts: who lives
             here and where they are), what they think of the player and what comes of it
             (society.ts, which also keeps what the player knows of people and of who knows
@@ -497,14 +515,16 @@ src/
   data/     The content the generator builds cities from (city.ts), travel times and
             prices (travel.ts), energy's numbers (energy.ts), the kinds of item the
             inventory sorts by (items.ts), what there is to eat (food.ts), the guns,
-            blades and ammo (weapons.ts), the implants and the body (cyberware.ts), the stages
+            blades and ammo (weapons.ts), the implants and the body (cyberware.ts), the
+            quickhacks (quickhacks.ts), fighting's numbers and lines (combat.ts), the stages
             of being drunk (inebriation.ts), the people's names, gangs, jobs and lines
             (people.ts), how grudges and reputations work (society.ts) and charisma's
             numbers (skills.ts).
   ui/       City map (camera, gestures, routes, markers), city renderer (draw-city.ts:
             ground, sea, buildings), the fog (fog.ts), the overlays over the map (overlay.ts:
-            the inventory in inventory.ts, settings in settings.ts, a menu in shop.ts, who's
-            here in people.ts, with the relationship web), the energy bar (energy.ts), place
+            the inventory in inventory.ts, settings in settings.ts, a menu in shop.ts, a
+            fight in fight.ts, who's here in people.ts, with the relationship web), the
+            energy bar (energy.ts), place
             panel, transmissions, HUD,
             typewriter, markup parser, the save slot in local storage.
   fx/       Effects: weather particles, screen glitch/shake/flash, glitch text, district colors.
