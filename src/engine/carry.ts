@@ -1,4 +1,5 @@
 import { implantGrams, implantOf, type ChromeContent } from './cyberware';
+import type { HackContent } from './combat';
 import type { Dish, Quality } from './food';
 import type { Money } from './money';
 import type { Item, ItemKind } from './types';
@@ -72,6 +73,8 @@ export interface GearContent {
   arms: ArmsContent;
   /** Cyberware: what an implant carried weighs, by the part of the body it's for (src/data/cyberware.ts). */
   chrome: ChromeContent;
+  /** Quickhacks, and the stores that sell them (src/data/quickhacks.ts). */
+  hacks: HackContent;
   /** Grams by kind of dish, unless the dish says its own. */
   dish: Record<Dish['kind'], number>;
   kinds: Record<string, PocketKind>;

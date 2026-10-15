@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CHARISMA } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
 import { LIFE } from '../src/data/life';
+import { COMBAT } from '../src/data/combat';
 import { CITY } from '../src/data/city';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
@@ -35,6 +36,7 @@ const RULES: GameRules = {
   charisma: CHARISMA,
   jobs: JOBS,
   life: LIFE,
+  combat: COMBAT,
   gear: GEAR,
   money: MONEY,
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
@@ -107,6 +109,11 @@ function check(game: Game, about: string): void {
   expect(again.lifeSaved, `${about}: the people's days after a save`).toEqual(game.lifeSaved);
   expect(again.youSaved, `${about}: who the player is after a save`).toEqual(game.youSaved);
   expect(again.chromeSaved, `${about}: chrome after a save`).toEqual(game.chromeSaved);
+  expect(again.healthSaved, `${about}: health after a save`).toEqual(game.healthSaved);
+  expect(again.heatSaved, `${about}: heat after a save`).toEqual(game.heatSaved);
+  const health = game.health(Date.now());
+  expect(health.current, `${about}: health`).toBeGreaterThanOrEqual(1);
+  expect(health.current, `${about}: health`).toBeLessThanOrEqual(health.max);
   // The chrome fits the body: within the capacity, no part over its slots, nothing in twice.
   const chrome = game.chrome();
   expect(chrome.used, `${about}: capacity`).toBeLessThanOrEqual(chrome.capacity);
@@ -206,7 +213,21 @@ describe('playing badly', () => {
               else if (move === 'official') game.makeOfficial(who, now);
               else if (move === 'end') game.endRomance(now);
             }
-            else if (what < 0.55) game.rob(who, now);
+            else if (what < 0.45) game.rob(who, now);
+            else if (what < 0.55 && game.attack(who, now)) {
+              // A fight, played badly to the end: any move there is, or none in time.
+              for (let beat = 0; beat < 40 && game.fighting; beat++) {
+                const view = game.fightView()!;
+                const moves = view.moves.filter((m) => m.enabled);
+                const move = rng.chance(0.1) || !moves.length ? null : rng.pick(moves)!;
+                if (!move) game.tick(view.deadline + 1);
+                else if (move.id === 'hack') game.fightMove('hack', now, rng.pick(view.hacks.filter((h) => h.enabled))?.id);
+                else game.fightMove(move.id, now);
+                for (const line of game.fightView()?.log ?? []) expect(line, `${about}: a fight's line`).not.toMatch(/[{}]|undefined|NaN/);
+              }
+              expect(game.fighting, `${about}: a fight that never ends`).toBe(false);
+              game.leaveFight();
+            }
             else if (what < 0.75 && game.workWith(who) === 'hire') game.askForWork(who, now);
             else if (what < 0.8 && game.workWith(who) === 'quit') game.quit(now);
             else if (game.canChop(who)) {

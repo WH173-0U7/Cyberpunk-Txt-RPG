@@ -74,7 +74,7 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 ## The inventory
 
 Everything the player owns is in a pocket of something worn, but the chrome in them; food,
-drink, credchips, clothing, weapons, ammo and cyberware are the items so far:
+drink, credchips, clothing, weapons, ammo, cyberware and quickhacks are the items so far:
 
 - An `Item` has a `kind` (`ItemKind`: weapon, ammo, attachment, cyberware, quickhack, clothing,
   consumable, shard, credchip, junk, component, after the wiki's 2077 item types plus the
@@ -191,9 +191,14 @@ drink, credchips, clothing, weapons, ammo and cyberware are the items so far:
   a pocket with room, else the doc keeps it). What's fitted is `Game.chrome()` (the
   `chromeChanged` event), saved as `chrome` (`Fitted`: which, and since when); the
   inventory's outfit page ends in a Chrome row opening onto a page by part (Take out at a
-  clinic), and the status drop-down has a Chrome row. Implants do nothing yet: what each
-  does (armor, health, a Smart Link for smart guns, a Sandevistan or a Kerenzikov in a fight,
-  a deck for quickhacks) hangs off what's fitted when there's fighting.
+  clinic), and the status drop-down has a Chrome row. What chrome does is in a fight (see
+  Fighting), by implant id in `COMBAT.chrome`; anything new it does goes there too.
+- Quickhacks: `src/data/quickhacks.ts` (`HACKS`, on `GEAR.hacks`) is the eight the wiki has
+  netrunner vendors selling that do something in a fight (its Combat and Control ones), each
+  checked against its page (name, type, tier, RAM cost; `tests/combat.test.ts` pins them),
+  with what it does in a fight (`effect`) and our price. A quickhack dealer (`HACKS.stores`)
+  racks every one its tier sells, a tier up; a quickhack is an `Item` of kind `quickhack`
+  named by its id, one copy each (`Game.canBuy` refuses a second).
 - `src/data/items.ts` names each kind and says what goes in it (the order items are listed
   in within a pocket). Real items take their names and details from the wiki and the TCG.
 - `src/ui/inventory.ts` shows a page at a time: the outfit (a row per slot, then the bags),
@@ -440,12 +445,68 @@ it needs no generator bump. The pieces:
   a header whose facts line unfolds (`factsOpen`) into everything known and their web, in
   the transcript's place; the transcript (your lines after a `›`, theirs bare, the notes
   small and colored by tone); one command row (Talk, which unfolds the ways in, Ask, Give,
-  Chop, Work, ♥ for the heart's moves, `⋯` for the hostile acts, each only when it can be
+  Chop, Work, ♥ for the heart's moves, `⋯` for the hostile acts (insult, rob, attack), each only when it can be
   done; ♥ shows on the card of the one the player is seeing even when they're not here, to
   end it by message)
   whose choices (`Picker`) unfold only while open; keep new things to do with a person
   behind a command, not as another row, and new things to know behind the facts line. Lines
   a person says use the `talk` tone, which the feed skips while the card is open.
+
+## Fighting
+
+Fights are simultaneous exchanges: each beat, the player and whoever they're fighting pick a
+move at once and both land together, the player against the clock:
+
+- `src/engine/combat.ts` is the engine, pure: `resolveBeat(state, yours, theirs, ctx)` moves
+  first (a step in or out, a run), then cover and reloads, then the attacks at the range left,
+  then the player's quickhack, then whatever burns; `theirMove` is what someone does (a blade
+  closes in, a gun finds its range or ducks to reload, the scared run or back down when it
+  turns on them), `talkOdds` the odds of talking them down, `hitChance`/`damageOf` the dice.
+  The moves are `Move`: attack, advance (close in), back (off), cover, hack, talk, run, and
+  freeze (the clock ran out). Ranges are `reach`, `close`, `far` (indoors, no further than
+  close). The numbers are `COMBAT` in `src/data/combat.ts`: every `FightClass` (each weapon
+  class, fists, and the chrome in an arm) with its odds at each range, its damage, rounds a
+  go and how often a downing blow kills; the clock (`window`), cover, armor's `soak`, escape
+  and talk odds.
+- `Game.attack(id, now)` goes for someone here (from the `⋯` on their card): it's an `assault`
+  incident at once (the cascade, the mask, witnesses add heat), and a fight in
+  `Game`'s `fightState` until it's over. `Game.fightMove(move, now, hack?)` is a beat, their
+  move drawn when it began; `Game.tick` freezes the player past the `deadline`. While it's on,
+  `go`, `enter` and `leave` refuse, and the UI lets nothing else be done. `Game.fightView()`
+  is everything the overlay shows (both sides, the range, the clock, the log a beat to an
+  entry, the moves there are); `leaveFight()` drops one that's over. The event is
+  `fightChanged`. Fights aren't saved: one in progress when the game closes is gone.
+- What each side fights with: the player, whatever's best for the range of what they carry
+  and have fitted (`yourFighter`: a loaded gun, chrome in the arms, a blade, then fists, which
+  lose a tie), its rounds in the gun item and reloads out of their pockets; the other side,
+  `Game.armOf(person)`, drawn on their own stream by gang, a guard's job, a corpo's, or the
+  street (`COMBAT.carry`: weapon ids, arm implants, or `fists`; most people carry nothing),
+  with `spareMags`, their health from `COMBAT.people` and armor from `COMBAT.armor`.
+- Chrome in a fight is `COMBAT.chrome` by implant id: armor (the wiki's number at its first
+  tier), health, `window` (a Kerenzikov; a Sandevistan by how much its page says it slows the
+  world; `below` for only when hurt), aim, melee, guard, evade on the first beat (optical
+  camo), a Smart Link for smart guns (without one they track worse), a Second Heart's revive,
+  a deck's RAM (`deck`) and the frontal cortex's (`ram`), and `arm` for chrome that fights;
+  `COMBAT.systems` is what a whole kind of operating system does (a Sandevistan's aim, a
+  Berserk's guard in a melee). Drink takes the aim off.
+- How it ends (`FightOutcome`): them down (`killed` by the odds of what dropped them,
+  written to `LifeState.dead` and `diedOn` with a `murder` incident and heat; `trauma` for a
+  corpo, whose Trauma Team gets them out alive, with heat; else `won`, laid up for
+  `hurtDays` in `LifeState.hurt`), the player down (`lost`: robbed of some cash, left at 1),
+  `fled` (out of the building), `escaped`, or `talked`. A Second Heart gets the player up once.
+  Every line is `COMBAT.lines`, by what happened, filled with `fightVars` (who, their
+  pronouns and the verbs that go with them, the arms on both sides); a named subject takes
+  the singular verb, so `{s}`/`{es}`/`{ies}`/`{is}`/`{has}` only follow `{he}`. A tell
+  (`tell<Move>`) shows their next move by the odds in `COMBAT.tell`, better knowing their
+  nature. A new move, outcome or effect is another pool of lines, which the combat test
+  checks for.
+- The player's health (`Game.health(now)`, back on the clock by `COMBAT.health`) and NCPD
+  heat (`Game.heat(now)`, stars, cooling by `COMBAT.heat`) are saved as `health` and `heat`
+  (`Meter`); they show in the status drop-down (and HP and stars on its line when there's
+  any). Heat does nothing yet: when the NCPD comes looking, it's read from there.
+- `src/ui/fight.ts` is the overlay: both health bars, the range and beat on the strip, the
+  log, the tell, the clock, and the moves (Hack opens the quickhacks). It can't be closed
+  while the fight is on, and the header's buttons and the keys rest.
 
 ## Work
 

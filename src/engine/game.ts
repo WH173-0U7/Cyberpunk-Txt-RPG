@@ -3,6 +3,7 @@ import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergySt
 import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
+import { NO_EDGE, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type HealthStatus, type HeatStatus, type Meter, type Move, type Range } from './combat';
 import { tillOf, tradeAt, turfFrom, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
@@ -11,7 +12,7 @@ import { drink, freshInebriation, inebriationStatus, type InebriationRules, type
 import { bossAt, bossOf, canPromote, ladderFor, nextRung, rungOf, shiftOpen, shiftPay, type JobRules, type JobState, type JobStatus, type Rung } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
-import { buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, isCorpo, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
@@ -121,6 +122,8 @@ export interface GameRules extends TravelRules {
   money: MoneyRules;
   /** Where the player can work, and how far up. */
   jobs: JobRules;
+  /** Fighting: the ways of fighting, the clock, what people carry, what chrome does, the heat. */
+  combat: CombatContent;
   /** The people's own days: what happens between them, and what they're seen doing together. */
   life: LifeRules;
   /** The time of day people's days run on. The phone's local time if not said (tests say). */
@@ -170,6 +173,38 @@ export interface Description {
 }
 
 const HOUR = 3_600_000;
+
+/** A fight, between beats. */
+interface Fight {
+  with: string;
+  state: FightState;
+  indoors: boolean;
+  startedAt: number;
+  /** When the player's time to choose runs out. */
+  deadline: number;
+  /** What they'll do this beat, drawn when it began; and what gave it away, if the player caught it. */
+  next: Move;
+  tell: string | null;
+  /** What's happened, a beat to an entry; and the beat being told. */
+  log: string[];
+  beatLines: string[];
+  revived: boolean;
+  /** The launcher in the palm has been fired. */
+  launched: boolean;
+  nerve: { courage: number; temper: number };
+  over: FightOutcome | null;
+  result: string;
+}
+
+/** Bare hands. */
+const FISTS: Arm = { id: 'fists', name: 'Fists', short: 'fists', cls: 'fists', magazine: 0 };
+/** The jobs that come armed and armored. */
+const GUARD = /guard|bouncer|security|trooper|patrol|sergeant/i;
+/** What an attack is called, by what it's made with. */
+const VERB: Record<ClassRules['kind'], string> = { gun: 'Shoot', blade: 'Slash', blunt: 'Strike', fists: 'Punch', wire: 'Lash', launcher: 'Fire' };
+/** Which lines tell a hit, by what it's made with. */
+const HIT_LINE: Record<ClassRules['kind'], string> = { gun: 'Shoot', blade: 'Cut', blunt: 'Bash', fists: 'Punch', wire: 'Lash', launcher: 'Blast' };
+const RANGE_LABEL: Record<Range, string> = { reach: 'Arm\'s reach', close: 'Close', far: 'Far' };
 
 /** Where the player stood with someone before an exchange: their regard, any grudge, their stance, and the player's charisma. */
 interface Snapshot {
@@ -223,6 +258,11 @@ export class Game {
   private you: You;
   /** The chrome a ripperdoc has fitted into the player. */
   private fitted: Fitted[];
+  /** The player's health and NCPD heat as last written down (both move on the clock). */
+  private healthState: Meter;
+  private heatState: Meter;
+  /** The fight the player is in, or has just finished. */
+  private fightState: Fight | null = null;
   private readonly baseEddies: ReadonlyMap<string, number>;
   /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
   private readonly home: { building: string; bed: boolean } | null = null;
@@ -260,6 +300,9 @@ export class Game {
     // Implants the game no longer has are gone, and one fitted twice is fitted once.
     const implants = rules.gear.chrome.implants;
     this.fitted = (progress?.chrome ?? []).filter((f, i, all) => f.id in implants && all.findIndex((g) => g.id === f.id) === i).map((f) => ({ ...f }));
+    // Saves from before fighting start the player well, and nobody looking for them.
+    this.healthState = progress?.health ? { ...progress.health } : { value: this.maxHealth(), at: 0 };
+    this.heatState = progress?.heat ? { ...progress.heat } : { value: 0, at: 0 };
     // A job at a place this city doesn't have, or that doesn't hire anymore, is no job.
     const workplace = progress?.job ? world.buildings.find((b) => b.id === progress.job?.building) : undefined;
     this.job = progress?.job && workplace && ladderFor(workplace, rules.jobs) ? { ...progress.job } : null;
@@ -517,7 +560,8 @@ export class Game {
     const key = business && (gear.racks[business] || gear.arms.stores[business]) ? business : null;
     const chromeKey = this.chromeKey(at);
     const chrome = chromeKey ? gear.chrome.stores[chromeKey] : undefined;
-    if (!key && !chrome) return null;
+    const hackStock = business ? gear.hacks.stores[business] : undefined;
+    if (!key && !chrome && !hackStock) return null;
     const ids = key ? (gear.racks[key] ?? []) : [];
     const stock = key ? gear.arms.stores[key] : undefined;
     // A clothing store sells at its tier; a store with only bags on the rack prices them the way its district eats.
@@ -529,6 +573,15 @@ export class Game {
       const implant = gear.chrome.implants[id];
       return implant ? [{ id, name: implant.name, note: implant.note, kind: 'cyberware', price: implant.price, detail: implantDetail(implant, gear.chrome) }] : [];
     });
+    // A quickhack dealer has every program its tier sells, a tier up as well.
+    const hackTiers = new Set(gear.hacks.tiers[quality]);
+    if (hackStock?.up) for (const t of gear.hacks.tiers[quality === 'poverty' ? 'everyday' : 'luxury']) hackTiers.add(t);
+    const programs = hackStock
+      ? Object.entries(gear.hacks.hacks)
+          .filter(([, h]) => hackTiers.has(h.quality))
+          .sort(([, a], [, b]) => a.type.localeCompare(b.type) || a.price - b.price)
+          .map(([id, h]): MenuItem => ({ id, name: h.name, note: h.note, kind: 'quickhack', price: h.price, detail: `${h.type} · ${h.ram} RAM` }))
+      : [];
     const arms = stock ? stockFor(this.world.seed, at.id, at.district, quality, stock, gear.arms) : [];
     const weapons = arms.flatMap((id): MenuItem[] => {
       const weapon = gear.arms.weapons[id];
@@ -549,7 +602,7 @@ export class Game {
       }
       return [{ id, name: kind.name, note: kind.note ?? '', kind: 'gear' as const, price: priceFor(kind.price, quality, food) }];
     });
-    const all = [...ware, ...weapons, ...ammo, ...items];
+    const all = [...ware, ...programs, ...weapons, ...ammo, ...items];
     return all.length ? { venue, items: all, kind: 'gear' } : null;
   }
 
@@ -574,6 +627,7 @@ export class Game {
     }
     if (item.kind === 'ammo') return { id: item.id, kind: 'ammo' };
     if (item.kind === 'cyberware') return { id: item.id, kind: 'cyberware' };
+    if (item.kind === 'quickhack') return { id: item.id, kind: 'quickhack' };
     return { id: item.id, kind: 'consumable' };
   }
 
@@ -595,6 +649,8 @@ export class Game {
       const why = this.cantFit(item.id);
       if (why) return why;
     }
+    // A program is a program: one copy runs as well as two.
+    if (item.kind === 'quickhack' && this.items.some((i) => i.kind === 'quickhack' && i.id === item.id)) return `You've got ${item.name} already.`;
     if (!this.canPay(item.price, this.takesTransfers(menu))) return this.shortBy(item.name, item.price, this.takesTransfers(menu));
     if (item.kind !== 'gear' && !fitting && !this.pocketFor(this.protoFor(item), this.boxOf(item))) {
       const proto = this.protoFor(item);
@@ -936,6 +992,518 @@ export class Game {
     this.events.emit('chromeChanged', this.chrome());
     return true;
   }
+
+  // ───────────── Fighting ─────────────
+
+  /** The player's health at `now`: back on the clock since it was last written down. */
+  health(now: number): HealthStatus {
+    const max = this.maxHealth();
+    const { regenPerHour } = this.rules.combat.health;
+    const value = Math.min(max, this.healthState.value + (Math.max(0, now - this.healthState.at) / HOUR) * this.rules.timeScale * regenPerHour);
+    const fullAt = value >= max ? null : now + ((max - value) / regenPerHour) * (HOUR / this.rules.timeScale);
+    return { current: Math.floor(value), max, fullAt };
+  }
+
+  /** Health as it was last written down, for saving. */
+  get healthSaved(): Meter {
+    return { ...this.healthState };
+  }
+
+  /** NCPD heat at `now`: what the player's done lately, cooling on the clock; stars, a whole one a point. */
+  heat(now: number): HeatStatus {
+    const { coolPerHour } = this.rules.combat.heat;
+    const level = Math.max(0, this.heatState.value - (Math.max(0, now - this.heatState.at) / HOUR) * this.rules.timeScale * coolPerHour);
+    return { level, stars: Math.max(0, Math.ceil(level - 1e-9)), coolAt: level > 0 ? now + (level / coolPerHour) * (HOUR / this.rules.timeScale) : null };
+  }
+
+  /** Heat, as it was last written down, for saving. */
+  get heatSaved(): Meter {
+    return { ...this.heatState };
+  }
+
+  private addHeat(amount: number, now: number): void {
+    this.heatState = { value: Math.min(this.rules.combat.heat.max, this.heat(now).level + amount), at: now };
+  }
+
+  /** The most health the player has: the base, and more for chrome that gives it. */
+  private maxHealth(): number {
+    const bonus = this.fitted.reduce((sum, f) => sum + (this.rules.combat.chrome[f.id]?.health ?? 0), 0);
+    return Math.round(this.rules.combat.health.base * (1 + bonus));
+  }
+
+  /** Whether a fight is on (one that's over waits on the player to look away from it). */
+  get fighting(): boolean {
+    return Boolean(this.fightState && !this.fightState.over);
+  }
+
+  /** Who the fight is with, if there's one to show. */
+  get fightWith(): string | null {
+    return this.fightState?.with ?? null;
+  }
+
+  /**
+   * Goes for someone here. They fight back with whatever they carry (a gun, a blade, chrome,
+   * their fists), and it's an assault on them, the way an incident goes: seen by whoever's
+   * here, known by the face unless there's a mask over it. Then it goes a beat at a time
+   * (`fightMove`), both moves at once, the player against the clock.
+   */
+  attack(id: string, now: number): boolean {
+    if (this.fighting || this.trip) return false;
+    const here = this.isHere(id, now);
+    if (!here || here.person.diedOn !== undefined) return false;
+    const { person, stance, doing } = here;
+    const { combat, society, timeScale } = this.rules;
+    const indoors = Boolean(this.inside);
+    const health = this.health(now);
+    const range: Range = 'close';
+    const theirs = this.armOf(person);
+    const them: Fighter = {
+      hp: this.healthOf(person),
+      max: this.healthOf(person),
+      arm: theirs,
+      loaded: theirs.magazine,
+      spare: theirs.magazine * combat.spareMags,
+      armor: this.armorOf(person),
+      covered: false,
+      blind: 0,
+      jammed: 0,
+      crippled: 0,
+      chromeOff: 0,
+      burn: 0,
+      burning: 0,
+      charges: combat.classes[theirs.cls]?.charges ?? 0,
+    };
+    const ram = this.ramMax();
+    const state: FightState = { range, beat: 0, you: { ...this.yourFighter(range, 1), hp: health.current, max: health.max }, them, ram, ramMax: ram, ramSpent: 0 };
+    const before = this.snapshot(person, now);
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const fallout = this.incident('assault', person, 0, now);
+    learnOf(this.society, id, 'met');
+    changeStanding(this.society, id, this.masked() ? {} : { met: true }, society, timeScale, now);
+    const witnesses = this.peopleHere(now).filter((p) => p.person.id !== id).length;
+    if (witnesses) this.addHeat(combat.heat.assault, now);
+    this.fightState = { with: id, state, indoors, startedAt: now, deadline: now, next: 'attack', tell: null, log: [], beatLines: [], revived: false, over: null, result: '', launched: false, nerve: { courage: person.traits.courage, temper: person.traits.temper } };
+    this.fightLine('start', person, { ...speaker.vars, ...this.fightVars(person, state.you, state.them) });
+    this.closeBeat();
+    this.nextBeat(person, now);
+    this.noteFeedback(person, before, now, this.masked() ? this.rules.lines.notes.masked : '', speaker.vars);
+    this.checkFired(now);
+    this.events.emit('societyChanged', { people: fallout });
+    this.events.emit('fightChanged', this.fightView());
+    return true;
+  }
+
+  /** What there is to do in the fight this beat, and what each would be done with. */
+  fightView(): FightView | null {
+    const f = this.fightState;
+    const person = f ? this.person(f.with) : undefined;
+    if (!f || !person) return null;
+    const { combat } = this.rules;
+    const s = f.state;
+    const you = this.yourFighter(s.range, s.you.hp);
+    const furthest: Range = f.indoors ? 'close' : 'far';
+    const reach = combat.classes[you.arm.cls]?.hit[s.range] ?? 0;
+    const gun = combat.classes[you.arm.cls]?.kind === 'gun';
+    const hacks = this.hacksOnHand();
+    const deck = this.ramMax() > 0;
+    const moves: FightView['moves'] = f.over
+      ? []
+      : [
+          { id: 'attack', label: VERB[combat.classes[you.arm.cls]?.kind ?? 'fists'], sub: reach > 0 ? `${you.arm.short}${gun ? ` ${you.loaded}/${you.arm.magazine}` : ''}` : 'Out of reach', enabled: reach > 0 },
+          ...(s.range !== 'reach' ? [{ id: 'advance' as const, label: 'Close in', sub: RANGE_LABEL[stepRange(s.range, -1)], enabled: s.you.crippled <= 0 }] : []),
+          ...(s.range !== furthest ? [{ id: 'back' as const, label: 'Back off', sub: RANGE_LABEL[stepRange(s.range, 1, furthest)], enabled: s.you.crippled <= 0 }] : []),
+          { id: 'cover', label: 'Cover', sub: gun && you.loaded < you.arm.magazine && you.spare > 0 ? 'and reload' : 'Duck', enabled: true },
+          ...(deck && hacks.length ? [{ id: 'hack' as const, label: 'Hack', sub: `${s.ram}/${s.ramMax} RAM`, enabled: hacks.some((h) => h.ram <= s.ram) }] : []),
+          { id: 'talk', label: 'Talk down', sub: '', enabled: true },
+          { id: 'run', label: 'Run', sub: '', enabled: s.you.crippled <= 0 },
+        ];
+    const theirs = this.theirArmNow(s.them);
+    return {
+      name: this.fightName(person, true),
+      range: s.range,
+      rangeLabel: RANGE_LABEL[s.range],
+      beat: s.beat,
+      deadline: f.deadline,
+      window: this.fightWindow(s.you),
+      you: { hp: s.you.hp, max: s.you.max, arm: you.arm.short },
+      them: { hp: s.them.hp, max: s.them.max, arm: theirs.short },
+      tell: f.over ? null : f.tell,
+      log: [...f.log],
+      moves,
+      hacks: deck ? hacks.map((h) => ({ id: h.id, name: h.name, ram: h.ram, enabled: h.ram <= s.ram })) : [],
+      ram: s.ram,
+      ramMax: s.ramMax,
+      over: f.over,
+      result: f.result,
+    };
+  }
+
+  /**
+   * One beat of the fight: the player's move and theirs, drawn when the beat began, land
+   * together. `hack` names the quickhack for a hack. When the clock runs out it's `freeze`
+   * (`tick` does that). False if there's no fight on, or the move can't be made.
+   */
+  fightMove(move: Move, now: number, hack?: string): boolean {
+    const f = this.fightState;
+    const person = f ? this.person(f.with) : undefined;
+    if (!f || f.over || !person) return false;
+    const view = this.fightView();
+    if (move !== 'freeze' && !view?.moves.some((m) => m.id === move && m.enabled)) return false;
+    const { combat, gear } = this.rules;
+    const chosen = move === 'hack' ? this.hacksOnHand().find((h) => h.id === hack && h.ram <= f.state.ram) : undefined;
+    if (move === 'hack' && !chosen) return false;
+    // What each side has in hand this beat: the player the best they carry for the range, they what they brought (fists, with their chrome knocked out).
+    const you = this.yourFighter(f.state.range, f.state.you.hp);
+    const state: FightState = { ...f.state, you: { ...f.state.you, arm: you.arm, loaded: you.loaded, spare: you.spare, armor: you.armor, max: f.state.you.max, charges: f.launched ? 0 : you.charges }, them: { ...f.state.them, arm: this.theirArmNow(f.state.them) } };
+    const theirs = f.next;
+    const rng = createRng(`${this.world.seed}:fight:${f.with}:${f.startedAt}:${state.beat}`);
+    const armed = Boolean(drawWeapon(this.items, gear.arms)?.gun);
+    const result = resolveBeat(state, move, theirs, {
+      you: this.yourEdge(state.you),
+      them: { ...NO_EDGE, smart: state.them.arm.tech === 'Smart' },
+      ...(chosen ? { hack: { id: chosen.id, ram: chosen.ram, effect: gear.hacks.hacks[chosen.id]!.effect } } : {}),
+      indoors: f.indoors,
+      talkOdds: talkOdds(state, f.nerve, this.charismaState.level, armed, combat),
+      rng,
+      rules: combat,
+    });
+    const s = result.state;
+    // The rounds fired and reloaded come out of what the player carries; a launcher's one shot is spent.
+    this.spendRounds(state.you, s.you);
+    if (combat.classes[state.you.arm.cls]?.charges && s.you.charges < state.you.charges) f.launched = true;
+    // Their weapon is back in their hands for next time (a knocked-out arm comes back with the chrome).
+    s.them.arm = f.state.them.arm;
+    f.state = s;
+    const speaker = this.speakerFor(person, 'hostile', '', now);
+    const vars = { ...speaker.vars, ...this.fightVars(person, state.you, state.them) };
+    let finisher: FightClass | 'hack' | null = null;
+    for (const e of result.events) {
+      const key = this.eventLine(e);
+      if (!key) continue;
+      if (e.what === 'hack') this.fightLine(this.hackLine(e.hack), person, { ...vars, hack: gear.hacks.hacks[e.hack]?.name ?? 'The hack', dmg: String(e.dmg) });
+      else this.fightLine(key, person, { ...vars, dmg: 'dmg' in e ? String(e.dmg) : '' });
+      if (e.who === 'you' && (e.what === 'hit' || e.what === 'hack') && s.them.hp <= 0 && !finisher) finisher = e.what === 'hack' ? 'hack' : state.you.arm.cls;
+    }
+    if (s.them.hp <= 0 && !finisher) finisher = 'hack';
+    // How it stands: someone down, someone gone, or talked out of it.
+    if (s.you.hp <= 0 && !f.revived && this.fitted.some((x) => combat.chrome[x.id]?.revive)) {
+      f.revived = true;
+      s.you.hp = s.you.max;
+      this.fightLine('revive', person, vars);
+    }
+    if (s.them.hp <= 0) this.endFight(person, finisher === 'hack' ? 0.5 : (combat.classes[finisher ?? 'fists']?.lethal ?? 0), rng, vars, now);
+    else if (s.you.hp <= 0) this.endFight(person, 0, rng, vars, now, 'lost');
+    else if (result.fled === 'you') this.endFight(person, 0, rng, vars, now, 'fled');
+    else if (result.fled === 'them') this.endFight(person, 0, rng, vars, now, 'escaped');
+    else if (result.talked) this.endFight(person, 0, rng, vars, now, 'talked');
+    else this.nextBeat(person, now);
+    this.closeBeat();
+    this.events.emit('fightChanged', this.fightView());
+    return true;
+  }
+
+  /** Done looking at a fight that's over. */
+  leaveFight(): void {
+    if (this.fightState?.over) this.fightState = null;
+  }
+
+  /** Their move for the beat to come, what might give it away, and the clock on the player's. */
+  private nextBeat(person: Person, now: number): void {
+    const f = this.fightState;
+    if (!f) return;
+    const { combat } = this.rules;
+    const rng = createRng(`${this.world.seed}:fight:${f.with}:${f.startedAt}:${f.state.beat}:next`);
+    f.next = theirMove({ ...f.state, them: { ...f.state.them, arm: this.theirArmNow(f.state.them) } }, f.nerve, f.indoors, rng, combat);
+    // Whether the player catches what they're about to do: likelier knowing their nature, and with charisma.
+    const odds = combat.tell.base + (knowledgeOf(this.society, person.id).facts.includes('nature') ? combat.tell.nature : 0) + this.charismaState.level * combat.tell.charisma;
+    const key = `tell${f.next[0]!.toUpperCase()}${f.next.slice(1)}`;
+    const pool = combat.lines[key];
+    f.tell = pool?.length && rng.chance(odds) ? finish(rng.pick(pool)!, { ...this.speakerFor(person, 'hostile', '', now).vars, ...this.fightVars(person, f.state.you, f.state.them) }) : null;
+    f.deadline = now + this.fightWindow(f.state.you);
+  }
+
+  /**
+   * How a fight ends, and what comes of it: someone downed (dead, by the odds of what dropped
+   * them; a corpo's Trauma Team gets them out alive; anyone else laid up for days), the player
+   * downed (robbed of some of the cash on them), or one of them gone, or talked out of it.
+   */
+  private endFight(person: Person, lethal: number, rng: Rng, vars: Record<string, string>, now: number, how?: FightOutcome): void {
+    const f = this.fightState;
+    if (!f) return;
+    const { combat } = this.rules;
+    const day = this.clockAt(now).day;
+    const name = this.fightName(person, false);
+    let outcome: FightOutcome = how ?? 'won';
+    let result = '';
+    if (!how) {
+      if (isCorpo(person, this.world)) {
+        outcome = 'trauma';
+        this.fightLine('trauma', person, vars);
+        this.addHeat(combat.heat.trauma, now);
+      } else if (rng.chance(lethal)) {
+        outcome = 'killed';
+        this.fightLine('theyDie', person, vars);
+      } else this.fightLine('theyDown', person, vars);
+      if (outcome === 'killed') {
+        this.life.dead[person.id] = day;
+        person.diedOn = day;
+        delete this.life.hurt[person.id];
+        delete person.hurtUntil;
+        const fallout = this.incident('murder', person, 0, now);
+        this.addHeat(combat.heat.murder, now);
+        if (this.society.romance?.with === person.id) this.society.romance = null;
+        this.events.emit('societyChanged', { people: fallout });
+        result = `${capitalize(name)} is dead.`;
+      } else {
+        const until = day + rng.int(combat.hurtDays[0], combat.hurtDays[1]);
+        this.life.hurt[person.id] = until;
+        person.hurtUntil = until;
+        result = outcome === 'trauma' ? `Trauma Team got ${name} out. ${capitalize(vars.he ?? 'they')} will live.` : `${capitalize(name)} is down, and will be laid up for days.`;
+      }
+    } else if (how === 'lost') {
+      this.fightLine('youDown', person, vars);
+      const share = rng.range(combat.robbed[0], combat.robbed[1]);
+      const { money, taken } = takeCash(this.money, Math.round(cash(this.money) * share));
+      this.money = money;
+      if (taken) {
+        person.eddies += taken;
+        this.life.eddies[person.id] = person.eddies;
+        this.fightLine('robbed', person, { ...vars, took: String(taken) });
+        this.events.emit('walletChanged', this.wallet);
+      }
+      f.state.you.hp = 1;
+      result = `${capitalize(name)} put you down${taken ? `, and took ${taken} €$` : ''}.`;
+    } else if (how === 'fled') {
+      result = `You got away from ${name}.`;
+    } else if (how === 'escaped') {
+      result = `${capitalize(name)} got away.`;
+    } else {
+      result = `It ended in words, with ${name}.`;
+    }
+    f.over = outcome;
+    f.result = result;
+    f.tell = null;
+    this.healthState = { value: Math.max(1, f.state.you.hp), at: now };
+    this.drainEnergy(Math.min(4, f.state.beat), now);
+    if (outcome === 'fled') this.leave();
+    this.say(result, 'system');
+    this.events.emit('healthChanged', this.health(now));
+  }
+
+  /** A line of the fight, told as part of the beat going on. */
+  private fightLine(key: string, person: Person, vars: Record<string, string>): void {
+    const f = this.fightState;
+    const pool = this.rules.combat.lines[key];
+    if (!f || !pool?.length) return;
+    const rng = createRng(`${this.world.seed}:fightline:${person.id}:${f.startedAt}:${f.log.length}:${f.beatLines.length}:${key}`);
+    f.beatLines.push(finish(rng.pick(pool)!, vars));
+  }
+
+  /** The beat's lines, kept as one entry of the fight's log. */
+  private closeBeat(): void {
+    const f = this.fightState;
+    if (!f || !f.beatLines.length) return;
+    f.log.push(f.beatLines.join(' '));
+    f.beatLines = [];
+    if (f.log.length > 30) f.log.splice(0, f.log.length - 30);
+  }
+
+  /** Which pool tells what happened. */
+  private eventLine(e: BeatEvent): string | null {
+    const who = e.who === 'you' ? 'you' : 'they';
+    if (e.what === 'hit') return `${who}${HIT_LINE[e.kind]}`;
+    if (e.what === 'miss') return `${who}${e.kind === 'gun' || e.kind === 'launcher' ? 'MissShot' : e.kind === 'fists' ? 'MissPunch' : 'MissSwing'}`;
+    if (e.what === 'talk') return e.who === 'you' ? (e.ok ? 'youTalkOk' : 'youTalkNo') : e.ok ? 'theyBackDown' : 'theyBegIgnored';
+    if (e.what === 'run') return `${who}Run${e.ok ? 'Ok' : 'No'}`;
+    if (e.what === 'hack') return 'hack';
+    if (e.what === 'outOfReach') return `${who}Reachless`;
+    if (e.what === 'jammed') return e.who === 'them' ? 'theyJammed' : null;
+    if (e.what === 'freeze') return e.who === 'you' ? 'youFreeze' : null;
+    return `${who}${e.what[0]!.toUpperCase()}${e.what.slice(1)}`;
+  }
+
+  /** The line for a quickhack, by what it does. */
+  private hackLine(id: string): string {
+    const effect = this.rules.gear.hacks.hacks[id]?.effect;
+    if (!effect) return 'hackDamage';
+    if (effect.burn) return 'hackBurn';
+    if (effect.blind) return 'hackBlind';
+    if (effect.jam) return 'hackJam';
+    if (effect.cripple) return 'hackCripple';
+    if (effect.chromeOff) return 'hackChrome';
+    return 'hackDamage';
+  }
+
+  /** The vars a fight's lines are filled with: who, their pronouns and how verbs go with them, and the arms on both sides. */
+  private fightVars(person: Person, you: Fighter, them: Fighter): Record<string, string> {
+    const p = pronounsOf(person);
+    const they = person.pronouns === 'they';
+    const who = this.fightName(person, false);
+    return {
+      who,
+      Who: capitalize(who),
+      he: p.he,
+      He: capitalize(p.he),
+      him: p.him,
+      his: p.his,
+      His: capitalize(p.his),
+      s: they ? '' : 's',
+      es: they ? '' : 'es',
+      ies: they ? 'y' : 'ies',
+      is: they ? 'are' : 'is',
+      has: they ? 'have' : 'has',
+      arm: you.arm.short,
+      theirArm: this.theirArmNow(them).short,
+    };
+  }
+
+  /** Who the player is fighting, as they know them: by name, or "the young woman in Mox colors". */
+  private fightName(person: Person, capital: boolean): string {
+    const named = knowledgeOf(this.society, person.id).facts.includes('name');
+    const name = named ? person.given : describeStranger(person, this.rules.people).replace(/^An? /, 'the ');
+    return capital ? capitalize(name) : name;
+  }
+
+  /** The player in a fight: the best they've got for the range (a gun with rounds in it, chrome, a blade, their fists), the rounds for it, and their armor. */
+  private yourFighter(range: Range, hp: number): Fighter {
+    const { combat, gear } = this.rules;
+    const options: Array<{ arm: Arm; loaded: number; spare: number }> = [];
+    for (const item of this.items) {
+      const weapon = weaponOf(item, gear.arms);
+      if (!weapon) continue;
+      const ammo = ammoFor(weapon, gear.arms);
+      const spare = ammo && !weapon.disposable ? this.items.filter((i) => i.kind === 'ammo' && i.id === ammo).reduce((n, i) => n + i.count, 0) : 0;
+      options.push({ arm: { id: item.weapon ?? item.id, item: item.id, name: weapon.name, short: weapon.short, cls: weapon.class, ...(weapon.tech ? { tech: weapon.tech } : {}), magazine: weapon.magazine ?? 0 }, loaded: item.loaded ?? 0, spare });
+    }
+    for (const fit of this.fitted) {
+      const cls = combat.chrome[fit.id]?.arm;
+      const implant = gear.chrome.implants[fit.id];
+      if (cls && implant && !(cls === 'launcher' && this.fightState?.launched)) options.push({ arm: { id: fit.id, name: implant.name, short: implant.short, cls, magazine: 0 }, loaded: 0, spare: 0 });
+    }
+    // Fists last, so anything carried wins a tie with them.
+    options.push({ arm: FISTS, loaded: 0, spare: 0 });
+    // The best for here; if nothing reaches, the best anywhere (the one to close in with).
+    const score = (o: (typeof options)[number], r: Range) => worth(o.arm, combat.classes[o.arm.cls]?.kind === 'gun' ? o.loaded + (o.spare > 0 ? 0.5 : 0) : 1, r, combat);
+    const best = [...options].sort((a, b) => score(b, range) - score(a, range))[0]!;
+    const pick = score(best, range) > 0 ? best : [...options].sort((a, b) => Math.max(...RANGES.map((r) => score(b, r))) - Math.max(...RANGES.map((r) => score(a, r))))[0]!;
+    const armor = this.fitted.reduce((sum, x) => sum + (combat.chrome[x.id]?.armor ?? 0), 0);
+    return { hp, max: this.maxHealth(), arm: pick.arm, loaded: pick.loaded, spare: pick.spare, armor, covered: false, blind: 0, jammed: 0, crippled: 0, chromeOff: 0, burn: 0, burning: 0, charges: combat.classes[pick.arm.cls]?.charges ?? 0 };
+  }
+
+  /** What the player's chrome and state do for them in a fight: a Sandevistan's aim, drink's lack of it, a Berserk's guard in a melee, a Smart Link, optical camo. */
+  private yourEdge(you: Fighter): Edge {
+    const { combat, gear } = this.rules;
+    let aim = 1;
+    let melee = 1;
+    let guard = 1;
+    let evade = 0;
+    let smart = false;
+    const kind = combat.classes[you.arm.cls]?.kind;
+    const close = kind === 'blade' || kind === 'blunt' || kind === 'fists' || kind === 'wire';
+    for (const f of this.fitted) {
+      const effect = combat.chrome[f.id];
+      const system = gear.chrome.implants[f.id]?.system;
+      const sys = system ? combat.systems[system] : undefined;
+      if (effect?.aim) aim *= effect.aim;
+      if (effect?.melee) melee *= effect.melee;
+      if (effect?.guard) guard *= effect.guard;
+      if (effect?.evade) evade = Math.max(evade, effect.evade);
+      if (effect?.smart) smart = true;
+      if (sys?.aim) aim *= sys.aim;
+      if (sys?.guard && (system !== 'berserk' || close)) guard *= sys.guard;
+    }
+    aim *= 1 - 0.3 * this.inebriation(Date.now()).severity;
+    return { aim, melee, guard, smart, evade };
+  }
+
+  /** The time the player has for a move: the base, and more with reflex chrome (some of it only when they're hurt). */
+  private fightWindow(you: Fighter): number {
+    const { combat } = this.rules;
+    return this.fitted.reduce((ms, f) => {
+      const effect = combat.chrome[f.id];
+      if (!effect?.window) return ms;
+      return effect.below && you.hp > you.max * effect.below ? ms : ms + effect.window;
+    }, combat.window);
+  }
+
+  /** The RAM the player's cyberdeck has for quickhacks, with what the frontal cortex adds; none without a deck. */
+  private ramMax(): number {
+    const { combat } = this.rules;
+    const deck = this.fitted.reduce((n, f) => Math.max(n, combat.chrome[f.id]?.deck ?? 0), 0);
+    return deck ? deck + this.fitted.reduce((n, f) => n + (combat.chrome[f.id]?.ram ?? 0), 0) : 0;
+  }
+
+  /** The quickhacks the player carries. */
+  private hacksOnHand(): Array<{ id: string; name: string; ram: number }> {
+    const { hacks } = this.rules.gear.hacks;
+    return [...new Set(this.items.filter((i) => i.kind === 'quickhack' && hacks[i.id]).map((i) => i.id))].map((id) => ({ id, name: hacks[id]!.name, ram: hacks[id]!.ram }));
+  }
+
+  /** Takes the rounds fired and reloaded out of the player's gun and pockets. */
+  private spendRounds(before: Fighter, after: Fighter): void {
+    const item = before.arm.item ? this.items.find((i) => i.id === before.arm.item) : undefined;
+    // A blade has no magazine; a gun that didn't fire or reload is as it was.
+    if (!item || !before.arm.magazine || (after.loaded === before.loaded && after.spare === before.spare)) return;
+    item.loaded = after.loaded;
+    let reloaded = before.spare - after.spare;
+    const weapon = weaponOf(item, this.rules.gear.arms);
+    const ammo = weapon ? ammoFor(weapon, this.rules.gear.arms) : null;
+    for (const stack of this.items.filter((i) => i.kind === 'ammo' && i.id === ammo)) {
+      if (reloaded <= 0) break;
+      const n = Math.min(stack.count, reloaded);
+      stack.count -= n;
+      reloaded -= n;
+    }
+    for (let i = this.items.length - 1; i >= 0; i--) if (this.items[i]!.kind === 'ammo' && this.items[i]!.count <= 0) this.items.splice(i, 1);
+    this.events.emit('inventoryChanged', this.inventory);
+  }
+
+  /** What someone carries into a fight, drawn on their own stream: by their gang, their job, their walk of life. Most people carry nothing and fight with their fists. */
+  armOf(person: Person): Arm {
+    const { combat, gear } = this.rules;
+    const rng = createRng(`${person.id}:arms`);
+    const guard = GUARD.test(person.job.role);
+    const corpo = isCorpo(person, this.world);
+    const walk = person.gang ? 'gang' : guard ? 'guard' : corpo ? 'corpo' : person.age >= 56 ? 'elder' : 'street';
+    if (!rng.chance(combat.carry.chance[walk])) return FISTS;
+    const pool = person.gang ? (combat.carry.gangs[person.gang] ?? combat.carry.street) : guard ? combat.carry.guard : corpo ? combat.carry.corpo : combat.carry.street;
+    const total = pool.reduce((n, [, w]) => n + w, 0);
+    let roll = rng.next() * total;
+    let id = pool[0]?.[0] ?? 'fists';
+    for (const [entry, w] of pool) {
+      roll -= w;
+      if (roll < 0) {
+        id = entry;
+        break;
+      }
+    }
+    const weapon = gear.arms.weapons[id];
+    if (weapon) return { id, name: weapon.name, short: weapon.short, cls: weapon.class, ...(weapon.tech ? { tech: weapon.tech } : {}), magazine: weapon.magazine ?? 0 };
+    const implant = gear.chrome.implants[id];
+    const cls = combat.chrome[id]?.arm;
+    if (implant && cls) return { id, name: implant.name, short: implant.short, cls, magazine: 0 };
+    return FISTS;
+  }
+
+  /** Their arm this beat: chrome knocked out by a quickhack leaves them their fists. */
+  private theirArmNow(them: Fighter): Arm {
+    return them.chromeOff > 0 && this.rules.gear.chrome.implants[them.arm.id] ? FISTS : them.arm;
+  }
+
+  /** Someone's health in a fight: more for the brave, for gangers and guards, less for their years. */
+  private healthOf(person: Person): number {
+    const p = this.rules.combat.people;
+    return Math.round(p.base + person.traits.courage * p.courage + (person.gang ? p.gang : 0) + (GUARD.test(person.job.role) ? p.guard : 0) + (person.age >= 56 ? p.elder : 0));
+  }
+
+  /** Someone's armor: by their gang, a guard's vest, a corpo's tailoring, or nothing. */
+  private armorOf(person: Person): number {
+    const a = this.rules.combat.armor;
+    if (person.gang) return a.gangs[person.gang] ?? a.gang;
+    if (GUARD.test(person.job.role)) return a.guard;
+    return isCorpo(person, this.world) ? a.corpo : a.street;
+  }
+
 
   // ───────────── Weapons ─────────────
 
@@ -2854,7 +3422,7 @@ export class Game {
 
   /** Sets off. Walking can change course partway; a train ride has to finish first. Pays the fare unless the pass covers it. */
   go(plan: TripPlan, now: number): boolean {
-    if (this.trip?.mode === 'ncart') return false;
+    if (this.trip?.mode === 'ncart' || this.fighting) return false;
     const covered = plan.mode === 'ncart' && this.passActive(now);
     const fare = plan.mode === 'ncart' && !covered ? plan.fare : 0;
     if (fare && !this.canPay(fare, this.rules.money.transfers.ncart)) {
@@ -2882,6 +3450,8 @@ export class Game {
 
   /** Moves the clock on: sobers up, reveals what's been walked past, and lands the player once the trip is over. */
   tick(now: number, away = false): void {
+    // Out of time to choose: the player freezes, and the beat goes on without them.
+    if (this.fightState && !this.fightState.over && now >= this.fightState.deadline) this.fightMove('freeze', now);
     this.live(now);
     this.soberUp(now);
     this.settleThreats(now);
@@ -2911,7 +3481,7 @@ export class Game {
   /** Goes into the building the player is standing outside. Nothing to do in there yet. */
   enter(now = Date.now()): boolean {
     const building = this.door;
-    if (!building) return false;
+    if (!building || this.fighting) return false;
     this.inside = building;
     this.events.emit('interiorChanged', building);
     this.recognize(now);
@@ -2920,7 +3490,7 @@ export class Game {
 
   /** Steps back out onto the street, at the building's door. */
   leave(): boolean {
-    if (!this.inside) return false;
+    if (!this.inside || this.fighting) return false;
     this.inside = null;
     this.events.emit('interiorChanged', null);
     return true;

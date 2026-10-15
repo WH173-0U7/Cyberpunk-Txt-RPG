@@ -81,7 +81,7 @@ export interface Venue {
 }
 
 /** What's for sale: something to eat or drink, a bag to carry things in, something to wear, a weapon, a box of rounds, or an implant. */
-export type MenuKind = Dish['kind'] | 'gear' | 'clothing' | 'weapon' | 'ammo' | 'cyberware';
+export type MenuKind = Dish['kind'] | 'gear' | 'clothing' | 'weapon' | 'ammo' | 'cyberware' | 'quickhack';
 
 export interface MenuItem {
   id: string;

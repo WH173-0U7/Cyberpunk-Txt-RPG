@@ -33,6 +33,9 @@ import { WeatherFx } from './fx/weather';
 import { ITEM_KINDS } from './data/items';
 import { ARMS, ARMS_BLURBS } from './data/weapons';
 import { CHROME, CHROME_BLURBS } from './data/cyberware';
+import { COMBAT } from './data/combat';
+import { HACKS } from './data/quickhacks';
+import { FightPanel } from './ui/fight';
 import { fitCheck, implantDetail, implantOf } from './engine/cyberware';
 import { isGun, weaponDetail, weaponOf } from './engine/weapons';
 import { formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
@@ -195,6 +198,49 @@ const settings = new Settings(
     onErase: () => {
       saveSlot.clear();
       startOver(randomSeed(), 'Save erased. A new Night City boots up.');
+    },
+  },
+  reducedMotion,
+);
+
+/** The header's buttons, which rest while a fight is on: there's no looking away. */
+const HEADER = [$('#status-toggle'), $('#inventory-toggle')];
+
+const fight = new FightPanel(
+  {
+    root: $('#fight'),
+    close: $<HTMLButtonElement>('#fight-close'),
+    kicker: $('#fight-kicker'),
+    youArm: $('#fight-you-arm'),
+    youFill: $('#fight-you-fill'),
+    youHp: $('#fight-you-hp'),
+    themName: $('#fight-them-name'),
+    themArm: $('#fight-them-arm'),
+    themFill: $('#fight-them-fill'),
+    themHp: $('#fight-them-hp'),
+    tell: $('#fight-tell'),
+    log: $('#fight-log'),
+    clock: $('#fight-clock'),
+    seconds: $('#fight-seconds'),
+    moves: $('#fight-moves'),
+    hacks: $('#fight-hacks'),
+    result: $('#fight-result'),
+    done: $<HTMLButtonElement>('#fight-done'),
+  },
+  () => {
+    const view = game.fightView();
+    if (view) fight.render(view, Date.now());
+  },
+  () => {
+    game.leaveFight();
+    fight.reset();
+    for (const el of HEADER) el.inert = false;
+    if (!target && !game.currentTrip) refresh();
+  },
+  {
+    onMove: (move, hack) => {
+      lastActivity = performance.now();
+      game.fightMove(move, Date.now(), hack);
     },
   },
   reducedMotion,
@@ -444,6 +490,7 @@ function actOn(action: PersonAction, id: string): void {
   if (action === 'talk') game.talk(id, now);
   else if (action === 'insult') game.insult(id, now);
   else if (action === 'rob') game.rob(id, now);
+  else if (action === 'attack') game.attack(id, now);
   else if (action === 'hire') game.askForWork(id, now);
   else if (action === 'quit') game.quit(now);
 }
@@ -898,6 +945,8 @@ function itemDetail(item: Item, tier: (p: { brand?: string; style?: PocketLoad['
   if (item.kind === 'ammo') return ARMS.ammo[item.id]?.for;
   const implant = implantOf(item, CHROME);
   if (implant) return implantDetail(implant, CHROME);
+  const hack = item.kind === 'quickhack' ? HACKS.hacks[item.id] : undefined;
+  if (hack) return `${hack.type} · ${hack.ram} RAM`;
   return undefined;
 }
 
@@ -964,16 +1013,22 @@ function showStatus(now: number): void {
   const mask = game.masked();
   const armed = game.armed();
   const chrome = game.chrome();
+  const health = game.health(now);
+  const heat = game.heat(now);
+  const hurt = health.current < health.max;
+  const stars = heat.stars ? '★'.repeat(heat.stars) : '';
   const heart = game.romance(now);
   const job = game.jobStatus(now);
   const pass = wallet.passUntil > now;
   const refill = energy.nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(energy.nextPointAt - now)}`;
   const condition = drunk.stage ? `${drunk.stage.label} · sober in ${formatCountdown((drunk.soberAt ?? now) - now)}` : '';
-  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, drunk.stage?.label, mask ? 'Masked' : '', job ? job.rung.title : ''].filter(Boolean).join(' · ');
+  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', stars, drunk.stage?.label, mask ? 'Masked' : '', job ? job.rung.title : ''].filter(Boolean).join(' · ');
   const today = new Date(now);
   const pad = (n: number) => String(n).padStart(2, '0');
   const rows: StatusRow[] = [
     { label: 'Energy', value: `Lv ${energy.level} · ${energy.xp}/${energy.xpToNext} XP · ${refill}` },
+    { label: 'Health', value: `${health.current}/${health.max}${health.fullAt ? ` · full in ${formatCountdown(health.fullAt - now)}` : ''}`, ...(health.current < health.max / 2 ? { tone: 'warn' as const } : {}) },
+    ...(stars ? [{ label: 'NCPD', value: `${stars} · cools in ${formatCountdown((heat.coolAt ?? now) - now)}`, tone: 'bad' as const }] : []),
     { label: 'Charisma', value: `Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP` },
     { label: 'Eddies', value: `€$ ${wallet.eddies} on you${wallet.account ? ` · €$ ${wallet.account} banked` : ''}${wallet.chips ? ` · €$ ${wallet.chips} on chips` : ''}` },
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
@@ -1237,6 +1292,18 @@ function wire(g: Game): void {
     queueSave();
   });
 
+  g.events.on('fightChanged', (view) => {
+    if (!view) return;
+    const opening = !fight.overlay.isOpen;
+    if (opening) fight.overlay.show();
+    fight.render(view, Date.now());
+    if (opening) fight.focusFirst();
+    for (const el of HEADER) el.inert = g.fighting;
+    if (view.over) queueSave();
+  });
+
+  g.events.on('healthChanged', () => queueSave());
+
   g.events.on('chromeChanged', () => {
     if (inventory.overlay.isOpen) showInventory();
     if (shop.overlay.isOpen) showShop();
@@ -1279,7 +1346,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT }, progress);
   wire(game);
   map.setWorld(world);
   try {
@@ -1328,6 +1395,7 @@ let lastHour = -1;
 function tick(): void {
   const now = Date.now();
   game.tick(now);
+  if (fight.overlay.isOpen) fight.clock(now);
   const hour = new Date(now).getHours();
   if (hour !== lastHour) {
     const first = lastHour === -1;
@@ -1351,6 +1419,8 @@ function tick(): void {
 // Escape drops the current pick; + and - zoom.
 document.addEventListener('keydown', (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
+  // In a fight there's no looking away: the keys rest until it's over.
+  if (game.fighting) return;
   if (event.key === 'i' || event.key === 'I') inventory.overlay.toggle();
   // Escape backs out of a person's card to the list, then closes whatever covers the map, then the status drop-down, then lets go of whatever's picked.
   else if (event.key === 'Escape' && people.overlay.isOpen && personShown) {
