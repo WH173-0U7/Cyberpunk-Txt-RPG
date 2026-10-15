@@ -77,9 +77,8 @@ export interface JobState {
 
 const RUNS_IT = /runs the|owner|manager|chef|maître|proprietor/i;
 
-/** Who runs a storefront: the worker whose role says so, else the first one who was there from the start (anyone taken on since is help). Null for a place nobody works at. */
-export function bossOf(building: Building, population: Population): Person | null {
-  const staff = population.people.filter((p) => p.job.building === building.id && p.diedOn === undefined);
+/** Who runs a storefront: the worker whose role says so, else the first one who was there from the start (anyone taken on since is help). Null for a place nobody works at. `staff`, the living who work there in the population's order, when the caller has it to hand. */
+export function bossOf(building: Building, population: Population, staff = population.people.filter((p) => p.job.building === building.id && p.diedOn === undefined)): Person | null {
   return staff.find((p) => RUNS_IT.test(p.job.role)) ?? staff.find((p) => p.hiredOn === undefined) ?? staff[0] ?? null;
 }
 

@@ -159,14 +159,30 @@ Every city has a population, made up for its seed in `Game`'s constructor (`gene
 in `src/engine/people.ts`, from `src/data/people.ts`): it never touches the city itself, so
 it needs no generator bump. The pieces:
 
-- The people come in two draws, each on its own RNG stream, so the first (`seed:people`: the
+- The people come in three draws, each on its own RNG stream, so the first (`seed:people`: the
   staff by `rolesFor`, `residents` per home, the gangs by their district weights) never
   changes and every save keeps the people it knows; the second (`seed:people:more`) fills
   the city out by `PEOPLE.more` (the chance of one more pair of hands per storefront, with a
   role from `roles.extra` by the building's category; residents `perHome`, more in a `tall`
-  block and a `megabuilding`; the gangs again, by `gangs`). Make a city bigger or smaller
-  there, or with a third draw on a new stream, never by changing the first. Families, ties
-  and hangouts are made within a draw; coworkers, crews and bios over everyone at the end.
+  block and a `megabuilding`; the gangs again, by `gangs`); the third (`seed:people:crowd`,
+  `PEOPLE.crowd`, the same shape) is the crowd that fills the homes, most of a city now
+  (about two thousand people in all, a few hundred in a small city, three thousand in a big
+  one). Make a city bigger or smaller with the last draw's numbers, or a fourth draw on a new
+  stream, never by changing an earlier one (`tests/people.test.ts` checks the first two come
+  out the same with the crowd as without it). Families, ties and hangouts are made within a
+  draw; coworkers, crews and bios over everyone at the end, except that the crowd knows only
+  `crowdKnows` of the people they work with (on a stream of its own), not a whole tower.
+- A city that size has to stay quick on a phone (a month away caught up in well under a
+  second): nothing that runs per person or per day may scan every person or every tie.
+  `tiesOf` and `personById` keep an index per list (a list of ties is only ever replaced by a
+  filter or pushed to, never edited in place: keep it that way); `peopleAt` looks only at
+  people whose home, work or hangout is the spot; `bossOf` takes the staff when the caller
+  has them; `liveDay` keeps its storefronts' staff indexed until a hire, a layoff or a death,
+  and picks a pair out of a crowd by counting (`pickPair`, and the fights and new friendships
+  counted from per-gang lists and ties) instead of listing every pair, drawing the same one
+  `rng.pick` would; `setTie` only filters the ties of a pair already tied. A save's records
+  are copied in with JSON (`copyOf`), never `structuredClone`, which in V8 makes the first
+  write to each key of a big record slow (seconds, for a city's eddies).
 - A `Person` has a home, a job (`building` null for freelance work), maybe a `gang`,
   `traits`, `likes` (a dish, a drink, a `hangout` spot), `hates` (a gang) and `eddies`.
   `Tie`s link people both ways: `to` is `from`'s `kind` (spouse, partner, parent, uncle,

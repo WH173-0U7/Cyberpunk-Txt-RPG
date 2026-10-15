@@ -125,7 +125,12 @@ export function economyDay({ world, population, state, rules, tier, turf, base, 
   const storefronts = world.buildings.filter((b) => b.business);
   const byId = new Map(storefronts.map((b) => [b.id, b]));
   const staffOf = new Map<string, Person[]>();
-  for (const p of population.people) if (p.job.building && byId.has(p.job.building) && p.diedOn === undefined) staffOf.set(p.job.building, [...(staffOf.get(p.job.building) ?? []), p]);
+  for (const p of population.people) {
+    if (!p.job.building || !byId.has(p.job.building) || p.diedOn !== undefined) continue;
+    const staff = staffOf.get(p.job.building);
+    if (staff) staff.push(p);
+    else staffOf.set(p.job.building, [p]);
+  }
   const takings = new Map<string, number>();
   // What walked in off the street, and what the player left on the counter.
   for (const b of storefronts) {
@@ -177,7 +182,7 @@ export function economyDay({ world, population, state, rules, tier, turf, base, 
     const gangs = turf(b.district);
     const cut = gangs.length ? took * rules.protection : 0;
     for (const [gang, share] of gangs) state.treasuries[gang] = (state.treasuries[gang] ?? 0) + cut * share;
-    const net = took - cut - rules.rent[t] - staffCostOf(staff, bossOf(b, population), t, rules) / 7;
+    const net = took - cut - rules.rent[t] - staffCostOf(staff, bossOf(b, population, staff), t, rules) / 7;
     const till = tillOf(state.tills, b.id);
     till.days.push(Math.round(net) || 0);
     if (till.days.length > 7) till.days.splice(0, till.days.length - 7);
