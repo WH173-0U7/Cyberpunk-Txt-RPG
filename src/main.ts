@@ -22,7 +22,7 @@ import type { Menu, Quality } from './engine/food';
 import { kinWord, type Approach, type Question } from './engine/dialogue';
 import type { InebriationStatus } from './engine/inebriation';
 import { randomSeed } from './engine/rng';
-import { createSave, readSave, resume, savedSeed, type Progress } from './engine/save';
+import { createSave, progressFor, readSave, savedSeed, type Progress } from './engine/save';
 import { snapToStreet } from './engine/streets';
 import { tripProgress } from './engine/travel';
 import type { Building, Item, TravelMode, Trip, TripPlan, Wallet, Weather, Whereabouts, World } from './engine/types';
@@ -1108,7 +1108,7 @@ function wire(g: Game): void {
     skyNow = location?.weather ?? district?.weather ?? 'clear';
     weather.setWeather(skyNow);
     weather.setTint(theme.primary);
-    hud.setLocation(g.nameOf(where), district?.name ?? 'Night City');
+    hud.setLocation(g.nameOf(where), district?.name ?? 'Night City', g.neighborhoodOf(where));
     if (from) screen.glitch();
     place.scan();
     refresh();
@@ -1122,7 +1122,7 @@ function wire(g: Game): void {
     // Indoors, the weather stays outside.
     skyNow = building ? 'clear' : (district?.weather ?? 'clear');
     weather.setWeather(skyNow);
-    hud.setLocation(building ? building.name : g.nameOf(where), district?.name ?? 'Night City');
+    hud.setLocation(building ? building.name : g.nameOf(where), district?.name ?? 'Night City', g.neighborhoodOf(where));
     place.scan();
     refresh();
     queueSave();
@@ -1225,7 +1225,7 @@ function boot(): void {
   try {
     const saved = readSave(raw);
     const world = saved ? generateWorld(saved.seed, CITY) : null;
-    const progress = saved && world && saved.generator === GENERATOR_VERSION ? resume(world, saved) : null;
+    const progress = saved && world ? progressFor(world, saved, GENERATOR_VERSION) : null;
     if (world && progress) {
       begin(world, progress);
       return;
@@ -1239,7 +1239,7 @@ function boot(): void {
   // A save from before the game changed how cities (or saves) work: keep the city, start the map over.
   const oldSeed = savedSeed(raw);
   if (oldSeed) {
-    begin(generateWorld(oldSeed, CITY), undefined, 'Night City has changed since you were last here. Your map starts over.');
+    begin(generateWorld(oldSeed, CITY), undefined, 'Night City has changed since you were last here. You start over in it.');
     return;
   }
   const seedInAddress = location.hash.slice(1).toLowerCase();

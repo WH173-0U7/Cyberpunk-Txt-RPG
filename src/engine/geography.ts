@@ -1,19 +1,26 @@
 import { createRng } from './rng';
-import type { CityLayout, District, Point, Side } from './types';
+import type { CityLayout, District, Point, Side, Subdistrict } from './types';
+
+/**
+ * How wide and tall the city is, in map units (a block is about eight). Everything that says
+ * where the edge of the map is goes by this; the districts' anchors are on a 0–100 scale of
+ * the real Night City and are scaled up to it.
+ */
+export const WORLD = 160;
 
 type Coast = NonNullable<CityLayout['coast']>;
 
-/** A point's position along a map edge, and how far in from that edge it is (both 0–100). */
+/** A point's position along a map edge, and how far in from that edge it is (both 0–`WORLD`). */
 export function coastFrame(side: Side, p: Point): { along: number; depth: number } {
   switch (side) {
     case 'west':
       return { along: p.y, depth: p.x };
     case 'east':
-      return { along: p.y, depth: 100 - p.x };
+      return { along: p.y, depth: WORLD - p.x };
     case 'north':
       return { along: p.x, depth: p.y };
     case 'south':
-      return { along: p.x, depth: 100 - p.y };
+      return { along: p.x, depth: WORLD - p.y };
   }
 }
 
@@ -23,11 +30,11 @@ export function fromCoastFrame(side: Side, along: number, depth: number): Point 
     case 'west':
       return { x: depth, y: along };
     case 'east':
-      return { x: 100 - depth, y: along };
+      return { x: WORLD - depth, y: along };
     case 'north':
       return { x: along, y: depth };
     case 'south':
-      return { x: along, y: 100 - depth };
+      return { x: along, y: WORLD - depth };
   }
 }
 
@@ -51,16 +58,34 @@ export function seaTest(layout: CityLayout, seed: string): (p: Point) => boolean
   };
 }
 
-/** The district whose center is closest: city blocks belong to the nearest district. */
-export function districtAt(districts: District[], p: Point): District | null {
-  let best: District | null = null;
+/**
+ * The district and neighborhood a point is in: the nearest neighborhood of any district (a
+ * district with none counts as one, at its center). Every city block belongs to one.
+ */
+export function subdistrictAt(districts: District[], p: Point): { district: District; subdistrict: Subdistrict | null } | null {
+  let best: { district: District; subdistrict: Subdistrict | null } | null = null;
   let bestDistance = Infinity;
-  for (const d of districts) {
-    const distance = Math.hypot(d.x - p.x, d.y - p.y);
-    if (distance < bestDistance) {
-      best = d;
-      bestDistance = distance;
+  for (const district of districts) {
+    if (district.subdistricts.length === 0) {
+      const distance = (district.x - p.x) ** 2 + (district.y - p.y) ** 2;
+      if (distance < bestDistance) {
+        best = { district, subdistrict: null };
+        bestDistance = distance;
+      }
+      continue;
+    }
+    for (const subdistrict of district.subdistricts) {
+      const distance = (subdistrict.x - p.x) ** 2 + (subdistrict.y - p.y) ** 2;
+      if (distance < bestDistance) {
+        best = { district, subdistrict };
+        bestDistance = distance;
+      }
     }
   }
   return best;
+}
+
+/** The district a point is in (see `subdistrictAt`). */
+export function districtAt(districts: District[], p: Point): District | null {
+  return subdistrictAt(districts, p)?.district ?? null;
 }

@@ -1,6 +1,6 @@
 import { blockAt } from '../engine/buildings';
 import { streetPath } from '../engine/generate';
-import { seaTest } from '../engine/geography';
+import { seaTest, WORLD } from '../engine/geography';
 import { pathLength, pathUpTo } from '../engine/streets';
 import { tripProgress } from '../engine/travel';
 import type { Building, District, Location, MapState, Point, Station, Trip, World } from '../engine/types';
@@ -19,7 +19,8 @@ const LABEL_GAP = 11;
 const MARKER_BOX = 18;
 
 const MIN_ZOOM = 1;
-const MAX_ZOOM = 8;
+/** As close as the map ever went (zoom 8 on a city 100 across), however big the city has grown. */
+const MAX_ZOOM = 8 * (WORLD / 100);
 /** The most the city stretches to fill a stage that isn't square. */
 const MAX_STRETCH = 1.35;
 /** Px per map unit from which a tap picks a building or a spot on the street. Further out, a tap zooms into the block. */
@@ -28,6 +29,12 @@ const PICK_SCALE = 7;
 const DRAG_SLOP = 8;
 /** District names fade out as you zoom in, gone by this zoom. */
 const NAMES_GONE = 2;
+/** Neighborhood names come in as the districts' go (from `HOODS_IN`, full by `HOODS_FULL`) and fade again by `HOODS_GONE`. */
+const HOODS_IN = 1.5;
+const HOODS_FULL = 2.2;
+const HOODS_GONE = 4.5;
+/** How far in a game opens, on the player: their neighborhood and the ones around it. */
+const OPENING_ZOOM = 2.6;
 /** Tapping this close (px) to a pinned spot counts as tapping it again. */
 const PIN_REACH = 26;
 
@@ -93,7 +100,9 @@ export class CityMap {
   private buildings = new Map<string, Building>();
   private inSea: (p: Point) => boolean = () => false;
   private hits: BuildingHit[] = [];
-  private camera: Camera = { zoom: 1, x: 50, y: 50 };
+  private camera: Camera = { zoom: 1, x: WORLD / 2, y: WORLD / 2 };
+  /** Whether this city's map has opened on the player yet. */
+  private opened = false;
   private width = 0;
   private height = 0;
   /** While the map is being dragged or flown, frames skip the costly glows. */
@@ -165,7 +174,8 @@ export class CityMap {
     this.inside = null;
     this.buildings = new Map(world.buildings.map((b) => [b.id, b]));
     this.inSea = seaTest(world.layout, world.seed);
-    this.camera = { zoom: 1, x: 50, y: 50 };
+    this.camera = { zoom: 1, x: WORLD / 2, y: WORLD / 2 };
+    this.opened = false;
     this.fog.reset();
     for (const label of this.nameLabels.values()) label.remove();
     this.nameLabels.clear();
@@ -173,6 +183,11 @@ export class CityMap {
 
   update(state: MapState): void {
     this.state = state;
+    // A city opens on the player, close enough to read their neighborhood; the whole city is a pinch away.
+    if (!this.opened) {
+      this.opened = true;
+      this.camera = { zoom: OPENING_ZOOM, x: state.where.x, y: state.where.y };
+    }
     if (this.target?.kind === 'place' && !state.discovered.has(this.target.id)) this.target = null;
     if (this.world) this.fog.update(this.world, state, this.arriving);
     this.arriving = false;
@@ -261,8 +276,8 @@ export class CityMap {
 
   /** Px per map unit at zoom 1, on each axis. Stretches a little to fill the stage, but only a little. */
   private units(): { sx: number; sy: number } {
-    const ux = Math.max(1, this.width - PAD * 2) / 100;
-    const uy = Math.max(1, this.height - PAD * 2) / 100;
+    const ux = Math.max(1, this.width - PAD * 2) / WORLD;
+    const uy = Math.max(1, this.height - PAD * 2) / WORLD;
     const fit = Math.min(ux, uy);
     return { sx: Math.min(ux, fit * MAX_STRETCH), sy: Math.min(uy, fit * MAX_STRETCH) };
   }
@@ -303,7 +318,7 @@ export class CityMap {
     const { sx, sy } = this.units();
     const axis = (center: number, view: number, unit: number) => {
       const half = (view / 2 - PAD) / (unit * zoom);
-      return half >= 50 ? 50 : Math.min(100 - half, Math.max(half, center));
+      return half >= WORLD / 2 ? WORLD / 2 : Math.min(WORLD - half, Math.max(half, center));
     };
     return { zoom, x: axis(camera.x, this.width, sx), y: axis(camera.y, this.height, sy) };
   }
@@ -502,7 +517,7 @@ export class CityMap {
       return;
     }
     const p = this.unproject(q);
-    if (p.x < 0 || p.y < 0 || p.x > 100 || p.y > 100 || this.inSea(p)) return;
+    if (p.x < 0 || p.y < 0 || p.x > WORLD || p.y > WORLD || this.inSea(p)) return;
     const pinned = this.target?.kind === 'point' ? this.project(this.target.point) : null;
     if (pinned && Math.hypot(pinned.x - q.x, pinned.y - q.y) <= PIN_REACH) this.handlers.onGo();
     else this.handlers.onSelect({ kind: 'point', point: p });
@@ -568,7 +583,9 @@ export class CityMap {
   /** The city, the fog over it, and the district names on top of the fog. */
   private drawCanvas(world: World, state: MapState, obstacles: Box[]): void {
     const { city } = this.els;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // On the move, a quarter of the pixels: drawing hundreds of buildings is most of a frame, and a
+    // finger on the map hides the softness; the full sharpness comes back once it settles.
+    const dpr = this.moving ? 1 : Math.min(window.devicePixelRatio || 1, 2);
     const known = new Set(Object.values(world.locations).flatMap((l) => (state.discovered.has(l.id) ? [l.district] : [])));
     const view: View = {
       width: this.width,
@@ -583,22 +600,28 @@ export class CityMap {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.hits = drawCity(ctx, world, view, known);
     this.fog.draw({ width: this.width, height: this.height, dpr, project: view.project });
-    this.drawDistrictNames(
+    const hoods = new Set(Object.values(world.locations).flatMap((l) => (state.discovered.has(l.id) && l.area ? [`${l.district}:${l.area}`] : [])));
+    this.drawNames(
       Object.values(world.districts).filter((d) => known.has(d.id)),
+      hoods,
       obstacles,
     );
   }
 
   /**
-   * Big district names across their territory, fading out as you zoom in. Each tries spots
-   * around the district's center, at full size and then smaller, and takes the first clear of
+   * Big district names across their territory, fading out as you zoom in, and the names of
+   * their neighborhoods (the ones with a place the player knows) fading in as they go. Each
+   * tries spots around its middle, at full size and then smaller, and takes the first clear of
    * markers, labels, routes and the other names. A name with no clear spot is left off rather
    * than drawn over something.
    */
-  private drawDistrictNames(districts: District[], obstacles: Box[]): void {
+  private drawNames(districts: District[], hoods: ReadonlySet<string>, obstacles: Box[]): void {
     const { names } = this.els;
     const ctx = this.measure;
-    const fade = Math.min(1, Math.max(0, (NAMES_GONE - this.camera.zoom) / (NAMES_GONE - MIN_ZOOM)));
+    const { zoom } = this.camera;
+    const unit = (v: number) => Math.min(1, Math.max(0, v));
+    const districtFade = unit((NAMES_GONE - zoom) / (NAMES_GONE - MIN_ZOOM));
+    const hoodFade = zoom < HOODS_FULL ? unit((zoom - HOODS_IN) / (HOODS_FULL - HOODS_IN)) : unit((HOODS_GONE - zoom) / (HOODS_GONE - HOODS_FULL));
     const placed = new Set<string>();
     const finish = () => {
       for (const [id, label] of this.nameLabels) {
@@ -608,23 +631,32 @@ export class CityMap {
       }
       names.classList.toggle('is-moving', this.moving);
     };
-    if (fade === 0 || !ctx) {
+    if ((districtFade === 0 && hoodFade === 0) || !ctx) {
       finish();
       return;
     }
     const base = Math.max(11, Math.min(22, Math.min(this.width, this.height) / 20));
+    const wanted: Array<{ id: string; text: string; at: Point; color: string; alpha: number; size: number }> = [];
+    if (districtFade > 0) for (const d of districts) wanted.push({ id: d.id, text: d.name.toUpperCase(), at: d, color: d.theme.primary, alpha: 0.42 * districtFade, size: base });
+    if (hoodFade > 0) {
+      for (const d of districts) {
+        for (const hood of d.subdistricts) {
+          const id = `${d.id}:${hood.name}`;
+          if (hoods.has(id)) wanted.push({ id, text: hood.name.toUpperCase(), at: hood, color: d.theme.primary, alpha: 0.4 * hoodFade, size: Math.max(9, base * 0.6) });
+        }
+      }
+    }
     const taken = [...obstacles];
     const project = this.projector();
-    for (const district of districts) {
-      const text = district.name.toUpperCase();
-      const c = project(district);
-      // Zoomed in, a district whose middle is off screen doesn't get its name pinned to the edge.
+    for (const name of wanted) {
+      const c = project(name.at);
+      // Zoomed in, a name whose middle is off screen doesn't get pinned to the edge.
       if (c.x < 0 || c.y < 0 || c.x > this.width || c.y > this.height) continue;
-      for (const size of [Math.round(base), Math.round(base * 0.72)]) {
+      for (const size of [Math.round(name.size), Math.round(name.size * 0.72)]) {
         const spacing = (size * 0.3).toFixed(1);
         ctx.font = `800 ${size}px Orbitron, "Share Tech Mono", sans-serif`;
         if ('letterSpacing' in ctx) ctx.letterSpacing = `${spacing}px`;
-        const textWidth = ctx.measureText(text).width;
+        const textWidth = ctx.measureText(name.text).width;
         const boxAt = (p: Px) => ({ x: p.x - textWidth / 2, y: p.y - size / 2, w: textWidth, h: size });
         let spot: Px | null = null;
         for (const dy of [0, -1.5, 1.5, -3, 3, -4.5, 4.5]) {
@@ -642,17 +674,16 @@ export class CityMap {
         }
         if (!spot) continue;
         taken.push(boxAt(spot));
-        let label = this.nameLabels.get(district.id);
+        let label = this.nameLabels.get(name.id);
         if (!label) {
           label = document.createElement('span');
           label.className = 'district-name';
-          label.textContent = text;
+          label.textContent = name.text;
           names.append(label);
-          this.nameLabels.set(district.id, label);
+          this.nameLabels.set(name.id, label);
         }
-        const color = hexToRgba(district.theme.primary, 0.42 * fade);
-        label.style.cssText = `left:${spot.x}px;top:${spot.y}px;font-size:${size}px;letter-spacing:${spacing}px;padding-left:${spacing}px;color:${color}`;
-        placed.add(district.id);
+        label.style.cssText = `left:${spot.x}px;top:${spot.y}px;font-size:${size}px;letter-spacing:${spacing}px;padding-left:${spacing}px;color:${hexToRgba(name.color, name.alpha)}`;
+        placed.add(name.id);
         break;
       }
     }

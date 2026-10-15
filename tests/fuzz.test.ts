@@ -15,7 +15,7 @@ import { TRAVEL } from '../src/data/travel';
 import { outfit } from '../src/engine/carry';
 import { GENERATOR_VERSION, generateWorld } from '../src/engine/generate';
 import { Game, streetSpot, type GameRules } from '../src/engine/game';
-import { createRng } from '../src/engine/rng';
+import { createRng, hashSeed } from '../src/engine/rng';
 import { createSave, readSave, resume, type Progress } from '../src/engine/save';
 import type { Building } from '../src/engine/types';
 
@@ -39,6 +39,29 @@ const RULES: GameRules = {
   money: MONEY,
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
 };
+
+/** Plain data equal all the way down, a missing key the same as one left undefined (as `toEqual` has it). */
+function same(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
+  const x = a as Record<string, unknown>;
+  const y = b as Record<string, unknown>;
+  const keys = (o: Record<string, unknown>) => Object.keys(o).filter((k) => o[k] !== undefined);
+  const kx = keys(x);
+  return kx.length === keys(y).length && kx.every((k) => same(x[k], y[k]));
+}
+
+/** A list of ties boiled down to numbers that don't depend on their order. */
+function digest(ties: Array<{ from: string; to: string; kind: string }>): string {
+  let sum = 0;
+  let mixed = 0;
+  for (const t of ties) {
+    const h = hashSeed(`${t.from}|${t.to}|${t.kind}`);
+    sum = (sum + h) >>> 0;
+    mixed ^= Math.imul(h, 2654435761);
+  }
+  return `${ties.length}:${sum}:${mixed >>> 0}`;
+}
 
 function check(game: Game, about: string): void {
   const pockets = game.gearSaved;
@@ -92,9 +115,10 @@ function check(game: Game, about: string): void {
   }
   // The people come back the same (their ties as a set: a friendship made again after a falling out sits elsewhere in the list).
   // Compared as text first, which is quick for hundreds of people; the slow deep match only says what differs.
-  const tiesOf = (ties: Array<{ from: string; to: string; kind: string }>) => [...ties].map((t) => `${t.from}|${t.to}|${t.kind}`).sort();
-  if (JSON.stringify(again.population.people) !== JSON.stringify(game.population.people)) expect(again.population.people, `${about}: the people after a save`).toEqual(game.population.people);
-  if (tiesOf(again.population.ties).join() !== tiesOf(game.population.ties).join()) expect(tiesOf(again.population.ties), `${about}: the ties after a save`).toEqual(tiesOf(game.population.ties));
+  // Compared quickly first, which matters for thousands of people and tens of thousands of ties; the slow deep match only says what differs.
+  const tiesOf = (ties: Array<{ from: string; to: string; kind: string }>) => ties.map((t) => `${t.from}|${t.to}|${t.kind}`);
+  if (!same(again.population.people, game.population.people)) expect(again.population.people, `${about}: the people after a save`).toEqual(game.population.people);
+  if (digest(again.population.ties) !== digest(game.population.ties)) expect(tiesOf(again.population.ties).sort(), `${about}: the ties after a save`).toEqual(tiesOf(game.population.ties).sort());
   // A job is always at a storefront that hires, on a rung of its ladder.
   const job = game.jobSaved;
   if (job) {
@@ -132,7 +156,8 @@ describe('playing badly', () => {
         life: null,
       };
       let now = Date.UTC(2077, 9, 12, 11, 0);
-      for (let step = 0; step < 60; step++) {
+      // Each step is a session of its own (a Game made and saved and made again): cities of thousands make that the cost, so forty a city.
+      for (let step = 0; step < 40; step++) {
         // Somewhere new to be, by day or by night.
         const at = rng.pick(stores) as Building;
         now += rng.int(1, 9) * 3_600_000;
@@ -200,6 +225,6 @@ describe('playing badly', () => {
         expect(progress, about).toBeTruthy();
       }
     }
-    expect(steps).toBe(720);
-  }, 120_000);
+    expect(steps).toBe(480);
+  }, 240_000);
 });

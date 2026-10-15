@@ -1,4 +1,4 @@
-import { districtAt, fromCoastFrame, shoreline } from '../engine/geography';
+import { districtAt, fromCoastFrame, shoreline, WORLD } from '../engine/geography';
 import { createRng, hashSeed } from '../engine/rng';
 import type { Building, BuildingKind, CityLayout, District, Point, World } from '../engine/types';
 
@@ -123,6 +123,34 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
+/**
+ * `hexToRgba` for the colors a frame asks for over and over (hundreds of buildings in a few
+ * district colors and shades): made once each. Kept small, as fades ask for endless shades.
+ */
+const rgbaMade = new Map<string, Map<number, string>>();
+function rgba(hex: string, alpha: number): string {
+  let shades = rgbaMade.get(hex);
+  if (!shades) rgbaMade.set(hex, (shades = new Map()));
+  let made = shades.get(alpha);
+  if (made === undefined) {
+    if (shades.size > 64) shades.clear();
+    shades.set(alpha, (made = hexToRgba(hex, alpha)));
+  }
+  return made;
+}
+
+/** Each building's own roof shade, worked out once. */
+const roofShades = new WeakMap<Building, string>();
+function roofShade(b: Building): string {
+  let shade = roofShades.get(b);
+  if (shade === undefined) {
+    // No two roofs quite the same shade.
+    const v = hash01(hashSeed(b.id), 2, 3);
+    roofShades.set(b, (shade = v < 0.5 ? `rgba(0, 0, 0, ${(0.5 - v) * 0.2})` : `rgba(255, 255, 255, ${(v - 0.5) * 0.05})`));
+  }
+  return shade;
+}
+
 /** Sizes a canvas to the stage at a pixel density, leaving it alone if it already fits. */
 export function fitCanvas(canvas: HTMLCanvasElement, width: number, height: number, dpr: number): void {
   const w = Math.round(width * dpr);
@@ -134,18 +162,34 @@ export function fitCanvas(canvas: HTMLCanvasElement, width: number, height: numb
 // ───────────── Ground ─────────────
 
 /** Pavement under every city block; in the desert, open sand that runs across the streets. */
-function drawBlocks(ctx: CanvasRenderingContext2D, world: World, view: View, known: Set<string>): void {
+/** Which district each block belongs to, worked out once a city rather than every frame. */
+const blockDistricts = new WeakMap<World, Array<District | null>>();
+function districtsOfBlocks(world: World): Array<District | null> {
+  let known = blockDistricts.get(world);
+  if (known) return known;
   const districts = Object.values(world.districts);
-  const xs = [0, ...world.layout.avenues, 100];
-  const ys = [0, ...world.layout.streets, 100];
+  const xs = [0, ...world.layout.avenues, WORLD];
+  const ys = [0, ...world.layout.streets, WORLD];
+  known = [];
+  for (let i = 0; i < xs.length - 1; i++) {
+    for (let j = 0; j < ys.length - 1; j++) known.push(districtAt(districts, { x: ((xs[i] ?? 0) + (xs[i + 1] ?? WORLD)) / 2, y: ((ys[j] ?? 0) + (ys[j + 1] ?? WORLD)) / 2 }));
+  }
+  blockDistricts.set(world, known);
+  return known;
+}
+
+function drawBlocks(ctx: CanvasRenderingContext2D, world: World, view: View, known: Set<string>): void {
+  const byBlock = districtsOfBlocks(world);
+  const xs = [0, ...world.layout.avenues, WORLD];
+  const ys = [0, ...world.layout.streets, WORLD];
   const curb = view.scale >= DETAIL_SCALE;
   for (let i = 0; i < xs.length - 1; i++) {
     for (let j = 0; j < ys.length - 1; j++) {
       const x0 = xs[i] ?? 0;
-      const x1 = xs[i + 1] ?? 100;
+      const x1 = xs[i + 1] ?? WORLD;
       const y0 = ys[j] ?? 0;
-      const y1 = ys[j + 1] ?? 100;
-      const district = districtAt(districts, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 });
+      const y1 = ys[j + 1] ?? WORLD;
+      const district = byBlock[i * (ys.length - 1) + j];
       if (!district) continue;
       const lit = known.has(district.id);
 
@@ -166,13 +210,13 @@ function drawBlocks(ctx: CanvasRenderingContext2D, world: World, view: View, kno
 
       // Sidewalks stop half a lane short of each street's centerline.
       const a = view.project({ x: i === 0 ? 0.2 : x0 + 0.55, y: j === 0 ? 0.2 : y0 + 0.55 });
-      const b = view.project({ x: i === xs.length - 2 ? 99.8 : x1 - 0.55, y: j === ys.length - 2 ? 99.8 : y1 - 0.55 });
+      const b = view.project({ x: i === xs.length - 2 ? WORLD - 0.2 : x1 - 0.55, y: j === ys.length - 2 ? WORLD - 0.2 : y1 - 0.55 });
       const pad = { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
       if (pad.w <= 0 || pad.h <= 0 || !onScreen(pad, view)) continue;
       ctx.fillStyle = PAVEMENT;
       ctx.fillRect(pad.x, pad.y, pad.w, pad.h);
       if (lit) {
-        ctx.fillStyle = hexToRgba(district.theme.primary, 0.025);
+        ctx.fillStyle = rgba(district.theme.primary, 0.025);
         ctx.fillRect(pad.x, pad.y, pad.w, pad.h);
       }
       if (curb) {
@@ -284,11 +328,56 @@ function drawBuildings(ctx: CanvasRenderingContext2D, world: World, view: View, 
   for (const { r, rise } of raised) ctx.rect(r.x + rise.x * 0.7, r.y - rise.y * 0.12, r.w, r.h);
   ctx.fill();
 
+  // On the move and zoomed out, every building is a few pixels across: drawn in a handful of
+  // batches rather than one by one (the city has hundreds), the detail back once the map is still.
+  if (view.fast && view.scale < DETAIL_SCALE) {
+    drawRaisedInBatches(ctx, raised, world, known);
+    for (const { b, r, rise } of raised) hits.push({ id: b.id, footprint: r, rise });
+    return hits;
+  }
   for (const { b, r, rise } of raised) {
     drawRaised(ctx, b, r, rise, view, world.districts[b.district], known.has(b.district));
     hits.push({ id: b.id, footprint: r, rise });
   }
   return hits;
+}
+
+/** Raised buildings as a few shapes: the walls, the roofs, and each district's tint on its roofs. */
+function drawRaisedInBatches(ctx: CanvasRenderingContext2D, raised: Array<{ b: Building; r: Box; rise: Px }>, world: World, known: Set<string>): void {
+  const south = new Path2D();
+  const west = new Path2D();
+  const roofs = new Path2D();
+  const tints = new Map<string, Path2D>();
+  for (const { b, r, rise } of raised) {
+    const x = r.x + rise.x;
+    const y = r.y + rise.y;
+    south.moveTo(r.x, r.y + r.h);
+    south.lineTo(r.x + r.w, r.y + r.h);
+    south.lineTo(x + r.w, y + r.h);
+    south.lineTo(x, y + r.h);
+    south.closePath();
+    west.moveTo(r.x, r.y);
+    west.lineTo(r.x, r.y + r.h);
+    west.lineTo(x, y + r.h);
+    west.lineTo(x, y);
+    west.closePath();
+    roofs.rect(x, y, r.w, r.h);
+    const district = world.districts[b.district];
+    const tint = rgba(district?.theme.primary ?? '#00f0ff', (b.kind === 'derelict' ? 0.04 : 0.12) * (known.has(b.district) ? 1 : 0.35));
+    let path = tints.get(tint);
+    if (!path) tints.set(tint, (path = new Path2D()));
+    path.rect(x, y, r.w, r.h);
+  }
+  ctx.fillStyle = WALL_SOUTH;
+  ctx.fill(south);
+  ctx.fillStyle = WALL_WEST;
+  ctx.fill(west);
+  ctx.fillStyle = ROOF;
+  ctx.fill(roofs);
+  for (const [color, path] of tints) {
+    ctx.fillStyle = color;
+    ctx.fill(path);
+  }
 }
 
 function footprint(b: Building, view: View): Box {
@@ -357,7 +446,7 @@ function drawOpenGround(ctx: CanvasRenderingContext2D, b: Building, r: Box, view
       // Open paving around a glowing holo-statue.
       ctx.fillStyle = `rgba(200, 210, 240, ${lit ? 0.07 : 0.03})`;
       ctx.fillRect(r.x, r.y, r.w, r.h);
-      ctx.strokeStyle = hexToRgba(district?.theme.secondary ?? '#5ce1ff', lit ? 0.6 : 0.2);
+      ctx.strokeStyle = rgba(district?.theme.secondary ?? '#5ce1ff', lit ? 0.6 : 0.2);
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(r.x + r.w / 2, r.y + r.h / 2, Math.min(r.w, r.h) * 0.16, 0, Math.PI * 2);
@@ -394,7 +483,7 @@ function drawRaised(
   const south = [corner, { x: r.x + r.w, y: r.y + r.h }, { x: roof.x + roof.w, y: roof.y + roof.h }, roofCorner];
   const west = [{ x: r.x, y: r.y }, corner, roofCorner, { x: roof.x, y: roof.y }];
   polygon(ctx, south, WALL_SOUTH);
-  polygon(ctx, south, hexToRgba(color, 0.07 * tint));
+  polygon(ctx, south, rgba(color, 0.07 * tint));
   polygon(ctx, west, WALL_WEST);
 
   if (facade && detail && -rise.y >= 4) {
@@ -410,8 +499,8 @@ function drawRaised(
   if (neon && lit && detail) {
     const spill = view.scale * 0.7;
     const glow = ctx.createLinearGradient(0, corner.y, 0, corner.y + spill);
-    glow.addColorStop(0, hexToRgba(neon, 0.3));
-    glow.addColorStop(1, hexToRgba(neon, 0));
+    glow.addColorStop(0, rgba(neon, 0.3));
+    glow.addColorStop(1, rgba(neon, 0));
     ctx.fillStyle = glow;
     ctx.fillRect(r.x, corner.y, r.w, spill);
   }
@@ -420,20 +509,18 @@ function drawRaised(
   const derelict = b.kind === 'derelict';
   ctx.fillStyle = ROOF;
   ctx.fillRect(roof.x, roof.y, roof.w, roof.h);
-  ctx.fillStyle = hexToRgba(color, (derelict ? 0.04 : 0.12) * tint);
+  ctx.fillStyle = rgba(color, (derelict ? 0.04 : 0.12) * tint);
   ctx.fillRect(roof.x, roof.y, roof.w, roof.h);
-  // No two roofs quite the same shade.
-  const shade = hash01(hashSeed(b.id), 2, 3);
-  ctx.fillStyle = shade < 0.5 ? `rgba(0, 0, 0, ${(0.5 - shade) * 0.2})` : `rgba(255, 255, 255, ${(shade - 0.5) * 0.05})`;
+  ctx.fillStyle = roofShade(b);
   ctx.fillRect(roof.x, roof.y, roof.w, roof.h);
-  ctx.strokeStyle = hexToRgba(color, (derelict ? 0.18 : 0.5) * tint);
+  ctx.strokeStyle = rgba(color, (derelict ? 0.18 : 0.5) * tint);
   ctx.lineWidth = 1;
   ctx.strokeRect(roof.x + 0.5, roof.y + 0.5, roof.w - 1, roof.h - 1);
 
   const small = Math.min(roof.w, roof.h);
   if (neon && small >= 5) {
     // The sign along the front edge of the roof.
-    ctx.strokeStyle = hexToRgba(neon, 0.9 * tint);
+    ctx.strokeStyle = rgba(neon, 0.9 * tint);
     ctx.lineWidth = Math.max(1.5, Math.min(4, view.scale * 0.14));
     glow(ctx, neon, lit && !view.fast ? 8 : 0);
     ctx.beginPath();
@@ -500,9 +587,9 @@ function windows(
       path.closePath();
     }
   }
-  ctx.fillStyle = hexToRgba(facade.light, 0.75);
+  ctx.fillStyle = rgba(facade.light, 0.75);
   ctx.fill(warm);
-  ctx.fillStyle = hexToRgba(color, 0.85);
+  ctx.fillStyle = rgba(color, 0.85);
   ctx.fill(neon);
 }
 
@@ -517,9 +604,9 @@ function holoAd(ctx: CanvasRenderingContext2D, b: Building, base: Px, along: Px,
   const band = [at(u, 0.55), at(u + w, 0.55), at(u + w, 0.85), at(u, 0.85)];
   ctx.save();
   glow(ctx, color, lit && !view.fast ? 14 : 0);
-  polygon(ctx, band, hexToRgba(color, lit ? 0.38 : 0.12));
+  polygon(ctx, band, rgba(color, lit ? 0.38 : 0.12));
   ctx.restore();
-  ctx.strokeStyle = hexToRgba(color, lit ? 0.9 : 0.3);
+  ctx.strokeStyle = rgba(color, lit ? 0.9 : 0.3);
   ctx.lineWidth = 1;
   ctx.beginPath();
   band.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));

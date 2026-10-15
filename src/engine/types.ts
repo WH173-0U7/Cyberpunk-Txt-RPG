@@ -24,6 +24,11 @@ export interface Point {
 
 export type Side = 'north' | 'east' | 'south' | 'west';
 
+/** One of a district's neighborhoods (the wiki's sub-districts, e.g. Kabuki in Watson), and where it is. */
+export interface Subdistrict extends Point {
+  name: string;
+}
+
 export interface District extends Point {
   id: string;
   name: string;
@@ -38,6 +43,8 @@ export interface District extends Point {
   ambient: AmbientLine[];
   /** How its eateries lean: luxury, everyday or poverty, as relative weights. */
   dining: Partial<Record<Quality, number>>;
+  /** Its neighborhoods on this map. A block belongs to the one nearest it (or to the nearest district with none). */
+  subdistricts: Subdistrict[];
 }
 
 /** An NCART stop. Stations sit on street corners. */
@@ -182,6 +189,8 @@ export interface Location extends Point {
   /** The kind as players read it, e.g. "Night market". */
   kindLabel: string;
   district: string;
+  /** The neighborhood it's in (a `Subdistrict` name), when its district has them. */
+  area?: string;
   weather: Weather;
   /** Overrides the district colors, e.g. for an interior with its own lighting. */
   theme?: Partial<Theme>;

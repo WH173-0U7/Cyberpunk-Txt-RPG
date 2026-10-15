@@ -183,12 +183,17 @@ describe("the people's own days", () => {
         }
       }
       // Every storefront is run by whoever ran it from the start, however many came and went.
-      for (const shop of world.buildings.filter((x) => x.business)) expect(bossOf(shop, population)?.id, `${seed} ${shop.name}`).toBe(bossOf(shop, fresh)?.id);
+      const staffOf = (people: Person[]) => {
+        const by = new Map<string, Person[]>();
+        for (const p of people) if (p.job.building && p.diedOn === undefined) by.set(p.job.building, [...(by.get(p.job.building) ?? []), p]);
+        return by;
+      };
+      const [now, then] = [staffOf(population.people), staffOf(fresh.people)];
+      const changed = world.buildings.filter((x) => x.business && bossOf(x, population, now.get(x.id) ?? [])?.id !== bossOf(x, fresh, then.get(x.id) ?? [])?.id);
+      expect(changed.map((x) => x.name), seed).toEqual([]);
       // One living partner or spouse each at most; every couple has the day it got together, and every tie runs both ways.
-      for (const p of population.people.filter((q) => q.diedOn === undefined)) {
-        const loves = population.ties.filter((t) => t.from === p.id && (t.kind === 'spouse' || t.kind === 'partner') && alive(t.to));
-        expect(loves.length, `${seed} ${p.name}`).toBeLessThanOrEqual(1);
-      }
+      const crowded = population.people.filter((p) => p.diedOn === undefined && tiesOf(population, p.id).filter((t) => (t.kind === 'spouse' || t.kind === 'partner') && alive(t.to)).length > 1);
+      expect(crowded.map((p) => p.name), seed).toEqual([]);
       for (const t of population.ties) {
         expect(ties.has(`${t.to}|${t.from}`), `${seed} ${t.from} ${t.kind} ${t.to}`).toBe(true);
         if (t.kind === 'partner') expect(state.since[tieKey(t.from, t.to)], `${seed} ${t.from}`).toBeDefined();
@@ -230,7 +235,8 @@ describe("the people's own days", () => {
 
   it('keeps the laid up at home', () => {
     const { world, population, events } = lived(seeds[0] as string, 20);
-    const fight = events.find((e) => e.kind === 'fight');
+    // A fight whose loser is still alive (the dead are nowhere, laid up or not).
+    const fight = events.find((e) => e.kind === 'fight' && population.people.find((p) => p.id === e.who[1])?.diedOn === undefined);
     if (fight) {
       const loser = population.people.find((p) => p.id === fight.who[1]) as Person;
       const hurt = { ...loser, hurtUntil: fight.day + 2 };
@@ -239,7 +245,7 @@ describe("the people's own days", () => {
         expect(where?.spot.id, `${loser.name} at ${hour}`).toBe(loser.home ?? undefined);
         if (loser.home) expect(where?.doing).toMatch(/laid up|asleep/);
       }
-      expect(whereIs(hurt, world, { hour: 11, weekday: 2, day: fight.day + 3 }, FOOD.dishes)?.doing).not.toMatch(/laid up/);
+      expect(whereIs(hurt, world, { hour: 11, weekday: 2, day: fight.day + 3 }, FOOD.dishes)?.doing ?? '').not.toMatch(/laid up/);
     }
   });
 
@@ -288,7 +294,8 @@ describe("the people's own days", () => {
       const news = newsFor(p, population, state, LIFE, state.day);
       if (!news) continue;
       told++;
-      expect(news.event.day).toBeGreaterThan(state.day - LIFE.newsDays);
+      // A death or a wedding stays news longer (`lasting`).
+      expect(news.event.day).toBeGreaterThan(state.day - (LIFE.lasting[news.event.kind] ?? LIFE.newsDays));
       if (news.role === 'me') expect(news.event.who).toContain(p.id);
       if (news.role === 'kin') {
         expect(news.tie?.from).toBe(p.id);
@@ -313,11 +320,12 @@ describe("the people's own days", () => {
       expect(scenes.get(b.id)).toMatchObject({ with: a.id, kind: 'couple' });
       expect(LIFE.scenes.couple).toContain(scenes.get(a.id)?.phrase);
     }
-    // A ganger on their turf and the help behind a counter.
+    // A ganger on their turf and the help behind a counter, who are nothing to each other (people who are, are at that instead).
     const ganger = population.people.find((p) => p.gang && (PEOPLE.turf[p.district] ?? []).some(([g]) => g === p.gang)) as Person;
-    const shop = world.buildings.find((b) => b.district === ganger.district && b.business && population.people.some((p) => p.job.building === b.id));
+    const strangers = (p: Person) => p.job.building && !tiesOf(population, ganger.id).some((t) => t.to === p.id);
+    const shop = world.buildings.find((b) => b.district === ganger.district && b.business && population.people.some((p) => p.job.building === b.id && strangers(p)));
     if (shop) {
-      const worker = population.people.find((p) => p.job.building === shop.id) as Person;
+      const worker = population.people.find((p) => p.job.building === shop.id && strangers(p)) as Person;
       const scenes = scenesAt([ganger, worker], population, { kind: 'building', id: shop.id }, { hour: 11, weekday: 2, day: T }, world, PEOPLE.turf, (g) => PEOPLE.gangs[g]?.rivals ?? [], sure, world.seed);
       expect(scenes.get(ganger.id)).toMatchObject({ with: worker.id, kind: 'shakedown' });
       // The help has their side of it: leaned on by whoever's leaning.

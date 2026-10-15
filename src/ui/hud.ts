@@ -23,21 +23,28 @@ const slug = (text: string) =>
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** The sign's letters never go below this, in pixels; a name longer than that gets an ellipsis. */
-const SIGN_MIN = 16;
+const SIGN_MIN = 12;
 
 /** The status bar and neon location sign above the terminal. */
 export class Hud {
   constructor(private readonly els: HudElements) {
     this.tick();
     setInterval(() => this.tick(), 1000);
-    // The sign refits when the screen turns or the window changes.
+    // The sign refits when the screen turns or the window changes, and once its font has come in
+    // (measured in the fallback, a long name fits at a size the real letters overflow).
     window.addEventListener('resize', () => this.fitSign());
+    document.fonts?.addEventListener('loadingdone', () => this.fitSign());
+    void document.fonts?.ready.then(() => this.fitSign());
   }
 
-  /** The sign says where you are; the address above it says the district (the sign has the name). */
-  setLocation(name: string, district: string): void {
+  /**
+   * The sign says where you are; the address above it says the neighborhood and the district
+   * (the sign has the name), most particular first like a host name, so a long one loses the
+   * district to the ellipsis rather than the neighborhood.
+   */
+  setLocation(name: string, district: string, neighborhood: string | null = null): void {
     this.els.sign.textContent = name;
-    this.els.path.textContent = `NCNET://${slug(district)}`;
+    this.els.path.textContent = neighborhood ? `NCNET://${slug(neighborhood)}.${slug(district)}` : `NCNET://${slug(district)}`;
     this.fitSign();
     this.flickerSign();
   }

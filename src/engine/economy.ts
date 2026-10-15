@@ -121,6 +121,16 @@ export interface EconomyDay {
  * One day of the economy: trade and spending into the tills, living off what people hold,
  * the gangs' cut, and on payday a week's money for everyone.
  */
+/** Where in its tier's range a storefront's usual walk-in trade falls, drawn once a storefront and kept. */
+const usuals = new WeakMap<World, Map<string, number>>();
+function usualOf(world: World, seed: string, id: string): number {
+  let known = usuals.get(world);
+  if (!known) usuals.set(world, (known = new Map()));
+  let usual = known.get(id);
+  if (usual === undefined) known.set(id, (usual = createRng(`${seed}:economy:${id}`).next()));
+  return usual;
+}
+
 export function economyDay({ world, population, state, rules, tier, turf, base, seed, day, rng }: EconomyDay): void {
   const storefronts = world.buildings.filter((b) => b.business);
   const byId = new Map(storefronts.map((b) => [b.id, b]));
@@ -136,7 +146,7 @@ export function economyDay({ world, population, state, rules, tier, turf, base, 
   for (const b of storefronts) {
     const t = tier({ kind: 'building', id: b.id });
     const [lo, hi] = rules.walkIn[t];
-    const usual = createRng(`${seed}:economy:${b.id}`).range(lo, hi);
+    const usual = lo + usualOf(world, seed, b.id) * (hi - lo);
     const till = tillOf(state.tills, b.id);
     takings.set(b.id, usual * rng.range(1 - rules.swing, 1 + rules.swing) + till.pending);
     till.pending = 0;

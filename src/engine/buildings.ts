@@ -1,4 +1,4 @@
-import { districtAt, seaTest } from './geography';
+import { seaTest, subdistrictAt, WORLD } from './geography';
 import { createRng, type Rng } from './rng';
 import type { Building, BuildingCategory, BuildingKind, CityLayout, District, Point } from './types';
 
@@ -42,11 +42,14 @@ export interface CategoryInfo {
 }
 
 /**
- * A real Night City building. It takes over the building of its kind nearest its district's
- * middle. A real storefront (a restaurant, say) names the business it runs, too.
+ * A real Night City building. It takes over the building of its kind nearest the middle of its
+ * neighborhood (or its district, if not said). A real storefront (a restaurant, say) names the
+ * business it runs, too.
  */
 export interface BuildingLandmark {
   district: string;
+  /** The neighborhood it's in, one of the district's `areas`. */
+  area?: string;
   kind: BuildingKind;
   name: string;
   business?: string;
@@ -106,17 +109,17 @@ export function blockAddress(column: number, row: number): string {
 
 /** The block a map point is in, or null off the map. */
 export function blockAt(layout: CityLayout, p: Point): BlockCell | null {
-  if (p.x < 0 || p.x > 100 || p.y < 0 || p.y > 100) return null;
-  const xs = [0, ...layout.avenues, 100];
-  const ys = [0, ...layout.streets, 100];
+  if (p.x < 0 || p.x > WORLD || p.y < 0 || p.y > WORLD) return null;
+  const xs = [0, ...layout.avenues, WORLD];
+  const ys = [0, ...layout.streets, WORLD];
   const cell = (lines: number[], v: number) => {
     let k = 0;
-    while (k < lines.length - 2 && (lines[k + 1] ?? 100) <= v) k++;
+    while (k < lines.length - 2 && (lines[k + 1] ?? WORLD) <= v) k++;
     return k;
   };
   const column = cell(xs, p.x);
   const row = cell(ys, p.y);
-  return { address: blockAddress(column, row), x0: xs[column] ?? 0, y0: ys[row] ?? 0, x1: xs[column + 1] ?? 100, y1: ys[row + 1] ?? 100 };
+  return { address: blockAddress(column, row), x0: xs[column] ?? 0, y0: ys[row] ?? 0, x1: xs[column + 1] ?? WORLD, y1: ys[row + 1] ?? WORLD };
 }
 
 /**
@@ -140,23 +143,25 @@ export function generateBuildings(
       { x: r.x + r.w, y: r.y + r.h },
     ].every((p) => !inSea(p));
 
-  const xs = [0, ...layout.avenues, 100];
-  const ys = [0, ...layout.streets, 100];
+  const xs = [0, ...layout.avenues, WORLD];
+  const ys = [0, ...layout.streets, WORLD];
   const buildings: Building[] = [];
   const reserved = new Set((content.landmarks ?? []).map((l) => l.name));
 
   for (let i = 0; i < xs.length - 1; i++) {
     for (let j = 0; j < ys.length - 1; j++) {
       const left = i === 0 ? 0.6 : (xs[i] ?? 0) + STREET_HALF_WIDTH;
-      const right = i === xs.length - 2 ? 99.4 : (xs[i + 1] ?? 100) - STREET_HALF_WIDTH;
+      const right = i === xs.length - 2 ? WORLD - 0.6 : (xs[i + 1] ?? WORLD) - STREET_HALF_WIDTH;
       const top = j === 0 ? 0.6 : (ys[j] ?? 0) + STREET_HALF_WIDTH;
-      const bottom = j === ys.length - 2 ? 99.4 : (ys[j + 1] ?? 100) - STREET_HALF_WIDTH;
+      const bottom = j === ys.length - 2 ? WORLD - 0.6 : (ys[j + 1] ?? WORLD) - STREET_HALF_WIDTH;
       const block: Rect = { x: left, y: top, w: right - left, h: bottom - top };
       if (block.w < MIN_SIDE || block.h < MIN_SIDE) continue;
 
-      const district = districtAt(districts, { x: block.x + block.w / 2, y: block.y + block.h / 2 });
+      const spot = subdistrictAt(districts, { x: block.x + block.w / 2, y: block.y + block.h / 2 });
+      const district = spot?.district;
       const plan = district ? plans[district.id] : undefined;
       if (!district || !plan) continue;
+      const area = spot?.subdistrict?.name ?? null;
 
       const address = blockAddress(i, j);
       const pieces =
@@ -169,7 +174,7 @@ export function generateBuildings(
         // Apartment blocks have shops at street level now and then.
         const kind: BuildingKind = blockKind === 'apartments' && rng.chance(0.2) ? 'shops' : blockKind;
         const style = content.styles[kind];
-        const { name, business } = makeName(rng, style, plan, content, reserved);
+        const { name, business } = makeName(rng, style, plan, area, content, reserved);
         buildings.push({
           id: `b-${address}-${k + 1}`,
           block: address,
@@ -192,7 +197,8 @@ export function generateBuildings(
   for (const landmark of content.landmarks ?? []) {
     const district = districts.find((d) => d.id === landmark.district);
     if (!district) continue;
-    const away = (b: Building) => Math.hypot(b.x + b.w / 2 - district.x, b.y + b.h / 2 - district.y);
+    const middle = district.subdistricts.find((s) => s.name === landmark.area) ?? district;
+    const away = (b: Building) => Math.hypot(b.x + b.w / 2 - middle.x, b.y + b.h / 2 - middle.y);
     const candidates = buildings.filter((b) => b.district === landmark.district && b.kind === landmark.kind && !taken.has(b));
     const nearest = candidates.reduce<Building | null>((best, b) => (!best || away(b) < away(best) ? b : best), null);
     if (!nearest) continue;
@@ -297,13 +303,15 @@ function weightedPick(rng: Rng, weights: Partial<Record<BuildingKind, number>>):
 /**
  * A made-up name from the style's templates, never one that belongs to a real landmark. A
  * storefront's `{shop}` also decides its business, leaning the way its district trades; a
- * chain's sign is its whole name, with the neighborhood when the template had one.
+ * chain's sign is its whole name, with the neighborhood when the template had one. `{area}`
+ * is the block's own neighborhood (any of the district's, for a district without them).
  * Each part of a name takes one draw, so what a storefront sells never moves a building.
  */
 function makeName(
   rng: Rng,
   style: BuildingStyle,
   plan: ZoningPlan,
+  hood: string | null,
   content: BuildingContent,
   reserved: Set<string>,
 ): { name: string; business: Business | null } {
@@ -313,7 +321,11 @@ function makeName(
     let picked: Business | null = null;
     const name = rng
       .pick(style.names)
-      .replace(/\{area\}/g, () => (area = rng.pick(plan.areas)))
+      .replace(/\{area\}/g, () => {
+        const drawn = rng.pick(plan.areas);
+        area = hood ?? drawn;
+        return area;
+      })
       .replace(/\{corp\}/g, () => rng.pick(content.corps))
       .replace(/\{shop\}/g, () => {
         picked = pickBusiness(rng, content, plan.trade ?? {}, plan.district);
