@@ -362,6 +362,19 @@ own.
   pockets. What you'd pull on someone is in the status drop-down (**Armed**): a loaded gun
   before an empty one (nobody can tell), any gun before a blade. Rob someone with a gun and
   few will fight back; with a blade, more; with bare hands, the brave ones.
+- **Cyberware**: ripperdocs (storefronts, and clinics of their own like Viktor's in Little
+  China) sell chrome and fit it there and then (**Fit** on the rack); cyberware outlets sell
+  it boxed, to take away, and cyberdeck shops sell decks and the RAM for them. Every implant
+  is a real 2077 one, checked against its page on the wiki: its name, maker, the part of the
+  body it goes in and the capacity it takes: Mantis Blades, Gorilla Arms, a Militech Paraline
+  or an Arasaka cyberdeck, a Dynalar or Zetatech Sandevistan, Kiroshi optics, a Smart Link,
+  Subdermal Armor, a Kerenzikov, a Second Heart. The body has the wiki's ten parts, each with
+  its slots (three in the frontal cortex, one pair of arms), and 50 capacity for all of it; a
+  part that's full gives up the implant there longest for the new one (into a pocket if
+  there's room, else the doc keeps it). A ripperdoc fits chrome you carry, or takes chrome
+  out, for a fee by how good a clinic it is (**Fit** in the inventory; **Take out** on the
+  inventory's **Chrome** page). What's in you is on that page and in the status drop-down.
+  Chrome does nothing yet: what each implant does comes with fighting.
 - **Clothes**: you're dressed head to toe but the head, in the wiki's six slots (head, face,
   outer torso, inner torso, legs, feet), and every garment is a real piece of 2077 clothing
   from the wiki in one of its four styles (Entropism, Kitsch, Neomilitarism, Neokitsch),
@@ -473,7 +486,8 @@ effects layer decides how that should look:
 src/
   engine/   Game rules and state: the city generator, the NCART network, street routes,
             trip planning on the real clock, the wallet and pass, energy (energy.ts),
-            menus (food.ts), weapons and what stores stock them (weapons.ts), drink
+            menus (food.ts), weapons and what stores stock them (weapons.ts), cyberware
+            and fitting it (cyberware.ts), drink
             (inebriation.ts), the people (people.ts: who lives
             here and where they are), what they think of the player and what comes of it
             (society.ts, which also keeps what the player knows of people and of who knows
@@ -483,7 +497,7 @@ src/
   data/     The content the generator builds cities from (city.ts), travel times and
             prices (travel.ts), energy's numbers (energy.ts), the kinds of item the
             inventory sorts by (items.ts), what there is to eat (food.ts), the guns,
-            blades and ammo (weapons.ts), the stages
+            blades and ammo (weapons.ts), the implants and the body (cyberware.ts), the stages
             of being drunk (inebriation.ts), the people's names, gangs, jobs and lines
             (people.ts), how grudges and reputations work (society.ts) and charisma's
             numbers (skills.ts).

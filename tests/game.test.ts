@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ASK_ABOUT, cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
 import { outfit, type GearContent } from '../src/engine/carry';
 import { FOOD } from '../src/data/food';
-import { GEAR } from '../src/data/gear';
+import { GEAR as ALL_GEAR } from '../src/data/gear';
 import { ARMS } from '../src/data/weapons';
 import { MONEY } from '../src/data/money';
 import { LINES } from '../src/data/dialogue';
@@ -20,6 +20,9 @@ import type { Progress } from '../src/engine/save';
 import { freshSociety, linkKey, type SocietyState } from '../src/engine/society';
 import type { TravelRules } from '../src/engine/travel';
 import type { Building, GameEvents, Item, Location, Whereabouts, World } from '../src/engine/types';
+
+/** The test city's chrome outlet stands in for any store with a rack, so its own chrome is left off unless a test is about chrome (`ALL_GEAR`). */
+const GEAR: GearContent = { ...ALL_GEAR, chrome: { ...ALL_GEAR.chrome, stores: {} } };
 
 // A small city on a 3×3 grid of streets:
 //
@@ -2103,6 +2106,107 @@ describe('Game', () => {
           return;
         }
         throw new Error('nobody at the noodle bar');
+      });
+    });
+
+    describe('chrome', () => {
+      // The test city's outlet as a ripperdoc's clinic, and the roof as a clinic of its own.
+      const clinic: World = {
+        ...world,
+        buildings: world.buildings.map((b) => (b.id === 'b-shop' ? { ...b, business: 'ripperdoc', kindLabel: 'Ripperdoc clinic' } : b)),
+        locations: { ...world.locations, roof: { ...world.locations.roof!, kind: 'ripperdoc', kindLabel: 'Ripperdoc' } },
+      };
+      /** Chrome stores with only these implants, all of them on every rack. */
+      const only = (ids: string[], capacity = ALL_GEAR.chrome.capacity): GearContent => ({
+        ...GEAR,
+        chrome: { ...ALL_GEAR.chrome, capacity, implants: Object.fromEntries(ids.map((id) => [id, ALL_GEAR.chrome.implants[id]!])), stores: { ripperdoc: { count: ids.length, fits: true }, 'cyberware-outlet': { count: ids.length } } },
+      });
+      const rich = (w: World, gear: GearContent, extra: Partial<Progress> = {}) => {
+        const game = new Game(w, { ...RULES, gear }, { ...progressInside('b-shop', 32, 20), money: { bills: 0, coins: 0, account: 20_000 }, ...extra });
+        game.start(T0);
+        const { take, outputs } = record(game);
+        take();
+        return { game, take, outputs };
+      };
+      const said = (recorded: ReturnType<ReturnType<typeof record>['take']>) => recorded.flatMap((e) => (e.type === 'output' ? [e.payload.text] : [])).join(' ');
+
+      it("sells a ripperdoc's chrome and fits it there and then, counting the capacity it takes", () => {
+        const { game, take } = rich(clinic, only(['subdermal-armor', 'mantis-blades']));
+        const menu = game.menu();
+        // Listed by the part of the body: the arms before the skin.
+        expect(menu?.items.map((i) => i.id)).toEqual(['mantis-blades', 'subdermal-armor']);
+        expect(menu?.items[0]).toMatchObject({ kind: 'cyberware', price: 1800, detail: 'Arms · Arasaka · 8 capacity' });
+        expect(game.clinic()?.name).toBe('Test Chrome');
+        expect(game.buy('mantis-blades', T0)).toBe(true);
+        expect(game.chrome().fitted.map((f) => f.id)).toEqual(['mantis-blades']);
+        expect(game.chrome().used).toBe(8);
+        expect(game.inventory.some((i) => i.kind === 'cyberware')).toBe(false);
+        // A rack of gear takes a transfer.
+        expect(game.wallet.account).toBe(20_000 - 1800);
+        expect(said(take())).toContain('fits it there and then');
+        // In once is all.
+        expect(game.canBuy('mantis-blades', T0)).toContain('in you already');
+        expect(game.buy('mantis-blades', T0)).toBe(false);
+        expect(game.chrome().fitted).toHaveLength(1);
+      });
+
+      it('takes out what a full part had, into a pocket, and refuses what the capacity left won\'t take', () => {
+        // A pair of arms wants a bag: with one, the old pair goes in it.
+        const bag = [...GEAR.start, { id: 'backpack-1', kind: 'backpack', in: null }];
+        const { game, take } = rich(clinic, only(['mantis-blades', 'subdermal-armor', 'gorilla-arms']), { chrome: [{ id: 'gorilla-arms', since: 1 }], gear: bag });
+        expect(game.buy('mantis-blades', T0)).toBe(true);
+        expect(game.chrome().fitted.map((f) => f.id)).toEqual(['mantis-blades']);
+        expect(game.inventory.find((i) => i.kind === 'cyberware')).toMatchObject({ id: 'gorilla-arms', count: 1, in: 'backpack-1' });
+        expect(said(take())).toContain('The Gorilla Arms comes out, into your backpack');
+        // Without one, the doc keeps them.
+        const bare = rich(clinic, only(['mantis-blades', 'gorilla-arms']), { chrome: [{ id: 'gorilla-arms', since: 1 }] });
+        expect(bare.game.buy('mantis-blades', T0)).toBe(true);
+        expect(bare.game.inventory.some((i) => i.kind === 'cyberware')).toBe(false);
+        expect(said(bare.take())).toContain('the doc keeps it');
+        // Ten capacity, eight of it taken: the arms can swap, but nothing else needing more than two goes in.
+        const tight = rich(clinic, only(['mantis-blades', 'subdermal-armor', 'gorilla-arms'], 10), { chrome: [{ id: 'mantis-blades', since: 1 }] });
+        expect(tight.game.canBuy('subdermal-armor', T0)).toContain('Not enough capacity for the Subdermal Armor: it takes 5');
+        expect(tight.game.canBuy('gorilla-arms', T0)).toBeNull();
+      });
+
+      it('sells chrome to take away at an outlet, which a ripperdoc then fits for a fee, and takes out again', () => {
+        const outlet = rich(world, only(['smart-link']));
+        expect(outlet.game.clinic()).toBeNull();
+        expect(outlet.game.buy('smart-link', T0)).toBe(true);
+        const carried = outlet.game.inventory.find((i) => i.kind === 'cyberware');
+        expect(carried).toMatchObject({ id: 'smart-link', name: 'Smart Link', in: expect.any(String) });
+        expect(outlet.game.chrome().fitted).toEqual([]);
+        expect(outlet.game.canInstall('smart-link', T0)).toContain('Only a ripperdoc');
+        // At the roof's clinic, an everyday one: the fee is the everyday fee.
+        const doc = new Game(clinic, { ...RULES, gear: only(['smart-link']) }, { ...progressInside('b-shop', 32, 20, outlet.game.inventory), where: at('roof'), inside: null, money: { bills: 0, coins: 0, account: 1000 } });
+        doc.start(T0);
+        expect(doc.clinic()).toEqual({ name: 'Roof', fee: 150 });
+        expect(doc.menu()?.kind).toBe('gear');
+        expect(doc.install('smart-link', T0)).toBe(true);
+        expect(doc.chrome().fitted.map((f) => f.id)).toEqual(['smart-link']);
+        expect(doc.inventory.some((i) => i.kind === 'cyberware')).toBe(false);
+        expect(doc.wallet.account).toBe(850);
+        expect(doc.uninstall('smart-link', T0)).toBe(true);
+        expect(doc.chrome().fitted).toEqual([]);
+        expect(doc.inventory.find((i) => i.kind === 'cyberware')?.id).toBe('smart-link');
+        expect(doc.wallet.account).toBe(700);
+        // Out of the clinic, nobody takes chrome out.
+        const away = new Game(clinic, { ...RULES, gear: only(['smart-link']) }, { ...progressInside('b-shop', 32, 20), where: at('alley'), inside: null, chrome: [{ id: 'smart-link', since: 1 }] });
+        expect(away.canUninstall('smart-link', T0)).toContain('Only a ripperdoc');
+      });
+
+      it('fits nothing for a masked face, and keeps the chrome through a save', () => {
+        const masked = rich(clinic, only(['smart-link']), { gear: [...GEAR.start, { id: 'old-plastic-gas-mask-1', kind: 'old-plastic-gas-mask', in: null }] });
+        expect(masked.game.canBuy('smart-link', T0)).toBe(masked.game.barred(T0));
+        expect(masked.game.buy('smart-link', T0)).toBe(false);
+        const { game } = rich(clinic, only(['smart-link', 'subdermal-armor']));
+        game.buy('smart-link', T0);
+        game.buy('subdermal-armor', T0 + MINUTE);
+        expect(game.chromeSaved).toEqual([{ id: 'smart-link', since: T0 }, { id: 'subdermal-armor', since: T0 + MINUTE }]);
+        const again = new Game(clinic, { ...RULES, gear: only(['smart-link', 'subdermal-armor']) }, { ...progressInside('b-shop', 32, 20), chrome: [...game.chromeSaved, { id: 'smart-link', since: 5 }, { id: 'no-such-implant', since: 5 }] });
+        // Twice is once, and what the game doesn't have is gone.
+        expect(again.chromeSaved).toEqual(game.chromeSaved);
+        expect(again.chrome()).toMatchObject({ used: 9, capacity: ALL_GEAR.chrome.capacity });
       });
     });
 

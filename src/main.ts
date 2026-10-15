@@ -32,13 +32,15 @@ import { applyTheme, resolveTheme } from './fx/theme';
 import { WeatherFx } from './fx/weather';
 import { ITEM_KINDS } from './data/items';
 import { ARMS, ARMS_BLURBS } from './data/weapons';
+import { CHROME, CHROME_BLURBS } from './data/cyberware';
+import { fitCheck, implantDetail, implantOf } from './engine/cyberware';
 import { isGun, weaponDetail, weaponOf } from './engine/weapons';
 import { formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
 import { Hud, WEATHER_LABEL } from './ui/hud';
 import { EnergyMeter } from './ui/energy';
 import { StatusPanel, type StatusRow } from './ui/status';
 import { Bank } from './ui/bank';
-import { Inventory, type InventoryItemView, type InventoryView, type PocketRowView } from './ui/inventory';
+import { Inventory, type ChromePageView, type InventoryItemView, type InventoryView, type PocketRowView } from './ui/inventory';
 import { MapOverlay } from './ui/overlay';
 import { stripMarkup } from './ui/markup';
 import { CityMap, type Target } from './ui/map';
@@ -159,11 +161,17 @@ const inventory = new Inventory(
       lastActivity = performance.now();
       game.takeOff(id);
     },
+    onTakeOut: (id) => {
+      lastActivity = performance.now();
+      game.uninstall(id, Date.now());
+    },
   },
   reducedMotion,
 );
-/** Which pocket the inventory is looking into, by the pockets opened in turn; none for the outfit. */
+/** Which pocket the inventory is looking into, by the pockets opened in turn; none for the outfit, `CHROME_PAGE` for the chrome. */
 let inventoryPath: string[] = [];
+/** The inventory's page for the chrome fitted: no pocket has this id. */
+const CHROME_PAGE = ':chrome';
 
 const settings = new Settings(
   {
@@ -557,9 +565,9 @@ function hereView(now: number): PanelView {
       mode: 'here',
       kicker: `You are here · ${location.kindLabel}`,
       description: location.description,
-      actions: [peopleAction(here), ...(menu ? [barred ? { id: 'menu' as const, label: 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : [])],
+      actions: [peopleAction(here), ...(menu ? [barred ? { id: 'menu' as const, label: menu.kind === 'gear' ? 'Shop' : 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : [])],
       closable: false,
-      announce: `${location.name}. ${stripMarkup(location.description)}${menu ? ' There is a menu.' : ''} ${here ? `${here} people here.` : 'Nobody here.'}`,
+      announce: `${location.name}. ${stripMarkup(location.description)}${menu ? (menu.kind === 'gear' ? ' There is something for sale.' : ' There is a menu.') : ''} ${here ? `${here} people here.` : 'Nobody here.'}`,
     };
   }
   if (where.station) {
@@ -656,6 +664,12 @@ function menuAction(menu: Menu): PanelAction {
 
 /** What the panel says about the place's menu or rack. */
 function menuBlurb(menu: Menu): string {
+  if (menu.kind === 'gear' && menu.items.some((i) => i.kind === 'cyberware')) {
+    if (game.clinic()) return CHROME_BLURBS[menu.venue.quality];
+    // A deck shop has only decks and the RAM for them; an outlet, a bit of everything.
+    const decks = menu.items.every((i) => i.kind !== 'cyberware' || CHROME.implants[i.id]?.system === 'cyberdeck' || CHROME.implants[i.id]?.part === 'frontal-cortex');
+    return CHROME_BLURBS[decks ? 'decks' : 'outlet'];
+  }
   if (menu.kind === 'gear') {
     const weapons = menu.items.filter((i) => i.kind === 'weapon');
     const guns = weapons.filter((i) => {
@@ -786,10 +800,13 @@ function showInventory(): void {
     };
   };
   // What the player is looking into, if it's still there; else back out to themselves.
-  while (inventoryPath.length && !pockets.some((p) => p.id === inventoryPath.at(-1))) inventoryPath.pop();
+  while (inventoryPath.length && inventoryPath.at(-1) !== CHROME_PAGE && !pockets.some((p) => p.id === inventoryPath.at(-1))) inventoryPath.pop();
   const open = inventoryPath.length ? pockets.find((p) => p.id === inventoryPath.at(-1)) : undefined;
+  const chrome = game.chrome();
   let page: InventoryView['page'];
-  if (!open) {
+  if (inventoryPath.at(-1) === CHROME_PAGE) {
+    page = chromePage();
+  } else if (!open) {
     const { worn, bags } = outfit(pockets, GEAR);
     const load = (id: string | undefined) => (id ? pockets.find((p) => p.id === id) : undefined);
     page = {
@@ -799,6 +816,15 @@ function showInventory(): void {
         return { label: GEAR.slotLabels[slot], garment: garment ? row(garment) : null };
       }),
       bags: bags.map((b) => load(b.id)).filter((b): b is PocketLoad => Boolean(b)).map(row),
+      chrome: {
+        id: CHROME_PAGE,
+        name: chrome.fitted.length ? `${chrome.fitted.length} ${chrome.fitted.length === 1 ? 'implant' : 'implants'}` : 'None fitted',
+        sub: chrome.fitted.map((f) => f.short).slice(0, 3).join(', ') + (chrome.fitted.length > 3 ? '…' : ''),
+        detail: `${chrome.used}/${chrome.capacity} capacity`,
+        weight: '',
+        over: false,
+        opens: true,
+      },
     };
   } else {
     const parent = open.in ? pockets.find((p) => p.id === open.in) : undefined;
@@ -828,6 +854,33 @@ function showInventory(): void {
 }
 type PocketPageFigures = Array<{ label: string; value: string }>;
 
+/** The chrome page: every part of the body and what's fitted there; at a ripperdoc, each can come out. */
+function chromePage(): ChromePageView {
+  const chrome = game.chrome();
+  const clinic = game.clinic();
+  return {
+    kind: 'chrome',
+    name: 'Chrome',
+    note: clinic ? `${clinic.name} fits chrome you carry, and takes chrome out: ${clinic.fee} €$ a time.` : 'Fitted by a ripperdoc, who can take it out again. Chrome you carry waits on one to fit it.',
+    load: `${chrome.used}/${chrome.capacity} capacity`,
+    back: 'On you',
+    parts: (Object.keys(CHROME.parts) as Array<keyof typeof CHROME.parts>).map((part) => {
+      const info = CHROME.parts[part];
+      const here = chrome.fitted.filter((f) => f.part === part);
+      return {
+        label: info.label,
+        count: `${here.length}/${info.slots}`,
+        // The part is the heading: under it, an operating system says its kind, and each its maker and capacity.
+        implants: here.map((f) => {
+          const implant = CHROME.implants[f.id];
+          const sub = implant ? [implant.system ? CHROME.systems[implant.system] : '', implant.maker, `${implant.capacity} capacity`].filter(Boolean).join(' · ') : '';
+          return { id: f.id, name: f.name, sub, removable: Boolean(clinic) };
+        }),
+      };
+    }),
+  };
+}
+
 /** "250 g", "1.3 kg"; `kilos` always in kilos, for the limits. */
 function formatGrams(grams: number, kilos = false): string {
   return grams >= 1000 || kilos ? `${(grams / 1000).toFixed(1)} kg` : `${Math.round(grams)} g`;
@@ -843,11 +896,14 @@ function itemDetail(item: Item, tier: (p: { brand?: string; style?: PocketLoad['
   if (weapon && isGun(weapon, ARMS)) return [ARMS.classes[weapon.class]?.label, `${item.loaded ?? 0}/${weapon.magazine ?? 0}`, weapon.disposable ? 'sealed' : ''].filter(Boolean).join(' · ');
   if (weapon) return weaponDetail(weapon, ARMS);
   if (item.kind === 'ammo') return ARMS.ammo[item.id]?.for;
+  const implant = implantOf(item, CHROME);
+  if (implant) return implantDetail(implant, CHROME);
   return undefined;
 }
 
-/** What can be done with something from the inventory: eat a dish, drink a drink, load a gun or unload it. */
+/** What can be done with something from the inventory: eat a dish, drink a drink, load a gun or unload it, have a ripperdoc fit an implant. */
 function useLabel(item: Item): string | undefined {
+  if (item.kind === 'cyberware') return game.clinic() ? 'Fit' : undefined;
   if (item.kind === 'weapon') {
     const can = game.canLoad(item.id);
     return can.load ? 'Load' : can.unload ? 'Unload' : undefined;
@@ -863,6 +919,10 @@ function use(id: string, pocket: string): void {
   if (item?.kind === 'weapon') {
     if (game.canLoad(id).load) game.load(id);
     else game.unload(id);
+    return;
+  }
+  if (item?.kind === 'cyberware') {
+    game.install(id, Date.now(), pocket || undefined);
     return;
   }
   game.consume(id, Date.now(), pocket || undefined);
@@ -903,6 +963,7 @@ function showStatus(now: number): void {
   const drunk = game.inebriation(now);
   const mask = game.masked();
   const armed = game.armed();
+  const chrome = game.chrome();
   const heart = game.romance(now);
   const job = game.jobStatus(now);
   const pass = wallet.passUntil > now;
@@ -921,6 +982,7 @@ function showStatus(now: number): void {
     ...(condition ? [{ label: 'Condition', value: condition, tone: 'warn' as const }] : []),
     ...(mask ? [{ label: 'Mask', value: `${mask.name} · nobody knows your face`, tone: 'warn' as const }] : []),
     { label: 'Armed', value: armed ? `${armed.name}${armed.gun ? ` · ${armed.loaded}/${armed.magazine}` : ''}` : 'Nothing but your hands' },
+    { label: 'Chrome', value: chrome.fitted.length ? `${chrome.fitted.map((f) => f.short).join(', ')} · ${chrome.used}/${chrome.capacity} capacity` : `None · ${chrome.capacity} capacity free` },
     ...game.reputation(now).map((r) => ({ label: r.label, value: `${r.value > 0 ? '+' : '−'}${Math.abs(r.value)}`, tone: (r.value < 0 ? 'bad' : 'good') as 'bad' | 'good' })),
     { label: 'Mapped', value: `${game.mapState.visited.size} of ${Object.keys(game.world.locations).length} places` },
     { label: 'Weather', value: WEATHER_LABEL[skyNow] },
@@ -942,12 +1004,21 @@ function showShop(): void {
   // A weapon counts by its model, each one its own item; rounds by the round.
   for (const item of game.inventory) carried.set(item.weapon ?? item.id, (carried.get(item.weapon ?? item.id) ?? 0) + item.count);
   const barred = game.barred(Date.now());
+  const clinic = game.clinic();
+  const chrome = game.chromeSaved;
   shop.render({
     kicker: qualityLabel(menu),
     blurb: barred ?? menuBlurb(menu),
     status: shopStatus,
     // Cash, or a transfer where this counter takes one: the game knows which.
-    items: items.map((item) => ({ ...item, affordable: !barred && game.affords(item.id), barred: Boolean(barred), carried: carried.get(item.id) ?? 0 })),
+    items: items.map((item) => {
+      const row = { ...item, affordable: !barred && game.affords(item.id), barred: Boolean(barred), carried: carried.get(item.id) ?? 0 };
+      if (item.kind !== 'cyberware' || !clinic) return row;
+      // A ripperdoc fits what it sells: the rack says whether it would go in, and what it would take the place of.
+      const check = fitCheck(chrome, item.id, CHROME.capacity, CHROME);
+      const state = check.ok ? (check.replaces ? `Replaces ${CHROME.implants[check.replaces]?.name ?? check.replaces}` : '') : check.why === 'fitted' ? 'Fitted' : 'No capacity';
+      return { ...row, verb: 'Fit', detail: [item.detail, state].filter(Boolean).join(' · '), affordable: row.affordable && check.ok, why: check.ok ? undefined : check.why === 'fitted' ? 'in you already' : 'not enough capacity left' };
+    }),
   });
 }
 
@@ -1163,6 +1234,12 @@ function wire(g: Game): void {
       lastMask = mask;
       if (!target && !g.currentTrip) refresh();
     }
+    queueSave();
+  });
+
+  g.events.on('chromeChanged', () => {
+    if (inventory.overlay.isOpen) showInventory();
+    if (shop.overlay.isOpen) showShop();
     queueSave();
   });
 

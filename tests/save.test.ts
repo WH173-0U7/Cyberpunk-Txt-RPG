@@ -198,6 +198,20 @@ describe('saving', () => {
     expect(saveOf(game, now).job).toBeNull();
   });
 
+  it('carries the chrome fitted, and reads a save from before it, or anything that is not an implant, as none', () => {
+    const { game, now } = played(1);
+    const chrome = [{ id: 'mantis-blades', since: T0 }, { id: 'smart-link', since: T0 + 1 }];
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), chrome })));
+    expect(read?.chrome).toEqual(chrome);
+    expect(read && new Game(world, rules, resume(world, read)!).chromeSaved).toEqual(chrome);
+    expect(readSave({ ...saveOf(game, now), chrome: [...chrome, { id: 3 }, 'arms', { id: 'x', since: 'then' }] })?.chrome).toEqual(chrome);
+    const before: Record<string, unknown> = { ...saveOf(game, now) };
+    delete before.chrome;
+    expect(readSave(before)?.chrome).toBeNull();
+    expect(new Game(world, rules, resume(world, readSave(before)!)!).chromeSaved).toEqual([]);
+    expect(saveOf(game, now).chrome).toEqual([]);
+  });
+
   it('carries charisma and what the player knows of people, and starts fresh without them', () => {
     const { game, now } = played(1);
     const charisma = { level: 3, xp: 12 };

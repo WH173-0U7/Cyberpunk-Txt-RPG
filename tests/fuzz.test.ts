@@ -106,6 +106,12 @@ function check(game: Game, about: string): void {
   expect(again.jobSaved, `${about}: job after a save`).toEqual(game.jobSaved);
   expect(again.lifeSaved, `${about}: the people's days after a save`).toEqual(game.lifeSaved);
   expect(again.youSaved, `${about}: who the player is after a save`).toEqual(game.youSaved);
+  expect(again.chromeSaved, `${about}: chrome after a save`).toEqual(game.chromeSaved);
+  // The chrome fits the body: within the capacity, no part over its slots, nothing in twice.
+  const chrome = game.chrome();
+  expect(chrome.used, `${about}: capacity`).toBeLessThanOrEqual(chrome.capacity);
+  for (const [part, info] of Object.entries(GEAR.chrome.parts)) expect(chrome.fitted.filter((f) => f.part === part).length, `${about}: ${part}`).toBeLessThanOrEqual(info.slots);
+  expect(new Set(chrome.fitted.map((f) => f.id)).size, `${about}: chrome twice`).toBe(chrome.fitted.length);
   // Seeing someone alive, and no one else's.
   const romance = game.societySaved.romance;
   if (romance) {
@@ -135,7 +141,7 @@ describe('playing badly', () => {
     for (const seed of seeds) {
       const world = generateWorld(seed, CITY);
       const rng = createRng(`fuzz:${seed}`);
-      const stores = world.buildings.filter((b) => b.business && ['food', 'clothing', 'commodity', 'services', 'firearms', 'melee'].includes(b.category));
+      const stores = world.buildings.filter((b) => b.business && ['food', 'clothing', 'commodity', 'services', 'firearms', 'melee', 'cyberware', 'netrunning'].includes(b.category));
       let progress: Progress = {
         where: { ...streetSpot(world.locations[world.start] ?? { x: 50, y: 50 }), place: world.start },
         visited: [world.start],
@@ -209,6 +215,11 @@ describe('playing badly', () => {
             } else game.insult(who, now);
           } else if (roll < 0.86 && game.jobStatus(now)?.here) {
             game.work(now);
+          } else if (game.clinic() && roll < 0.95) {
+            const carried = game.inventory.filter((i) => i.kind === 'cyberware');
+            const fitted = game.chromeSaved;
+            if (carried.length && rng.chance(0.6)) game.install(rng.pick(carried)!.id, now);
+            else if (fitted.length) game.uninstall(rng.pick(fitted)!.id, now);
           } else if (game.bank()) {
             const what = rng.next();
             if (what < 0.3) game.deposit();

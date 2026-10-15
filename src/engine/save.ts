@@ -1,5 +1,6 @@
 import { CELLS } from './game';
 import type { PocketState } from './carry';
+import type { Fitted } from './cyberware';
 import type { Money } from './money';
 import type { EnergyState } from './energy';
 import type { InebriationState } from './inebriation';
@@ -45,6 +46,8 @@ export interface Progress {
   life: LifeState | null;
   /** The pronouns the player goes by (missing or null: a save from before; they go by they). */
   you?: You | null;
+  /** The chrome a ripperdoc has fitted into the player (missing or null: a save from before; none). */
+  chrome?: Fitted[] | null;
 }
 
 /** What a save takes from a game in progress (a `Game` has all of it). */
@@ -63,6 +66,7 @@ export interface SaveSource {
   readonly jobSaved: JobState | null;
   readonly lifeSaved: LifeState;
   readonly youSaved: You;
+  readonly chromeSaved: readonly Fitted[];
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -100,6 +104,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     job: game.jobSaved ? { ...game.jobSaved } : null,
     life: game.lifeSaved,
     you: { ...game.youSaved },
+    chrome: game.chromeSaved.map((f) => ({ ...f })),
     savedAt: now,
   };
 }
@@ -160,6 +165,8 @@ export function readSave(raw: unknown): SaveData | null {
     life: isLife(save.life) ? { ...save.life, events: save.life.events.filter((e) => isObject(e) && Array.isArray(e.who)) } : null,
     // And before the player said who they are, they went by they.
     you: isYou(save.you) ? save.you : null,
+    // And before there was chrome, the player had none; an implant that isn't one is dropped.
+    chrome: Array.isArray(save.chrome) ? save.chrome.filter(isFitted) : null,
     savedAt: save.savedAt,
   };
 }
@@ -181,12 +188,12 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, life, you } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, life, you, chrome } = save;
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null, life, you: you ?? null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null, life, you: you ?? null, chrome: chrome ?? null };
 }
 
 function isItem(value: unknown): value is Item {
@@ -207,6 +214,11 @@ function isItem(value: unknown): value is Item {
     (item.weapon === undefined || typeof item.weapon === 'string') &&
     (item.loaded === undefined || (Number.isInteger(item.loaded) && (item.loaded as number) >= 0))
   );
+}
+
+function isFitted(value: unknown): value is Fitted {
+  const fitted = value as Record<string, unknown> | null;
+  return typeof fitted === 'object' && fitted !== null && typeof fitted.id === 'string' && isNumber(fitted.since);
 }
 
 function isYou(value: unknown): value is You {

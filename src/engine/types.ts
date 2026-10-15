@@ -4,6 +4,7 @@ import type { SkillStatus } from './skills';
 import type { JobStatus } from './jobs';
 import type { Quality } from './food';
 import type { You } from './romance';
+import type { ChromeStatus } from './cyberware';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -307,5 +308,7 @@ export type GameEvents = {
   jobChanged: JobStatus | null;
   /** The player changed the pronouns they go by. */
   youChanged: You;
+  /** A ripperdoc fitted an implant, or took one out. */
+  chromeChanged: ChromeStatus;
   fx: { effect: FxName };
 };

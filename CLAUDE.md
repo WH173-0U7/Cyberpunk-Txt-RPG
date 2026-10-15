@@ -73,8 +73,8 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 
 ## The inventory
 
-Everything the player owns is in a pocket of something worn; food, drink, credchips,
-clothing, weapons and ammo are the items so far:
+Everything the player owns is in a pocket of something worn, but the chrome in them; food,
+drink, credchips, clothing, weapons, ammo and cyberware are the items so far:
 
 - An `Item` has a `kind` (`ItemKind`: weapon, ammo, attachment, cyberware, quickhack, clothing,
   consumable, shard, credchip, junk, component, after the wiki's 2077 item types plus the
@@ -170,6 +170,30 @@ clothing, weapons and ammo are the items so far:
   uses (`ARMS.rob`, the share of courage it takes to fight back against each) and names in
   its lines (`weapon`, `gun`, `blade`, `blunt` in the vars). Shooting, damage, attachments
   and people's own weapons hang off the same pieces when they come.
+- Cyberware: `src/engine/cyberware.ts` is the engine, `src/data/cyberware.ts` the canon and
+  the numbers (`CHROME`, on `GEAR.chrome`). Every implant is a real, non-iconic 2077 one
+  checked against its own wiki page: the infobox's title (a cyberdeck by its first mark,
+  "Paraline Mk.1"), manufacturer, type (the part of the body, or an operating system's kind:
+  Cyberdeck, Sandevistan, Berserk), capacity and the tier it's first sold at; its note says
+  only what the page says it does, in our words. `tests/cyberware.test.ts` pins each one
+  (`CANON`): a new implant goes in there from its page. The body is the wiki's ten parts with
+  its slots (`parts`); `capacity` is what everything fitted may add up to (ours). A store
+  with chrome (`CHROME.stores`, by business id or by kind of place: a ripperdoc is a
+  storefront or a place of its own, Viktor's Clinic) gets its rack from `chromeStockFor` (its
+  tier, a ripperdoc's a tier up, `perPart` for a spread of the body, `only` for a deck shop)
+  on its own stream, listed first on `Game`'s rack. A ripperdoc (`fits`) fits what it sells
+  there and then (`Game.buy`); bought anywhere else, an implant is an `Item` of kind
+  `cyberware` named by its id, weighing by its part (a pair of arms wants a bag).
+  `Game.clinic()` is the ripperdoc here and its fee (`fitting`, by its tier); `canInstall`/
+  `install(id, now, from)` fits one carried, `canUninstall`/`uninstall(id, now)` takes one
+  out into a pocket. `fitCheck` is the rule: never the same one twice, never past the
+  capacity, and a part with every slot taken gives up the implant fitted there longest (into
+  a pocket with room, else the doc keeps it). What's fitted is `Game.chrome()` (the
+  `chromeChanged` event), saved as `chrome` (`Fitted`: which, and since when); the
+  inventory's outfit page ends in a Chrome row opening onto a page by part (Take out at a
+  clinic), and the status drop-down has a Chrome row. Implants do nothing yet: what each
+  does (armor, health, a Smart Link for smart guns, a Sandevistan or a Kerenzikov in a fight,
+  a deck for quickhacks) hangs off what's fitted when there's fighting.
 - `src/data/items.ts` names each kind and says what goes in it (the order items are listed
   in within a pocket). Real items take their names and details from the wiki and the TCG.
 - `src/ui/inventory.ts` shows a page at a time: the outfit (a row per slot, then the bags),
