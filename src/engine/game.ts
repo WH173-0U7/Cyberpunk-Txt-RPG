@@ -4,13 +4,13 @@ import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type HealthStatus, type HeatStatus, type Meter, type Move, type Range } from './combat';
-import { tillOf, tradeAt, turfFrom, type Health } from './economy';
+import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
 import { medDetail, medTotal, TREATMENT, type Coverage, type CoverageStatus, type MedicalStock, type MedKind } from './medical';
 import { answer, compose, deflect, describeStranger, drawnWord, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
-import { bossAt, bossOf, canPromote, ladderFor, nextRung, rungOf, shiftOpen, shiftPay, type JobRules, type JobState, type JobStatus, type Rung } from './jobs';
+import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobRules, type JobState, type JobStatus, type Ladder, type Rung } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
 import { allHours, buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
@@ -261,8 +261,10 @@ export class Game {
   readonly population: Population;
   private society: SocietyState;
   private charismaState: SkillState;
-  /** The player's job, if they have one. */
-  private job: JobState | null;
+  /** The jobs the player holds: the main one, and maybe a side gig whose hours don't clash with it. */
+  private jobs: JobState[];
+  /** Shifts worked in each line of work (by the ladder's key), the experience a new job starts higher with. */
+  private career: Record<string, number>;
   /** The people's own days so far, and what everyone started with in eddies, for earning it back. */
   private life: LifeState;
   /** The player, as people see them: the pronouns they go by. */
@@ -320,9 +322,13 @@ export class Game {
     this.heatState = progress?.heat ? { ...progress.heat } : { value: 0, at: 0 };
     this.lethalOn = progress?.lethal ?? false;
     this.coverage = progress?.coverage ? { ...progress.coverage } : null;
-    // A job at a place this city doesn't have, or that doesn't hire anymore, is no job.
-    const workplace = progress?.job ? world.buildings.find((b) => b.id === progress.job?.building) : undefined;
-    this.job = progress?.job && workplace && ladderFor(workplace, rules.jobs) ? { ...progress.job } : null;
+    // A job at a place this city doesn't have, or that doesn't hire anymore, is no job (an older save has one, as `job`).
+    const held = progress?.jobs ?? (progress?.job ? [progress.job] : []);
+    this.jobs = held.flatMap((j) => {
+      const workplace = world.buildings.find((b) => b.id === j.building);
+      return workplace && ladderFor(workplace, rules.jobs) ? [{ ...j, ...(j.days ? { days: [...j.days] } : {}) }] : [];
+    }).slice(0, rules.jobs.most);
+    this.career = { ...(progress?.career ?? {}) };
     // People this city doesn't have (the generator changed) are forgotten.
     const known = new Set(this.population.people.map((p) => p.id));
     for (const id of Object.keys(this.society.standings)) if (!known.has(id)) delete this.society.standings[id];
@@ -1947,23 +1953,57 @@ export class Game {
 
   // ───────────── Work ─────────────
 
-  /** The player's job, for saving. */
+  /** The player's main job, for saving (an older build reads only this). */
   get jobSaved(): JobState | null {
-    return this.job ? { ...this.job } : null;
+    return this.jobs[0] ? { ...this.jobs[0] } : null;
   }
 
-  /** The player's job as it stands now: where, for whom, which rung, what a shift pays, and whether one can start. Null without one. */
-  jobStatus(now: number): JobStatus | null {
-    const job = this.job;
-    if (!job) return null;
-    const building = this.world.buildings.find((b) => b.id === job.building);
+  /** Every job the player holds, the main one first, for saving. */
+  get jobsSaved(): JobState[] {
+    return this.jobs.map((j) => ({ ...j, ...(j.days ? { days: [...j.days] } : {}) }));
+  }
+
+  /** Shifts worked in each line of work, for saving. */
+  get careerSaved(): Record<string, number> {
+    return { ...this.career };
+  }
+
+  private buildingOf(id: string): Building | undefined {
+    return this.world.buildings.find((b) => b.id === id);
+  }
+
+  /** A job as it stands now: where, for whom, which rung, when, what's owed, and whether a shift can start. */
+  private statusOf(job: JobState, now: number): JobStatus | null {
+    const building = this.buildingOf(job.building);
     const ladder = building ? ladderFor(building, this.rules.jobs) : null;
     if (!building || !ladder) return null;
-    const rung = rungOf(job, ladder);
-    const clock = this.clockAt(now);
+    const rung = rungOf(job, ladder.rungs);
+    const shift = shiftDay(this.clockAt(now), ladder.hours);
+    const days = this.daysOf(job, ladder);
     const here = this.inside?.id === building.id;
-    const blocked = !here ? 'away' : job.lastShiftDay === clock.day ? 'done' : !shiftOpen(clock.hour, this.rules.jobs) ? 'closed' : null;
-    return { building, boss: bossOf(building, this.population), rung, next: nextRung(job, ladder), trust: job.trust, shifts: job.shifts, pay: this.shiftPayAt(rung, building), here, blocked };
+    const off = !days.includes(shift.weekday);
+    const done = job.lastShiftDay === shift.day;
+    const closed = !shiftOpen(this.clockAt(now).hour, ladder.hours);
+    const blocked = !here ? 'away' : off ? 'off' : done ? 'done' : closed ? 'closed' : null;
+    const side = this.jobs.indexOf(job) > 0;
+    return { building, boss: bossOf(building, this.population), rung, next: nextRung(job, ladder.rungs), trust: job.trust, shifts: job.shifts, pay: this.shiftPayAt(rung, building, job.raise ?? 0), side, hours: ladder.hours, days, owed: job.owed ?? 0, here, open: !off && !done && !closed, blocked };
+  }
+
+  /** The days a job has the player on: as set, else the roster a new job of its hours starts with. */
+  private daysOf(job: JobState, ladder: Ladder): number[] {
+    return job.days ?? (overnight(ladder.hours) ? this.rules.jobs.roster.night : this.rules.jobs.roster.day);
+  }
+
+  /** Every job the player holds as it stands now, the main one first. */
+  jobsStatus(now: number): JobStatus[] {
+    return this.jobs.flatMap((j) => this.statusOf(j, now) ?? []);
+  }
+
+  /** The job at the building the player is in, else the main one; null without a job. */
+  jobStatus(now: number): JobStatus | null {
+    const here = this.inside ? this.jobs.find((j) => j.building === this.inside?.id) : undefined;
+    const job = here ?? this.jobs[0];
+    return job ? this.statusOf(job, now) : null;
   }
 
   /** The tier a storefront runs at: its menu's, its rack's, or drawn the way its district eats. */
@@ -1972,42 +2012,78 @@ export class Game {
     return menuFor(this.world, building, food)?.venue.quality ?? (building.business ? gear.quality[building.business] : undefined) ?? drawQuality(this.world, building);
   }
 
-  /** What there is to do about work with someone: ask them for a job (they run a place that hires), quit the job they gave the player, or nothing. */
-  workWith(id: string): 'hire' | 'quit' | null {
-    const person = this.person(id);
-    const runs = person ? bossAt(person, this.world, this.population, this.rules.jobs) : null;
-    if (!runs) return null;
-    return this.job?.building === runs.id ? 'quit' : 'hire';
-  }
-
-  /** The hours shifts run, as people say them. */
-  private shiftHours(): string {
-    const [from, to] = this.rules.jobs.hours;
-    const h = (n: number) => `${((n + 11) % 12) + 1}${n < 12 ? 'am' : 'pm'}`;
-    return `${h(from)} to ${h(to)}`;
+  /** The job a new one at `building` would take the place of: one whose hours overlap it, or the last when there's no room for another. */
+  private displacedBy(building: Building): JobState | undefined {
+    const ladder = ladderFor(building, this.rules.jobs);
+    if (!ladder) return undefined;
+    const clash = this.jobs.find((j) => {
+      const other = this.buildingOf(j.building);
+      const hours = other ? ladderFor(other, this.rules.jobs)?.hours : undefined;
+      return hours ? overlaps(hours, ladder.hours) : false;
+    });
+    return clash ?? (this.jobs.length >= this.rules.jobs.most ? this.jobs[this.jobs.length - 1] : undefined);
   }
 
   /**
-   * Asks someone here for work. They have to run a place that hires; whether they take the
-   * player on is their openness to it (how they feel about them, the player's way with words),
-   * and never with a mask on the player, nor while the player has a job elsewhere. Taken on,
-   * the player starts at the bottom of that place's ladder.
+   * What there is to do about work with someone who runs a place that hires: ask them for a job
+   * (`hire`), ask for one that means handing in notice elsewhere (`switch`: its hours clash, or
+   * there's no room for another), or, for a boss of the player's, `quit`. Null for anyone else.
+   */
+  workWith(id: string): 'hire' | 'switch' | 'quit' | null {
+    const person = this.person(id);
+    const runs = person ? bossAt(person, this.world, this.population, this.rules.jobs) : null;
+    if (!runs) return null;
+    if (this.jobs.some((j) => j.building === runs.id)) return 'quit';
+    return this.displacedBy(runs) ? 'switch' : 'hire';
+  }
+
+  /** The job a yes from someone would mean handing in notice at: its place's name, or null. */
+  switchingFrom(id: string): string | null {
+    const person = this.person(id);
+    const runs = person ? bossAt(person, this.world, this.population, this.rules.jobs) : null;
+    const leaving = runs && !this.jobs.some((j) => j.building === runs.id) ? this.displacedBy(runs) : undefined;
+    return leaving ? (this.buildingOf(leaving.building)?.name ?? null) : null;
+  }
+
+  /** The hours a job's shifts run, as people say them. */
+  private shiftHours(hours: [number, number]): string {
+    const h = (n: number) => `${((n + 11) % 12) + 1}${n < 12 ? 'am' : 'pm'}`;
+    return `${h(hours[0])} to ${h(hours[1])}`;
+  }
+
+  /** Weekdays as a roster says them, the week from Monday: "Mon–Fri", "Thu, Fri, Sat", "Sat, Sun". */
+  private daysWord(days: number[]): string {
+    const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const order = [...days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+    const run = order.length > 3 && order.every((d, i) => i === 0 || d === ((order[i - 1] as number) + 1) % 7);
+    return run ? `${names[order[0] as number]}–${names[order[order.length - 1] as number]}` : order.map((d) => names[d]).join(', ');
+  }
+
+  /**
+   * Asks a boss here for work. A yes starts the player on a rung their experience in that line
+   * reaches (`JOBS.experience` of the shifts worked in it, and a reference from a boss who liked
+   * them, `JOBS.reference`); a job whose hours clash with it (or the last, with no room for
+   * another) is handed in, with notice: less than walking out, and the boss let go of it says
+   * a word for the player if they liked them. A second job beside the first is a side gig.
    */
   askForWork(id: string, now: number): boolean {
     const here = this.isHere(id, now);
     const runs = here ? bossAt(here.person, this.world, this.population, this.rules.jobs) : null;
-    if (!here || !runs || this.job?.building === runs.id) return false;
-    if (this.job) {
-      this.say(`You've got work at ${this.world.buildings.find((b) => b.id === this.job?.building)?.name ?? 'another place'}. Quit that first.`, 'error');
-      return false;
-    }
+    if (!here || !runs || this.jobs.some((j) => j.building === runs.id)) return false;
     const { person, stance, doing } = here;
     const { society, timeScale, lines, jobs } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);
-    const bottom = (ladderFor(runs, jobs) as Rung[])[0] as Rung;
-    const pay = this.shiftPayAt(bottom, runs);
+    const ladder = ladderFor(runs, jobs) as Ladder;
+    const leaving = this.displacedBy(runs);
+    // A reference from the boss of the job being left, if they liked the player.
+    const oldBoss = leaving ? bossOf(this.buildingOf(leaving.building) as Building, this.population) : null;
+    const reference = Boolean(oldBoss && jobs.reference.stances.includes(this.stanceOf(oldBoss, now)));
+    const line_ = lineOf(runs, jobs) as string;
+    const start = startOf(ladder, this.career[line_] ?? 0, reference, jobs);
+    const first = ladder.rungs[start.rung] as Rung;
+    const pay = this.shiftPayAt(first, runs, 0);
     const speaker = this.speakerFor(person, stance, doing, now);
-    speaker.vars = { ...speaker.vars, title: bottom.title.toLowerCase(), work: runs.name, pay: String(pay) };
+    speaker.vars = { ...speaker.vars, title: first.title.toLowerCase(), work: runs.name, pay: String(pay), ...(start.rung > 0 ? { experienced: 'yes' } : {}), ...(reference && oldBoss ? { referee: oldBoss.given } : {}) };
     const rng = createRng(`${this.world.seed}:${id}:hire:${standing.asks}`);
     const before = this.snapshot(person, now);
     learnOf(this.society, id, 'met');
@@ -2035,13 +2111,19 @@ export class Game {
       const reply = replyTo(openness('hire', stance, this.charismaState.level, person.traits, society.openness), society.openness, rng);
       if (reply === 'answer') {
         hired = true;
-        this.job = { building: runs.id, rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 };
+        if (leaving) this.leaveJob(leaving, now, 'notice');
+        const today = shiftDay(this.clockAt(now), ladder.hours).day;
+        const job: JobState = { building: runs.id, rung: start.rung, trust: start.trust, shifts: 0, lastShiftDay: -1, days: [...this.daysOf({} as JobState, ladder)], owed: 0, raise: 0, missed: 0, checked: today, paidOn: today - ((weekdayOf(today) - this.rules.life.economy.payday + 7) % 7) };
+        this.jobs.push(job);
+        // A second job is a side gig; the main job's boss hasn't heard of it yet.
+        if (this.jobs.length > 1) (this.jobs[0] as JobState).heard = false;
         this.remember(id, { kind: 'hired', at: now, what: runs.name }, now);
         this.speech(person, compose(lines.work.hire, speaker, lines, rng, { opener: false }), now);
         // The boss has a name and a job now, as far as the player's concerned.
         learnFact(this.society, id, 'name');
         learnFact(this.society, id, 'job');
-        this.say(`You work at ${runs.name} now: ${bottom.title.toLowerCase()}, ${pay} €$ a shift, ${this.shiftHours()}. Come in and Work.`, 'system');
+        const what = this.jobs.length > 1 ? 'a side gig' : 'work';
+        this.say(`You've got ${what} at ${runs.name}: ${first.title.toLowerCase()}, ${pay} €$ a shift, ${this.shiftHours(ladder.hours)}, ${this.daysWord(job.days ?? [])}. Pay comes on payday.${reference && oldBoss ? ` ${oldBoss.given} put in a word for you.` : ''}`, 'system');
       } else {
         this.speech(person, reply === 'deflect' ? deflect(speaker, 'hire', lines, rng) : line(lines.work.refuse, speaker, rng), now);
         refused.hire = now;
@@ -2058,30 +2140,35 @@ export class Game {
   }
 
   /**
-   * Works a shift: at the workplace, in working hours, one a day, for the rung's energy. The
-   * pay goes to the account; the shift is trust, and regard with the boss, and standing with
-   * the place; the boss, if about, says something, and moves the player up once there's
-   * trust enough and they've warmed to them.
+   * Works a shift at the job here: on a rostered day, in its hours, once that day, for the
+   * rung's energy. The pay is owed, paid on payday; the shift is trust, and regard with the
+   * boss, and standing with the place, and a shift more in that line of work; the boss, if
+   * about, says something, and moves the player up once there's trust enough and they've
+   * warmed to them. The main job's boss who hears of a side gig may mind.
    */
   work(now: number): boolean {
     if (this.checkFired(now)) return false;
-    const status = this.jobStatus(now);
+    const job = this.inside ? this.jobs.find((j) => j.building === this.inside?.id) : undefined;
+    const status = job ? this.statusOf(job, now) : this.jobStatus(now);
     if (!status) return false;
     const { society, timeScale, lines, jobs } = this.rules;
     const { building, boss, rung, pay } = status;
     const mask = this.masked();
     if (status.blocked === 'away') this.say(`Your shift is at ${building.name}.`, 'error');
-    else if (status.blocked === 'done') this.say("You've done your shift today. Back tomorrow.", 'error');
-    else if (status.blocked === 'closed') this.say(`Shifts run ${this.shiftHours()}. Come back then.`, 'error');
+    else if (status.blocked === 'off') this.say(`You're not on today. Your days at ${building.name}: ${this.daysWord(status.days)}.`, 'error');
+    else if (status.blocked === 'done') this.say("You've done your shift today. Back next time you're on.", 'error');
+    else if (status.blocked === 'closed') this.say(`Shifts run ${this.shiftHours(status.hours)}. Come back then.`, 'error');
     else if (mask) this.say(`Nobody works a shift in a ${mask.word}. Take it off.`, 'error');
-    if (status.blocked || mask) return false;
+    if (!job || status.blocked || mask) return false;
     if (!this.spendEnergy(rung.energy, now)) return false;
-    const job = this.job as JobState;
     job.shifts += 1;
     job.trust += jobs.trustPerShift;
-    job.lastShiftDay = this.clockAt(now).day;
-    this.money = { ...this.money, account: this.money.account + pay };
-    this.say(`A shift ${rung.doing} at ${building.name}: ${pay} €$ to your account.`, 'system');
+    job.lastShiftDay = shiftDay(this.clockAt(now), status.hours).day;
+    job.missed = 0;
+    job.owed = (job.owed ?? 0) + pay;
+    const line_ = lineOf(building, jobs);
+    if (line_) this.career[line_] = (this.career[line_] ?? 0) + 1;
+    this.say(`A shift ${rung.doing} at ${building.name}: ${pay} €$ on your pay, ${job.owed} €$ owed by payday.`, 'system');
     changeRep(this.society, `business:${building.id}`, jobs.rep, society, timeScale, now);
     if (boss) {
       learnOf(this.society, boss.id, 'met');
@@ -2091,11 +2178,19 @@ export class Game {
         const stance = this.stanceOf(boss, now);
         const speaker = this.speakerFor(boss, stance, about.doing, now);
         const rng = createRng(`${this.world.seed}:shift:${building.id}:${job.shifts}`);
-        const ladder = ladderFor(building, jobs) as Rung[];
-        if (canPromote(job, ladder, stance, jobs)) {
+        const ladder = ladderFor(building, jobs) as Ladder;
+        const side = this.jobs[1] ? this.buildingOf(this.jobs[1].building) : undefined;
+        if (job === this.jobs[0] && side && job.heard === false) {
+          // Word of the side gig reaches the main boss; a loyal one minds.
+          job.heard = true;
+          const minds = boss.traits.loyalty >= jobs.moonlight.loyalty;
+          speaker.vars = { ...speaker.vars, work: building.name, gig: side.name };
+          this.speech(boss, line(minds ? lines.work.moonlight : lines.work.sideGig, speaker, rng), now);
+          if (minds) changeStanding(this.society, boss.id, { rapport: -jobs.moonlight.rapport }, society, timeScale, now);
+        } else if (canPromote(job, ladder.rungs, stance, jobs)) {
           job.rung += 1;
-          const up = rungOf(job, ladder);
-          const raise = this.shiftPayAt(up, building);
+          const up = rungOf(job, ladder.rungs);
+          const raise = this.shiftPayAt(up, building, job.raise ?? 0);
           this.remember(boss.id, { kind: 'promoted', at: now, what: up.title.toLowerCase() }, now);
           speaker.vars = { ...speaker.vars, title: up.title.toLowerCase(), work: building.name, pay: String(raise) };
           this.speech(boss, compose(lines.work.promote, speaker, lines, rng, { opener: false }), now);
@@ -2104,57 +2199,151 @@ export class Game {
           speaker.vars = { ...speaker.vars, title: rung.title.toLowerCase(), work: building.name, pay: String(pay) };
           this.speech(boss, line(lines.work.shift, speaker, rng), now);
         }
+      } else if (job === this.jobs[0] && this.jobs[1] && job.heard === false) {
+        job.heard = true;
       }
     }
-    this.events.emit('walletChanged', this.wallet);
     this.events.emit('jobChanged', this.jobStatus(now));
     this.events.emit('societyChanged', { people: boss ? [boss.id] : [] });
     return true;
   }
 
-  /** Quits the job. If the boss is about, they hear it from the player. */
-  quit(now: number): boolean {
-    const status = this.jobStatus(now);
-    if (!status) return false;
-    const { lines, society, timeScale, jobs } = this.rules;
-    const { boss, building, rung } = status;
-    const about = boss ? this.isHere(boss.id, now) : undefined;
-    const before = boss ? this.snapshot(boss, now) : null;
-    if (boss && about) {
-      const speaker = this.speakerFor(boss, about.stance, about.doing, now);
-      speaker.vars = { ...speaker.vars, work: building.name, title: rung.title.toLowerCase() };
-      const rng = createRng(`${this.world.seed}:quit:${building.id}:${status.shifts}`);
-      this.logged(boss.id, 'you', line(lines.you.quit, speaker, rng), now);
-      this.speech(boss, line(lines.work.quit, speaker, rng), now);
-    }
-    this.job = null;
-    // Told to their face or heard from the staff, the boss remembers being walked out on.
-    if (boss) {
-      this.remember(boss.id, { kind: 'quit', at: now, what: rung.title.toLowerCase() }, now);
-      // Walking out costs a little with the boss.
-      changeStanding(this.society, boss.id, { rapport: -jobs.quit }, society, timeScale, now);
-      if (before) this.noteFeedback(boss, before, now, lines.notes.quit);
-    }
-    this.say(`You don't work at ${building.name} anymore.`, 'system');
-    this.events.emit('jobChanged', null);
-    if (boss) this.events.emit('societyChanged', { people: [boss.id] });
+  /** Puts the player on a job's roster for these weekdays (0 Sunday – 6 Saturday; at least one). From the boss's card. */
+  setRoster(bossId: string, days: number[], now: number): boolean {
+    const job = this.jobOfBoss(bossId);
+    const building = job ? this.buildingOf(job.building) : undefined;
+    const clean = [...new Set(days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort((a, b) => a - b);
+    if (!job || !building || !clean.length) return false;
+    job.days = clean;
+    this.say(`Your days at ${building.name}: ${this.daysWord(clean)}.`, 'system');
+    this.events.emit('jobChanged', this.jobStatus(now));
     return true;
   }
 
-  /** Lets the player go from a job at a place that has had enough of them (a storefront that won't serve them won't keep them either). True if it did. */
-  private checkFired(now: number): boolean {
-    const job = this.job;
-    if (!job) return false;
-    const { society, timeScale } = this.rules;
-    const building = this.world.buildings.find((b) => b.id === job.building);
-    const banned = !building || repOf(this.society, `business:${job.building}`, society, timeScale, now) <= society.rep.banAt || (building.business ? repOf(this.society, `chain:${building.business}`, society, timeScale, now) <= society.rep.banAt : false);
-    if (!banned) return false;
-    this.job = null;
-    const boss = building ? bossOf(building, this.population) : null;
-    if (boss) this.remember(boss.id, { kind: 'fired', at: now, what: building?.name ?? '' }, now);
-    this.say(`${building?.name ?? 'The place'} is done with you: after what you did to its people, nobody there wants you on a shift.`, 'error');
-    this.events.emit('jobChanged', null);
+  /** The player's job at the place someone runs. */
+  private jobOfBoss(bossId: string): JobState | undefined {
+    const person = this.person(bossId);
+    const runs = person ? bossAt(person, this.world, this.population, this.rules.jobs) : null;
+    return runs ? this.jobs.find((j) => j.building === runs.id) : undefined;
+  }
+
+  /** Quits a job: the one at the place `bossId` runs, else the main one. If the boss is about, they hear it from the player. What's owed is paid out. */
+  quit(now: number, bossId?: string): boolean {
+    const job = (bossId ? this.jobOfBoss(bossId) : undefined) ?? this.jobs[0];
+    if (!job || !this.statusOf(job, now)) return false;
+    this.leaveJob(job, now, 'quit');
     return true;
+  }
+
+  /**
+   * The end of a job: walked out on (`quit`, the boss remembers it), handed in with notice
+   * (`notice`, for another job: less to forgive), or let go for missing days (`fired`). What's
+   * owed is paid out to the account, out of the place's till.
+   */
+  private leaveJob(job: JobState, now: number, how: 'quit' | 'notice' | 'fired'): void {
+    const status = this.statusOf(job, now);
+    const { lines, society, timeScale, jobs } = this.rules;
+    this.jobs = this.jobs.filter((j) => j !== job);
+    if (this.jobs[0]) delete this.jobs[0].heard;
+    this.payOut(job, status?.building.name ?? 'the place');
+    if (!status) {
+      this.events.emit('jobChanged', this.jobStatus(now));
+      return;
+    }
+    const { boss, building, rung } = status;
+    const about = boss ? this.isHere(boss.id, now) : undefined;
+    const before = boss ? this.snapshot(boss, now) : null;
+    if (boss && about && how !== 'fired') {
+      const speaker = this.speakerFor(boss, about.stance, about.doing, now);
+      speaker.vars = { ...speaker.vars, work: building.name, title: rung.title.toLowerCase() };
+      const rng = createRng(`${this.world.seed}:${how}:${building.id}:${status.shifts}`);
+      this.logged(boss.id, 'you', line(how === 'notice' ? lines.you.notice : lines.you.quit, speaker, rng), now);
+      this.speech(boss, line(how === 'notice' ? lines.work.notice : lines.work.quit, speaker, rng), now);
+    }
+    if (boss) {
+      // Told to their face or heard from the staff, the boss remembers it: walking out costs more than notice.
+      this.remember(boss.id, { kind: how, at: now, what: how === 'fired' ? building.name : rung.title.toLowerCase() }, now);
+      if (how !== 'fired') changeStanding(this.society, boss.id, { rapport: -(how === 'notice' ? jobs.notice : jobs.quit) }, society, timeScale, now);
+      if (before && how !== 'fired') this.noteFeedback(boss, before, now, how === 'notice' ? lines.notes.notice : lines.notes.quit);
+    }
+    if (how === 'quit') this.say(`You don't work at ${building.name} anymore.`, 'system');
+    else if (how === 'notice') this.say(`You hand in your notice at ${building.name}.`, 'system');
+    this.events.emit('jobChanged', this.jobStatus(now));
+    if (boss) this.events.emit('societyChanged', { people: [boss.id] });
+  }
+
+  /** Pays a job's owed pay into the account, out of the place's till. */
+  private payOut(job: JobState, name: string): void {
+    const owed = job.owed ?? 0;
+    if (owed <= 0) return;
+    job.owed = 0;
+    this.money = { ...this.money, account: this.money.account + owed };
+    tillOf(this.life.tills, job.building).pending -= owed;
+    this.say(`${owed} €$ from ${name} to your account.`, 'system');
+    this.events.emit('walletChanged', this.wallet);
+  }
+
+  /**
+   * Goes over each job's days since it was last looked at, as each is over: a rostered day with
+   * no shift costs trust and rapport with the boss (enough in a row, and the player's let go).
+   * Come payday, what's owed is paid, with a raise at a place that's thriving for a week worked.
+   */
+  private punchClock(now: number): void {
+    const { jobs, life } = this.rules;
+    const clock = this.clockAt(now);
+    for (const job of [...this.jobs]) {
+      const building = this.buildingOf(job.building);
+      const ladder = building ? ladderFor(building, jobs) : null;
+      if (!building || !ladder) continue;
+      const today = shiftDay(clock, ladder.hours).day;
+      if (job.checked === undefined) job.checked = today - 1;
+      const days = this.daysOf(job, ladder);
+      for (let d = job.checked + 1; d < today && this.jobs.includes(job); d++) {
+        if (days.includes(weekdayOf(d))) {
+          if (job.lastShiftDay === d) job.missed = 0;
+          else {
+            job.missed = (job.missed ?? 0) + 1;
+            job.trust = Math.max(0, job.trust - jobs.noShow.trust);
+            const boss = bossOf(building, this.population);
+            if (boss) changeStanding(this.society, boss.id, { rapport: -jobs.noShow.rapport }, this.rules.society, this.rules.timeScale, now);
+          }
+        }
+        job.checked = d;
+        if ((job.missed ?? 0) >= jobs.noShow.fireAfter) {
+          this.say(`${building.name} has let you go: you stopped showing up.`, 'error');
+          this.leaveJob(job, now, 'fired');
+        }
+      }
+      if (!this.jobs.includes(job)) continue;
+      // Payday's morning pays for the week through the day before.
+      const payday = today - ((weekdayOf(today) - life.economy.payday + 7) % 7);
+      if (job.paidOn === undefined) job.paidOn = payday;
+      if (job.paidOn >= payday) continue;
+      job.paidOn = payday;
+      if ((job.owed ?? 0) <= 0) continue;
+      const raise = job.lastShiftDay >= payday - 7 && this.trade(building).health === 'thriving' && (job.raise ?? 0) < jobs.raise.most;
+      this.payOut(job, building.name);
+      if (raise) {
+        job.raise = Math.min(jobs.raise.most, (job.raise ?? 0) + jobs.raise.thriving);
+        this.say(`${building.name} is doing well, and it shows: a raise, to ${this.shiftPayAt(rungOf(job, ladder.rungs), building, job.raise)} €$ a shift.`, 'system');
+        this.events.emit('jobChanged', this.jobStatus(now));
+      }
+    }
+  }
+
+  /** Lets the player go from every job at a place that has had enough of them (a storefront that won't serve them won't keep them either). True if it did. */
+  private checkFired(now: number): boolean {
+    const { society, timeScale } = this.rules;
+    let fired = false;
+    for (const job of [...this.jobs]) {
+      const building = this.buildingOf(job.building);
+      const banned = !building || repOf(this.society, `business:${job.building}`, society, timeScale, now) <= society.rep.banAt || (building.business ? repOf(this.society, `chain:${building.business}`, society, timeScale, now) <= society.rep.banAt : false);
+      if (!banned) continue;
+      fired = true;
+      this.say(`${building?.name ?? 'The place'} is done with you: after what you did to its people, nobody there wants you on a shift.`, 'error');
+      this.leaveJob(job, now, 'fired');
+    }
+    return fired;
   }
 
   // ───────────── People ─────────────
@@ -2547,8 +2736,8 @@ export class Game {
   }
 
   /** What a shift pays the player at a storefront: its rung by its tier, and more or less by how the place is doing. */
-  private shiftPayAt(rung: Rung, building: Building): number {
-    return Math.max(1, Math.round(shiftPay(rung, this.tierOf(building), this.rules.jobs) * this.rules.life.economy.pay[this.trade(building).health]));
+  private shiftPayAt(rung: Rung, building: Building, raise = 0): number {
+    return Math.max(1, Math.round(shiftPay(rung, this.tierOf(building), this.rules.jobs) * this.rules.life.economy.pay[this.trade(building).health] * (1 + raise)));
   }
 
   /** How long ago something was, said the way people say it, from a number of days. */
@@ -3621,6 +3810,7 @@ export class Game {
   /** Greets the player (or welcomes them back) and puts them where they are. A trip that ended while they were away lands now. */
   start(now: number): void {
     this.live(now);
+    this.punchClock(now);
     this.say(this.resumed ? this.world.welcomeBack : this.world.welcome);
     if (!this.resumed) this.settle(this.where);
     this.emitArrived(null);
@@ -3695,6 +3885,7 @@ export class Game {
     // Out of time to choose: the player freezes, and the beat goes on without them.
     if (this.fightState && !this.fightState.over && now >= this.fightState.deadline) this.fightMove('freeze', now);
     this.live(now);
+    this.punchClock(now);
     this.soberUp(now);
     this.settleThreats(now);
     this.recognize(now);

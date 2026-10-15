@@ -16,7 +16,7 @@ import { HOURS } from '../src/data/hours';
 import { priceFor } from '../src/engine/food';
 import { freshLife, newsFor, tieKey } from '../src/engine/life';
 import { FAMILY, openness } from '../src/engine/dialogue';
-import { bossOf } from '../src/engine/jobs';
+import { bossOf, type JobState } from '../src/engine/jobs';
 import { memoriesOf } from '../src/engine/memory';
 import { dreamOf, handleOf, tiesOf, type Person, type Pronouns } from '../src/engine/people';
 import { SOCIETY } from '../src/data/society';
@@ -1675,22 +1675,28 @@ describe('Game', () => {
     });
 
     describe('work', () => {
-      /** A weekday at 11:00 with the boss of a storefront in, and the player inside with a friend's standing with them unless said otherwise. */
-      function withBoss(building: string, x: number, y: number, progress: Partial<Progress> = {}, friend = true) {
-        const b = world.buildings.find((it) => it.id === building);
+      /** A weekday at 11:00 (or `hour`) with the boss of a storefront in, and the player inside with a friend's standing with them unless said otherwise. */
+      function withBoss(building: string, x: number, y: number, progress: Partial<Progress> = {}, friend = true, on: World = world, hour = 11) {
+        const b = on.buildings.find((it) => it.id === building);
         if (!b) throw new Error(`no ${building}`);
         for (let day = 0; day < 14; day++) {
-          const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
+          const now = Date.UTC(2077, 9, 12, hour, 0) + day * 24 * HOUR;
           if (new Date(now).getUTCDay() % 6 === 0) continue;
-          const probe = new Game(world, RULES, progressInside(building, x, y));
+          const probe = new Game(on, RULES, progressInside(building, x, y));
           const boss = bossOf(b, probe.population);
           if (!boss) throw new Error(`nobody runs ${building}`);
-          const game = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside(building, x, y), ...(friend ? { society: friendOf(boss.id, now) } : {}), ...progress });
+          const game = new Game(on, { ...RULES, startingEddies: 100 }, { ...progressInside(building, x, y), ...(friend ? { society: friendOf(boss.id, now) } : {}), ...progress });
           game.start(now);
           if (game.peopleHere(now).some((p) => p.person.id === boss.id)) return { game, now, boss, ...record(game) };
         }
         throw new Error(`the boss of ${building} is never in`);
       }
+      /** The test city with a bar on the top street, which works nights. */
+      const barWorld: World = {
+        ...world,
+        buildings: [...world.buildings, { id: 'b-bar', block: 'C1', district: 'test', kind: 'shops', kindLabel: 'Bar', category: 'nightlife', business: 'bar', name: 'Test Bar', floors: 2, x: 52, y: 21, w: 4, h: 4 }],
+      };
+      const noodleJob = (extra: Partial<JobState> = {}): JobState => ({ building: 'b-noodle', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1, ...extra });
 
       /** A week of books for a storefront: a day's net, seven times. */
       const books = (building: string, net: number) => ({ life: { ...freshLife(), tills: { [building]: { days: Array.from({ length: 7 }, () => net), pending: 0 } } } });
@@ -1709,13 +1715,13 @@ describe('Game', () => {
         const refusal = spoken(game, boss.id).at(-1);
         expect(refusal?.who).toBe('them');
         expect(LINES.work.broke.map((l) => (typeof l === 'string' ? l : l.text).replace(/\{[a-z]+\}/gi, '')).some((t) => refusal?.text.includes(t.split(' ').slice(0, 3).join(' ')))).toBe(true);
-        expect(outputs(take()).some((o) => /You work at/.test(o.text))).toBe(false);
+        expect(outputs(take()).some((o) => /You've got work at/.test(o.text))).toBe(false);
         // Doing well: the same job pays a quarter more.
         const good = withBoss('b-noodle', 38, 20, books('b-noodle', 400));
         expect(good.game.trade(noodle).health).toBe('thriving');
         expect(good.game.askForWork(good.boss.id, good.now)).toBe(true);
         expect(good.game.jobStatus(good.now)?.pay).toBe(Math.round(24 * LIFE.economy.pay.thriving));
-        const bad = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside('b-noodle', 38, 20), ...books('b-noodle', -40), job: { building: 'b-noodle', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 } });
+        const bad = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside('b-noodle', 38, 20), ...books('b-noodle', -40), job: noodleJob() });
         bad.start(now);
         expect(bad.jobStatus(now)?.pay).toBe(Math.round(24 * LIFE.economy.pay.struggling));
       });
@@ -1730,36 +1736,37 @@ describe('Game', () => {
         expect(game.lifeSaved.tills['b-noodle']?.pending).toBe(dish.price * 2);
       });
 
-      it('takes the player on at the bottom of the ladder when the boss will, pays a shift a day into the account, and moves them up on trust', () => {
+      it('takes the player on at the bottom of the ladder when the boss will, owes a shift a day till payday, and moves them up on trust', () => {
         const { game, now, boss, take, outputs } = withBoss('b-noodle', 38, 20);
         expect(game.jobStatus(now)).toBeNull();
         expect(game.workWith(boss.id)).toBe('hire');
-        for (const other of game.peopleHere(now).filter((p) => p.person.id !== boss.id)) expect(game.workWith(other.person.id), other.person.name).toBeNull();
+        expect(game.switchingFrom(boss.id)).toBeNull();
+        for (const other of game.peopleHere(now).filter((p) => p.person.id !== boss.id && p.person.job.building === 'b-noodle')) expect(game.workWith(other.person.id), other.person.name).toBeNull();
         take();
         expect(game.askForWork(boss.id, now)).toBe(true);
         const said = outputs(take());
-        expect(said.some((o) => /You work at Test Noodles now: dish pit, 24 €\$ a shift, 9am to 5pm/.test(o.text))).toBe(true);
+        expect(said.some((o) => /^You've got work at Test Noodles: dish pit, 24 €\$ a shift, 9am to 5pm, Mon–Fri\. Pay comes on payday\.$/.test(o.text))).toBe(true);
         expect(spoken(game, boss.id).at(-1)?.who).toBe('them');
         const status = game.jobStatus(now);
-        expect(status).toMatchObject({ rung: { id: 'dishes' }, next: { id: 'prep' }, trust: 0, shifts: 0, pay: 24, here: true, blocked: null });
+        expect(status).toMatchObject({ rung: { id: 'dishes' }, next: { id: 'prep' }, trust: 0, shifts: 0, pay: 24, side: false, hours: [9, 17], days: [1, 2, 3, 4, 5], owed: 0, here: true, open: true, blocked: null });
         expect(status?.boss?.id).toBe(boss.id);
         expect(game.workWith(boss.id)).toBe('quit');
         expect(game.standingWith(boss.id, now)?.knowledge.facts).toEqual(expect.arrayContaining(['name', 'job']));
         // Asked again, there's nothing to ask: the player works here.
         expect(game.askForWork(boss.id, now)).toBe(false);
 
-        // A shift: energy spent, pay banked, trust and the boss's regard up; and only one a day.
+        // A shift: energy spent, pay owed, trust and the boss's regard up; and only one a day.
         const account = game.wallet.account;
         const rapport = game.standingWith(boss.id, now)?.standing.rapport ?? 0;
         expect(game.work(now)).toBe(true);
-        expect(game.wallet.account).toBe(account + 24);
+        expect(game.wallet.account).toBe(account);
         expect(game.energy(now).current).toBe(1);
-        expect(game.jobStatus(now)).toMatchObject({ trust: 1, shifts: 1, blocked: 'done' });
+        expect(game.jobStatus(now)).toMatchObject({ trust: 1, shifts: 1, owed: 24, open: false, blocked: 'done' });
         expect(game.standingWith(boss.id, now)?.standing.rapport).toBe(Math.min(100, rapport + JOBS.rapport));
-        expect(outputs(take()).some((o) => /A shift washing dishes at Test Noodles: 24 €\$ to your account/.test(o.text))).toBe(true);
+        expect(outputs(take()).some((o) => /A shift washing dishes at Test Noodles: 24 €\$ on your pay, 24 €\$ owed by payday/.test(o.text))).toBe(true);
         expect(game.work(now + MINUTE)).toBe(false);
         expect(outputs(take()).at(-1)?.text).toMatch(/done your shift today/);
-        expect(game.wallet.account).toBe(account + 24);
+        expect(game.careerSaved).toEqual({ food: 1 });
 
         // A shift a day, and the day the trust is there and the boss is in, a step up.
         let moved: number | null = null;
@@ -1772,16 +1779,23 @@ describe('Game', () => {
         }
         expect(moved).not.toBeNull();
         expect(game.jobStatus(now + (moved as number) * 24 * HOUR)).toMatchObject({ rung: { id: 'prep' }, pay: 40 });
-        expect(game.jobStatus(now)?.trust).toBeGreaterThanOrEqual(JOBS.ladders.food![1]!.at);
+        expect(game.jobStatus(now)?.trust).toBeGreaterThanOrEqual(JOBS.ladders.food!.rungs[1]!.at);
         expect(spoken(game, boss.id).some((l) => l.who === 'them' && /prep/i.test(l.text))).toBe(true);
 
-        // Quitting, to the boss's face.
+        // Quitting, to the boss's face: what's owed is paid out, from the till.
         const last = now + (moved as number) * 24 * HOUR;
+        const owed = game.jobStatus(last)?.owed ?? 0;
+        expect(owed).toBeGreaterThan(0);
+        const pending = game.lifeSaved.tills['b-noodle']?.pending ?? 0;
         take();
-        expect(game.quit(last)).toBe(true);
+        expect(game.quit(last, boss.id)).toBe(true);
         expect(game.jobStatus(last)).toBeNull();
         expect(game.workWith(boss.id)).toBe('hire');
-        expect(outputs(take()).some((o) => /You don't work at Test Noodles anymore/.test(o.text))).toBe(true);
+        expect(game.wallet.account).toBe(account + owed);
+        expect(game.lifeSaved.tills['b-noodle']?.pending).toBe(pending - owed);
+        const quitting = outputs(take());
+        expect(quitting.some((o) => o.text === `${owed} €$ from Test Noodles to your account.`)).toBe(true);
+        expect(quitting.some((o) => /You don't work at Test Noodles anymore/.test(o.text))).toBe(true);
         expect(spoken(game, boss.id).at(-2)?.who).toBe('you');
         expect(game.quit(last)).toBe(false);
       });
@@ -1840,7 +1854,7 @@ describe('Game', () => {
         for (const e of game.lifeSaved.events) expect(['friends', 'fallout']).toContain(e.kind);
       });
 
-      it('keeps shifts to working hours and the workplace, and keeps the job through a save', () => {
+      it('keeps shifts to working hours and the workplace, and keeps the jobs through a save', () => {
         const { game, now, boss } = withBoss('b-noodle', 38, 20);
         expect(game.askForWork(boss.id, now)).toBe(true);
         const evening = Date.UTC(2077, 9, 12, 20, 0) + Math.floor((now - Date.UTC(2077, 9, 12, 11, 0)) / (24 * HOUR)) * 24 * HOUR;
@@ -1850,12 +1864,133 @@ describe('Game', () => {
         expect(game.jobStatus(now)?.blocked).toBe('away');
         expect(game.work(now)).toBe(false);
         // Saved and read back, the job is the same; at a place that doesn't hire, or isn't there, it's none.
-        const saved = game.jobSaved;
-        expect(saved).toEqual({ building: 'b-noodle', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 });
-        const again = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), job: { building: 'b-noodle', rung: 1, trust: 7, shifts: 7, lastShiftDay: -1 } });
-        expect(again.jobStatus(now)).toMatchObject({ rung: { id: 'prep' }, trust: 7, shifts: 7, blocked: null });
-        expect(new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), job: { building: 'b-shop', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 } }).jobSaved).toBeNull();
-        expect(new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), job: { building: 'b-gone', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 } }).jobSaved).toBeNull();
+        const today = Math.floor(now / (24 * HOUR));
+        expect(game.jobSaved).toMatchObject({ building: 'b-noodle', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1, days: [1, 2, 3, 4, 5], owed: 0, checked: today });
+        expect(game.jobsSaved).toEqual([game.jobSaved]);
+        const again = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), job: noodleJob({ rung: 1, trust: 7, shifts: 7 }) });
+        expect(again.jobStatus(now)).toMatchObject({ rung: { id: 'prep' }, trust: 7, shifts: 7, days: [1, 2, 3, 4, 5], owed: 0, blocked: null });
+        expect(new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), job: { ...noodleJob(), building: 'b-park' } }).jobSaved).toBeNull();
+        expect(new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), job: { ...noodleJob(), building: 'b-gone' } }).jobSaved).toBeNull();
+        // Both jobs, and the shifts worked in each line, come back from a newer save; its jobs over an older one's.
+        const two = [noodleJob({ owed: 48, days: [1, 3] }), { building: 'b-deck', rung: 2, trust: 15, shifts: 15, lastShiftDay: today - 1 }];
+        const both = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), job: { ...noodleJob(), building: 'b-bank' }, jobs: two, career: { food: 9, netrunning: 15 } });
+        expect(both.jobsSaved).toEqual(two);
+        expect(both.careerSaved).toEqual({ food: 9, netrunning: 15 });
+        expect(both.jobsStatus(now).map((j) => [j.building.id, j.side, j.days])).toEqual([['b-noodle', false, [1, 3]], ['b-deck', true, [1, 2, 3, 4, 5]]]);
+      });
+
+      it("takes a side gig on hours that don't clash, which a loyal boss at the day job minds hearing of", () => {
+        // Evenings at the bar: the noodle bar's hours are over by then.
+        const { game, now, boss, take, outputs } = withBoss('b-bar', 54, 20, { jobs: [noodleJob()] }, true, barWorld, 20);
+        expect(game.workWith(boss.id)).toBe('hire');
+        expect(game.switchingFrom(boss.id)).toBeNull();
+        take();
+        expect(game.askForWork(boss.id, now)).toBe(true);
+        expect(outputs(take()).some((o) => /^You've got a side gig at Test Bar: barback, \d+ €\$ a shift, 6pm to 2am, Thu, Fri, Sat\./.test(o.text))).toBe(true);
+        expect(game.jobsStatus(now).map((j) => [j.building.id, j.side, j.hours])).toEqual([['b-noodle', false, [9, 17]], ['b-bar', true, [18, 2]]]);
+        // Inside the bar, its job is the one the panel works.
+        expect(game.jobStatus(now)?.building.id).toBe('b-bar');
+        expect(game.jobsSaved[0]?.heard).toBe(false);
+        // No room for a third: asking anywhere else means handing one in.
+        const deck = bossOf(world.buildings.find((b) => b.id === 'b-deck') as Building, game.population) as Person;
+        expect(game.workWith(deck.id)).toBe('switch');
+        expect(game.switchingFrom(deck.id)).toBe('Test Noodles');
+
+        // Back at the noodle bar, a boss who's loyal hears of it and minds: the shift's regard is gone.
+        const noodle = bossOf(barWorld.buildings.find((b) => b.id === 'b-noodle') as Building, game.population) as Person;
+        const day = withBoss('b-noodle', 38, 20, { jobs: [noodleJob({ heard: false }), { building: 'b-bar', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 }] }, true, barWorld);
+        (day.game.person(noodle.id) as Person).traits.loyalty = 0.9;
+        const rapport = day.game.standingWith(noodle.id, day.now)?.standing.rapport ?? 0;
+        expect(day.game.work(day.now)).toBe(true);
+        expect(day.game.standingWith(noodle.id, day.now)?.standing.rapport).toBe(rapport + JOBS.rapport - JOBS.moonlight.rapport);
+        const minded = spoken(day.game, noodle.id).at(-1)?.text ?? '';
+        expect(minded).toContain('Test Bar');
+        expect(day.game.jobsSaved[0]?.heard).toBe(true);
+        // Heard once is enough.
+        const tomorrow = day.now + 24 * HOUR;
+        const after = day.game.standingWith(noodle.id, tomorrow)?.standing.rapport ?? 0;
+        if (new Date(tomorrow).getUTCDay() % 6 !== 0 && day.game.peopleHere(tomorrow).some((p) => p.person.id === noodle.id)) {
+          expect(day.game.work(tomorrow)).toBe(true);
+          expect(day.game.standingWith(noodle.id, tomorrow)?.standing.rapport).toBe(Math.min(100, after + JOBS.rapport));
+        }
+      });
+
+      it('hands in notice at a job whose hours clash, with a good word from a boss who liked the player, and starts a rung up on experience', () => {
+        const deck = world.buildings.find((b) => b.id === 'b-deck') as Building;
+        const noodle = world.buildings.find((b) => b.id === 'b-noodle') as Building;
+        const probe = new Game(world, RULES, progressInside('b-deck', 26, 20));
+        const old = bossOf(noodle, probe.population) as Person;
+        const first = withBoss('b-deck', 26, 20);
+        const society = { ...first.game.societySaved, standings: { ...first.game.societySaved.standings, [old.id]: { ...friendOf(old.id, first.now).standings[old.id]! } } };
+        const { game, now, boss, take, outputs } = withBoss('b-deck', 26, 20, { society, jobs: [noodleJob({ owed: 48, trust: 3, shifts: 3 })], career: { netrunning: 12 } });
+        expect(game.workWith(boss.id)).toBe('switch');
+        expect(game.switchingFrom(boss.id)).toBe('Test Noodles');
+        const account = game.wallet.account;
+        const rapport = game.standingWith(old.id, now)?.standing.rapport ?? 0;
+        take();
+        expect(game.askForWork(boss.id, now)).toBe(true);
+        const said = outputs(take()).map((o) => o.text);
+        // Notice handed in, the pay owed paid out, and the old boss puts in a word.
+        expect(said).toContain('48 €$ from Test Noodles to your account.');
+        expect(said).toContain('You hand in your notice at Test Noodles.');
+        expect(said.some((t) => t.startsWith("You've got work at Test Decks: counter, ") && t.endsWith(`${old.given} put in a word for you.`))).toBe(true);
+        expect(game.wallet.account).toBe(account + 48);
+        expect(game.standingWith(old.id, now)?.standing.rapport).toBe(rapport - JOBS.notice);
+        expect(game.societySaved.memories[old.id]?.some((m) => m.kind === 'notice')).toBe(true);
+        // Twelve shifts in the line are six of trust, and the word four more: a rung up, not two.
+        expect(game.jobsSaved).toHaveLength(1);
+        expect(game.jobsSaved[0]).toMatchObject({ building: 'b-deck', rung: 1, trust: 10 });
+        expect(game.jobStatus(now)?.rung.id).toBe('net-counter');
+        expect(deck.category).toBe('netrunning');
+      });
+
+      it('keeps the player to their days, pays on payday out of the till, gives a raise at a place doing well, and lets a no-show go', () => {
+        // Tuesday the 12th, 11:00: a day job, Monday and Wednesday only.
+        const { game, now, boss, take, outputs } = withBoss('b-noodle', 38, 20, books('b-noodle', 400));
+        expect(new Date(now).getUTCDay()).toBe(2);
+        expect(game.askForWork(boss.id, now)).toBe(true);
+        expect(game.setRoster(boss.id, [3, 1], now)).toBe(true);
+        expect(game.setRoster(boss.id, [], now)).toBe(false);
+        expect(game.jobStatus(now)).toMatchObject({ days: [1, 3], blocked: 'off', open: false });
+        take();
+        expect(game.work(now)).toBe(false);
+        expect(outputs(take()).at(-1)?.text).toBe("You're not on today. Your days at Test Noodles: Mon, Wed.");
+        // Wednesday's shift; Thursday's tick owes nothing yet.
+        const wednesday = now + 24 * HOUR;
+        expect(game.work(wednesday)).toBe(true);
+        const pay = game.jobStatus(wednesday)?.pay ?? 0;
+        expect(game.jobStatus(wednesday)?.owed).toBe(pay);
+        const account = game.wallet.account;
+        game.tick(wednesday + 24 * HOUR);
+        expect(game.wallet.account).toBe(account);
+        // Friday morning is payday: the week's pay to the account, out of the till; and the place is doing well.
+        const friday = wednesday + 2 * 24 * HOUR - 10 * HOUR;
+        expect(game.trade(world.buildings.find((b) => b.id === 'b-noodle') as Building).health).toBe('thriving');
+        take();
+        game.tick(friday);
+        expect(game.wallet.account).toBe(account + pay);
+        expect(game.jobStatus(friday)?.owed).toBe(0);
+        const said = outputs(take()).map((o) => o.text);
+        expect(said).toContain(`${pay} €$ from Test Noodles to your account.`);
+        expect(game.jobsSaved[0]?.raise).toBe(JOBS.raise.thriving);
+        expect(said.some((t) => /doing well, and it shows: a raise/.test(t))).toBe(true);
+        expect(game.jobStatus(friday)?.pay).toBe(Math.round(pay * (1 + JOBS.raise.thriving)));
+        // Paid once a payday.
+        game.tick(friday + 6 * HOUR);
+        expect(game.wallet.account).toBe(account + pay);
+        // No misses on days off; then a fortnight of no-shows, four rostered days, and the job's gone.
+        expect(game.jobsSaved[0]?.missed ?? 0).toBe(0);
+        const trust = game.jobsSaved[0]?.trust ?? 0;
+        const regard = game.standingWith(boss.id, friday)?.standing.rapport ?? 0;
+        game.tick(friday + 4 * 24 * HOUR);
+        expect(game.jobsSaved[0]?.missed).toBe(1);
+        expect(game.jobsSaved[0]?.trust).toBe(Math.max(0, trust - JOBS.noShow.trust));
+        expect(game.standingWith(boss.id, friday + 4 * 24 * HOUR)?.standing.rapport).toBeLessThan(regard);
+        take();
+        game.tick(friday + 14 * 24 * HOUR);
+        expect(game.jobsSaved).toEqual([]);
+        expect(outputs(take()).some((o) => o.tone === 'error' && /let you go: you stopped showing up/.test(o.text))).toBe(true);
+        expect(game.societySaved.memories[boss.id]?.some((m) => m.kind === 'fired')).toBe(true);
       });
 
       describe('how people take things', () => {

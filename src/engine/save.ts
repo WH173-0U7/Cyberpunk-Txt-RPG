@@ -42,8 +42,12 @@ export interface Progress {
   society: SocietyState | null;
   /** Charisma, as last written down (null: a new player's). */
   charisma: SkillState | null;
-  /** The player's job (null: none). */
+  /** The player's main job (null: none); every job they hold is `jobs`. */
   job: JobState | null;
+  /** Every job the player holds, the main one first (missing or null: a save from before side gigs; just `job`). */
+  jobs?: JobState[] | null;
+  /** Shifts worked in each line of work (missing or null: a save from before; none counted). */
+  career?: Record<string, number> | null;
   /** The people's own days so far (null: none lived yet). */
   life: LifeState | null;
   /** The pronouns the player goes by (missing or null: a save from before; they go by they). */
@@ -73,6 +77,8 @@ export interface SaveSource {
   readonly societySaved: SocietyState;
   readonly charismaSaved: SkillState;
   readonly jobSaved: JobState | null;
+  readonly jobsSaved: readonly JobState[];
+  readonly careerSaved: Record<string, number>;
   readonly lifeSaved: LifeState;
   readonly youSaved: You;
   readonly chromeSaved: readonly Fitted[];
@@ -115,6 +121,8 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     society: game.societySaved,
     charisma: { ...game.charismaSaved },
     job: game.jobSaved ? { ...game.jobSaved } : null,
+    jobs: game.jobsSaved.map((j) => ({ ...j })),
+    career: { ...game.careerSaved },
     life: game.lifeSaved,
     you: { ...game.youSaved },
     chrome: game.chromeSaved.map((f) => ({ ...f })),
@@ -178,6 +186,8 @@ export function readSave(raw: unknown): SaveData | null {
     charisma: isSkill(save.charisma) ? save.charisma : null,
     // And before there was work, the player had none.
     job: isJob(save.job) ? save.job : null,
+    jobs: Array.isArray(save.jobs) ? save.jobs.filter(isJob).map(jobOf) : null,
+    career: isObject(save.career) ? Object.fromEntries(Object.entries(save.career).filter(([, n]) => isNumber(n) && n >= 0)) as Record<string, number> : null,
     // And before the people had days of their own, none had passed.
     life: isLife(save.life) ? { ...save.life, events: save.life.events.filter((e) => isObject(e) && Array.isArray(e.who)) } : null,
     // And before the player said who they are, they went by they.
@@ -211,12 +221,13 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, life, you, chrome, health, heat, lethal, coverage } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, jobs, career, life, you, chrome, health, heat, lethal, coverage } = save;
+  const exists = (j: JobState) => world.buildings.some((b) => b.id === j.building);
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
 }
 
 function isCoverage(value: unknown): value is Coverage {
@@ -340,6 +351,15 @@ function isLife(value: unknown): value is LifeState {
     Array.isArray(l.broken) &&
     [l.chips, l.tills, l.treasuries, l.jobs, l.gangs, l.dead, l.since].every(optional)
   );
+}
+
+/** A job as read: only the extras that read right (the roster's weekdays, what's owed, the raise, the days missed and checked). */
+function jobOf(j: JobState): JobState {
+  const { building, rung, trust, shifts, lastShiftDay } = j;
+  const days = Array.isArray(j.days) ? j.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6) : undefined;
+  const count = (n: unknown) => (isNumber(n) && n >= 0 ? n : undefined);
+  const extras = { days: days?.length ? days : undefined, owed: count(j.owed), raise: count(j.raise), missed: count(j.missed), checked: Number.isInteger(j.checked) ? j.checked : undefined, paidOn: Number.isInteger(j.paidOn) ? j.paidOn : undefined, heard: typeof j.heard === 'boolean' ? j.heard : undefined };
+  return { building, rung, trust, shifts, lastShiftDay, ...Object.fromEntries(Object.entries(extras).filter(([, v]) => v !== undefined)) };
 }
 
 function isJob(value: unknown): value is JobState {

@@ -9,6 +9,16 @@ import { Fog } from './fog';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+/** A place the player works, for its badge on the map: the building, its name, and whether a shift there is open now. */
+export interface WorkPin {
+  id: string;
+  name: string;
+  open: boolean;
+}
+
+/** The work badge's color: the yellow of the signs. */
+const WORK_COLOR = '#ffd84d';
+
 /** Room around the edge of the map so markers don't touch the frame. */
 const PAD = 14;
 /** Label metrics for collision checks (10.5px mono, slightly generous). */
@@ -91,6 +101,8 @@ export class CityMap {
   private world: World | null = null;
   private state: MapState | null = null;
   private target: Target | null = null;
+  private work: WorkPin[] = [];
+  private workKey = '[]';
   private preview: Preview = { path: null, stations: [] };
   private trip: Trip | null = null;
   /** A trip just ended: whatever it uncovers glitches in. */
@@ -198,6 +210,15 @@ export class CityMap {
   select(target: Target | null, preview: Preview = { path: null, stations: [] }): void {
     this.target = target;
     this.preview = target ? preview : { path: null, stations: [] };
+    this.render();
+  }
+
+  /** Marks where the player works: a badge on each building, lit while a shift there is open. Redrawn only when it changes. */
+  setWork(pins: WorkPin[]): void {
+    const key = JSON.stringify(pins);
+    if (key === this.workKey) return;
+    this.workKey = key;
+    this.work = pins;
     this.render();
   }
 
@@ -900,6 +921,19 @@ export class CityMap {
     }
     for (const station of Object.values(world.transit.stations)) {
       markers.push(this.renderStation(world, station, state, labelBoxes.get(station.id)));
+    }
+    // Where the player works: tap to pick it, and again to go.
+    for (const pin of this.work) {
+      const building = this.buildings.get(pin.id);
+      if (!building) continue;
+      const picked = this.target?.kind === 'building' && this.target.id === pin.id;
+      const node = this.marker(`work:${pin.id}`, pin.name, this.project({ x: building.x + building.w / 2, y: building.y + building.h / 2 }), WORK_COLOR, ['is-work', pin.open ? 'is-due' : '', picked ? 'is-selected' : ''], undefined, () => {
+        if (picked) this.handlers.onGo();
+        else this.handlers.onSelect({ kind: 'building', id: pin.id });
+      });
+      node.setAttribute('aria-label', `Work: ${pin.name}${pin.open ? ', a shift is on' : ''}`);
+      node.setAttribute('aria-pressed', String(picked));
+      markers.push(node);
     }
     if (this.target?.kind === 'point') {
       const p = this.project(this.target.point);
