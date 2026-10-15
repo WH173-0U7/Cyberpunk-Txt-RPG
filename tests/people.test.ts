@@ -4,8 +4,9 @@ import { CITY } from '../src/data/city';
 import { FOOD } from '../src/data/food';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
-import { dreamOf, drawnTo, generatePeople, handleOf, heartOf, INVERSE, isCorpo, isNetrunner, peopleAt, tiesOf, whereIs, worksNights, type Population, type TieKind } from '../src/engine/people';
+import { allHours, dreamOf, drawnTo, generatePeople, handleOf, hauntOf, heartOf, INVERSE, isCorpo, isNetrunner, peopleAt, tiesOf, whereIs, worksNights, type Population, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
+import { moodOf } from '../src/engine/dialogue';
 import type { World } from '../src/engine/types';
 
 const seeds = Array.from({ length: 60 }, (_, i) => createRng(`people-${i}`).next().toString(16).slice(2, 10));
@@ -200,8 +201,8 @@ describe('the people', () => {
     }
     // Over a working week, every storefront has its people in by day, and a bar or a club by night.
     for (const shop of world.buildings.filter((b) => b.business)) {
-      // (A capsule hotel's night clerk is in by night.)
-      const hours = shop.category === 'nightlife' ? [21] : [11, 21];
+      // (A capsule hotel's night clerk is in by night; a place that never closes has hands on days and on nights.)
+      const hours = shop.category === 'nightlife' && !allHours(shop) ? [21] : [11, 21];
       const staffed = [1, 2, 3, 4, 5].some((weekday) => hours.some((hour) => peopleAt(population, world, { kind: 'building', id: shop.id }, { hour, weekday, day: 100 + weekday }, FOOD.dishes).some((p) => p.person.job.building === shop.id)));
       expect(staffed, `${shop.name} is never open`).toBe(true);
     }
@@ -219,6 +220,54 @@ describe('the people', () => {
       return w && p.likes.hangout && w.spot.id === p.likes.hangout.id;
     }).length;
     expect(evening).toBeGreaterThan(population.people.length / 4);
+  });
+
+  it('sees people out and about at an open place near home, doing what people do there, and fills most of the city\'s open places by day', () => {
+    const { world, population } = cities[0] as { world: World; population: Population };
+    const { out } = PEOPLE;
+    let seen = 0;
+    for (const person of population.people.slice(0, 800)) {
+      const haunt = hauntOf(person, world, out);
+      if (!haunt) continue;
+      const place = world.locations[haunt.id];
+      expect(place?.district).toBe(person.district);
+      expect(out.kinds[place?.kind ?? '']).toBeDefined();
+      expect(hauntOf(person, world, out)).toBe(haunt);
+      for (const hour of [7, 10, 13, 16, 20]) {
+        const where = whereIs(person, world, { hour, weekday: 6, day: 100 }, FOOD.dishes, out);
+        if (where?.spot.kind !== 'location' || where.spot.id !== haunt.id) continue;
+        seen++;
+        expect(out.kinds[place?.kind ?? '']).toContain(where.doing);
+        // And it's where anyone there sees them.
+        expect(peopleAt(population, world, haunt, { hour, weekday: 6, day: 100 }, FOOD.dishes, out).some((p) => p.person.id === person.id)).toBe(true);
+      }
+      // Without it, they're never there but as a hangout.
+      if (person.likes.hangout?.id !== haunt.id) for (const hour of [7, 10, 13, 16, 20]) expect(whereIs(person, world, { hour, weekday: 6, day: 100 }, FOOD.dishes)?.spot.id).not.toBe(haunt.id);
+    }
+    expect(seen).toBeGreaterThan(50);
+    // What they do there never reads as busy, eating or drinking.
+    for (const doings of Object.values(out.kinds)) for (const doing of doings) expect(moodOf(doing), doing).toBe('easy');
+    // At midday, nearly every open place in the city proper has someone there.
+    const open = Object.values(world.locations).filter((l) => out.kinds[l.kind] && l.district !== 'badlands');
+    const busy = open.filter((l) => peopleAt(population, world, { kind: 'location', id: l.id }, { hour: 12, weekday: 3, day: 100 }, FOOD.dishes, out).length > 0);
+    expect(busy.length / open.length).toBeGreaterThan(0.8);
+  });
+
+  it('puts half the hands of a place that never closes on nights', () => {
+    let nights = 0;
+    let days = 0;
+    for (const { world, population } of cities.slice(0, 6)) {
+      for (const p of population.people) {
+        const work = p.job.building ? world.buildings.find((b) => b.id === p.job.building) : undefined;
+        if (!work || !allHours(work) || /\bnight\b/i.test(p.job.role)) continue;
+        if (worksNights(p, world)) nights++;
+        else days++;
+      }
+    }
+    expect(nights).toBeGreaterThan(10);
+    expect(days).toBeGreaterThan(10);
+    expect(nights / (nights + days)).toBeGreaterThan(0.35);
+    expect(nights / (nights + days)).toBeLessThan(0.65);
   });
 
   it('give everyone a heart: whom they are drawn to, what wins them over, the look they like; the same every time, and their spouse among them', () => {

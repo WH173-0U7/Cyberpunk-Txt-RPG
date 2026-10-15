@@ -29,6 +29,17 @@ export interface GangContent {
   rivals: string[];
 }
 
+/**
+ * Where people are to be seen when they're out and about, not at home, work or their
+ * hangout: the kinds of open place (a plaza, a rooftop, the docks, a megabuilding's lobby…)
+ * with what someone there is doing, and the share of those times they're somewhere to be seen
+ * rather than on the move.
+ */
+export interface OutContent {
+  share: number;
+  kinds: Record<string, string[]>;
+}
+
 export interface PeopleContent {
   names: Record<string, NamePool>;
   /** Weighted name pools by district: who lives there. */
@@ -63,6 +74,8 @@ export interface PeopleContent {
   chips: Record<'corpo' | 'gang' | 'street', { chance: number; range: [number, number] }>;
   /** Kinds of place people go to in the evening. */
   hangouts: string[];
+  /** Out and about: the open places people are seen at near home, and what they do there. */
+  out: OutContent;
   /** Street names (made up, never a canon character's), and the chance of one for a ganger, for anyone else on the street, and for a corpo. */
   handles: { pool: string[]; chance: Record<'gang' | 'street' | 'corpo', number> };
   /** What people want out of life, each weighted by the kinds of people who'd want it. */
@@ -457,7 +470,7 @@ export function isNetrunner(person: Person, world: World): boolean {
 }
 
 /** Where a person is at a moment, and what they're doing there. Null when they're out on the streets somewhere. */
-export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish[]): { spot: Spot; doing: string } | null {
+export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish[], out?: OutContent): { spot: Spot; doing: string } | null {
   const { hour, weekday, day } = clock;
   const rng = createRng(`${person.id}:${day}:${Math.floor(hour / 3)}`);
   const home: Spot | null = person.home ? { kind: 'building', id: person.home } : null;
@@ -467,6 +480,12 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
   const dayOff = offOn(day, weekday);
   const at = (spot: Spot | null, doing: string) => (spot ? { spot, doing } : null);
   const outLate = person.gang ? 0.45 : person.traits.chatty * 0.3;
+  // Out and about: now and then somewhere to be seen, an open place near home; else on the move, and nowhere.
+  const about = () => {
+    const haunt = out ? hauntOf(person, world, out) : null;
+    return out && haunt && rng.chance(out.share) ? at(haunt, outDoing(world, haunt, out, rng)) : null;
+  };
+  const hanging = (spot: Spot) => hangingOut(person, world, spot, dishes, out, rng);
 
   // The dead are nowhere.
   if (person.diedOn !== undefined && day >= person.diedOn) return null;
@@ -483,40 +502,47 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
     if (hour >= 3 && hour < 11) return at(home, 'at home, asleep');
     if (hour >= 11 && hour < 18) {
       const roll = rng.next();
-      if (roll < 0.35 && hangout) return at(hangout, hangingOut(person, world, hangout, dishes));
-      return roll < 0.75 ? at(home, 'at home') : null;
+      if (roll < 0.35 && hangout) return at(hangout, hanging(hangout));
+      return roll < 0.75 ? at(home, 'at home') : about();
     }
     // A night off is anyone's night.
   }
-  if (hour < 6) return rng.chance(outLate) && hangout ? at(hangout, hangingOut(person, world, hangout, dishes)) : at(home, 'at home, asleep');
-  if (hour < 9) return rng.chance(0.5) ? at(home, 'at home') : null;
+  if (hour < 6) return rng.chance(outLate) && hangout ? at(hangout, hanging(hangout)) : at(home, 'at home, asleep');
+  if (hour < 9) return rng.chance(0.5) ? at(home, 'at home') : about();
   if (hour < 18) {
     if (work && !dayOff) return at(work, atWork(person));
     const roll = rng.next();
-    if (roll < 0.35 && hangout) return at(hangout, hangingOut(person, world, hangout, dishes));
+    if (roll < 0.35 && hangout) return at(hangout, hanging(hangout));
     if (roll < 0.7) return at(home, 'at home');
-    return null;
+    return about();
   }
   if (hour < 23) {
-    if (hangout && rng.chance(person.gang ? 0.8 : 0.6)) return at(hangout, hangingOut(person, world, hangout, dishes));
-    return rng.chance(0.75) ? at(home, 'at home') : null;
+    if (hangout && rng.chance(person.gang ? 0.8 : 0.6)) return at(hangout, hanging(hangout));
+    return rng.chance(0.75) ? at(home, 'at home') : about();
   }
-  return rng.chance(0.3) && hangout ? at(hangout, hangingOut(person, world, hangout, dishes)) : at(home, 'at home, asleep');
+  return rng.chance(0.3) && hangout ? at(hangout, hanging(hangout)) : at(home, 'at home, asleep');
 }
 
 const buildingsById = new WeakMap<World, Map<string, Building>>();
 
-/** Whether someone works nights: anyone at a bar, a club or a karaoke box, and the night clerks and watchmen. */
+/** Whether someone works nights: anyone at a bar, a club or a karaoke box, the night clerks and watchmen, and half the hands at a place that never closes. */
 export function worksNights(person: Person, world: World): boolean {
   if (/\bnight\b/i.test(person.job.role)) return true;
   if (!person.job.building) return false;
   let byId = buildingsById.get(world);
   if (!byId) buildingsById.set(world, (byId = new Map(world.buildings.map((b) => [b.id, b]))));
-  return byId.get(person.job.building)?.category === 'nightlife';
+  const work = byId.get(person.job.building);
+  if (work && allHours(work)) return createRng(`${person.id}:nights`).chance(0.5);
+  return work?.category === 'nightlife';
+}
+
+/** A place that never closes: a hospital, and anywhere whose sign says 24/7. */
+export function allHours(building: Building): boolean {
+  return building.business === 'hospital' || building.name.startsWith('24/7 ');
 }
 
 /** Everyone to be found at a spot right now. */
-export function peopleAt(population: Population, world: World, spot: Spot, clock: Clock, dishes: Dish[]): Array<{ person: Person; doing: string }> {
+export function peopleAt(population: Population, world: World, spot: Spot, clock: Clock, dishes: Dish[], out?: OutContent): Array<{ person: Person; doing: string }> {
   const found: Array<{ person: Person; doing: string }> = [];
   for (const person of population.people) {
     // Nobody is ever anywhere but home, work or their hangout: anyone with none of them here isn't here.
@@ -525,9 +551,11 @@ export function peopleAt(population: Population, world: World, spot: Spot, clock
     const could =
       (spot.kind === 'building' && (person.home === spot.id || person.job.building === spot.id)) ||
       (hangout?.kind === spot.kind && hangout.id === spot.id) ||
-      (person.hurtUntil !== undefined && clock.day <= person.hurtUntil && sameSpot(hospitalOf(person, world), spot));
+      (person.hurtUntil !== undefined && clock.day <= person.hurtUntil && sameSpot(hospitalOf(person, world), spot)) ||
+      // ...or the open place near home they're seen at when they're out.
+      (spot.kind === 'location' && out !== undefined && sameSpot(hauntOf(person, world, out), spot));
     if (!could) continue;
-    const where = whereIs(person, world, clock, dishes);
+    const where = whereIs(person, world, clock, dishes, out);
     if (where && where.spot.kind === spot.kind && where.spot.id === spot.id) found.push({ person, doing: where.doing });
   }
   return found;
@@ -666,7 +694,7 @@ function atWork(person: Person): string {
   return 'on shift';
 }
 
-function hangingOut(person: Person, world: World, spot: Spot, dishes: Dish[]): string {
+function hangingOut(person: Person, world: World, spot: Spot, dishes: Dish[], out?: OutContent, rng?: Rng): string {
   const place = spot.kind === 'location' ? world.locations[spot.id] : buildingById(world, spot.id);
   const kind = spot.kind === 'location' ? (place as Location | undefined)?.kind : (place as Building | undefined)?.category;
   const dish = dishes.find((d) => d.id === person.likes.dish)?.name ?? 'something';
@@ -674,8 +702,40 @@ function hangingOut(person: Person, world: World, spot: Spot, dishes: Dish[]): s
   if (person.gang && (kind === 'bar' || kind === 'club' || kind === 'nightlife')) return 'holding court';
   if (kind === 'bar' || kind === 'club' || kind === 'nightlife' || kind === 'pachinko' || kind === 'entertainment') return `nursing a ${drink}`;
   if (kind === 'noodle' || kind === 'diner' || kind === 'restaurant' || kind === 'food') return `eating ${dish}`;
+  // An open place: what people do there.
+  const doings = kind && out ? out.kinds[kind] : undefined;
+  if (doings?.length && rng) return rng.pick(doings) ?? 'killing time';
   if (kind === 'market') return 'browsing the stalls';
   return 'killing time';
+}
+
+/** What someone out and about is doing at an open place. */
+function outDoing(world: World, spot: Spot, out: OutContent, rng: Rng): string {
+  const kind = spot.kind === 'location' ? world.locations[spot.id]?.kind : undefined;
+  return (kind && rng.pick(out.kinds[kind] ?? [])) || 'killing time';
+}
+
+const haunts = new WeakMap<World, { out: OutContent; spots: Map<string, Spot | null>; byDistrict: Map<string, Location[]> }>();
+
+/**
+ * The open place near home someone is seen at when they're out (one of the three nearest in
+ * their district, picked for them, or none), worked out once a person.
+ */
+export function hauntOf(person: Person, world: World, out: OutContent): Spot | null {
+  let known = haunts.get(world);
+  if (!known || known.out !== out) haunts.set(world, (known = { out, spots: new Map(), byDistrict: new Map() }));
+  const had = known.spots.get(person.id);
+  if (had !== undefined) return had;
+  let places = known.byDistrict.get(person.district);
+  if (!places) known.byDistrict.set(person.district, (places = Object.values(world.locations).filter((l) => l.district === person.district && out.kinds[l.kind])));
+  const home = person.home ? buildingById(world, person.home) : undefined;
+  const district = world.districts[person.district];
+  const from = home ? { x: home.x + home.w / 2, y: home.y + home.h / 2 } : district ? { x: district.x, y: district.y } : null;
+  const near = from ? [...places].sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y)).slice(0, 3) : [];
+  const pick = near.length ? createRng(`${person.id}:haunt`).pick(near) : undefined;
+  const spot: Spot | null = pick ? { kind: 'location', id: pick.id } : null;
+  known.spots.set(person.id, spot);
+  return spot;
 }
 
 function hangoutsIn(world: World, district: string, content: PeopleContent): Spot[] {

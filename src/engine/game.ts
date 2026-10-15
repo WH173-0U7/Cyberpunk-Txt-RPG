@@ -13,7 +13,7 @@ import { drink, freshInebriation, inebriationStatus, type InebriationRules, type
 import { bossAt, bossOf, canPromote, ladderFor, nextRung, rungOf, shiftOpen, shiftPay, type JobRules, type JobState, type JobStatus, type Rung } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
-import { buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { allHours, buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
@@ -131,6 +131,14 @@ export interface GameRules extends TravelRules {
   life: LifeRules;
   /** The time of day people's days run on. The phone's local time if not said (tests say). */
   clock?: (now: number) => Clock;
+  /** Opening hours: counters shut while nobody who works them is in. Not said, every counter is always open. */
+  hours?: HoursRules;
+}
+
+/** Whether counters keep the hours of whoever works them, and how many hours ahead to look for when one opens. */
+export interface HoursRules {
+  close: boolean;
+  ahead: number;
 }
 
 /** Someone where the player is, how they feel about the player, and who they're with. */
@@ -548,8 +556,52 @@ export class Game {
   /** What's for sale where the player is: an eatery's menu, a store's rack, a ripperdoc's chrome, or nothing. */
   menu(now = Date.now()): Menu | null {
     const at = this.inside ?? this.location;
-    if (!at) return null;
+    if (!at || !this.counterOpen(at, now)) return null;
+    return this.counterMenu(at, now);
+  }
+
+  /** What a counter sells, open or not. */
+  private counterMenu(at: Building | Location, now: number): Menu | null {
     return menuFor(this.world, at, this.rules.food) ?? this.rack(at, now);
+  }
+
+  /** The people who work at a storefront, kept until a day is lived (when hires, layoffs and deaths change them). */
+  private readonly staffCache = new Map<string, Person[]>();
+  private staffOf(building: Building): Person[] {
+    let staff = this.staffCache.get(building.id);
+    if (!staff) this.staffCache.set(building.id, (staff = this.population.people.filter((p) => p.job.building === building.id)));
+    return staff;
+  }
+
+  /**
+   * Whether a counter is open: with opening hours on, a storefront's only while someone who
+   * works there is in (one that never closes, a hospital or a 24/7, always); a place of its own's
+   * (a market, a stall) never closes.
+   */
+  private counterOpen(at: Building | Location, now: number): boolean {
+    if (!this.rules.hours?.close || !('block' in at) || !at.business || allHours(at)) return true;
+    const clock = this.clockAt(now);
+    return this.staffOf(at).some((p) => {
+      const where = whereIs(p, this.world, clock, this.rules.food.dishes, this.rules.people.out);
+      return where?.spot.kind === 'building' && where.spot.id === at.id;
+    });
+  }
+
+  /**
+   * The counter in here, if it's shut for now: what it would be (a menu, a rack, a bank) and
+   * when someone's next in, to the hour (null: nobody is, as far ahead as `hours.ahead` looks).
+   */
+  closed(now = Date.now()): { what: 'menu' | 'shop' | 'bank'; opensAt: number | null } | null {
+    const at = this.inside;
+    if (!at || this.counterOpen(at, now)) return null;
+    const menu = this.counterMenu(at, now);
+    const what = menu ? (menu.kind === 'gear' ? 'shop' : 'menu') : at.business === 'bank' ? 'bank' : null;
+    if (!what) return null;
+    const HOUR_MS = 3_600_000;
+    const from = Math.floor(now / HOUR_MS) * HOUR_MS;
+    let opensAt: number | null = null;
+    for (let k = 1; k <= (this.rules.hours?.ahead ?? 0) && opensAt === null; k++) if (this.counterOpen(at, from + k * HOUR_MS)) opensAt = from + k * HOUR_MS;
+    return { what, opensAt };
   }
 
   /** The medical counter where the player is, if there's one: what it does (meds, treatment, Trauma Team's plans), and the key it's kept under. */
@@ -670,11 +722,13 @@ export class Game {
   canBuy(id: string, now = Date.now()): string | null {
     const menu = this.menu(now);
     const item = menu?.items.find((i) => i.id === id);
+    const shut = this.closed(now);
+    if (shut) return shut.opensAt === null ? 'Closed. Nobody works the counter any more.' : `Closed. Nobody's behind the counter till ${clockWord(shut.opensAt, this.clockAt(shut.opensAt))}.`;
     if (!menu || !item) return 'Not for sale here.';
     const barred = this.barred(now);
     if (barred) return barred;
     // A ripperdoc fits what it sells there and then: it wants the room in the body, not a pocket.
-    const fitting = item.kind === 'cyberware' && this.clinic() !== null;
+    const fitting = item.kind === 'cyberware' && this.clinic(now) !== null;
     if (fitting) {
       const why = this.cantFit(item.id);
       if (why) return why;
@@ -709,7 +763,7 @@ export class Game {
     const pockets = [...this.pockets];
     const items = this.items.map((i) => ({ ...i }));
     const fitted = [...this.fitted];
-    const chromed = item.kind === 'cyberware' && this.clinic() !== null;
+    const chromed = item.kind === 'cyberware' && this.clinic(now) !== null;
     let bought: string;
     const on = this.covered(now);
     const plan = item.kind === 'plan' ? this.rules.gear.medical.plans[item.id] : undefined;
@@ -907,10 +961,10 @@ export class Game {
   }
 
   /** The ripperdoc the player is at (a storefront or a clinic of its own), and its fee for fitting chrome bought elsewhere, or taking chrome out. Null anywhere else. */
-  clinic(): { name: string; fee: number } | null {
+  clinic(now = Date.now()): { name: string; fee: number } | null {
     const at = this.inside ?? this.location;
     const key = at ? this.chromeKey(at) : null;
-    if (!at || !key || !this.rules.gear.chrome.stores[key]?.fits) return null;
+    if (!at || !key || !this.rules.gear.chrome.stores[key]?.fits || !this.counterOpen(at, now)) return null;
     return { name: at.name, fee: priceFor(this.rules.gear.chrome.fitting, drawQuality(this.world, at), this.rules.food) };
   }
 
@@ -1767,7 +1821,7 @@ export class Game {
   bank(now = Date.now()): { name: string; fee: number; withdrawals: number[] } | null {
     const at = this.inside;
     // A branch whose people the player has crossed keeps its counter closed to them, like any storefront.
-    if (at?.business !== 'bank' || this.barred(now)) return null;
+    if (at?.business !== 'bank' || this.barred(now) || !this.counterOpen(at, now)) return null;
     return { name: at.name, fee: this.rules.money.coinFee, withdrawals: [...this.rules.money.withdrawals] };
   }
 
@@ -2121,7 +2175,7 @@ export class Game {
     const spot = this.spot;
     if (!spot) return [];
     const clock = this.clockAt(now);
-    const present = peopleAt(this.population, this.world, spot, clock, this.rules.food.dishes);
+    const present = peopleAt(this.population, this.world, spot, clock, this.rules.food.dishes, this.rules.people.out);
     const scenes = scenesAt(present.map((p) => p.person), this.population, spot, clock, this.world, this.rules.people.turf, (gang) => this.rules.people.gangs[gang]?.rivals ?? [], this.rules.life, this.world.seed);
     return present.map(({ person, doing }) => ({
       person,
@@ -2461,6 +2515,8 @@ export class Game {
   private live(now: number): void {
     const today = this.clockAt(now).day;
     if (this.life.day >= today) return;
+    // A day lived can hire, lay off or kill: who works where is worked out afresh.
+    this.staffCache.clear();
     // Whoever the player is seeing is no one else's to fall for.
     const spokenFor = new Set(this.society.romance ? [this.society.romance.with] : []);
     const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed, (spot) => this.tierOfSpot(spot), turfFrom(this.rules.people.turf), this.rules.people, spokenFor);
@@ -3828,6 +3884,11 @@ export class Game {
     if (!location) throw new Error(`Unknown location "${id}"`);
     return location;
   }
+}
+
+/** An hour as a counter's sign would put it: "09:00", by the game's clock. */
+function clockWord(at: number, clock: Clock): string {
+  return `${String(clock.hour).padStart(2, '0')}:${String(new Date(at).getMinutes()).padStart(2, '0')}`;
 }
 
 function capitalize(text: string): string {

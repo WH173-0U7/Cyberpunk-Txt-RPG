@@ -77,6 +77,14 @@ Going inside a building is in place, with nothing to do in there yet. What's add
   `interiorChanged` event); it's saved as `inside`. New rules for being inside go in `Game`.
 - `insideView` in `src/main.ts` is the panel inside. It has the building's `category` and
   `business` to decide what to show.
+- Opening hours (`rules.hours`, `HOURS` in `src/data/hours.ts`): a storefront's counter (its
+  menu, rack, bank or ripperdoc's chair) is open only while someone who works there is in
+  (`Game`'s private `counterOpen`, by `whereIs` of its staff, kept per building until a day is
+  lived); a hospital and anywhere whose sign says 24/7 (`allHours`) never close, and a place
+  of its own (a market, a stall) never does. Shut, `menu`, `bank` and `clinic` are null,
+  `canBuy` says when it opens, and `Game.closed(now)` gives the panel what it would be and
+  when someone's in again (its Closed action). The tests' `RULES` leave `hours` out, so their
+  counters are always open; a test about hours passes `HOURS`.
 
 ## The inventory
 
@@ -265,9 +273,14 @@ it needs no generator bump. The pieces:
   `Tie`s link people both ways: `to` is `from`'s `kind` (spouse, partner, parent, uncle,
   friend, crew, coworker…; `INVERSE` gives the other side), one tie a pair. `whereIs` puts a person somewhere by the clock
   (`Clock`: hour, weekday, day; the phone's local time, or `rules.clock` in tests; night work,
-  `worksNights`, at a bar, a club or the night desk, runs from six till three); nobody is
-  placed on the streets, only in buildings and at places, so `Game.peopleHere(now)` works
-  inside a building or at a location.
+  `worksNights`, at a bar, a club or the night desk, and for half the hands of a place that
+  never closes, `allHours`, runs from six till three); nobody is placed on the streets, only
+  in buildings and at places, so `Game.peopleHere(now)` works inside a building or at a
+  location. Out and about (not at home, work or their hangout), people are now and then at an
+  open place near home (`hauntOf`: one of the three nearest of `PEOPLE.out.kinds` in their
+  district, on its own stream; `out.share` of those times, doing what `out.kinds` says people
+  do there, never reading as busy, eating or drinking), else on the move and nowhere;
+  `whereIs` and `peopleAt` take `out` (`Game` passes `PEOPLE.out`; without it, as before).
 - `src/engine/society.ts` is the player's side: `Standing` per person (rapport, and a grudge
   fading on the clock), `Rep` per circle (`gang:`, `district:`, `business:<building id>`,
   `chain:<business id>`), incidents and threats. `applyIncident` is the cascade; add a new

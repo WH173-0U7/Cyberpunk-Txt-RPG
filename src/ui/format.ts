@@ -23,6 +23,12 @@ export function formatDuration(ms: number): string {
   return formatMinutes(seconds / 60);
 }
 
+/** A time of day on the 24-hour clock, as the header has it: "09:00". */
+export function formatClock(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 /** A short date in the game's calendar style: "Nov 11". */
 export function formatDay(ms: number): string {
   return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });

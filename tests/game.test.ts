@@ -12,6 +12,7 @@ import { JOBS } from '../src/data/jobs';
 import { LIFE } from '../src/data/life';
 import { COMBAT } from '../src/data/combat';
 import { MEDICAL } from '../src/data/medical';
+import { HOURS } from '../src/data/hours';
 import { priceFor } from '../src/engine/food';
 import { freshLife, newsFor, tieKey } from '../src/engine/life';
 import { FAMILY, openness } from '../src/engine/dialogue';
@@ -2492,6 +2493,43 @@ describe('Game', () => {
         expect(placed.game.fightView()?.result).toContain('dropped you at Test Med Center');
         expect(placed.game.location?.id).toBe('roof');
         expect(placed.game.interior).toBeNull();
+      });
+    });
+
+    describe('opening hours', () => {
+      const HOURLY = { hours: HOURS };
+
+      it('shuts a counter while nobody who works it is in, says when someone will be, and opens with them', () => {
+        const { game, now } = atWork('b-noodle', 38, 20, {}, HOURLY);
+        expect(game.menu(now)).not.toBeNull();
+        expect(game.closed(now)).toBeNull();
+        // Three in the morning: the day's hands are home asleep.
+        const late = now + 16 * HOUR;
+        expect(game.menu(late)).toBeNull();
+        const shut = game.closed(late);
+        expect(shut?.what).toBe('menu');
+        expect(shut?.opensAt).toBeGreaterThan(late);
+        expect(game.menu(shut?.opensAt ?? 0)).not.toBeNull();
+        expect(game.canBuy(game.menu(now)?.items[0]?.id ?? '', late)).toMatch(/^Closed\. Nobody's behind the counter till \d\d:\d\d\./);
+        expect(game.buy(game.menu(now)?.items[0]?.id ?? '', late)).toBe(false);
+        // Without opening hours, every counter is always open.
+        expect(atWork('b-noodle', 38, 20).game.menu(late)).not.toBeNull();
+      });
+
+      it('shuts a bank the same way, and keeps a hospital and anywhere whose sign says 24/7 open all hours', () => {
+        const night = T0 + 7 * HOUR;
+        const bank = new Game(world, { ...RULES, ...HOURLY }, progressInside('b-bank', 44, 20));
+        bank.start(T0);
+        expect(bank.bank(night)).toBeNull();
+        expect(bank.closed(night)?.what).toBe('bank');
+        const allNight: World = { ...world, buildings: world.buildings.map((b) => (b.id === 'b-noodle' ? { ...b, name: '24/7 Noodles' } : b)) };
+        const noodles = new Game(allNight, { ...RULES, ...HOURLY }, progressInside('b-noodle', 38, 20));
+        noodles.start(T0);
+        expect(noodles.menu(night)).not.toBeNull();
+        expect(noodles.closed(night)).toBeNull();
+        const hospital = new Game(clinicWorld, { ...RULES, ...HOURLY }, progressInside('b-hospital', 54, 20));
+        hospital.start(T0);
+        expect(hospital.menu(night)).not.toBeNull();
       });
     });
 
