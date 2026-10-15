@@ -295,7 +295,11 @@ function isEnergy(value: unknown): value is EnergyState {
 /** What's known of each person, with the facts and the log that older saves don't have. */
 function knownOf(known: SocietyState['known'] | undefined): SocietyState['known'] {
   const out: SocietyState['known'] = {};
-  for (const [id, k] of Object.entries(known ?? {})) if (isObject(k)) out[id] = { ...k, facts: Array.isArray(k.facts) ? k.facts : [], log: Array.isArray(k.log) ? k.log : [] };
+  for (const [id, k] of Object.entries(known ?? {})) {
+    if (!isObject(k)) continue;
+    const { said, ...rest } = k;
+    out[id] = { ...rest, facts: Array.isArray(k.facts) ? k.facts : [], log: Array.isArray(k.log) ? k.log : [], ...(Array.isArray(said) ? { said } : {}) };
+  }
   return out;
 }
 

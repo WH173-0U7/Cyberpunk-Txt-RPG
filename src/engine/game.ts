@@ -25,6 +25,7 @@ import {
   changeStanding,
   dueThreats,
   freshSociety,
+  heardFrom,
   knowledgeOf,
   knownPeople,
   knowsOf,
@@ -37,6 +38,7 @@ import {
   pinIncident,
   relearnLink,
   repOf,
+  saidBy,
   settleThreat,
   STANCE_LABEL,
   standingOf,
@@ -2512,12 +2514,14 @@ export class Game {
     const ago = this.agoWord(this.clockAt(now).day - event.day);
     const pronouns = pronounsOf(other);
     const where = event.where ? (event.where.kind === 'building' ? this.world.buildings.find((b) => b.id === event.where?.id)?.name : this.world.locations[event.where.id]?.name) : undefined;
+    // Someone who shares the speaker's given name goes by their whole name, or it sounds like the speaker means themselves.
+    const called = (p: Person) => (p.given === person.given && p.id !== person.id ? p.name : p.given);
     return {
       news: 'yes',
       [`news${event.kind.charAt(0).toUpperCase()}${event.kind.slice(1)}`]: 'yes',
       // What the speaker was to it: `newsMine`, `newsKin`, `newsOurs` (their gang's doing) or `newsHeard`; `newsGang` is the gang's name.
       [{ me: 'newsMine', kin: 'newsKin', gang: 'newsOurs', heard: 'newsHeard' }[role]]: 'yes',
-      newsWho: other.given,
+      newsWho: called(other),
       newsGang: event.gang ? (this.rules.people.gangs[event.gang]?.name ?? '') : '',
       newsWord: tie ? kinWord(person, tie.kind, other) : '',
       newsAgo: ago,
@@ -2530,7 +2534,7 @@ export class Game {
       newsWon: won ? 'yes' : '',
       newsHurt: event.kind === 'fight' && event.who[1] === other.id ? 'yes' : '',
       // The other one in it, for a relative's news or the district's; and, for a death, whether someone did it.
-      newsWith: news.with?.given ?? '',
+      newsWith: news.with ? called(news.with) : '',
       newsKilled: event.kind === 'death' && event.who[0] !== event.who[1] ? 'yes' : '',
     };
   }
@@ -2917,14 +2921,18 @@ export class Game {
       this.events.emit('societyChanged', { people: [id] });
       return true;
     }
-    this.speech(person, line(lines.greeting, speaker, rng), now);
+    // Talking is an introduction: the first time, they say who they are.
+    const intro = saidBy(this.society, id, 'name') ? '' : line(lines.introduce, speaker, rng);
+    this.speech(person, [line(lines.greeting, speaker, rng), intro].filter(Boolean).join(' '), now);
+    if (intro) heardFrom(this.society, id, 'name');
     let topic: Topic | null = null;
     const learned = [id];
     // What they remember of the player, they may bring up; a grievance is all they'll say.
     const memory = recall(this.society, id, society.memory, timeScale, now);
     let aired = false;
     if (memory && rng.chance(society.memory.recall)) {
-      const said = compose(lines.memory, { ...speaker, vars: { ...speaker.vars, ...this.memoryVars(person, memory, now) } }, lines, rng, { opener: false });
+      // An aside, if any, comes at the end of all they say, not in the middle of it.
+      const said = compose(lines.memory, { ...speaker, vars: { ...speaker.vars, ...this.memoryVars(person, memory, now) } }, lines, rng, { opener: false, tail: false });
       if (said) {
         this.speech(person, said, now);
         recalled(this.society, id, memory);
@@ -2936,7 +2944,7 @@ export class Game {
     const reaction = reactionTo(society.reactions.approach[approach], speaker);
     if (how && !aired) {
       const pool = reaction.score > 0 ? how.liked : reaction.score < 0 ? how.disliked : how.flat;
-      this.speech(person, compose(pool, speaker, lines, rng, { opener: false }), now);
+      this.speech(person, compose(pool, speaker, lines, rng, { opener: false, tail: false }), now);
     }
     if (aired || (how && reaction.score < 0)) {
       // Said their piece, or put off: nothing more out of them this time.
@@ -2947,18 +2955,18 @@ export class Game {
       const topics = openTopics(speaker, this.charismaState.level, society.openness, rng, standing.rapport >= society.talk.revealAt);
       const prefer: Topic[] = approach === 'gossip' ? ['news', 'rumor', 'here', 'district'] : approach === 'care' ? ['life', 'kin'] : [];
       const chat = smallTalk(speaker, topics, lines, rng, prefer);
-      this.speech(person, chat.said, now);
+      // Come at a way they took, and with nothing more to say, they leave it at their answer to it.
+      if (chat.topic || !how) this.speech(person, chat.said, now);
       topic = chat.topic;
     }
-    // Talking is an introduction; what they talk about, the player now knows; a few chats, and the player has their measure.
-    learnFact(this.society, id, 'name');
-    if (topic === 'job') learnFact(this.society, id, 'job');
+    // What they talk about, the player now knows, from them; a few chats, and the player has their measure.
+    if (topic === 'job') heardFrom(this.society, id, 'job');
     if (topic === 'likes') {
-      learnFact(this.society, id, 'likes');
-      learnFact(this.society, id, 'drinks');
+      heardFrom(this.society, id, 'likes');
+      heardFrom(this.society, id, 'drinks');
     }
-    if (topic === 'hates') learnFact(this.society, id, 'hates');
-    if (topic === 'dream') learnFact(this.society, id, 'dream');
+    if (topic === 'hates') heardFrom(this.society, id, 'hates');
+    if (topic === 'dream') heardFrom(this.society, id, 'dream');
     if (standing.talks + 1 >= 3) learnFact(this.society, id, 'nature');
     if (topic === 'kin' && kin) {
       learnLink(this.society, id, kin.to, kin.kind, 'told', now);
@@ -3146,10 +3154,14 @@ export class Game {
     let pressed = false;
     let news = false;
     let heard = true;
+    let answered = false;
+    let repeated = false;
     if (speaker.mood === 'asleep' || stance === 'hostile') {
       heard = false;
       this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
-    } else if (knowledgeOf(this.society, id).facts.includes(fact)) {
+    } else if (saidBy(this.society, id, fact)) {
+      // Told the player already; asked again, they say so (and it's no compliment to be asked twice).
+      repeated = true;
       this.speech(person, repeat(speaker, fact, lines, rng), now);
     } else if (this.pressing(standing, fact, now)) {
       pressed = true;
@@ -3158,21 +3170,26 @@ export class Game {
       const score = openness(fact, stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked()), momentOf(speaker, grilled)) + reaction.score * society.reactions.openness;
       const reply = replyTo(score, society.openness, rng);
       if (reply === 'answer') {
-        this.speech(person, answer(speaker, fact, lines, rng), now);
-        news = learnFact(this.society, id, fact);
-        // Asked what they like, they say what they eat and what they drink; answering at all is an introduction.
-        if (fact === 'likes') learnFact(this.society, id, 'drinks');
-        if (fact !== 'name') learnFact(this.society, id, 'name');
+        answered = true;
+        // Answering at all is an introduction: if they haven't said who they are, they do now.
+        const intro = fact === 'name' || saidBy(this.society, id, 'name') ? '' : line(lines.introduce, speaker, rng);
+        this.speech(person, [answer(speaker, fact, lines, rng), intro].filter(Boolean).join(' '), now);
+        news = heardFrom(this.society, id, fact);
+        // Asked what they like, they say what they eat and what they drink.
+        if (fact === 'likes') heardFrom(this.society, id, 'drinks');
+        if (intro) heardFrom(this.society, id, 'name');
       } else {
         this.speech(person, reply === 'deflect' ? deflect(speaker, fact, lines, rng) : line(lines.refuse, speaker, rng), now);
         refused[fact] = now;
       }
     }
-    // Pressing after a no costs; so does a question they're touchy about, and one too many in a row; one they're glad of is worth a little.
-    const rapport = heard ? (pressed ? -society.openness.press : 0) + Math.round(reaction.score * society.reactions.rapport) - grilled * society.openness.grill.rapport : 0;
+    // Pressing after a no costs; so does a question they're touchy about, and one too many in a row; one they're glad of is worth a little,
+    // but only if they answer it (and not asked twice): glad of a question they then won't answer, they weren't.
+    const took = reaction.score < 0 || (answered && !repeated) ? reaction : { score: 0, why: '' };
+    const rapport = heard ? (pressed ? -society.openness.press : 0) + Math.round(took.score * society.reactions.rapport) - grilled * society.openness.grill.rapport : 0;
     changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport, ...(heard ? { lastAskAt: now, sitting } : {}) }, society, timeScale, now);
     if (news) this.gainCharisma(2);
-    this.noteFeedback(person, before, now, !heard ? '' : [pressed ? lines.notes.pressed : '', grilled ? lines.notes.grilled : '', reaction.why].filter(Boolean).join(' · '), speaker.vars);
+    this.noteFeedback(person, before, now, !heard ? '' : [pressed ? lines.notes.pressed : '', grilled ? lines.notes.grilled : '', took.why].filter(Boolean).join(' · '), speaker.vars);
     this.events.emit('societyChanged', { people: [id] });
     return true;
   }

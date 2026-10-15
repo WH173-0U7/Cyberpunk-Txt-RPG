@@ -165,13 +165,19 @@ describe('dialogue', () => {
   it('opens up with charisma and warmth, and less the more a question asks', () => {
     const rules = SOCIETY.openness;
     const plain = person('p').traits;
-    // A stranger with no way with words: name yes, work a coin toss, age a non-answer, home and enemies a no.
+    // A stranger with no way with words: name yes, work a coin toss, age mostly a non-answer (now and then an answer), home and enemies a no.
     expect(replyTo(openness('name', 'neutral', 1, plain, rules), rules, createRng('a'))).toBe('answer');
     expect(openness('job', 'neutral', 1, plain, rules)).toBe(0);
-    expect(openness('age', 'neutral', 1, plain, rules)).toBe(-1);
-    expect(replyTo(openness('age', 'neutral', 1, plain, rules), rules, createRng('a'))).toBe('deflect');
-    expect(replyTo(openness('home', 'neutral', 1, plain, rules), rules, createRng('a'))).toBe('refuse');
-    expect(replyTo(openness('hates', 'neutral', 1, plain, rules), rules, createRng('a'))).toBe('refuse');
+    expect(openness('age', 'neutral', 1, plain, rules)).toBe(-0.6);
+    const odds = (asked: Asked) => {
+      const replies = Array.from({ length: 200 }, (_, i) => replyTo(openness(asked, 'neutral', 1, plain, rules), rules, createRng(`o${i}`)));
+      return { answer: replies.filter((r) => r === 'answer').length / 200, refuse: replies.filter((r) => r === 'refuse').length / 200 };
+    };
+    expect(odds('age').refuse).toBe(0);
+    expect(odds('age').answer).toBeGreaterThan(0.05);
+    expect(odds('age').answer).toBeLessThan(0.35);
+    expect(odds('home').refuse).toBe(1);
+    expect(odds('hates').refuse).toBe(1);
     // A friend tells everything; so does a stranger to someone with charisma enough; the hostile nothing.
     for (const asked of ['name', 'job', 'age', 'home', 'likes', 'hates', 'kin'] as Asked[]) {
       expect(replyTo(openness(asked, 'friend', 1, plain, rules), rules, createRng('a')), asked).toBe('answer');
@@ -268,6 +274,11 @@ describe('dialogue', () => {
     expect(reactionTo(SOCIETY.reactions.asked.likes, speakerOf(person('s'))).score).toBeGreaterThan(0);
   });
 
+  it('puts no full stop after a name that ends in its own mark', () => {
+    expect(finish('Nothing beats {dish}.', { dish: 'Got Escargot?' })).toBe('Nothing beats Got Escargot?');
+    expect(finish('Wait... What?', {})).toBe('Wait... What?');
+  });
+
   it('answers, deflects, repeats and refuses in character', () => {
     const corpo = speakerOf(person('helena', { age: 44, job: { role: 'middle manager', building: 'b-tower' }, home: 'b-home' }), { voice: 'corpo', stance: 'neutral' });
     expect(answer(corpo, 'job', LINES, createRng('j'))).toContain('Petrochem Annex');
@@ -283,7 +294,7 @@ describe('dialogue', () => {
     expect(answer(ganger, 'job', LINES, createRng('j'))).toContain('Valentinos');
     expect(answer(ganger, 'hates', LINES, createRng('h'))).toMatch(/6th Street/);
     expect(deflect(drifter, 'age', LINES, createRng('d'))).toMatch(/Old enough|Older than I look|writing a book/);
-    expect(deflect(drifter, 'district', LINES, createRng('d'))).toMatch(/Pass|Next question|well enough/);
+    expect(deflect(drifter, 'district', LINES, createRng('d'))).toMatch(/Pass|Next question|well enough|easier|Next\.|other time|Long story|next week/);
     expect(line(LINES.refuse, speakerOf(person('x'), { voice: 'corpo', stance: 'cold' }), createRng('r'))).toMatch(/\S/);
   });
 

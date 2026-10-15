@@ -276,7 +276,9 @@ it needs no generator bump. The pieces:
   change how someone feels goes through `changeStanding`/`changeRep` so it fades right.
 - What the player knows is separate from what is true: `SocietyState.known` (met, seen,
   told of; which `facts` the player has: name, job, age, home, likes, hates, nature, and
-  `dead` once they've been told; and
+  `dead` once they've been told; which of those they `said` themselves (`heardFrom`,
+  `saidBy`: asked one again, they say they've said it, `LINES.repeat`; known any other way,
+  they just answer); and
   the `log` of what was said, the last `LOG_CAP` lines) and `links` (what the player knows
   of a tie, keyed `a|b`; `kind` null for "connected somehow", `'none'` for "asked, and
   they'd never heard of them"). The UI shows a person only through `Game.describe` (name
@@ -324,6 +326,12 @@ it needs no generator bump. The pieces:
   `dream` topic and a `dream` fact), the `views` topic on the corps and the city, their age
   bracket, their home, their hangout, their boss and years at work, their district
   (`inWatson`…). Loosely-fitting lines can be `vague` (they give way to ones that say more).
+  The first time they talk to the player, or answer something else first, they say who they
+  are (`LINES.introduce`), which is how the player learns a name from them. An aside
+  (`tails`) comes only at the end of all they say: a memory brought up and the reply to a
+  way in take none, and a way in that landed, with nothing more they'd bring up, is left at
+  the reply (no brush-off after it). Someone who shares the speaker's given name is named in
+  full in their news.
 - Whether someone answers is `openness` (engine) with the numbers in `SOCIETY.openness`:
   stance, charisma level and traits against the cost of what's asked (`Asked`: a fact, a
   topic, or `chop`, a favor), less `openness.mask` while the player is masked, and moved by
@@ -336,7 +344,8 @@ it needs no generator bump. The pieces:
 - People like and dislike things (`SOCIETY.reactions`, evaluated by `reactionTo` with
   `fits`): each `Reaction` that fits adds its `by` (two rapport a point, 0.4 openness) and the
   strongest says why. `asked` is per question (a stranger put off by being asked where they
-  live, a ganger glad to run down rivals); `approach` is per way of starting a chat
+  live, a ganger glad to run down rivals; glad of a question counts only when they answer it,
+  and not when it's asked again, while being put off by it always counts); `approach` is per way of starting a chat
   (`Approach`: chat, compliment, joke, gossip, care, flirt; `Game.talk(id, now, approach)`, with
   `LINES.approaches` for the player's line and the liked/flat/disliked reply). The
   speaker's `touchy`/`keen` vars let answers show it. A new thing to react to is another list

@@ -1859,8 +1859,8 @@ describe('Game', () => {
 
       describe('how people take things', () => {
         /** Someone at the noodle counter, made into whoever the test needs. */
-        function someone(traits: Partial<Person['traits']>, progress: Partial<Progress> = {}) {
-          const at = atWork('b-noodle', 38, 20, progress);
+        function someone(traits: Partial<Person['traits']>, progress: Partial<Progress> = {}, rules: Partial<GameRules> = {}) {
+          const at = atWork('b-noodle', 38, 20, progress, rules);
           const person = at.game.person(at.worker.id) as Person;
           person.traits = { warmth: 0.5, temper: 0.5, loyalty: 0.5, greed: 0.5, courage: 0.5, chatty: 0.5, ...traits };
           return at;
@@ -1913,6 +1913,58 @@ describe('Game', () => {
           expect(notes(game, worker.id).at(-1)).toMatchObject({ tone: 'good', text: expect.stringMatching(new RegExp(`^${dish.name} is \\w+ favorite · Rapport \\+${SOCIETY.gift.favorite} · Charisma \\+3 XP`)) });
           expect(game.insult(worker.id, now + MINUTE)).toBe(true);
           expect(notes(game, worker.id).at(-1)).toMatchObject({ tone: 'bad', text: expect.stringMatching(new RegExp(`Rapport −${SOCIETY.insult.rapport + Math.round(SOCIETY.severity.insult / 3)} · Grudge \\+${SOCIETY.severity.insult}`)) });
+        });
+
+        const REPEATED = /^(Told you already|Weren't you listening|Again\?|You've got a short memory|Write it down|Ha, you forgot|Third time)|Same as last time\.$/;
+
+        it('says who they are the first time, so asking their name after is asking twice; known only by hearsay, they just say it', () => {
+          const { game, now, worker } = someone({});
+          expect(game.talk(worker.id, now)).toBe(true);
+          const greeting = spoken(game, worker.id).find((l) => l.who === 'them')?.text ?? '';
+          const handle = handleOf(worker, world, PEOPLE);
+          expect(greeting.includes(worker.given) || (handle !== null && greeting.includes(handle)), greeting).toBe(true);
+          expect(game.describe(worker.id, now)?.named).toBe(true);
+          game.askFact(worker.id, 'name', now + MINUTE);
+          expect(spoken(game, worker.id).at(-1)?.text).toMatch(REPEATED);
+          // Told of them by someone else: the player has the name, but they never said it, so they just do.
+          const heard = someone({}, { society: { ...freshSociety(), known: { [worker.id]: { met: false, seen: false, told: true, facts: ['name'], log: [] } } } });
+          expect(heard.game.describe(heard.worker.id, heard.now)?.named).toBe(true);
+          heard.game.askFact(heard.worker.id, 'name', heard.now);
+          const said = spoken(heard.game, heard.worker.id).at(-1)?.text ?? '';
+          expect(said).not.toMatch(REPEATED);
+          // Answering anything else first, they say who they are with it.
+          const asked = someone({}, {}, { society: { ...SOCIETY, openness: { ...SOCIETY.openness, answerAt: -99, deflectAt: -100 } } });
+          asked.game.askFact(asked.worker.id, 'job', asked.now);
+          const reply = spoken(asked.game, asked.worker.id).at(-1)?.text ?? '';
+          expect(reply.includes(asked.worker.given) || reply.includes(handleOf(asked.worker, world, PEOPLE) ?? '\u0000'), reply).toBe(true);
+        });
+
+        it('is glad of a question only when they answer it, and only the first time it is asked', () => {
+          const glad = (answerAt: number) => ({ society: { ...SOCIETY, openness: { ...SOCIETY.openness, answerAt, deflectAt: answerAt - 1 }, reactions: { ...SOCIETY.reactions, asked: { ...SOCIETY.reactions.asked, likes: [{ when: {}, by: 2, why: 'Likes talking food' }] } } } });
+          // They won't say: no gladness, on the note or in the rapport.
+          const shy = someone({}, {}, glad(99));
+          shy.game.askFact(shy.worker.id, 'likes', shy.now);
+          expect(notes(shy.game, shy.worker.id).at(-1)?.text ?? '').not.toContain('Likes talking food');
+          expect(shy.game.standingWith(shy.worker.id, shy.now)?.standing.rapport ?? 0).toBeLessThanOrEqual(0);
+          // They say: glad of it, once.
+          const keen = someone({}, {}, glad(-99));
+          keen.game.askFact(keen.worker.id, 'likes', keen.now);
+          expect(notes(keen.game, keen.worker.id).at(-1)?.text).toMatch(/^Likes talking food · Rapport \+/);
+          const once = keen.game.standingWith(keen.worker.id, keen.now)?.standing.rapport ?? 0;
+          keen.game.askFact(keen.worker.id, 'likes', keen.now + MINUTE);
+          expect(spoken(keen.game, keen.worker.id).at(-1)?.text).toMatch(REPEATED);
+          expect(keen.game.standingWith(keen.worker.id, keen.now + MINUTE)?.standing.rapport).toBeLessThanOrEqual(once);
+        });
+
+        it('leaves a compliment that landed at that, when there is nothing more they would bring up', () => {
+          const shut = Object.fromEntries(Object.keys(SOCIETY.openness.cost).map((k) => [k, 50])) as typeof SOCIETY.openness.cost;
+          const { game, now, worker } = someone({ warmth: 0.9 }, { charisma: { level: 3, xp: 0 } }, { society: { ...SOCIETY, openness: { ...SOCIETY.openness, cost: shut } } });
+          game.talk(worker.id, now, 'compliment');
+          const theirs = spoken(game, worker.id).filter((l) => l.who === 'them').map((l) => l.text);
+          // The greeting (with who they are) and the thanks: no brush-off after.
+          expect(theirs).toHaveLength(2);
+          const brushOffs = LINES.brushOff.map((l) => (typeof l === 'string' ? l : l.text));
+          expect(brushOffs.some((b) => theirs[1]?.includes(b.replace(/\{[^}]+\}/g, '')))).toBe(false);
         });
 
         it('goes by a street name once introduced, and tells the player what they want out of life', () => {
