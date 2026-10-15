@@ -65,12 +65,14 @@ describe("the people's own days", () => {
     applyLife(fresh, structuredClone(a.state));
     expect(fresh.people).toEqual(a.population.people);
     expect(sortedTies(fresh)).toEqual(sortedTies(a.population));
-    // Living a day at a time is the same as living them all at once.
-    const once = lived('7f3a29c1', 1, T + 11);
-    const atOnce = generatePeople(once.world, PEOPLE, FOOD.dishes);
-    const state = freshLife();
-    liveUntil(once.world, atOnce, state, LIFE, new Map(atOnce.people.map((p) => [p.id, p.eddies])), T + 11, '7f3a29c1', tierIn(once.world), turf, PEOPLE);
-    expect(state.day).toBe(T + 11);
+    // Living a day at a time is the same as catching up on a month of them at once, as a phone left in a drawer does.
+    const daily = lived('7f3a29c1', 16 + LIFE.catchUpDays);
+    const caught = lived('7f3a29c1', 16);
+    liveUntil(caught.world, caught.population, caught.state, LIFE, caught.base, T + 15 + LIFE.catchUpDays, '7f3a29c1', tierIn(caught.world), turf, PEOPLE);
+    expect(caught.state.day).toBe(daily.state.day);
+    expect(caught.state).toEqual(daily.state);
+    expect(caught.population.people).toEqual(daily.population.people);
+    expect(sortedTies(caught.population)).toEqual(sortedTies(daily.population));
   });
 
   it('has gangs lean on storefronts and jump people, fights that lay the loser up, and friendships made and lost, with every effect on the people', () => {
@@ -318,7 +320,9 @@ describe("the people's own days", () => {
       const worker = population.people.find((p) => p.job.building === shop.id) as Person;
       const scenes = scenesAt([ganger, worker], population, { kind: 'building', id: shop.id }, { hour: 11, weekday: 2, day: T }, world, PEOPLE.turf, (g) => PEOPLE.gangs[g]?.rivals ?? [], sure, world.seed);
       expect(scenes.get(ganger.id)).toMatchObject({ with: worker.id, kind: 'shakedown' });
-      expect(scenes.get(worker.id)).toBeUndefined();
+      // The help has their side of it: leaned on by whoever's leaning.
+      const leaning = LIFE.scenes.shakedown.indexOf(scenes.get(ganger.id)?.phrase ?? '');
+      expect(scenes.get(worker.id)).toEqual({ with: ganger.id, kind: 'leanedOn', phrase: LIFE.scenes.leanedOn[leaning] });
     }
     // Drawn the same for the place and the hour (hours go in threes), and nobody paired with themselves or twice.
     const here = population.people.slice(0, 12);
@@ -327,7 +331,7 @@ describe("the people's own days", () => {
     expect(scenesAt(here, population, spot, { hour: 20, weekday: 2, day: T }, world, PEOPLE.turf, (g) => PEOPLE.gangs[g]?.rivals ?? [], LIFE, world.seed)).toEqual(once);
     for (const [id, scene] of once) {
       expect(scene.with).not.toBe(id);
-      if (scene.kind !== 'shakedown') expect(once.get(scene.with)?.with).toBe(id);
+      expect(once.get(scene.with)?.with).toBe(id);
     }
     void tiesOf;
   });

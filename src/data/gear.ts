@@ -39,7 +39,7 @@ export const GEAR: GearContent = {
     'messenger-bag': { name: 'Messenger bag', slots: 5, maxGrams: 5000, grams: 450, price: 30, note: 'Slung across the chest. Five slots, five kilos; a rifle rides along the strap.', long: true },
     'duffel-bag': { name: 'Duffel bag', slots: 8, maxGrams: 9000, grams: 700, price: 40, note: 'Eight slots and nine kilos, over one shoulder. Long enough for a rifle.', long: true },
     backpack: { name: 'Backpack', slots: 7, maxGrams: 8000, grams: 600, price: 55, note: 'Seven slots, eight kilos, both hands free. A rifle sticks out the top.', long: true },
-    holster: { name: 'Holster', slots: 1, maxGrams: 1500, grams: 250, price: 25, note: 'On the hip: one pistol, revolver or knife, out of your pockets.', only: ['weapon'] },
+    holster: { name: 'Holster', slots: 1, maxGrams: 2000, grams: 250, price: 25, note: 'On the hip: one sidearm or one blade, out of your pockets. Nothing long.', only: ['weapon'] },
     'gun-case': { name: 'Gun case', slots: 3, maxGrams: 12000, grams: 2400, price: 70, note: 'A hard case with a handle. Three slots and twelve kilos, for guns and their rounds only.', long: true, only: ['weapon', 'ammo', 'attachment'] },
     ...GARMENTS,
   },

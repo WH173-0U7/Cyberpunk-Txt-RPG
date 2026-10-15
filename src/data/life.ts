@@ -54,6 +54,8 @@ export const LIFE: LifeRules = {
     crew: ['holding court with', 'running numbers with', 'watching the door with', 'muttering with'],
     coworkers: ['complaining about the boss with', 'on a break with', 'splitting a smoke with'],
     shakedown: ['leaning on', 'collecting from', 'having a quiet word with'],
+    // The help's side of each of those, in the same order.
+    leanedOn: ['being leaned on by', 'paying off', 'getting a quiet word from'],
     rivals: ['staring down', 'squaring up to', 'keeping an eye on'],
   },
 };

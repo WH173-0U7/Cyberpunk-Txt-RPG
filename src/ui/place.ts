@@ -83,7 +83,8 @@ export class PlacePanel {
         this.typed = view.description;
         this.typing?.finish();
         this.typing = typewrite(els.description, view.description, {
-          msPerChar: TYPE_MS,
+          // With motion reduced, it's all there at once.
+          msPerChar: this.reducedMotion ? 0 : TYPE_MS,
           onGlitch: (el, glitchText) => this.handlers.onGlitchText(el, glitchText),
         });
       }

@@ -1214,6 +1214,92 @@ describe('Game', () => {
       expect(outputs(take()).map((o) => o.text)).not.toContain('No room for the change');
     });
 
+    it('puts what was bought in its pocket before the change comes back, so the coins never take its place', () => {
+      // No room in the jacket and one slot to spare in the pants, where the first coin would go too.
+      const snug: GearContent = { ...GEAR, items: { ...GEAR.items, consumable: { grams: 250, perSlot: 1 } }, kinds: { ...GEAR.kinds, jacket: { ...GEAR.kinds.jacket!, slots: 0 }, pants: { ...GEAR.kinds.pants!, slots: 2 } } };
+      const { game, take, outputs } = inside('b-noodle', 38, 20, { gear: snug });
+      const dish = game.menu()?.items.find((i) => i.price % MONEY.noteMin !== 0);
+      if (!dish) throw new Error('every price is a round one');
+      expect(game.canBuy(dish.id)).toBeNull();
+      expect(game.buy(dish.id)).toBe(true);
+      expect(game.inventory.find((i) => i.id === dish.id)?.in).toBe('pants');
+      // The pants are full with it, so the counter keeps the change.
+      const change = Math.ceil(dish.price / MONEY.noteMin) * MONEY.noteMin - dish.price;
+      expect(game.wallet).toMatchObject({ coins: 0, bills: 100 - dish.price - change });
+      expect(outputs(take()).map((o) => o.text)).toEqual([`No room for the change: ${change} €$ stays on the counter.`, `Bought ${dish.name} for ${dish.price} €$.`]);
+      expect(game.carry().pockets.every((p) => !p.over)).toBe(true);
+    });
+
+    it('makes room for change once the coins paid are out of the pocket', () => {
+      // Pants a few grams from full, with two coins in: paying with them first leaves room for the change.
+      const tight: GearContent = { ...GEAR, kinds: { ...GEAR.kinds, pants: { ...GEAR.kinds.pants!, maxGrams: Math.round(GEAR.kinds.wallet!.grams + 100 * GEAR.gramsPerBill + 2 * GEAR.gramsPerCoin) + 1 } } };
+      const game = new Game(world, { ...RULES, gear: tight }, { ...progressInside('b-noodle', 38, 20), money: { bills: 100, coins: 2, account: 0 } });
+      game.start(T0);
+      const { take, outputs } = record(game);
+      const dish = game.menu()?.items.find((i) => i.price > 2 && (i.price - 2) % MONEY.noteMin !== 0);
+      if (!dish) throw new Error('no dish to make change on');
+      expect(game.buy(dish.id)).toBe(true);
+      const change = Math.ceil((dish.price - 2) / MONEY.noteMin) * MONEY.noteMin - (dish.price - 2);
+      expect(game.wallet.coins).toBe(Math.min(change, 2));
+      expect(outputs(take()).some((o) => o.text.startsWith('No room for the change') && change <= 2)).toBe(false);
+    });
+
+    it('drops, eats and puts on the one in the pocket it was picked from', () => {
+      const racked: GearContent = { ...GEAR, racks: { ...GEAR.racks, 'cyberware-outlet': GEAR.racks.stylishly! }, quality: { ...GEAR.quality, 'cyberware-outlet': 'everyday' } };
+      const tacos = [
+        { id: 'taco', kind: 'consumable' as const, name: 'Taco', count: 2, in: 'jacket' },
+        { id: 'taco', kind: 'consumable' as const, name: 'Taco', count: 1, in: 'pants' },
+      ];
+      const game = new Game(world, { ...RULES, gear: racked }, progressInside('b-shop', 32, 20, tacos));
+      game.start(T0);
+      expect(game.drop('taco', 'pants')).toBe(true);
+      expect(game.inventory.filter((i) => i.id === 'taco').map((i) => [i.in, i.count])).toEqual([['jacket', 2]]);
+      expect(game.consume('taco', T0, 'pants')).toBe(false);
+      expect(game.consume('taco', T0, 'jacket')).toBe(true);
+      expect(game.inventory.find((i) => i.id === 'taco')?.count).toBe(1);
+    });
+
+    it('never moves the wallet into a holster, and new legwear has to bear the coins', () => {
+      // A holster on, the jacket full, and hotpants with one golden pocket waiting.
+      const full = Array.from({ length: 4 }, (_, i) => ({ id: `junk-${i}`, kind: 'junk' as const, name: 'Junk', count: 1, in: 'jacket' }));
+      const hotpants = { id: 'golden-pocket-hotpants', kind: 'clothing' as const, name: 'Hotpants', count: 1, in: 'pants', gear: 'golden-pocket-hotpants' };
+      const holster = { id: 'holster-1', kind: 'holster', in: null };
+      const game = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20, [...full, hotpants]), gear: [...GEAR.start, holster], money: { bills: 50, coins: 1, account: 0 } });
+      game.start(T0);
+      game.wear('golden-pocket-hotpants');
+      expect(game.gearSaved.find((p) => p.kind === 'wallet')?.in).not.toBe('holster-1');
+      for (const p of game.carry().pockets) expect(p.over, p.id).toBe(false);
+      // With a pocketful of coins, the hotpants won't take them.
+      const heavy = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20, [hotpants]), money: { bills: 50, coins: 150, account: 0 } });
+      heavy.start(T0);
+      const { take, outputs } = record(heavy);
+      expect(heavy.wear('golden-pocket-hotpants')).toBe(false);
+      expect(outputs(take()).at(-1)?.text).toMatch(/won't bear the weight of your coins/);
+      expect(outfit(heavy.gearSaved, GEAR).worn.legs?.kind).toBe('pants');
+    });
+
+    it('takes what a robbery takes off the victim for good, chip and all', () => {
+      for (let day = 0; day < 14; day++) {
+        const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
+        const game = new Game(world, { ...RULES, startingEddies: 10 }, progressInside('b-noodle', 38, 20));
+        game.start(now);
+        const victim = game.peopleHere(now).find((p) => p.person.eddies > 20 && p.person.chip > 0)?.person;
+        if (!victim) continue;
+        const had = victim.eddies;
+        const cash = game.wallet.eddies;
+        expect(game.rob(victim.id, now)).toBe(true);
+        const took = game.wallet.eddies - cash;
+        expect(took).toBeGreaterThan(0);
+        expect(victim.eddies).toBe(had - took);
+        expect(victim.chip).toBe(0);
+        // Their days, saved and put back, bring them back without it.
+        const again = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), life: JSON.parse(JSON.stringify(game.lifeSaved)) });
+        expect(again.population.people.find((p) => p.id === victim.id)).toMatchObject({ eddies: had - took, chip: 0 });
+        return;
+      }
+      throw new Error('nobody at the noodle bar with a chip on them');
+    });
+
     it('takes a transfer where the counter does, and cash where it does not', () => {
       // A rack of gear takes a transfer when the account covers it; a neighborhood noodle bar wants cash.
       const rack: GearContent = { ...GEAR, racks: { 'cyberware-outlet': ['belt-pouch'] } };
@@ -1249,7 +1335,7 @@ describe('Game', () => {
       expect(game.exchange()).toBe(false);
       expect(game.deposit()).toBe(true);
       expect(game.wallet).toMatchObject({ bills: 0, coins: 0, account: 100 });
-      expect(outputs(take()).at(-1)?.text).toBe('Deposited 100 €$. €$ 100 in the bank.');
+      expect(outputs(take()).at(-1)?.text).toBe('Deposited 100 €$. 100 €$ in the bank.');
       expect(game.deposit()).toBe(false);
       // Out again, in bills.
       expect(game.withdraw(200)).toBe(false);
@@ -1395,7 +1481,7 @@ describe('Game', () => {
       expect(teller.bankChips()).toBe(true);
       expect(teller.wallet).toMatchObject({ account: 100, chips: 0 });
       expect(teller.inventory.map((i) => i.id)).toEqual(['credchip-2']);
-      expect(outBank(takeBank()).at(-1)?.text).toBe('Banked the chip: 90 €$ into the account. €$ 100 in the bank. The teller slides the other one back: not in your name.');
+      expect(outBank(takeBank()).at(-1)?.text).toBe('Banked the chip: 90 €$ into the account. 100 €$ in the bank. The teller slides the other one back: not in your name.');
       expect(teller.bankChips()).toBe(false);
       expect(outBank(takeBank()).at(-1)?.text).toBe("That chip isn't in your name. EuroBank won't touch it.");
       const { game: nothing } = inside('b-bank', 44, 20);
@@ -2115,6 +2201,87 @@ describe('Game', () => {
           return;
         }
         throw new Error('never two people at the noodle bar');
+      });
+
+      it('is ended by someone who has turned on the player, rather than taken out', () => {
+        const sour = (id: string, at: number) => {
+          const society = sweetOn(id, at, 40, { with: id, stage: 'dating', since: at, dates: 1, lastDateAt: 0 });
+          society.standings[id] = { ...society.standings[id]!, rapport: -100, grudge: 150 };
+          return { society };
+        };
+        const { game, now, guest } = evening(sour);
+        expect(game.standingWith(guest.id, now)?.stance).toBe('hostile');
+        const cash = game.wallet.eddies + game.wallet.account;
+        expect(game.date(guest.id, now)).toBe(true);
+        expect(game.romance(now)).toBeNull();
+        expect(game.wallet.eddies + game.wallet.account).toBe(cash);
+        // The spark goes with it, and the note reads as the bad news it is.
+        expect(game.standingWith(guest.id, now)?.standing.spark).toBe(0);
+        expect(game.conversation(guest.id).at(-1)).toMatchObject({ who: 'note', tone: 'bad' });
+      });
+
+      it('dates once a night by the clock, small hours included, and never where the counter is barred', () => {
+        // Out at 23:30 the evening before: half past midnight is still that night.
+        const late = Date.UTC(2077, 9, 13, 0, 30);
+        const night = (id: string) => ({ society: sweetOn(id, late, 40, { with: id, stage: 'dating', since: late - 24 * HOUR, dates: 1, lastDateAt: late - HOUR }) });
+        const probe = new Game(world, { ...RULES, people: everyone }, progressInside('b-noodle', 38, 20));
+        probe.start(late);
+        const guest = probe.peopleHere(late).find((p) => p.person.job.building !== 'b-noodle' && p.person.age >= 18);
+        if (!guest) throw new Error('nobody out at the noodle bar at half past midnight');
+        const game = new Game(world, { ...RULES, startingEddies: 400, people: everyone }, { ...progressInside('b-noodle', 38, 20), ...night(guest.person.id) });
+        game.start(late);
+        const { take, outputs } = record(game);
+        expect(game.date(guest.person.id, late)).toBe(false);
+        expect(outputs(take()).at(-1)?.text).toMatch(/tonight already/);
+        // Barred at the counter: no table for two either.
+        const banned = evening((id, at) => {
+          const society = sweetOn(id, at, 40, { with: id, stage: 'dating', since: at, dates: 1, lastDateAt: 0 });
+          return { society: { ...society, rep: { 'business:b-noodle': { value: -100, at } } } };
+        });
+        expect(banned.game.barred(banned.now)).toBeTruthy();
+        expect(banned.game.date(banned.guest.id, banned.now)).toBe(false);
+        expect(banned.outputs(banned.take()).at(-1)?.text).toBe(banned.game.barred(banned.now));
+      });
+
+      it('takes a no to a mask as a no to the mask: asked again bare-faced, it is not pressing', () => {
+        const gasMask = { id: 'old-plastic-gas-mask-1', kind: 'old-plastic-gas-mask', in: null };
+        const { game, now, guest } = evening((id, at) => ({ society: sweetOn(id, at, 40), gear: [...GEAR.start, gasMask] }));
+        expect(game.askOut(guest.id, now)).toBe(true);
+        expect(game.romance(now)).toBeNull();
+        expect(game.conversation(guest.id).map((l) => l.text).join(' ')).not.toMatch(/Nobody knows it's you/);
+        expect(game.takeOff('old-plastic-gas-mask-1')).toBe(true);
+        expect(game.askOut(guest.id, now + MINUTE)).toBe(true);
+        expect(game.romance(now + MINUTE)?.id).toBe(guest.id);
+      });
+
+      it('counts being caught this time round, whoever with, and not what came before', () => {
+        for (let day = 0; day < 14; day++) {
+          const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
+          const probe = new Game(world, { ...RULES, people: everyone }, progressInside('b-noodle', 38, 20));
+          probe.start(now);
+          const here = probe.peopleHere(now);
+          const partner = here.find((p) => p.person.job.building === 'b-noodle')?.person;
+          const others = here.filter((p) => p.person.id !== partner?.id && p.person.age >= 18).map((p) => p.person);
+          if (!partner || others.length < 2) continue;
+          const [a, b] = others as [Person, Person];
+          const seeing = () => sweetOn(partner.id, now, 60, { with: partner.id, stage: 'dating', since: now, dates: 1, lastDateAt: 0 });
+          // Once with one, once with another: twice, and they end it.
+          const game = new Game(world, { ...RULES, people: everyone }, { ...progressInside('b-noodle', 38, 20), society: seeing() });
+          game.start(now);
+          game.talk(a.id, now, 'flirt');
+          game.talk(b.id, now, 'flirt');
+          expect(game.talk(partner.id, now + MINUTE)).toBe(true);
+          expect(game.romance(now + MINUTE)).toBeNull();
+          // Caught three times before this began: forgiven, or they'd not have said yes.
+          const before = seeing();
+          before.memories = { [partner.id]: [{ kind: 'cheated', at: now - HOUR, about: a.id, times: 3, said: 0 }] };
+          const again = new Game(world, { ...RULES, people: everyone }, { ...progressInside('b-noodle', 38, 20), society: before });
+          again.start(now);
+          expect(again.talk(partner.id, now)).toBe(true);
+          expect(again.romance(now)?.id).toBe(partner.id);
+          return;
+        }
+        throw new Error('never three people at the noodle bar');
       });
 
       it('knows someone\'s type once asked, and saves who the player goes by and who they see', () => {

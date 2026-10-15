@@ -47,7 +47,7 @@ export interface LifeEvent {
   where: Spot | null;
 }
 
-export type SceneKind = 'couple' | 'family' | 'friends' | 'crew' | 'coworkers' | 'shakedown' | 'rivals';
+export type SceneKind = 'couple' | 'family' | 'friends' | 'crew' | 'coworkers' | 'shakedown' | 'leanedOn' | 'rivals';
 
 /** What a pair of people here are seen doing: the phrase, and the other one's id ("arguing with" them). */
 export interface Scene {
@@ -105,6 +105,8 @@ export interface LifeState {
   events: LifeEvent[];
   /** Eddies people have now, where that isn't what they started with. */
   eddies: Record<string, number>;
+  /** What's on someone's credchip now, where it isn't what they started with (0: it was taken off them). */
+  chips: Record<string, number>;
   /** Until which day someone is laid up. */
   hurt: Record<string, number>;
   /** A gang someone has come to hate. */
@@ -126,7 +128,7 @@ export interface LifeState {
 }
 
 export function freshLife(): LifeState {
-  return { day: -1, nextId: 1, events: [], eddies: {}, hurt: {}, hates: {}, made: [], broken: [], tills: {}, treasuries: {}, jobs: {}, gangs: {}, dead: {}, since: {} };
+  return { day: -1, nextId: 1, events: [], eddies: {}, chips: {}, hurt: {}, hates: {}, made: [], broken: [], tills: {}, treasuries: {}, jobs: {}, gangs: {}, dead: {}, since: {} };
 }
 
 const FAMILY: TieKind[] = ['spouse', 'partner', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew', 'kin'];
@@ -135,12 +137,12 @@ export function tieKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-/** Puts what has happened onto a population made fresh for the seed: ties made and broken, eddies, hates, jobs and gangs, who is laid up and who is dead. Anyone the city no longer has is forgotten. */
+/** Puts what has happened onto a population made fresh for the seed: ties made and broken, eddies and chips, hates, jobs and gangs, who is laid up and who is dead. Anyone the city no longer has is forgotten. */
 export function applyLife(population: Population, state: LifeState): void {
   const ids = new Set(population.people.map((p) => p.id));
   state.made = state.made.filter((t) => ids.has(t.from) && ids.has(t.to));
   state.broken = state.broken.filter((key) => key.split('|').every((id) => ids.has(id)));
-  for (const key of ['eddies', 'hurt', 'hates', 'jobs', 'gangs', 'dead'] as const) for (const id of Object.keys(state[key])) if (!ids.has(id)) delete state[key][id];
+  for (const key of ['eddies', 'chips', 'hurt', 'hates', 'jobs', 'gangs', 'dead'] as const) for (const id of Object.keys(state[key])) if (!ids.has(id)) delete state[key][id];
   for (const key of Object.keys(state.since)) if (!key.split('|').every((id) => ids.has(id))) delete state.since[key];
   state.events = state.events.filter((e) => e.who.every((id) => ids.has(id)));
   const broken = new Set(state.broken);
@@ -154,6 +156,8 @@ export function applyLife(population: Population, state: LifeState): void {
   for (const person of population.people) {
     const eddies = state.eddies[person.id];
     if (eddies !== undefined) person.eddies = eddies;
+    const chip = state.chips[person.id];
+    if (chip !== undefined) person.chip = chip;
     const hates = state.hates[person.id];
     if (hates !== undefined) person.hates = hates;
     const hurt = state.hurt[person.id];
@@ -198,8 +202,9 @@ export function liveUntil(world: World, population: Population, state: LifeState
     economyDay({ world, population, state, rules: rules.economy, tier, turf, base, seed, day, rng });
     for (const district of Object.keys(world.districts)) happened.push(...liveDay(world, population, state, rules, district, day, rng, ctx));
     state.day = day;
+    // Forgotten day by day, so days caught up on all at once come out as they would have one at a time.
+    state.events = state.events.filter((e) => e.day > day - (rules.lasting[e.kind] ?? rules.keepDays));
   }
-  state.events = state.events.filter((e) => e.day > today - (rules.lasting[e.kind] ?? rules.keepDays));
   for (const person of population.people) {
     const hurt = state.hurt[person.id];
     if (hurt !== undefined) person.hurtUntil = hurt;
@@ -301,6 +306,11 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
     person.diedOn = day;
     delete state.hurt[person.id];
     delete person.hurtUntil;
+    // Gone from the rest of the day, too: nobody falls for, falls out with or is recruited by the dead.
+    for (const list of [locals, gangers, civilians, workers]) {
+      const at = list.indexOf(person);
+      if (at >= 0) list.splice(at, 1);
+    }
   };
   const spot = (person: Person): Spot | null => person.likes.hangout ?? (person.job.building ? { kind: 'building', id: person.job.building } : null);
   const at = (building: Building): Spot => ({ kind: 'building', id: building.id });
@@ -617,7 +627,10 @@ export function scenesAt(present: Person[], population: Population, spot: Spot, 
     if (!g.gang || taken.has(g.id) || !local.has(g.gang)) continue;
     const worker = present.find((p) => !taken.has(p.id) && !p.gang && spot.kind === 'building' && p.job.building === spot.id);
     if (worker && rng.chance(rules.leaning)) {
-      scenes.set(g.id, { with: worker.id, phrase: rng.pick(rules.scenes.shakedown), kind: 'shakedown' });
+      // The same moment from both sides: the ganger leaning, the help leaned on.
+      const at = rng.int(0, rules.scenes.shakedown.length - 1);
+      scenes.set(g.id, { with: worker.id, phrase: rules.scenes.shakedown[at] ?? '', kind: 'shakedown' });
+      scenes.set(worker.id, { with: g.id, phrase: rules.scenes.leanedOn[at] ?? rules.scenes.leanedOn[0] ?? '', kind: 'leanedOn' });
       taken.add(g.id);
       taken.add(worker.id);
     }
