@@ -265,14 +265,14 @@ function drawSea(ctx: CanvasRenderingContext2D, coast: NonNullable<CityLayout['c
   // Stretch well past the frame so the water reaches the canvas edge at any zoom.
   const line = (offset: number) => {
     const points: Px[] = [];
-    for (let t = -40; t <= 140; t += 1.5) points.push(view.project(fromCoastFrame(coast.side, t, shore(t) - offset)));
+    for (let t = -40; t <= WORLD + 40; t += 1.5) points.push(view.project(fromCoastFrame(coast.side, t, shore(t) - offset)));
     return points;
   };
   const trace = (points: Px[]) => points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
 
   const coastline = line(0);
   ctx.beginPath();
-  trace([...coastline, view.project(fromCoastFrame(coast.side, 140, -60)), view.project(fromCoastFrame(coast.side, -40, -60))]);
+  trace([...coastline, view.project(fromCoastFrame(coast.side, WORLD + 40, -60)), view.project(fromCoastFrame(coast.side, -40, -60))]);
   ctx.closePath();
   ctx.fillStyle = SEA;
   ctx.fill();
@@ -328,56 +328,11 @@ function drawBuildings(ctx: CanvasRenderingContext2D, world: World, view: View, 
   for (const { r, rise } of raised) ctx.rect(r.x + rise.x * 0.7, r.y - rise.y * 0.12, r.w, r.h);
   ctx.fill();
 
-  // On the move and zoomed out, every building is a few pixels across: drawn in a handful of
-  // batches rather than one by one (the city has hundreds), the detail back once the map is still.
-  if (view.fast && view.scale < DETAIL_SCALE) {
-    drawRaisedInBatches(ctx, raised, world, known);
-    for (const { b, r, rise } of raised) hits.push({ id: b.id, footprint: r, rise });
-    return hits;
-  }
   for (const { b, r, rise } of raised) {
     drawRaised(ctx, b, r, rise, view, world.districts[b.district], known.has(b.district));
     hits.push({ id: b.id, footprint: r, rise });
   }
   return hits;
-}
-
-/** Raised buildings as a few shapes: the walls, the roofs, and each district's tint on its roofs. */
-function drawRaisedInBatches(ctx: CanvasRenderingContext2D, raised: Array<{ b: Building; r: Box; rise: Px }>, world: World, known: Set<string>): void {
-  const south = new Path2D();
-  const west = new Path2D();
-  const roofs = new Path2D();
-  const tints = new Map<string, Path2D>();
-  for (const { b, r, rise } of raised) {
-    const x = r.x + rise.x;
-    const y = r.y + rise.y;
-    south.moveTo(r.x, r.y + r.h);
-    south.lineTo(r.x + r.w, r.y + r.h);
-    south.lineTo(x + r.w, y + r.h);
-    south.lineTo(x, y + r.h);
-    south.closePath();
-    west.moveTo(r.x, r.y);
-    west.lineTo(r.x, r.y + r.h);
-    west.lineTo(x, y + r.h);
-    west.lineTo(x, y);
-    west.closePath();
-    roofs.rect(x, y, r.w, r.h);
-    const district = world.districts[b.district];
-    const tint = rgba(district?.theme.primary ?? '#00f0ff', (b.kind === 'derelict' ? 0.04 : 0.12) * (known.has(b.district) ? 1 : 0.35));
-    let path = tints.get(tint);
-    if (!path) tints.set(tint, (path = new Path2D()));
-    path.rect(x, y, r.w, r.h);
-  }
-  ctx.fillStyle = WALL_SOUTH;
-  ctx.fill(south);
-  ctx.fillStyle = WALL_WEST;
-  ctx.fill(west);
-  ctx.fillStyle = ROOF;
-  ctx.fill(roofs);
-  for (const [color, path] of tints) {
-    ctx.fillStyle = color;
-    ctx.fill(path);
-  }
 }
 
 function footprint(b: Building, view: View): Box {

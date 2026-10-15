@@ -16,7 +16,7 @@ export interface Theme {
   secondary: string;
 }
 
-/** Map coordinates. Both axes run 0–100; the map stretches them to fit the screen. */
+/** Map coordinates. Both axes run 0–`WORLD` (geography.ts); the map stretches them to fit the screen. */
 export interface Point {
   x: number;
   y: number;
@@ -77,7 +77,7 @@ export interface Whereabouts extends Point {
   building: string | null;
 }
 
-/** The street grid every location sits on. Positions run 0–100 like map coordinates. */
+/** The street grid every location sits on. Positions run 0–`WORLD` like map coordinates. */
 export interface CityLayout {
   /** Streets running north–south, by x position. */
   avenues: number[];

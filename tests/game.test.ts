@@ -2131,6 +2131,8 @@ describe('Game', () => {
             const life = over.length ? { life: { ...freshLife(), broken: over } } : {};
             const game = new Game(world, { ...RULES, startingEddies: 400, people: everyone, ...rules }, { ...progressInside('b-noodle', 38, 20), ...life, ...progress(guest.person.id, now) });
             game.start(now);
+            // And still free once the day is lived (the people's own days could pair them off).
+            if (tiesOf(game.population, guest.person.id).some((t) => t.kind === 'spouse' || t.kind === 'partner')) continue;
             return { game, now, guest: guest.person, ...record(game) };
           }
         }

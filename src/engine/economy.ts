@@ -117,10 +117,6 @@ export interface EconomyDay {
   rng: Rng;
 }
 
-/**
- * One day of the economy: trade and spending into the tills, living off what people hold,
- * the gangs' cut, and on payday a week's money for everyone.
- */
 /** Where in its tier's range a storefront's usual walk-in trade falls, drawn once a storefront and kept. */
 const usuals = new WeakMap<World, Map<string, number>>();
 function usualOf(world: World, seed: string, id: string): number {
@@ -131,6 +127,10 @@ function usualOf(world: World, seed: string, id: string): number {
   return usual;
 }
 
+/**
+ * One day of the economy: trade and spending into the tills, living off what people hold,
+ * the gangs' cut, and on payday a week's money for everyone.
+ */
 export function economyDay({ world, population, state, rules, tier, turf, base, seed, day, rng }: EconomyDay): void {
   const storefronts = world.buildings.filter((b) => b.business);
   const byId = new Map(storefronts.map((b) => [b.id, b]));

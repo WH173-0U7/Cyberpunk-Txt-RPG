@@ -58,7 +58,8 @@ them, about where they are on the real map, with different places, streets and w
 - The map opens on the player (`OPENING_ZOOM`), and as it zooms in the district names fade
   into their neighborhoods' (those with a place the player knows), which fade in turn; the
   closest zoom is as close as it was on a smaller map (`MAX_ZOOM`). While it moves it draws at
-  one pixel a pixel, and zoomed out its buildings in a few batches (`drawRaisedInBatches`).
+  one pixel a pixel. A district's name goes in the middle of its places, or on its own
+  neighborhood nearest it when that middle is someone else's ground (the Badlands').
 
 ## Inside buildings
 
@@ -213,7 +214,7 @@ it needs no generator bump. The pieces:
   population's list is settled once at the end, in the order changing it there and then
   would have left (so anything in a day reads ties from the book, never `population.ties`);
   the book and the hearts are kept between days with the population (`keptFor`), a heart
-  worked out again only when what it's drawn from (spouses, gang, work, grudge) changes. A
+  worked out again only when what it's drawn from (spouses, gang, work and role, grudge) changes. A
   save's records
   are copied in with JSON (`copyOf`), never `structuredClone`, which in V8 makes the first
   write to each key of a big record slow (seconds, for a city's eddies).
@@ -373,7 +374,10 @@ it needs no generator bump. The pieces:
   puts every given name of a community's pool with every family name of it against the
   wiki's character pages (`tests/fixtures/canon-characters.txt`, the titles of its 2077,
   Edgerunners, comic, fixer and vendor categories), and checks the pools are big enough for
-  a city: nobody needs a number to tell them apart. Grow a pool when a city grows.
+  a city: nobody needs a number to tell them apart. Grow a pool when a city grows, knowing
+  that any change to a pool renames everyone (names are picks from it, and ids are names), so
+  saved people no longer match: it needs `GENERATOR_VERSION` bumped like a change to the city,
+  for saves to start over rather than lose their people quietly.
 - People have hearts and the player can win one (`src/engine/romance.ts`, numbers in
   `SOCIETY.romance`). `heartOf(person)` (people.ts, on its own stream, from `PEOPLE.hearts`)
   is whom they're drawn to by pronouns (none at all for a few; a spouse always), the way in

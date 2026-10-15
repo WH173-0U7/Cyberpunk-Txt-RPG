@@ -1,6 +1,6 @@
 import { blockAt } from '../engine/buildings';
 import { streetPath } from '../engine/generate';
-import { seaTest, WORLD } from '../engine/geography';
+import { districtAt, seaTest, WORLD } from '../engine/geography';
 import { pathLength, pathUpTo } from '../engine/streets';
 import { tripProgress } from '../engine/travel';
 import type { Building, District, Location, MapState, Point, Station, Trip, World } from '../engine/types';
@@ -637,7 +637,12 @@ export class CityMap {
     }
     const base = Math.max(11, Math.min(22, Math.min(this.width, this.height) / 20));
     const wanted: Array<{ id: string; text: string; at: Point; color: string; alpha: number; size: number }> = [];
-    if (districtFade > 0) for (const d of districts) wanted.push({ id: d.id, text: d.name.toUpperCase(), at: d, color: d.theme.primary, alpha: 0.42 * districtFade, size: base });
+    // A district's name goes in the middle of its places, unless that's someone else's ground (the
+    // Badlands wrap the city, so theirs is downtown): then on its own neighborhood nearest the middle.
+    const all = Object.values(this.world?.districts ?? {});
+    const middleOf = (d: District): Point =>
+      districtAt(all, d) === d || d.subdistricts.length === 0 ? d : d.subdistricts.reduce((best, s) => (Math.hypot(s.x - d.x, s.y - d.y) < Math.hypot(best.x - d.x, best.y - d.y) ? s : best));
+    if (districtFade > 0) for (const d of districts) wanted.push({ id: d.id, text: d.name.toUpperCase(), at: middleOf(d), color: d.theme.primary, alpha: 0.42 * districtFade, size: base });
     if (hoodFade > 0) {
       for (const d of districts) {
         for (const hood of d.subdistricts) {

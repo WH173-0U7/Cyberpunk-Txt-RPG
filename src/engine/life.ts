@@ -197,10 +197,10 @@ export function liveUntil(world: World, population: Population, state: LifeState
   const from = state.day < 0 ? today - 1 : Math.max(state.day + 1, today - rules.catchUpDays + 1);
   const happened: LifeEvent[] = [];
   const kept = keptFor(population, state);
-  // A heart stays worked out while what it's drawn from stays the same: their spouse, their gang, their work, their grudge.
+  // A heart stays worked out while what it's drawn from stays the same: their spouse, their gang, their work and role, their grudge.
   const heart = (p: Person): Heart => {
     const spouses = (book.web.get(p.id) ?? []).filter((t) => t.kind === 'spouse').map((t) => t.to);
-    const stamp = `${spouses.join(',')}|${p.gang ?? ''}|${p.job.building ?? ''}|${p.hates ?? ''}`;
+    const stamp = `${spouses.join(',')}|${p.gang ?? ''}|${p.job.building ?? ''}|${p.job.role}|${p.hates ?? ''}`;
     const known = kept.hearts.get(p.id);
     if (known?.stamp === stamp) return known.heart;
     const h = heartOf(p, world, content, population, (id) => book.web.get(id) ?? []);
