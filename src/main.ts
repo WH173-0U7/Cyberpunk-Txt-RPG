@@ -434,6 +434,18 @@ function buildingOf(id: string): Building | undefined {
 }
 
 /** The spot a pick means going to. Buildings and bits of street are reached from the nearest street. */
+/** The walk to a building, planned once for each spot the player is near (the planner walks the streets): for the shift on the status line. */
+let walkCache: { key: string; minutes: number } | null = null;
+function walkTo(building: string, now: number): number {
+  const at = game.positionAt(now);
+  const key = `${building}|${Math.round(at.x)},${Math.round(at.y)}`;
+  if (walkCache?.key !== key) {
+    const to = destinationOf({ kind: 'building', id: building });
+    walkCache = { key, minutes: (to && game.plan(to, 'foot', now)?.minutes) || 0 };
+  }
+  return walkCache.minutes;
+}
+
 function destinationOf(t: Target): Whereabouts | null {
   const { world } = game;
   switch (t.kind) {
@@ -1055,8 +1067,7 @@ function showStatus(now: number): void {
   map.setWork(jobs.map((j) => ({ id: j.building.id, name: j.building.name, open: j.open })));
   // A shift open somewhere else: how far, on foot.
   const due = jobs.find((j) => j.open && !j.here);
-  const at = game.positionAt(now);
-  const away = due ? Math.round(Math.hypot(due.building.x + due.building.w / 2 - at.x, due.building.y + due.building.h / 2 - at.y) * TRAVEL.walkMinutesPerUnit) : 0;
+  const away = due ? walkTo(due.building.id, now) : 0;
   const pass = wallet.passUntil > now;
   const refill = energy.nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(energy.nextPointAt - now)}`;
   const condition = drunk.stage ? `${drunk.stage.label} · sober in ${formatCountdown((drunk.soberAt ?? now) - now)}` : '';

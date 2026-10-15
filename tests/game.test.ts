@@ -1916,13 +1916,13 @@ describe('Game', () => {
       });
 
       it('hands in notice at a job whose hours clash, with a good word from a boss who liked the player, and starts a rung up on experience', () => {
-        const deck = world.buildings.find((b) => b.id === 'b-deck') as Building;
-        const noodle = world.buildings.find((b) => b.id === 'b-noodle') as Building;
-        const probe = new Game(world, RULES, progressInside('b-deck', 26, 20));
+        const deck = barWorld.buildings.find((b) => b.id === 'b-deck') as Building;
+        const noodle = barWorld.buildings.find((b) => b.id === 'b-noodle') as Building;
+        const probe = new Game(barWorld, RULES, progressInside('b-deck', 26, 20));
         const old = bossOf(noodle, probe.population) as Person;
-        const first = withBoss('b-deck', 26, 20);
+        const first = withBoss('b-deck', 26, 20, {}, true, barWorld);
         const society = { ...first.game.societySaved, standings: { ...first.game.societySaved.standings, [old.id]: { ...friendOf(old.id, first.now).standings[old.id]! } } };
-        const { game, now, boss, take, outputs } = withBoss('b-deck', 26, 20, { society, jobs: [noodleJob({ owed: 48, trust: 3, shifts: 3 })], career: { netrunning: 12 } });
+        const { game, now, boss, take, outputs } = withBoss('b-deck', 26, 20, { society, jobs: [noodleJob({ owed: 48, trust: 3, shifts: 3 }), { building: 'b-bar', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 }], career: { netrunning: 12 } }, true, barWorld);
         expect(game.workWith(boss.id)).toBe('switch');
         expect(game.switchingFrom(boss.id)).toBe('Test Noodles');
         const account = game.wallet.account;
@@ -1938,7 +1938,8 @@ describe('Game', () => {
         expect(game.standingWith(old.id, now)?.standing.rapport).toBe(rapport - JOBS.notice);
         expect(game.societySaved.memories[old.id]?.some((m) => m.kind === 'notice')).toBe(true);
         // Twelve shifts in the line are six of trust, and the word four more: a rung up, not two.
-        expect(game.jobsSaved).toHaveLength(1);
+        // The new day job takes the old one's place; the bar stays the side gig.
+        expect(game.jobsSaved.map((j) => j.building)).toEqual(['b-deck', 'b-bar']);
         expect(game.jobsSaved[0]).toMatchObject({ building: 'b-deck', rung: 1, trust: 10 });
         expect(game.jobStatus(now)?.rung.id).toBe('net-counter');
         expect(deck.category).toBe('netrunning');

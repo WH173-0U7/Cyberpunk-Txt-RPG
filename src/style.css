@@ -2207,6 +2207,24 @@ button {
   background: color-mix(in srgb, #ffd84d 12%, transparent);
   color: #ffd84d;
 }
+/* A day on the roster: lit in the work pin's yellow when the player is on, dim when off. */
+.person-chip.person-day {
+  min-width: 40px;
+  padding: 6px 0;
+  border-color: color-mix(in srgb, var(--muted) 45%, transparent);
+  background: transparent;
+  color: var(--muted);
+  text-align: center;
+}
+.person-chip.person-day.is-on {
+  border-color: #ffd84d;
+  background: color-mix(in srgb, #ffd84d 16%, transparent);
+  color: #ffd84d;
+}
+.person-chip.person-day:hover,
+.person-chip.person-day:focus-visible {
+  background: color-mix(in srgb, #ffd84d 26%, transparent);
+}
 .person-chip.is-danger {
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, transparent);

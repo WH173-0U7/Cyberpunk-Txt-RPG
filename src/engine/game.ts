@@ -2111,10 +2111,12 @@ export class Game {
       const reply = replyTo(openness('hire', stance, this.charismaState.level, person.traits, society.openness), society.openness, rng);
       if (reply === 'answer') {
         hired = true;
+        // The new job takes the place of the one handed in: a day job for a day job.
+        const slot = leaving ? this.jobs.indexOf(leaving) : this.jobs.length;
         if (leaving) this.leaveJob(leaving, now, 'notice');
         const today = shiftDay(this.clockAt(now), ladder.hours).day;
         const job: JobState = { building: runs.id, rung: start.rung, trust: start.trust, shifts: 0, lastShiftDay: -1, days: [...this.daysOf({} as JobState, ladder)], owed: 0, raise: 0, missed: 0, checked: today, paidOn: today - ((weekdayOf(today) - this.rules.life.economy.payday + 7) % 7) };
-        this.jobs.push(job);
+        this.jobs.splice(slot, 0, job);
         // A second job is a side gig; the main job's boss hasn't heard of it yet.
         if (this.jobs.length > 1) (this.jobs[0] as JobState).heard = false;
         this.remember(id, { kind: 'hired', at: now, what: runs.name }, now);
@@ -2122,7 +2124,7 @@ export class Game {
         // The boss has a name and a job now, as far as the player's concerned.
         learnFact(this.society, id, 'name');
         learnFact(this.society, id, 'job');
-        const what = this.jobs.length > 1 ? 'a side gig' : 'work';
+        const what = this.jobs.indexOf(job) > 0 ? 'a side gig' : 'work';
         this.say(`You've got ${what} at ${runs.name}: ${first.title.toLowerCase()}, ${pay} €$ a shift, ${this.shiftHours(ladder.hours)}, ${this.daysWord(job.days ?? [])}. Pay comes on payday.${reference && oldBoss ? ` ${oldBoss.given} put in a word for you.` : ''}`, 'system');
       } else {
         this.speech(person, reply === 'deflect' ? deflect(speaker, 'hire', lines, rng) : line(lines.work.refuse, speaker, rng), now);

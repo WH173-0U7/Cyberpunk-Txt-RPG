@@ -580,33 +580,60 @@ them up:
 
 ## Work
 
-Eateries and clothing stores hire; the player climbs a ladder of rungs at one place at a time:
+Every storefront hires; the player holds up to two jobs, a day job and a side gig on hours
+that don't clash, and climbs a ladder of rungs at each:
 
 - `src/engine/jobs.ts` is the engine: `bossOf(building, population)` (the worker whose role
   says they run it, else the first one; every storefront has exactly one), `bossAt(person)`
-  (the hiring storefront they run, if any), `ladderFor(building)` (by category, from
-  `JOBS.ladders`), `rungOf`/`nextRung`/`canPromote` (trust against the next rung's `at`, and
-  the boss's stance in `promoteAt`), `shiftOpen(hour)` and `shiftPay(rung, quality)`. The
-  numbers (rungs, pay, energy, hours, tiers, trust and rapport per shift) are in
-  `src/data/jobs.ts`; a new kind of place that hires is another ladder there, keyed by
-  building category.
-- `Game` keeps the job (`JobState`: building, rung, trust, shifts, the clock day of the last
-  shift; saved as `job`, dropped when the building is gone or no longer hires).
-  `Game.jobStatus(now)` is where it stands (rung, next rung, pay, `here`, `blocked`: away,
-  done today, or closed); `Game.workWith(id)` says what a person's card offers (`hire` for a
-  boss, `quit` for the player's own boss); `Game.askForWork(id, now)` is an ask like any
-  other (`openness` with the `hire` cost, pressing, the mask's own refusal, no second job);
-  `Game.work(now)` is a shift (energy through `spendEnergy`, pay to the account, trust,
-  `JOBS.rapport` with the boss and `JOBS.rep` with the place, the boss's line if they're
-  about, and the promotion when `canPromote`); `Game.quit(now)`; a private `checkFired(now)`
-  lets the player go once the place bars them (called after a robbery or an insult lands).
-  Everything it says comes from `LINES.work` and `LINES.you.work`/`quit`, with `{title}`,
+  (the hiring storefront they run, if any), `lineOf`/`ladderFor(building)` (a `Ladder` by
+  business id, else by category, from `JOBS.ladders`: its `hours` and `rungs`),
+  `rungOf`/`nextRung`/`canPromote` (trust against the next rung's `at`, and the boss's stance
+  in `promoteAt`), `shiftOpen(hour, hours)` and `shiftDay(clock, hours)` (a night shift's
+  small hours count as the day it started), `overnight`, `overlaps` (two jobs' hours),
+  `startOf` (where a new job starts: `JOBS.experience` of the shifts worked in its line and
+  a `reference`, short of the top rung) and `shiftPay(rung, quality)`. The numbers (rungs,
+  pay, energy, hours, the `roster` a new job starts with, tiers, trust and rapport per shift,
+  `quit` and `notice`, `noShow`, `raise`, `moonlight`) are in `src/data/jobs.ts`; a new kind
+  of place that hires is another ladder there, keyed by business id or category (the jobs
+  test wants one for every category with a business).
+- `Game` keeps the jobs (`JobState`: building, rung, trust, shifts, the shift day of the
+  last shift, and its `days`, `owed`, `raise`, `missed`, `checked`, `paidOn`, `heard`; saved
+  as `jobs`, the main one also as `job` for older builds, dropped when the building is gone
+  or no longer hires) and the shifts worked in each line (`career`, saved). The main job is
+  `jobs[0]`, a side gig after it. `Game.jobsStatus(now)` is where each stands (rung, next,
+  pay, `side`, `hours`, `days`, `owed`, `here`, `open`, `blocked`: away, off, done today, or
+  closed); `Game.jobStatus(now)` is the one here, else the main one. `Game.workWith(id)` says
+  what a person's card offers (`hire`; `switch` when taking it means handing one in, its
+  hours clashing or no room for another, `switchingFrom` naming it; `quit` for a boss of
+  the player's); `Game.askForWork(id, now)` is an ask like any other (`openness` with the
+  `hire` cost, pressing, the mask's own refusal, a boss with `quit` or `fired` on their mind),
+  and a yes hands in the job it displaces (`notice`, a memory of its own) with a word from
+  its boss if they liked the player. `Game.work(now)` is a shift at the job here on a
+  rostered day in its hours (energy through `spendEnergy`, its pay onto `owed`, trust,
+  `JOBS.rapport` with the boss and `JOBS.rep` with the place, a shift more in `career`, the
+  boss's line if they're about, the promotion when `canPromote`, and the main boss hearing
+  of a side gig, which a loyal one minds). `Game.setRoster(bossId, days, now)` sets the days;
+  `Game.quit(now, bossId?)` walks out. Every way a job ends goes through `Game`'s private
+  `leaveJob` (`quit`, `notice` or `fired`), which pays out what's owed (`payOut`: into the account, out of
+  the place's till). The private `punchClock(now)` (from `start` and `tick`)
+  goes over the days since each job was last checked: a rostered day with no shift costs
+  trust and rapport, `noShow.fireAfter` in a row and the player's let go; on payday's morning
+  (`LIFE.economy.payday`) what's owed is paid from the till, with a raise for a week worked
+  at a thriving place. `checkFired(now)` lets the player go from every job at a place that
+  bars them (called after a robbery or an insult lands). Everything said comes from
+  `LINES.work` (`hire`, with `experienced` and `referee` in the vars, `notice`,
+  `moonlight`/`sideGig` with `{gig}`) and `LINES.you.work`/`quit`/`notice`, with `{title}`,
   `{work}` and `{pay}` in the speaker's vars; the event is `jobChanged`.
-- The UI: a boss's card gets a **Work** command (`Picker` `work`: an `Ask for work` or `Quit`
-  chip, actions `hire`/`quit`); the panel inside the workplace gets a **Work** action
-  (`ActionId` `work`) whose subtitle is the pay and energy, or why not now; the status
-  drop-down names the job. People's troubles to help with are not here yet: when they are,
-  they hang off the same card, behind a command.
+- The UI: a boss's card gets a **Work** command (`Picker` `work`): `Ask for work` (with
+  "Means notice at …" over it for a switch), or for the player's own boss the days of the
+  week as toggles (`data-day`, `onRoster`) and `Quit`; the panel inside the workplace gets a
+  **Work** action (`ActionId` `work`) whose subtitle is the pay and energy, or why not now;
+  the status drop-down has a row per job, **Work** and **Side gig**. The map carries a work
+  pin on each workplace (`CityMap.setWork`, from `showStatus`), lit while a shift there is
+  open; tapping it picks the building like a block, and again goes. The line under the energy
+  bar says "Shift on · N min" (the planned walk, `walkTo`, cached per spot) while one is open
+  elsewhere. People's troubles to help with are not here yet: when they are, they hang off
+  the same card, behind a command.
 
 ## Inebriation
 
@@ -664,7 +691,7 @@ here · Restaurant", "Inside · Block G1"), never the district, and has no title
 building or at a place (the target view keeps its own, with the district, since it's
 elsewhere). The energy bar has no words: one line under it (`src/ui/status.ts`, filled by
 `showStatus` in `main.ts` on every tick) says the figure, the level, when the next point
-comes, and anything the matter (drunk, masked, the job's rung); tapping it unfolds
+comes, and anything the matter (drunk, masked, a shift on elsewhere and the walk there, else the job's rung); tapping it unfolds
 everything else about the player: experience, charisma, eddies and the bank, the pass, the
 job, the condition, the mask, every reputation, the map count, the weather, the date, and
 last the **Settings** link (the drop-down's `foot`, which `StatusPanel.render` keeps at the
@@ -673,7 +700,7 @@ on the header, the map's head (the save light and the one button: the inventory,
 cash on it) or the People overlay's strip (only what people here can see: the mask). The
 map has no footer; it zooms by pinch, scroll or a tap on a block, and its only button, the
 one that finds the player (`CityMap`'s `updateControls`), shows while they're off the
-screen. Buttons go away when they can, not into a corner.
+screen. Where the player works is a pin on the map, not a button (see Work). Buttons go away when they can, not into a corner.
 
 ## The panel under the map
 
