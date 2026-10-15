@@ -177,6 +177,11 @@ interface Snapshot {
   xp: number;
 }
 
+/** A copy of plain save data, the way a save is read back. */
+function copyOf<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data)) as T;
+}
+
 /**
  * The game rules and state. It never touches the DOM: everything the player
  * sees or feels is driven by the events it emits. Time comes in as `now`
@@ -237,10 +242,12 @@ export class Game {
     this.drunkState = progress?.inebriation ? { ...progress.inebriation } : freshInebriation();
     this.population = generatePeople(world, rules.people, rules.food.dishes);
     this.baseEddies = new Map(this.population.people.map((p) => [p.id, p.eddies]));
-    // The days the people have had since the city was made are put back onto them.
-    this.life = progress?.life ? { ...freshLife(), ...structuredClone(progress.life) } : freshLife();
+    // The days the people have had since the city was made are put back onto them. Copied the
+    // way a save is read (JSON): a structured clone of a record with a key per person makes
+    // every first write to it slow in V8, which stalled the first day lived after loading for seconds.
+    this.life = progress?.life ? { ...freshLife(), ...copyOf(progress.life) } : freshLife();
     applyLife(this.population, this.life);
-    this.society = progress?.society ? { ...freshSociety(), ...structuredClone(progress.society) } : freshSociety();
+    this.society = progress?.society ? { ...freshSociety(), ...copyOf(progress.society) } : freshSociety();
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
     // Saves from before the player said otherwise go by they.
     this.you = progress?.you ? { ...progress.you } : { pronouns: 'they' };

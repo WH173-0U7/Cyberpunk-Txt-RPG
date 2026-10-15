@@ -249,6 +249,9 @@ export const PEOPLE: PeopleContent = {
   residents: [6, 9],
   // The second draw: a second pair of hands at most storefronts, a resident or so per home (three more in a megabuilding, one in a tall block), and the gangs again.
   more: { staff: 0.6, perHome: [0, 1], tall: 1, megabuilding: 3, gangs: 1 },
+  // The third draw: the homes as full as Night City's are, a megabuilding most of all, a few more hands behind the counters, and the gangs a little deeper.
+  crowd: { staff: 0.3, perHome: [2, 6], tall: 8, megabuilding: 20, gangs: 0.5 },
+  crowdKnows: 3,
   // Credchips (the wiki's 2020 chips of eurodollars): corpos nearly always carry one with real money on it; the street often, with less; gangers deal in cash.
   chips: { corpo: { chance: 0.8, range: [80, 500] }, gang: { chance: 0.2, range: [20, 120] }, street: { chance: 0.45, range: [15, 150] } },
   // Street names: made up, checked against the wiki so none is a canon character's (and none a canon weapon or perk). Most gangers go by one, some on the street, corpos never.

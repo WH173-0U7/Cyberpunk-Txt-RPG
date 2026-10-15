@@ -235,8 +235,12 @@ function webFor(population: Population): Web {
  */
 function setTie(population: Population, state: LifeState, web: Web, a: Person, b: Person, kind: TieKind | null): void {
   const key = tieKey(a.id, b.id);
-  population.ties = population.ties.filter((t) => tieKey(t.from, t.to) !== key);
-  state.made = state.made.filter((t) => tieKey(t.from, t.to) !== key);
+  // Only a pair already tied has ties to take out (the web says, as quickly as asking it), and those only between them.
+  if ((web.get(a.id) ?? []).some((t) => t.to === b.id)) {
+    const between = (t: Tie) => (t.from === a.id && t.to === b.id) || (t.from === b.id && t.to === a.id);
+    population.ties = population.ties.filter((t) => !between(t));
+    state.made = state.made.filter((t) => !between(t));
+  }
   if (!state.broken.includes(key)) state.broken.push(key);
   web.set(a.id, (web.get(a.id) ?? []).filter((t) => t.to !== b.id));
   web.set(b.id, (web.get(b.id) ?? []).filter((t) => t.to !== a.id));
@@ -311,15 +315,59 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
       const at = list.indexOf(person);
       if (at >= 0) list.splice(at, 1);
     }
+    staffIndex = null;
   };
   const spot = (person: Person): Spot | null => person.likes.hangout ?? (person.job.building ? { kind: 'building', id: person.job.building } : null);
   const at = (building: Building): Spot => ({ kind: 'building', id: building.id });
-  const staffAt = (id: string) => population.people.filter((p) => p.job.building === id && alive(p));
+  // Who works at each storefront here, the living in the population's order: worked out when first asked, and again after anyone is hired, let go or dies.
+  let staffIndex: Map<string, Person[]> | null = null;
+  const staffAt = (id: string): Person[] => {
+    if (!staffIndex) {
+      staffIndex = new Map(storefronts.map((b) => [b.id, []]));
+      for (const p of population.people) if (p.job.building && alive(p)) staffIndex.get(p.job.building)?.push(p);
+    }
+    return [...(staffIndex.get(id) ?? population.people.filter((p) => p.job.building === id && alive(p)))];
+  };
   const healthAt = (b: Building) => {
     const tier = ctx.tier(at(b));
-    return healthOf(state.tills[b.id], staffCostOf(staffAt(b.id), bossOf(b, population), tier, rules.economy) + rules.economy.rent[tier] * 7, rules.economy);
+    const staff = staffAt(b.id);
+    return healthOf(state.tills[b.id], staffCostOf(staff, bossOf(b, population, staff), tier, rules.economy) + rules.economy.rent[tier] * 7, rules.economy);
   };
   const together = (p: Person) => tiesFrom(p.id).some((t) => (t.kind === 'spouse' || t.kind === 'partner') && alive(byId.get(t.to)));
+  /**
+   * One of the pairs `each` lists, the very one `rng.pick` would draw from the whole list, without
+   * making it: the pairs are counted, one draw picks the place, and the list is walked to it. A
+   * crowd's pairs grow as its square; this way they cost a count, not a list.
+   */
+  const pickPair = (each: (take: (a: Person, b: Person) => boolean) => void): [Person, Person] | null => {
+    let count = 0;
+    each(() => {
+      count++;
+      return false;
+    });
+    if (!count) return null;
+    const at = Math.floor(rng.next() * count);
+    let seen = 0;
+    let found: [Person, Person] | null = null;
+    each((a, b) => {
+      if (seen++ !== at) return false;
+      found = [a, b];
+      return true;
+    });
+    return found;
+  };
+  /** The people of a list by the place they hang out, in the list's order. */
+  const byHangoutOf = (people: Person[]): Map<string, Person[]> => {
+    const by = new Map<string, Person[]>();
+    for (const p of people) {
+      if (!p.likes.hangout) continue;
+      const key = `${p.likes.hangout.kind}:${p.likes.hangout.id}`;
+      const list = by.get(key);
+      if (list) list.push(p);
+      else by.set(key, [p]);
+    }
+    return by;
+  };
 
   // A gang leans on a storefront for its cut.
   if (room() && gangers.length && workers.length && rng.chance(rules.chances.shakedown)) {
@@ -344,12 +392,36 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
   // Someone picks a fight with a gang they hate, or two crews go at it; the loser is laid up,
   // or, between crews and now and then, dead, and their family hate whoever did it.
   if (room() && rng.chance(rules.chances.fight)) {
-    const pairs: Array<[Person, Person]> = [];
+    // Every ganger against each civilian with the nerve who hates their gang, then each ganger of another gang who does,
+    // counted by gang rather than pair by pair, and the one `rng.pick` would take from that list drawn.
+    const civiliansHating = new Map<string, Person[]>();
+    const gangersHating = new Map<string, Person[]>();
+    const add = (by: Map<string, Person[]>, gang: string, p: Person) => {
+      const list = by.get(gang);
+      if (list) list.push(p);
+      else by.set(gang, [p]);
+    };
+    for (const c of civilians) if (c.hates && c.traits.courage >= 0.5) add(civiliansHating, c.hates, c);
+    for (const h of gangers) if (h.hates) add(gangersHating, h.hates, h);
+    const foesOf = (g: Person) => ({ civil: civiliansHating.get(g.gang as string) ?? [], crews: (gangersHating.get(g.gang as string) ?? []).filter((h) => h.gang !== g.gang) });
+    let count = 0;
     for (const g of gangers) {
-      for (const c of civilians) if (c.hates === g.gang && c.traits.courage >= 0.5) pairs.push([g, c]);
-      for (const h of gangers) if (h !== g && h.gang !== g.gang && h.hates === g.gang) pairs.push([g, h]);
+      const { civil, crews } = foesOf(g);
+      count += civil.length + crews.length;
     }
-    const pair = pairs.length ? rng.pick(pairs) : null;
+    let pair: [Person, Person] | null = null;
+    if (count) {
+      let at = Math.floor(rng.next() * count);
+      for (const g of gangers) {
+        const { civil, crews } = foesOf(g);
+        if (at >= civil.length + crews.length) {
+          at -= civil.length + crews.length;
+          continue;
+        }
+        pair = [g, (at < civil.length ? civil[at] : crews[at - civil.length]) as Person];
+        break;
+      }
+    }
     if (pair) {
       const nerve = (p: Person) => p.traits.courage * 0.6 + p.traits.temper * 0.4 + rng.range(0, 0.5);
       const [winner, loser] = nerve(pair[0]) >= nerve(pair[1]) ? pair : [pair[1], pair[0]];
@@ -374,21 +446,20 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
   if (room() && rng.chance(rules.chances.romance)) {
     const free = locals.filter((p) => p.age >= rules.adultAt && !together(p) && !ctx.spokenFor.has(p.id));
     const freeIds = new Set(free.map((p) => p.id));
-    const pairs: Array<[Person, Person]> = [];
     const close = (a: Person, b: Person) => Math.abs(a.age - b.age) <= rules.ageGap && drawnTo(ctx.heart(a), b.pronouns) && drawnTo(ctx.heart(b), a.pronouns);
-    for (const a of free) for (const t of tiesFrom(a.id)) if (t.kind === 'friend' && a.id < t.to && freeIds.has(t.to) && close(a, byId.get(t.to) as Person)) pairs.push([a, byId.get(t.to) as Person]);
-    const byHangout = new Map<string, Person[]>();
-    for (const p of free) if (p.likes.hangout) byHangout.set(`${p.likes.hangout.kind}:${p.likes.hangout.id}`, [...(byHangout.get(`${p.likes.hangout.kind}:${p.likes.hangout.id}`) ?? []), p]);
-    for (const regulars of byHangout.values()) {
-      for (let i = 0; i < regulars.length; i++) {
-        for (let j = i + 1; j < regulars.length; j++) {
-          const a = regulars[i] as Person;
-          const b = regulars[j] as Person;
-          if (close(a, b) && tieBetween(a.id, b.id) === null) pairs.push([a, b]);
+    const byHangout = byHangoutOf(free);
+    const pair = pickPair((take) => {
+      for (const a of free) for (const t of tiesFrom(a.id)) if (t.kind === 'friend' && a.id < t.to && freeIds.has(t.to) && close(a, byId.get(t.to) as Person) && take(a, byId.get(t.to) as Person)) return;
+      for (const regulars of byHangout.values()) {
+        for (let i = 0; i < regulars.length; i++) {
+          for (let j = i + 1; j < regulars.length; j++) {
+            const a = regulars[i] as Person;
+            const b = regulars[j] as Person;
+            if (close(a, b) && tieBetween(a.id, b.id) === null && take(a, b)) return;
+          }
         }
       }
-    }
-    const pair = pairs.length ? rng.pick(pairs) : null;
+    });
     if (pair) {
       setTie(population, state, web, pair[0], pair[1], 'partner');
       state.since[tieKey(pair[0].id, pair[1].id)] = day;
@@ -425,19 +496,36 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
   }
   // Two regulars of the same place become friends.
   if (room() && rng.chance(rules.chances.friends)) {
-    const byHangout = new Map<string, Person[]>();
-    for (const p of locals) if (p.likes.hangout) byHangout.set(`${p.likes.hangout.kind}:${p.likes.hangout.id}`, [...(byHangout.get(`${p.likes.hangout.kind}:${p.likes.hangout.id}`) ?? []), p]);
-    const pairs: Array<[Person, Person]> = [];
-    for (const regulars of byHangout.values()) {
+    // Every pair of regulars of a place who aren't already something to each other: each one's count is everyone after them
+    // there less those they're tied to, so the pairs are counted from the ties, and only the row with the one drawn is walked.
+    const rows: Array<{ regulars: Person[]; i: number; free: number }> = [];
+    let count = 0;
+    for (const regulars of byHangoutOf(locals).values()) {
+      const place = new Map(regulars.map((p, i) => [p.id, i]));
       for (let i = 0; i < regulars.length; i++) {
-        for (let j = i + 1; j < regulars.length; j++) {
-          const a = regulars[i] as Person;
-          const b = regulars[j] as Person;
-          if (tieBetween(a.id, b.id) === null) pairs.push([a, b]);
-        }
+        const later = new Set<string>();
+        for (const t of tiesFrom((regulars[i] as Person).id)) if ((place.get(t.to) ?? -1) > i) later.add(t.to);
+        const free = regulars.length - 1 - i - later.size;
+        if (free > 0) rows.push({ regulars, i, free });
+        count += free;
       }
     }
-    const pair = pairs.length ? rng.pick(pairs) : null;
+    let pair: [Person, Person] | null = null;
+    if (count) {
+      let at = Math.floor(rng.next() * count);
+      for (const { regulars, i, free } of rows) {
+        if (at >= free) {
+          at -= free;
+          continue;
+        }
+        const a = regulars[i] as Person;
+        for (let j = i + 1; j < regulars.length && !pair; j++) {
+          const b = regulars[j] as Person;
+          if (tieBetween(a.id, b.id) === null && at-- === 0) pair = [a, b];
+        }
+        break;
+      }
+    }
     if (pair) {
       setTie(population, state, web, pair[0], pair[1], 'friend');
       write('friends', pair, null, 0, pair[0].likes.hangout);
@@ -477,11 +565,12 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
     if (busy.length) {
       const b = rng.pick(busy);
       const hire = rng.pick(looking);
-      const boss = bossOf(b, population);
       const staff = staffAt(b.id);
+      const boss = bossOf(b, population, staff);
       const role = rng.pick(content.roles.extra[b.category] ?? content.roles.extra.default ?? ['helps out']);
       hire.job = { role, building: b.id };
       hire.hiredOn = day;
+      staffIndex = null;
       state.jobs[hire.id] = { role, building: b.id, day };
       for (const s of staff) if (tieBetween(hire.id, s.id) === null) setTie(population, state, web, hire, s, 'coworker');
       if (boss) write('hired', [boss, hire], null, 0, at(b));
@@ -492,7 +581,7 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
     const failing = storefronts.filter((b) => staffAt(b.id).length >= 2 && healthAt(b) === 'struggling');
     if (failing.length) {
       const b = rng.pick(failing);
-      const boss = bossOf(b, population);
+      const boss = bossOf(b, population, staffAt(b.id));
       const staff = staffAt(b.id).filter((p) => p !== boss && (state.hurt[p.id] ?? -1) < day);
       const newest = Math.max(...staff.map((p) => p.hiredOn ?? -Infinity));
       const last = staff.filter((p) => (p.hiredOn ?? -Infinity) === newest);
@@ -501,6 +590,7 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
         const role = rules.jobless[0] ?? 'between jobs';
         gone.job = { role, building: null };
         delete gone.hiredOn;
+        staffIndex = null;
         state.jobs[gone.id] = { role, building: null, day };
         for (const t of [...tiesFrom(gone.id)]) if (t.kind === 'coworker') setTie(population, state, web, gone, byId.get(t.to) as Person, null);
         write('laidOff', [boss, gone], null, 0, at(b));

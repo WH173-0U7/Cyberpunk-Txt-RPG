@@ -20,6 +20,42 @@ describe('the people', () => {
     expect(generatePeople(world, PEOPLE, FOOD.dishes)).toEqual(generatePeople(world, PEOPLE, FOOD.dishes));
   });
 
+  it('crowd the homes on a third draw, leaving everyone the first two made (and their ties) as every save knows them', () => {
+    const none = { ...PEOPLE, crowd: { staff: 0, perHome: [0, 0] as [number, number], tall: 0, megabuilding: 0, gangs: 0 } };
+    const strip = ({ bio: _bio, ...person }: Population['people'][number]) => person;
+    for (const { world, population } of cities.slice(0, 20)) {
+      const before = generatePeople(world, none, FOOD.dishes);
+      expect(population.people.slice(0, before.people.length).map(strip), world.seed).toEqual(before.people.map(strip));
+      const ties = new Set(population.ties.map((t) => `${t.from}|${t.to}|${t.kind}`));
+      for (const t of before.ties) expect(ties.has(`${t.from}|${t.to}|${t.kind}`), `${world.seed} ${t.from}|${t.to}|${t.kind}`).toBe(true);
+      // The crowd is most of the city, in its homes, and knows a few at work rather than a whole tower.
+      const crowd = population.people.slice(before.people.length);
+      expect(crowd.length, world.seed).toBeGreaterThan(before.people.length / 2);
+      const known = new Set(before.people.map((p) => p.id));
+      for (const p of crowd) {
+        const mates = tiesOf(population, p.id).filter((t) => t.kind === 'coworker' && known.has(t.to));
+        expect(mates.length, `${world.seed} ${p.id}`).toBeLessThanOrEqual(PEOPLE.crowdKnows);
+      }
+    }
+  });
+
+  it('finds ties and people by id as the lists change, the way scanning them would', () => {
+    const { population } = cities[0] as { population: Population };
+    const pop: Population = { people: population.people, ties: [...population.ties] };
+    const [a, b] = pop.people as [Population['people'][number], Population['people'][number]];
+    const scan = (id: string) => pop.ties.filter((t) => t.from === id);
+    expect(tiesOf(pop, a.id)).toEqual(scan(a.id));
+    // Added to, and replaced: the index follows.
+    pop.ties.push({ from: a.id, to: b.id, kind: 'friend' }, { from: b.id, to: a.id, kind: 'friend' });
+    expect(tiesOf(pop, a.id)).toEqual(scan(a.id));
+    pop.ties = pop.ties.filter((t) => t.from !== a.id && t.to !== a.id);
+    expect(tiesOf(pop, a.id)).toEqual([]);
+    expect(tiesOf(pop, b.id)).toEqual(scan(b.id));
+    // A copy every time: changing what comes back changes nothing.
+    tiesOf(pop, b.id).pop();
+    expect(tiesOf(pop, b.id)).toEqual(scan(b.id));
+  });
+
   it('fill every district: its storefronts staffed, residents, and its gangs', () => {
     for (const { world, population } of cities) {
       const { people } = population;

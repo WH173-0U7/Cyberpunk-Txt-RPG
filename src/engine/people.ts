@@ -55,7 +55,10 @@ export interface PeopleContent {
    * every save already knows): the chance of one more pair of hands per storefront; residents
    * per home, plus more for a tall block and a megabuilding; and the gangs again, by this much.
    */
-  more: { staff: number; perHome: [number, number]; tall: number; megabuilding: number; gangs: number };
+  more: Crowd;
+  /** The third draw, on a stream of its own, so the first two stay as every save knows them: the crowd, the same way; and how many of the people they work with each of them knows. */
+  crowd: Crowd;
+  crowdKnows: number;
   /** Who carries a credchip, and with how much on it: the odds and the range, for corpos, gangers and the street. */
   chips: Record<'corpo' | 'gang' | 'street', { chance: number; range: [number, number] }>;
   /** Kinds of place people go to in the evening. */
@@ -292,11 +295,16 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
       }
 
       // The rest of a life: friends (among everyone in the district so far), a hangout, grudges, a little money.
-      const neighbors = [...(byDistrict.get(district.id) ?? []), ...locals];
-      for (const person of locals) {
-        const others = neighbors.filter((p) => p !== person);
+      const earlier = byDistrict.get(district.id) ?? [];
+      const neighbors = [...earlier, ...locals];
+      for (const [k, person] of locals.entries()) {
+        // A friend among everyone else here: drawn as a pick from the neighbors less this one would be, without making that list.
+        const self = earlier.length + k;
         const friends = rng.int(1, 2);
-        for (let i = 0; i < friends && others.length; i++) tie(person, rng.pick(others), 'friend');
+        for (let i = 0; i < friends && neighbors.length > 1; i++) {
+          const at = Math.floor(rng.next() * (neighbors.length - 1));
+          tie(person, neighbors[at < self ? at : at + 1] as Person, 'friend');
+        }
         const gang = person.gang ? content.gangs[person.gang] : null;
         const own = gang ? hangouts.filter((h) => h.kind === 'location' && world.locations[h.id]?.description.includes(gang.name)) : [];
         const options = own.length ? own : hangouts;
@@ -337,16 +345,21 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
     residents: (rng) => rng.int(content.residents[0], content.residents[1]),
     gang: (rng, weight) => Math.max(1, weight + rng.int(-1, 1)),
   });
-  const { more } = content;
-  draw(createRng(`${world.seed}:people:more`), {
-    staff: (rng) => (rng.chance(more.staff) ? 1 : 0),
+  // Each draw after the first by its numbers: a chance of another pair of hands per storefront, residents by the size of each home, the gangs again.
+  const filling = (crowd: Crowd): Draw => ({
+    staff: (rng) => (rng.chance(crowd.staff) ? 1 : 0),
     role: (rng, b) => rng.pick(content.roles.extra[b.category] ?? content.roles.extra.default ?? ['helps out']),
-    residents: (rng, homes) => homes.reduce((n, b) => n + rng.int(more.perHome[0], more.perHome[1]) + (b.floors >= 20 ? more.megabuilding : b.floors >= 8 ? more.tall : 0), 0),
+    residents: (rng, homes) => homes.reduce((n, b) => n + rng.int(crowd.perHome[0], crowd.perHome[1]) + (b.floors >= 20 ? crowd.megabuilding : b.floors >= 8 ? crowd.tall : 0), 0),
     gang: (rng, weight) => {
-      const n = Math.round(weight * more.gangs);
+      const n = Math.round(weight * crowd.gangs);
       return n > 0 ? Math.max(0, n + rng.int(-1, 1)) : 0;
     },
   });
+  draw(createRng(`${world.seed}:people:more`), filling(content.more));
+  // The third fills the homes: the city as crowded as it is.
+  const known = people.length;
+  draw(createRng(`${world.seed}:people:crowd`), filling(content.crowd));
+  const crowd = new Set(people.slice(known));
 
   // Coworkers and crews know each other (gangers hold no storefront job, so nobody is both).
   const byWork = new Map<string, Person[]>();
@@ -356,11 +369,26 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
     if (p.gang) byGang.set(p.gang, [...(byGang.get(p.gang) ?? []), p]);
   }
   for (const a of people) {
-    for (const b of (a.job.building && byWork.get(a.job.building)) || []) if (a.id < b.id) tie(a, b, 'coworker');
+    for (const b of (a.job.building && byWork.get(a.job.building)) || []) if (a.id < b.id && !crowd.has(a) && !crowd.has(b)) tie(a, b, 'coworker');
     for (const b of (a.gang && byGang.get(a.gang)) || []) if (a.id < b.id) tie(a, b, 'crew');
+  }
+  // The crowd knows a few of the people they work with, not the whole floor of a tower (on a stream of its own).
+  const workRng = createRng(`${world.seed}:people:crowd:work`);
+  for (const a of crowd) {
+    const mates = ((a.job.building && byWork.get(a.job.building)) || []).filter((b) => b !== a);
+    for (const b of workRng.shuffle(mates).slice(0, content.crowdKnows)) tie(a, b, 'coworker');
   }
   for (const person of people) person.bio = describe(person, world, content, dishes);
   return { people, ties };
+}
+
+/** How many more people a draw after the first makes: the chance of another pair of hands per storefront; residents per home, plus more for a tall block and a megabuilding; and the gangs again, by this much. */
+export interface Crowd {
+  staff: number;
+  perHome: [number, number];
+  tall: number;
+  megabuilding: number;
+  gangs: number;
 }
 
 /** How many people one draw makes, and what the storefront staff do. */
@@ -371,13 +399,33 @@ interface Draw {
   gang: (rng: Rng, weight: number) => number;
 }
 
+/**
+ * Lookups by id, built once for a list and kept while it stands: a list of ties is only ever
+ * replaced (a filter) or added to (a push), never edited in place, so the same list at the
+ * same length is the same ties. Ties come back in the list's order, as a filter would give.
+ */
+const tieIndex = new WeakMap<readonly Tie[], { length: number; from: Map<string, Tie[]> }>();
+const personIndex = new WeakMap<readonly Person[], { length: number; byId: Map<string, Person> }>();
+
 /** Everyone a person is tied to. */
 export function tiesOf(population: Population, id: string): Tie[] {
-  return population.ties.filter((t) => t.from === id);
+  let index = tieIndex.get(population.ties);
+  if (!index || index.length !== population.ties.length) {
+    const from = new Map<string, Tie[]>();
+    for (const t of population.ties) {
+      const list = from.get(t.from);
+      if (list) list.push(t);
+      else from.set(t.from, [t]);
+    }
+    tieIndex.set(population.ties, (index = { length: population.ties.length, from }));
+  }
+  return [...(index.from.get(id) ?? [])];
 }
 
 export function personById(population: Population, id: string): Person | undefined {
-  return population.people.find((p) => p.id === id);
+  let index = personIndex.get(population.people);
+  if (!index || index.length !== population.people.length) personIndex.set(population.people, (index = { length: population.people.length, byId: new Map(population.people.map((p) => [p.id, p])) }));
+  return index.byId.get(id);
 }
 
 /** Whether someone can crack a stolen credchip: a netrunner by trade, or anyone behind a netrunning counter. */
@@ -446,6 +494,10 @@ export function worksNights(person: Person, world: World): boolean {
 export function peopleAt(population: Population, world: World, spot: Spot, clock: Clock, dishes: Dish[]): Array<{ person: Person; doing: string }> {
   const found: Array<{ person: Person; doing: string }> = [];
   for (const person of population.people) {
+    // Nobody is ever anywhere but home, work or their hangout: anyone with none of them here isn't here.
+    const hangout = person.likes.hangout;
+    const could = (spot.kind === 'building' && (person.home === spot.id || person.job.building === spot.id)) || (hangout?.kind === spot.kind && hangout.id === spot.id);
+    if (!could) continue;
     const where = whereIs(person, world, clock, dishes);
     if (where && where.spot.kind === spot.kind && where.spot.id === spot.id) found.push({ person, doing: where.doing });
   }
@@ -578,9 +630,18 @@ function makeTraits(rng: Rng, gang: string | null, job: Person['job']): Traits {
   return traits;
 }
 
+/** What there is to like of a kind in a district, a district's own three times over: worked out once per list of dishes. */
+const dishPools = new WeakMap<Dish[], Map<string, Dish[]>>();
+
 function pickDish(rng: Rng, dishes: Dish[], district: string, kind: Dish['kind']): string {
-  const pool = dishes.filter((d) => d.kind === kind && d.on.length > 0);
-  const weighted = pool.flatMap((d) => (d.favored?.includes(district) ? [d, d, d] : [d]));
+  let pools = dishPools.get(dishes);
+  if (!pools) dishPools.set(dishes, (pools = new Map()));
+  const key = `${district}|${kind}`;
+  let weighted = pools.get(key);
+  if (!weighted) {
+    const pool = dishes.filter((d) => d.kind === kind && d.on.length > 0);
+    pools.set(key, (weighted = pool.flatMap((d) => (d.favored?.includes(district) ? [d, d, d] : [d]))));
+  }
   return weighted.length ? rng.pick(weighted).id : '';
 }
 
