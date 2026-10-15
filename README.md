@@ -248,6 +248,11 @@ own.
   day and reputations recover two, on the game's clock. The status drop-down under the
   energy bar lists every reputation that stands at anything. (Violence, once there is combat, goes through the same
   machinery: assault and murder are already kinds of incident, with heavier consequences.)
+- **Hours, and the city out and about**: a shop's counter is open while someone who works
+  there is in, so most close at night (the panel says when they open again); hospitals and
+  anywhere signed 24/7 never close, with a night shift. Out and about, people turn up at the
+  open places near home: browsing a market, smoking on a rooftop, fishing off the docks,
+  lighting incense at a shrine, waiting for a megabuilding's elevator.
 - **Their own lives**: the people have days without you. Every day on the clock, in every
   district, a few things happen between them where the people for them exist: a gang leans
   on a storefront for its cut or jumps someone on the way home (the victim loses eddies and

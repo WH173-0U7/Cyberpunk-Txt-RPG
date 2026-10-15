@@ -7,6 +7,7 @@ import { CITY } from '../src/data/city';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
+import { HOURS } from '../src/data/hours';
 import { INEBRIATION } from '../src/data/inebriation';
 import { LINES } from '../src/data/dialogue';
 import { MONEY } from '../src/data/money';
@@ -39,6 +40,7 @@ const RULES: GameRules = {
   combat: COMBAT,
   gear: GEAR,
   money: MONEY,
+  hours: HOURS,
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
 };
 

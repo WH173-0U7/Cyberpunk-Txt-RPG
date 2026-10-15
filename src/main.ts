@@ -36,11 +36,12 @@ import { CHROME, CHROME_BLURBS } from './data/cyberware';
 import { COMBAT } from './data/combat';
 import { HACKS } from './data/quickhacks';
 import { MEDICAL } from './data/medical';
+import { HOURS } from './data/hours';
 import { medDetail } from './engine/medical';
 import { FightPanel } from './ui/fight';
 import { fitCheck, implantDetail, implantOf } from './engine/cyberware';
 import { isGun, weaponDetail, weaponOf } from './engine/weapons';
-import { formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
+import { formatClock, formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
 import { Hud, WEATHER_LABEL } from './ui/hud';
 import { EnergyMeter } from './ui/energy';
 import { StatusPanel, type StatusRow } from './ui/status';
@@ -678,9 +679,13 @@ function insideView(building: Building): PanelView {
   const barred = game.barred(now);
   const job = game.jobStatus(now);
   const shift = job?.here ? job : null;
+  // Shut: nobody who works here is in. The sign says when someone will be.
+  const closed = game.closed(now);
+  const opens = closed?.opensAt ? `Opens ${formatClock(closed.opensAt)}` : 'Shut for good';
+  const shut = closed ? `Closed. The shutters are half down and nobody's behind the counter. ${closed.opensAt ? `Someone's in again at ${formatClock(closed.opensAt)}.` : 'Nobody works here any more.'}` : '';
   // How the place is doing on its books, after what it sells.
-  const trade = menu ? ` ${game.trade(building).line}` : '';
-  const description = (barred ?? (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut, and a credchip in your name is banked.' : here ? 'People live and work in here.' : 'Nobody around right now.')) + trade;
+  const trade = menu || closed ? ` ${game.trade(building).line}` : '';
+  const description = (barred ?? (shut || (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut, and a credchip in your name is banked.' : here ? 'People live and work in here.' : 'Nobody around right now.'))) + trade;
   return {
     mode: 'inside',
     kicker: `Inside · Block ${building.block}`,
@@ -690,6 +695,7 @@ function insideView(building: Building): PanelView {
       peopleAction(here),
       ...(menu ? [barred ? { id: 'menu' as const, label: menu.kind === 'gear' ? 'Shop' : 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []),
       ...(game.bank() ? [{ id: 'bank' as const, label: 'Bank', sub: `€$ ${game.wallet.account} banked` }] : []),
+      ...(closed ? [{ id: closed.what === 'bank' ? ('bank' as const) : ('menu' as const), label: 'Closed', sub: opens, disabled: true }] : []),
       // The player's shift here: what it pays and costs, or why not now (masked, or too tired, it's refused).
       ...(shift ? [workAction(shift, now)] : []),
     ],
@@ -1375,7 +1381,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS }, progress);
   wire(game);
   map.setWorld(world);
   try {
