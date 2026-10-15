@@ -16,13 +16,18 @@ export interface Theme {
   secondary: string;
 }
 
-/** Map coordinates. Both axes run 0–100; the map stretches them to fit the screen. */
+/** Map coordinates. Both axes run 0–`WORLD` (geography.ts); the map stretches them to fit the screen. */
 export interface Point {
   x: number;
   y: number;
 }
 
 export type Side = 'north' | 'east' | 'south' | 'west';
+
+/** One of a district's neighborhoods (the wiki's sub-districts, e.g. Kabuki in Watson), and where it is. */
+export interface Subdistrict extends Point {
+  name: string;
+}
 
 export interface District extends Point {
   id: string;
@@ -38,6 +43,8 @@ export interface District extends Point {
   ambient: AmbientLine[];
   /** How its eateries lean: luxury, everyday or poverty, as relative weights. */
   dining: Partial<Record<Quality, number>>;
+  /** Its neighborhoods on this map. A block belongs to the one nearest it (or to the nearest district with none). */
+  subdistricts: Subdistrict[];
 }
 
 /** An NCART stop. Stations sit on street corners. */
@@ -70,7 +77,7 @@ export interface Whereabouts extends Point {
   building: string | null;
 }
 
-/** The street grid every location sits on. Positions run 0–100 like map coordinates. */
+/** The street grid every location sits on. Positions run 0–`WORLD` like map coordinates. */
 export interface CityLayout {
   /** Streets running north–south, by x position. */
   avenues: number[];
@@ -182,6 +189,8 @@ export interface Location extends Point {
   /** The kind as players read it, e.g. "Night market". */
   kindLabel: string;
   district: string;
+  /** The neighborhood it's in (a `Subdistrict` name), when its district has them. */
+  area?: string;
   weather: Weather;
   /** Overrides the district colors, e.g. for an interior with its own lighting. */
   theme?: Partial<Theme>;

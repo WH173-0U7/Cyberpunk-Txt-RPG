@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CITY } from '../src/data/city';
 import { FOOD } from '../src/data/food';
@@ -57,41 +58,50 @@ describe('the people', () => {
   });
 
   it('fill every district: its storefronts staffed, residents, and its gangs', () => {
+    // Problems are collected and checked once: an assertion per person is slow across cities of thousands.
+    const problems: string[] = [];
+    const pools = Object.values(PEOPLE.names);
+    const masculine = new Set(pools.flatMap((pool) => pool.masculine));
+    const feminine = new Set(pools.flatMap((pool) => pool.feminine));
+    const dishes = new Map(FOOD.dishes.map((d) => [d.id, d]));
     for (const { world, population } of cities) {
       const { people } = population;
-      expect(people.length, world.seed).toBeGreaterThanOrEqual(20);
+      const buildings = new Map(world.buildings.map((b) => [b.id, b]));
+      if (people.length < 20) problems.push(`${world.seed}: only ${people.length} people`);
       for (const district of Object.keys(world.districts)) {
         const locals = people.filter((p) => p.district === district);
-        expect(locals.length, `${world.seed} ${district}`).toBeGreaterThanOrEqual(PEOPLE.residents[0]);
-        for (const b of world.buildings.filter((b) => b.district === district && b.business)) {
-          expect(locals.some((p) => p.job.building === b.id), `${world.seed} nobody works at ${b.name}`).toBe(true);
-        }
+        if (locals.length < PEOPLE.residents[0]) problems.push(`${world.seed} ${district}: ${locals.length} residents`);
+        const staffed = new Set(locals.map((p) => p.job.building));
+        for (const b of world.buildings) if (b.district === district && b.business && !staffed.has(b.id)) problems.push(`${world.seed} nobody works at ${b.name}`);
         for (const [gang, weight] of PEOPLE.turf[district] ?? []) {
-          expect(locals.filter((p) => p.gang === gang).length, `${world.seed} ${gang} in ${district}`).toBeGreaterThanOrEqual(Math.max(1, weight - 1));
+          const members = locals.filter((p) => p.gang === gang).length;
+          if (members < Math.max(1, weight - 1)) problems.push(`${world.seed} ${gang} in ${district}: ${members}`);
         }
       }
       for (const p of people) {
-        expect(p.name, p.id).toMatch(/\S+ \S+/);
+        const fail = (what: string) => problems.push(`${world.seed} ${p.name}: ${what}`);
+        if (!/\S+ \S+/.test(p.name)) fail('no full name');
         // Given names go with the pronouns.
-        const pools = Object.values(PEOPLE.names);
-        if (p.pronouns === 'he') expect(pools.some((pool) => pool.masculine.includes(p.given)), p.name).toBe(true);
-        if (p.pronouns === 'she') expect(pools.some((pool) => pool.feminine.includes(p.given)), p.name).toBe(true);
-        expect(p.id).toMatch(/^[a-z0-9-]+$/);
-        expect(p.age).toBeGreaterThanOrEqual(18);
-        expect(p.bio.length).toBeGreaterThan(10);
-        expect(p.eddies).toBeGreaterThan(0);
-        expect(p.chip).toBeGreaterThanOrEqual(0);
-        if (p.home) expect(world.buildings.find((b) => b.id === p.home)).toMatchObject({ district: p.district, category: 'residential' });
-        if (p.job.building) expect(world.buildings.find((b) => b.id === p.job.building)?.district, p.name).toBe(p.district);
-        if (p.gang) expect((PEOPLE.turf[p.district] ?? []).map(([g]) => g), p.name).toContain(p.gang);
-        expect(FOOD.dishes.find((d) => d.id === p.likes.dish)?.kind, p.name).toBe('food');
-        expect(['drink', 'alcohol']).toContain(FOOD.dishes.find((d) => d.id === p.likes.drink)?.kind);
-        for (const v of Object.values(p.traits)) expect(v).toBeGreaterThan(0);
+        if (p.pronouns === 'he' && !masculine.has(p.given)) fail(`given name ${p.given}`);
+        if (p.pronouns === 'she' && !feminine.has(p.given)) fail(`given name ${p.given}`);
+        if (!/^[a-z0-9-]+$/.test(p.id)) fail(`id ${p.id}`);
+        if (p.age < 18) fail(`age ${p.age}`);
+        if (p.bio.length <= 10) fail(`bio ${p.bio}`);
+        if (!(p.eddies > 0)) fail(`eddies ${p.eddies}`);
+        if (!(p.chip >= 0)) fail(`chip ${p.chip}`);
+        const home = p.home ? buildings.get(p.home) : undefined;
+        if (p.home && (home?.district !== p.district || home?.category !== 'residential')) fail(`home ${p.home}`);
+        if (p.job.building && buildings.get(p.job.building)?.district !== p.district) fail(`works out of district at ${p.job.building}`);
+        if (p.gang && !(PEOPLE.turf[p.district] ?? []).some(([g]) => g === p.gang)) fail(`${p.gang} off their turf`);
+        if (dishes.get(p.likes.dish)?.kind !== 'food') fail(`dish ${p.likes.dish}`);
+        if (!['drink', 'alcohol'].includes(dishes.get(p.likes.drink)?.kind ?? '')) fail(`drink ${p.likes.drink}`);
+        for (const v of Object.values(p.traits)) if (!(v > 0)) fail(`trait ${v}`);
       }
       const names = people.map((p) => p.name);
-      expect(new Set(names).size, world.seed).toBe(names.length);
-      expect(new Set(people.map((p) => p.id)).size, world.seed).toBe(names.length);
+      if (new Set(names).size !== names.length) problems.push(`${world.seed}: names repeat`);
+      if (new Set(people.map((p) => p.id)).size !== names.length) problems.push(`${world.seed}: ids repeat`);
     }
+    expect(problems.slice(0, 10)).toEqual([]);
   });
 
   it('puts a credchip on some of them, corpos most of all, and knows who can chop one', () => {
@@ -122,31 +132,34 @@ describe('the people', () => {
   });
 
   it('tie people together both ways: family who share a name, friends, crews and coworkers', () => {
+    const problems: string[] = [];
     for (const { world, population } of cities) {
       const byId = new Map(population.people.map((p) => [p.id, p]));
       const keys = new Set(population.ties.map((t) => `${t.from}|${t.to}|${t.kind}`));
       const knows = new Map<string, number>();
       for (const t of population.ties) knows.set(t.from, (knows.get(t.from) ?? 0) + 1);
       for (const t of population.ties) {
-        expect(t.from, world.seed).not.toBe(t.to);
-        expect(byId.has(t.to), `${world.seed} ${t.to}`).toBe(true);
-        expect(keys.has(`${t.to}|${t.from}|${INVERSE[t.kind]}`), `${world.seed} ${t.from} ${t.kind} ${t.to}`).toBe(true);
+        const fail = (what: string) => problems.push(`${world.seed} ${t.from} ${t.kind} ${t.to}: ${what}`);
+        if (t.from === t.to) fail('tied to themself');
+        if (!byId.has(t.to)) fail('nobody');
+        if (!keys.has(`${t.to}|${t.from}|${INVERSE[t.kind]}`)) fail('one way only');
         const a = byId.get(t.from);
         const b = byId.get(t.to);
         if (!a || !b) continue;
-        if (FAMILY.includes(t.kind) && a.district === b.district) expect(a.family, `${a.name} ${t.kind} ${b.name}`).toBe(b.family);
-        if (t.kind === 'crew') expect(a.gang).toBe(b.gang);
-        if (t.kind === 'coworker') expect(a.job.building).toBe(b.job.building);
+        if (FAMILY.includes(t.kind) && a.district === b.district && a.family !== b.family) fail('family by another name');
+        if (t.kind === 'crew' && a.gang !== b.gang) fail('crew of another gang');
+        if (t.kind === 'coworker' && a.job.building !== b.job.building) fail('coworkers apart');
         // `to` is `from`'s parent: a generation older (an aunt or uncle can be any age).
-        if (t.kind === 'parent') expect(b.age - a.age, `${b.name} is ${a.name}'s parent`).toBeGreaterThanOrEqual(18);
-        if (t.kind === 'spouse') expect(Math.abs(a.age - b.age)).toBeLessThanOrEqual(12);
+        if (t.kind === 'parent' && b.age - a.age < 18) fail('a parent too young');
+        if (t.kind === 'spouse' && Math.abs(a.age - b.age) > 12) fail('ages too far apart');
       }
-      for (const p of population.people) expect(knows.get(p.id) ?? 0, `${world.seed} ${p.name} knows nobody`).toBeGreaterThan(0);
+      for (const p of population.people) if (!knows.get(p.id)) problems.push(`${world.seed} ${p.name} knows nobody`);
       const kinds = new Set(population.ties.map((t) => t.kind));
-      for (const kind of ['friend', 'coworker', 'spouse', 'sibling'] as TieKind[]) expect(kinds, `${world.seed} has no ${kind}`).toContain(kind);
+      for (const kind of ['friend', 'coworker', 'spouse', 'sibling'] as TieKind[]) if (!kinds.has(kind)) problems.push(`${world.seed} has no ${kind}`);
       // Blood runs across the city too.
-      if (Object.keys(world.districts).length > 1) expect(population.ties.some((t) => t.kind === 'cousin' && byId.get(t.from)?.district !== byId.get(t.to)?.district)).toBe(true);
+      if (Object.keys(world.districts).length > 1 && !population.ties.some((t) => t.kind === 'cousin' && byId.get(t.from)?.district !== byId.get(t.to)?.district)) problems.push(`${world.seed}: no cousins across districts`);
     }
+    expect(problems.slice(0, 10)).toEqual([]);
   });
 
   it('keeps hours: at work by day, out in the evening, home at night, and findable', () => {
@@ -216,8 +229,15 @@ describe('the people', () => {
   });
 
   it('never names anyone after a real character', () => {
-    const real = ['Jackie Welles', 'Judy Alvarez', 'Panam Palmer', 'Johnny Silverhand', 'Sebastián Ibarra', 'Solomon Reed', 'Kurt Hansen', 'Wakako Okada', 'Viktor Vektor'];
-    for (const { population } of cities) for (const p of population.people) expect(real).not.toContain(p.name);
+    // Every character page of the wiki's 2077, Edgerunners, comic, fixer and vendor categories (titles, without any "(2077)").
+    const real = new Set(readFileSync(new URL('./fixtures/canon-characters.txt', import.meta.url), 'utf8').split('\n').map((n) => n.replace(/ \(.*\)$/, '').trim().toLowerCase()).filter(Boolean));
+    expect(real.size).toBeGreaterThan(500);
+    // No name a community's pools can put together is one, whoever ends up with it.
+    const composable = Object.entries(PEOPLE.names).flatMap(([pool, { masculine, feminine, family }]) => [...masculine, ...feminine].flatMap((given) => family.map((f) => `${pool}: ${given} ${f}`)));
+    expect(composable.filter((n) => real.has(n.slice(n.indexOf(': ') + 2).toLowerCase()))).toEqual([]);
+    for (const { population } of cities) expect(population.people.filter((p) => real.has(p.name.toLowerCase())).map((p) => p.name)).toEqual([]);
+    // And the city is big enough for its names: nobody needs a number to tell them apart.
+    for (const { world, population } of cities) expect(population.people.filter((p) => /\d/.test(p.name)).map((p) => p.name), world.seed).toEqual([]);
     // Nor gives anyone a canon character's street name, or a canon weapon's or perk's (checked on the wiki).
     const canon = ['Lucky', 'Rook', 'Hammer', 'Bolt', 'Jackie', 'Johnny', 'Panam', 'Judy', 'Dex', 'Brick', 'Nix', 'Rogue', 'Smasher', 'Placide', 'Skippy', 'Royce', 'Dum Dum', 'Sasquatch', 'T-Bug', 'Spider', 'Takemura'];
     for (const handle of PEOPLE.handles.pool) expect(canon, handle).not.toContain(handle);

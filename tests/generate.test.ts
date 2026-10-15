@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CITY } from '../src/data/city';
 import { blockAt, STREET_HALF_WIDTH } from '../src/engine/buildings';
 import { distance, generateWorld, MAX_DESCRIPTION, streetPath } from '../src/engine/generate';
-import { seaTest } from '../src/engine/geography';
+import { seaTest, subdistrictAt, WORLD } from '../src/engine/geography';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 import { stripMarkup } from '../src/ui/markup';
@@ -28,14 +28,32 @@ describe('generateWorld', () => {
     expect(layouts.size).toBeGreaterThan(worlds.length * 0.95);
   });
 
-  it('makes cities of a playable size', () => {
+  it('builds every district and neighborhood of the real Night City, each with places of its own', () => {
     for (const world of worlds) {
-      const districtCount = Object.keys(world.districts).length;
+      expect(Object.keys(world.districts).sort(), world.seed).toEqual(CITY.districts.map((d) => d.id).sort());
       const locationCount = Object.keys(world.locations).length;
-      expect(districtCount, world.seed).toBeGreaterThanOrEqual(3);
-      expect(districtCount, world.seed).toBeLessThanOrEqual(5);
-      expect(locationCount, world.seed).toBeGreaterThanOrEqual(8);
-      expect(locationCount, world.seed).toBeLessThanOrEqual(20);
+      expect(locationCount, world.seed).toBeGreaterThanOrEqual(40);
+      expect(locationCount, world.seed).toBeLessThanOrEqual(64);
+      for (const template of CITY.districts) {
+        const district = world.districts[template.id];
+        expect(district?.subdistricts.map((s) => s.name), `${world.seed} ${template.id}`).toEqual(template.areas.filter((a) => template.areaAt?.[a]));
+        for (const hood of district?.subdistricts ?? []) {
+          const places = Object.values(world.locations).filter((l) => l.area === hood.name);
+          expect(places.length, `${world.seed} ${hood.name}`).toBeGreaterThan(0);
+          expect(places.every((l) => l.district === template.id)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('puts every place in its own neighborhood, as the map draws it', () => {
+    for (const world of worlds) {
+      const districts = Object.values(world.districts);
+      for (const location of Object.values(world.locations)) {
+        const at = subdistrictAt(districts, location);
+        expect(at?.district.id, `${world.seed} ${location.name}`).toBe(location.district);
+        expect(at?.subdistrict?.name, `${world.seed} ${location.name}`).toBe(location.area);
+      }
     }
   });
 
@@ -103,7 +121,7 @@ describe('generateWorld', () => {
     for (const world of worlds) {
       const { coast } = world.layout;
       if (!coast) continue;
-      const reach = { north: (y: number) => y, south: (y: number) => 100 - y, west: (x: number) => x, east: (x: number) => 100 - x };
+      const reach = { north: (y: number) => y, south: (y: number) => WORLD - y, west: (x: number) => x, east: (x: number) => WORLD - x };
       for (const location of Object.values(world.locations)) {
         const along = coast.side === 'north' || coast.side === 'south' ? location.y : location.x;
         expect(reach[coast.side](along), `${world.seed} ${location.id}`).toBeGreaterThanOrEqual(coast.depth + 4);
@@ -127,9 +145,9 @@ describe('generateWorld', () => {
       const list = Object.values(world.locations);
       for (const location of list) {
         expect(location.x).toBeGreaterThanOrEqual(7);
-        expect(location.x).toBeLessThanOrEqual(93);
+        expect(location.x).toBeLessThanOrEqual(WORLD - 7);
         expect(location.y).toBeGreaterThanOrEqual(7);
-        expect(location.y).toBeLessThanOrEqual(93);
+        expect(location.y).toBeLessThanOrEqual(WORLD - 7);
         for (const other of list) {
           if (other !== location) expect(distance(location, other), world.seed).toBeGreaterThanOrEqual(8);
         }
@@ -160,13 +178,24 @@ describe('generateWorld', () => {
 describe('canon first', () => {
   const realNames = new Set(CITY.districts.flatMap((d) => (d.landmarks ?? []).map((l) => l.name)));
 
-  it('uses real Night City places before making any up', () => {
+  it('uses real Night City places before making any up, each in its own neighborhood', () => {
     for (const world of worlds) {
       for (const template of CITY.districts) {
-        const places = Object.values(world.locations).filter((l) => l.district === template.id);
         const landmarks = template.landmarks ?? [];
-        const real = places.filter((l) => landmarks.some((m) => m.name === l.name));
-        expect(real.length, `${world.seed} ${template.id}`).toBe(Math.min(places.length, landmarks.length));
+        const unplaced = landmarks.filter((m) => !m.area && !Object.values(world.locations).some((l) => l.name === m.name));
+        for (const area of template.areas) {
+          const places = Object.values(world.locations).filter((l) => l.district === template.id && l.area === area);
+          const own = landmarks.filter((m) => m.area === area);
+          const real = places.filter((l) => landmarks.some((m) => m.name === l.name));
+          // A made-up place only once the neighborhood's own real places, and the district's
+          // real places that could go anywhere, are all used.
+          if (real.length < places.length) expect(own.filter((m) => !real.some((l) => l.name === m.name)), `${world.seed} ${area}`).toEqual([]);
+          if (real.length < places.length) expect(unplaced, `${world.seed} ${area}`).toEqual([]);
+        }
+        for (const location of Object.values(world.locations)) {
+          const landmark = landmarks.find((m) => m.name === location.name);
+          if (landmark?.area) expect(location.area, location.name).toBe(landmark.area);
+        }
       }
     }
   });
@@ -209,10 +238,16 @@ describe('canon first', () => {
         expect(pacifica.x, `${world.seed} Pacifica is west`).toBeLessThan(center.x);
         expect(pacifica.y, `${world.seed} Pacifica is south`).toBeGreaterThan(center.y);
       }
-      if (badlands) {
-        for (const other of Object.values(world.districts)) {
-          if (other !== badlands) expect(badlands.x, `${world.seed} the Badlands are east of ${other.id}`).toBeGreaterThan(other.x);
+      // The desert wraps the city on the east and the south, well out from the middle.
+      if (badlands && center) {
+        for (const place of Object.values(world.locations).filter((l) => l.district === badlands.id)) {
+          expect(place.x > center.x + 20 || place.y > center.y + 30, `${world.seed} ${place.name} is out past the city`).toBe(true);
         }
+      }
+      const santo = mean(world, 'santo_domingo');
+      if (center && santo) {
+        expect(santo.x, `${world.seed} Santo Domingo is east`).toBeGreaterThan(center.x);
+        expect(santo.y, `${world.seed} Santo Domingo is south`).toBeGreaterThan(center.y);
       }
     }
   });

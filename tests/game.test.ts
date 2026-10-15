@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
+import { ASK_ABOUT, cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
 import { outfit, type GearContent } from '../src/engine/carry';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
@@ -17,7 +17,7 @@ import { memoriesOf } from '../src/engine/memory';
 import { dreamOf, handleOf, tiesOf, type Person, type Pronouns } from '../src/engine/people';
 import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
-import { freshSociety, type SocietyState } from '../src/engine/society';
+import { freshSociety, linkKey, type SocietyState } from '../src/engine/society';
 import type { TravelRules } from '../src/engine/travel';
 import type { Building, GameEvents, Item, Location, Whereabouts, World } from '../src/engine/types';
 
@@ -70,6 +70,7 @@ const world: World = {
       mood: 'Quiet streets.',
       ambient: ['traffic hums'],
       dining: { everyday: 1 },
+      subdistricts: [],
       x: 50,
       y: 50,
     },
@@ -877,6 +878,32 @@ describe('Game', () => {
       }
     });
 
+    it('offers a few people worth asking about, from what the player knows, however many names they have', () => {
+      const { game: probe, now, worker } = shiftAt();
+      const everyone = probe.population.people.filter((p) => p.id !== worker.id);
+      // Every name in the city known, someone seen with them, someone already asked about.
+      const [seen, asked] = everyone as [Person, Person];
+      const society: SocietyState = {
+        ...freshSociety(),
+        known: Object.fromEntries(everyone.map((p) => [p.id, { met: true, seen: true, told: false, facts: ['name'], log: [] }])),
+        links: { [linkKey(worker.id, seen.id)]: { kind: null, how: 'seen', at: now }, [linkKey(worker.id, asked.id)]: { kind: 'none', how: 'asked', at: now } },
+      };
+      const inside = { ...carryingProgress([]), where: outside('b-noodle', 38, 20), inside: 'b-noodle' };
+      const game = new Game(world, { ...RULES, startingEddies: 100 }, { ...inside, society });
+      game.start(now);
+      const offered = game.worthAsking(worker.id, now).map((p) => p.id);
+      expect(everyone.length).toBeGreaterThan(ASK_ABOUT);
+      expect(offered.length).toBeLessThanOrEqual(ASK_ABOUT);
+      expect(offered[0]).toBe(seen.id);
+      expect(offered).not.toContain(asked.id);
+      expect(offered).not.toContain(worker.id);
+      // Family by the name come before strangers; nobody the player can't name.
+      for (const p of everyone.filter((q) => q.family === worker.family)) if (offered.length < ASK_ABOUT && p.id !== asked.id) expect(offered).toContain(p.id);
+      const stranger = new Game(world, RULES, inside);
+      stranger.start(now);
+      expect(stranger.worthAsking(worker.id, now)).toEqual([]);
+    });
+
     it('tells people apart by their look until introduced, and learns the rest by watching, talking and asking', () => {
       const { game, now, worker } = shiftAt();
       const { take, outputs } = record(game);
@@ -891,7 +918,9 @@ describe('Game', () => {
       expect(game.describe(worker.id)?.named).toBe(false);
       // Talking is an introduction, on the record both ways.
       expect(game.talk(worker.id, now)).toBe(true);
-      expect(game.describe(worker.id)).toMatchObject({ named: true, name: worker.name });
+      // Their name, with the street name in the middle if they go by one.
+      expect(game.describe(worker.id)?.named).toBe(true);
+      expect(game.describe(worker.id)?.name).toMatch(new RegExp(`^${worker.given}( "[^"]+")? ${worker.family}$`));
       const log = spoken(game, worker.id);
       expect(log[0]?.who).toBe('you');
       expect(log.some((l) => l.who === 'them')).toBe(true);
@@ -1490,7 +1519,9 @@ describe('Game', () => {
     });
 
     it('loses the chips on you to whoever comes to collect, when the cash runs short', () => {
-      const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20, {}, { startingEddies: 0 });
+      // No cash on the player, next to none on them, and a chip: whoever collects wants more than the cash.
+      const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20, { eddies: 0 }, { startingEddies: 0 });
+      worker.eddies = 4;
       worker.chip = 50;
       expect(game.rob(worker.id, now)).toBe(true);
       expect(game.inventory.find((i) => i.kind === 'credchip')).toMatchObject({ balance: 50, locked: true });
@@ -2086,8 +2117,6 @@ describe('Game', () => {
         known: { [id]: { met: true, seen: true, told: false, facts: ['name'], log: [] } },
         romance,
       });
-      /** Whether someone is with no one: no spouse, no one they're seeing. */
-      const free = (game: Game, id: string) => !tiesOf(game.population, id).some((t) => t.kind === 'spouse' || t.kind === 'partner');
       /** An evening at the noodle bar, with someone free there who doesn't work there. */
       function evening(progress: (id: string, now: number) => Partial<Progress> = () => ({}), rules: Partial<GameRules> = {}) {
         for (let day = 0; day < 21; day++) {
@@ -2095,10 +2124,15 @@ describe('Game', () => {
             const now = Date.UTC(2077, 9, 12, hour, 5) + day * 24 * HOUR;
             const probe = new Game(world, { ...RULES, people: everyone, ...rules }, progressInside('b-noodle', 38, 20));
             probe.start(now);
-            const guest = probe.peopleHere(now).find((p) => p.person.job.building !== 'b-noodle' && p.person.age >= 18 && free(probe, p.person.id));
+            const guest = probe.peopleHere(now).find((p) => p.person.job.building !== 'b-noodle' && p.person.age >= 18);
             if (!guest) continue;
-            const game = new Game(world, { ...RULES, startingEddies: 400, people: everyone, ...rules }, { ...progressInside('b-noodle', 38, 20), ...progress(guest.person.id, now) });
+            // Free, whoever it is: a couple they were in is over, written off in their life as a breakup leaves it.
+            const over = tiesOf(probe.population, guest.person.id).filter((t) => t.kind === 'spouse' || t.kind === 'partner').map((t) => tieKey(guest.person.id, t.to));
+            const life = over.length ? { life: { ...freshLife(), broken: over } } : {};
+            const game = new Game(world, { ...RULES, startingEddies: 400, people: everyone, ...rules }, { ...progressInside('b-noodle', 38, 20), ...life, ...progress(guest.person.id, now) });
             game.start(now);
+            // And still free once the day is lived (the people's own days could pair them off).
+            if (tiesOf(game.population, guest.person.id).some((t) => t.kind === 'spouse' || t.kind === 'partner')) continue;
             return { game, now, guest: guest.person, ...record(game) };
           }
         }
@@ -2181,8 +2215,10 @@ describe('Game', () => {
           const probe = new Game(world, { ...RULES, people: everyone }, progressInside('b-noodle', 38, 20));
           probe.start(now);
           const here = probe.peopleHere(now);
-          const partner = here.find((p) => p.person.job.building === 'b-noodle')?.person;
-          const other = here.find((p) => p.person.id !== partner?.id && p.person.age >= 18)?.person;
+          // Both still there two hours on, for the second time.
+          const stay = new Set(probe.peopleHere(now + 2 * HOUR).map((p) => p.person.id));
+          const partner = here.find((p) => p.person.job.building === 'b-noodle' && stay.has(p.person.id))?.person;
+          const other = here.find((p) => p.person.id !== partner?.id && p.person.age >= 18 && stay.has(p.person.id))?.person;
           if (!partner || !other) continue;
           const society = sweetOn(partner.id, now, 50, { with: partner.id, stage: 'dating', since: now, dates: 1, lastDateAt: 0 });
           const game = new Game(world, { ...RULES, people: everyone }, { ...progressInside('b-noodle', 38, 20), society });

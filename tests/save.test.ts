@@ -16,7 +16,7 @@ import { TRAVEL } from '../src/data/travel';
 import { Game } from '../src/engine/game';
 import { GENERATOR_VERSION, generateWorld } from '../src/engine/generate';
 import { hashSeed } from '../src/engine/rng';
-import { createSave, readSave, resume, savedSeed, type Progress, type SaveData } from '../src/engine/save';
+import { createSave, progressFor, readSave, resume, savedSeed, type Progress, type SaveData } from '../src/engine/save';
 import type { World } from '../src/engine/types';
 
 const world = generateWorld('7f3a29c1', CITY);
@@ -294,27 +294,54 @@ describe('saving', () => {
     expect(again.peopleHere(now).length).toBeGreaterThanOrEqual(0);
   });
 
-  it('plays on from a save made by 0.1.0, keeping everything in it', () => {
-    // Saved by the 0.1.0 release after a few days in this city: food and a chip off someone in the jacket and wallet, a robbery or two, the people's days.
+  it('starts the city over from a save made before the city grew, keeping its seed', () => {
+    // Saved by the 0.1.0 release after a few days in this city, which the seed no longer builds.
     const old: unknown = JSON.parse(readFileSync(new URL('./fixtures/save-0.1.0.json', import.meta.url), 'utf8'));
     const save = readSave(old);
-    const progress = save && resume(world, save);
-    if (!save || !progress) throw new Error('the 0.1.0 save no longer loads');
+    if (!save) throw new Error('the 0.1.0 save no longer reads');
+    expect(save.seed).toBe(world.seed);
+    expect(save.generator).toBeLessThan(GENERATOR_VERSION);
+    expect(progressFor(world, save, GENERATOR_VERSION)).toBeNull();
+    // A save from this build picks up.
+    const { game, now } = played(2);
+    expect(progressFor(world, saveOf(game, now), GENERATOR_VERSION)?.where).toEqual(game.whereabouts);
+  });
+
+  it('plays on from a save made with every district in the city, keeping everything in it', () => {
+    // Saved after a few days in this city, as generator 4 builds it: an evening at El Pinche Pollo, two dishes in the jacket, a chip off someone in the wallet, the people's days.
+    const old: unknown = JSON.parse(readFileSync(new URL('./fixtures/save-generator-4.json', import.meta.url), 'utf8'));
+    const save = readSave(old);
+    const progress = save && progressFor(world, save, GENERATOR_VERSION);
+    if (!save || !progress) throw new Error('the generator 4 save no longer loads');
     const game = new Game(world, rules, progress);
     let now = save.savedAt ?? T0;
     game.start(now);
-    expect(game.inventory.map((i) => [i.id, i.in])).toEqual([['wontons', 'jacket'], ['rammmmen', 'jacket'], ['galician-pierogi', 'jacket'], ['credchip-1', 'wallet']]);
-    expect(game.wallet).toMatchObject({ bills: 204, coins: 3, account: 0 });
+    expect(game.inventory.map((i) => [i.id, i.in])).toEqual([['taco', 'jacket'], ['loaded-tamale', 'jacket'], ['credchip-1', 'wallet']]);
+    expect(game.wallet).toMatchObject({ bills: 127, coins: 3, account: 0 });
     expect(game.youSaved).toEqual({ pronouns: 'they' });
     expect(game.societySaved.romance).toBeNull();
-    expect(game.standingWith('bao-liu', now)?.stance).toBe('hostile');
+    expect(game.standingWith('hector-acosta', now)?.stance).toBe('hostile');
     // Ten days on, and it saves and loads again as it is.
     for (let day = 0; day < 10; day++) game.tick((now += 24 * 3_600_000));
     const again = readSave(JSON.parse(JSON.stringify(saveOf(game, now))));
-    const after = again && new Game(world, rules, resume(world, again) ?? undefined);
+    const after = again && new Game(world, rules, progressFor(world, again, GENERATOR_VERSION) ?? undefined);
     expect(after?.inventory).toEqual(game.inventory);
     expect(after?.lifeSaved).toEqual(game.lifeSaved);
     expect(after?.societySaved).toEqual(game.societySaved);
+  });
+
+  it('says which neighborhood the player is in: a place in its own, a building in the one it was named in', () => {
+    const game = new Game(world, rules);
+    for (const l of Object.values(world.locations)) expect(game.neighborhoodOf({ x: l.x, y: l.y, place: l.id })).toBe(l.area);
+    const chains = new Map(CITY.buildings.businesses.filter((b) => b.chain).map((b) => [b.id, b.sign]));
+    let named = 0;
+    for (const b of world.buildings) {
+      const sign = b.business ? chains.get(b.business) : undefined;
+      if (!sign || !b.name.startsWith(`${sign} `)) continue;
+      expect(`${sign} ${game.neighborhoodOf({ x: b.x, y: b.y - 1, building: b.id })}`, b.id).toBe(b.name);
+      named++;
+    }
+    expect(named).toBeGreaterThan(3);
   });
 
   it('picks up exactly where the player left off', () => {
@@ -388,12 +415,14 @@ describe('generator version', () => {
     1: '1b8af260',
     2: '518b9b2b',
     3: 'f56e245e',
+    // Every district of the real Night City in every city, by neighborhood, on a map 160 across.
+    4: '18e95a2a',
   };
 
   // Saves also name the building the player stands at, so its id must still be there. Every
   // building's id, kind, footprint and height (not its name or business) go into this one.
   // When it fails, bump GENERATOR_VERSION too, and record the new value here.
-  const BUILDING_LAYOUT = '49f20347';
+  const BUILDING_LAYOUT = '6c4223ec';
 
   it('keeps every building where saves expect it', () => {
     const layout = ['7f3a29c1', '0badc0de', '1c0ffee5'].map((seed) =>

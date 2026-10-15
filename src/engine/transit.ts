@@ -1,4 +1,4 @@
-import { coastFrame, districtAt } from './geography';
+import { coastFrame, districtAt, WORLD } from './geography';
 import { createRng } from './rng';
 import type { CityLayout, District, Location, Point, Station, Transit, TransitLine } from './types';
 
@@ -15,7 +15,7 @@ const FALLBACK_COLORS = ['#a46bff', '#ff8a3d', '#00f0ff'];
 const STATION_GAP = 11;
 const PLACE_GAP = 6;
 /** How far from a district's middle its stations can be. */
-const REACH = 18;
+const REACH = 18 * (WORLD / 100);
 
 /**
  * The city's NCART network: stations in every city district (the Badlands get none), joined
@@ -35,7 +35,7 @@ export function generateTransit(
   const { coast } = layout;
   const corners = layout.avenues
     .flatMap((x) => layout.streets.map((y) => ({ x, y })))
-    .filter((c) => c.x >= 7 && c.x <= 93 && c.y >= 7 && c.y <= 93)
+    .filter((c) => c.x >= 7 && c.x <= WORLD - 7 && c.y >= 7 && c.y <= WORLD - 7)
     .filter((c) => !coast || coastFrame(coast.side, c).depth >= coast.depth + 5)
     .filter((c) => districtAt(districts, c)?.terrain === 'city')
     .filter((c) => locations.every((l) => distance(l, c) >= PLACE_GAP));

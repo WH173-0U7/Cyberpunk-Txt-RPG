@@ -302,9 +302,10 @@ describe('dialogue', () => {
 
   it('never leaves a hole in a line, whoever is talking, across whole cities', () => {
     const holes = /[{}]|  |^\p{Ll}|^\s|\s$/u;
+    // Problems are collected and checked once: an assertion a line is slow across cities of thousands.
+    const problems: string[] = [];
     const check = (said: string, about: string) => {
-      expect(said, about).toMatch(/\S/);
-      expect(said, about).not.toMatch(holes);
+      if (!/\S/.test(said) || holes.test(said)) problems.push(`${about}: ${JSON.stringify(said)}`);
     };
     const voices: Voice[] = ['street', 'gang', 'corpo', 'nomad', 'elder', 'young'];
     const moods: Mood[] = ['busy', 'easy', 'eating', 'drinking', 'court', 'home', 'asleep'];
@@ -313,7 +314,8 @@ describe('dialogue', () => {
     const eloquences: Eloquence[] = ['blunt', 'easy', 'smooth'];
     const questions = Object.keys(LINES.questions) as Question[];
     const topics = Object.keys(LINES.topics) as Topic[];
-    const seeds = Array.from({ length: 4 }, (_, i) => createRng(`dialogue-${i}`).next().toString(16).slice(2, 10));
+    // Two cities hold about as many people as four did before the city grew: thousands of speakers.
+    const seeds = Array.from({ length: 2 }, (_, i) => createRng(`dialogue-${i}`).next().toString(16).slice(2, 10));
     let lines = 0;
     for (const seed of seeds) {
       const city = generateWorld(seed, CITY);
@@ -493,7 +495,7 @@ describe('dialogue', () => {
           for (const pool of [LINES.greeting, LINES.rob.done, LINES.rob.fought, ...(mask ? [LINES.masked.barred, LINES.masked.recognized] : [])]) {
             const said = line(pool, masked, rng);
             check(said, `${about} ${mask ? 'masked' : 'bare'} pool`);
-            if (mask) expect(said, `${about} masked pool`).not.toMatch(/your face|friendly face|new face/i);
+            if (mask && /your face|friendly face|new face/i.test(said)) problems.push(`${about} masked pool: ${JSON.stringify(said)}`);
           }
           lines += 3;
         }
@@ -503,6 +505,7 @@ describe('dialogue', () => {
         lines += 30;
       }
     }
+    expect(problems.slice(0, 10)).toEqual([]);
     expect(lines).toBeGreaterThan(5000);
   }, 120_000);
 });

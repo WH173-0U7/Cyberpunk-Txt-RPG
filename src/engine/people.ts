@@ -196,13 +196,18 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
   const people: Person[] = [];
   const ties: Tie[] = [];
   const names = new Set<string>();
-  const tied = new Set<string>();
+  /** Whom each person is tied to so far. */
+  const tied = new Map<string, Set<string>>();
   /** Ties `a` to `b`: `b` is `a`'s `kind`. Once per pair. */
   const tie = (a: Person, b: Person, kind: TieKind) => {
     if (a.id === b.id) return;
-    const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
-    if (tied.has(key)) return;
-    tied.add(key);
+    const mine = tied.get(a.id);
+    if (mine?.has(b.id)) return;
+    if (mine) mine.add(b.id);
+    else tied.set(a.id, new Set([b.id]));
+    const theirs = tied.get(b.id);
+    if (theirs) theirs.add(a.id);
+    else tied.set(b.id, new Set([a.id]));
     ties.push({ from: a.id, to: b.id, kind }, { from: b.id, to: a.id, kind: INVERSE[kind] });
   };
   const gangsHere = new Set(Object.keys(world.districts).flatMap((d) => (content.turf[d] ?? []).map(([g]) => g)));
@@ -314,7 +319,7 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
           const local = (content.turf[district.id] ?? []).map(([g]) => g);
           person.hates = local.length ? rng.pick(local) : null;
         }
-        const corpo = person.job.building ? world.buildings.find((b) => b.id === person.job.building)?.kind === 'tower' : false;
+        const corpo = person.job.building ? buildingById(world, person.job.building)?.kind === 'tower' : false;
         person.eddies = Math.round((corpo ? rng.int(60, 220) : gang ? rng.int(20, 90) : rng.int(8, 60)) * (0.7 + person.traits.greed * 0.6));
         // Their credchip, if they carry one: drawn on its own stream, so the city's people stay who they were.
         const purse = content.chips[corpo ? 'corpo' : gang ? 'gang' : 'street'];
@@ -364,12 +369,20 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
   // Coworkers and crews know each other (gangers hold no storefront job, so nobody is both).
   const byWork = new Map<string, Person[]>();
   const byGang = new Map<string, Person[]>();
+  const add = (by: Map<string, Person[]>, key: string, p: Person) => {
+    const list = by.get(key);
+    if (list) list.push(p);
+    else by.set(key, [p]);
+  };
   for (const p of people) {
-    if (p.job.building) byWork.set(p.job.building, [...(byWork.get(p.job.building) ?? []), p]);
-    if (p.gang) byGang.set(p.gang, [...(byGang.get(p.gang) ?? []), p]);
+    if (p.job.building) add(byWork, p.job.building, p);
+    if (p.gang) add(byGang, p.gang, p);
   }
+  // Everyone at a place knows everyone else there, but for the crowd (below).
+  const knownAt = new Map<string, Person[]>();
+  for (const [building, staff] of byWork) knownAt.set(building, staff.filter((p) => !crowd.has(p)));
   for (const a of people) {
-    for (const b of (a.job.building && byWork.get(a.job.building)) || []) if (a.id < b.id && !crowd.has(a) && !crowd.has(b)) tie(a, b, 'coworker');
+    if (!crowd.has(a)) for (const b of (a.job.building && knownAt.get(a.job.building)) || []) if (a.id < b.id) tie(a, b, 'coworker');
     for (const b of (a.gang && byGang.get(a.gang)) || []) if (a.id < b.id) tie(a, b, 'crew');
   }
   // The crowd knows a few of the people they work with, not the whole floor of a tower (on a stream of its own).
@@ -428,10 +441,18 @@ export function personById(population: Population, id: string): Person | undefin
   return index.byId.get(id);
 }
 
+const buildingIndex = new WeakMap<World, Map<string, Building>>();
+/** A building of the city by its id, from an index made once a city (its buildings never change). */
+export function buildingById(world: World, id: string): Building | undefined {
+  let index = buildingIndex.get(world);
+  if (!index) buildingIndex.set(world, (index = new Map(world.buildings.map((b) => [b.id, b]))));
+  return index.get(id);
+}
+
 /** Whether someone can crack a stolen credchip: a netrunner by trade, or anyone behind a netrunning counter. */
 export function isNetrunner(person: Person, world: World): boolean {
   if (/netrunner|deck tech|quickhack/i.test(person.job.role)) return true;
-  const work = person.job.building ? world.buildings.find((b) => b.id === person.job.building) : undefined;
+  const work = person.job.building ? buildingById(world, person.job.building) : undefined;
   return work?.category === 'netrunning';
 }
 
@@ -506,7 +527,7 @@ export function peopleAt(population: Population, world: World, spot: Spot, clock
 
 /** Whether someone works for a corporation: in a tower, or with a corporate title. */
 export function isCorpo(person: Person, world: World): boolean {
-  const work = person.job.building ? world.buildings.find((b) => b.id === person.job.building) : undefined;
+  const work = person.job.building ? buildingById(world, person.job.building) : undefined;
   return work?.kind === 'tower' || /analyst|manager|executive|consultant/i.test(person.job.role);
 }
 
@@ -541,13 +562,14 @@ function walksOf(person: Person, world: World): Walk[] {
  * go for. Drawn on its own stream, so the people stay who they are; someone married is drawn
  * to whoever their spouse is, whatever the draw said.
  */
-export function heartOf(person: Person, world: World, content: PeopleContent, population?: Population): Heart {
+export function heartOf(person: Person, world: World, content: PeopleContent, population?: Population, tiesFrom?: (id: string) => readonly Tie[]): Heart {
   const rng = createRng(`${person.id}:heart`);
   const { hearts } = content;
   const drawn = hearts.drawn[person.pronouns] ?? [];
   const to = (pickWeighted(rng, drawn.map((d, i) => [String(i), d.weight])) ?? '0') as string;
   const drawnTo = [...(drawn[Number(to)]?.to ?? [])];
-  for (const tie of population ? tiesOf(population, person.id) : []) {
+  // `tiesFrom` reads them from wherever they're kept up while days are lived, when not from the population.
+  for (const tie of tiesFrom ? tiesFrom(person.id) : population ? tiesOf(population, person.id) : []) {
     const spouse = tie.kind === 'spouse' ? personById(population as Population, tie.to) : undefined;
     if (spouse && !drawnTo.includes(spouse.pronouns)) drawnTo.push(spouse.pronouns);
   }
@@ -588,7 +610,7 @@ function atWork(person: Person): string {
 }
 
 function hangingOut(person: Person, world: World, spot: Spot, dishes: Dish[]): string {
-  const place = spot.kind === 'location' ? world.locations[spot.id] : world.buildings.find((b) => b.id === spot.id);
+  const place = spot.kind === 'location' ? world.locations[spot.id] : buildingById(world, spot.id);
   const kind = spot.kind === 'location' ? (place as Location | undefined)?.kind : (place as Building | undefined)?.category;
   const dish = dishes.find((d) => d.id === person.likes.dish)?.name ?? 'something';
   const drink = dishes.find((d) => d.id === person.likes.drink)?.name ?? 'a drink';
@@ -690,11 +712,13 @@ function relate(rng: Rng, family: Person[], tie: (a: Person, b: Person, kind: Ti
 
 function describe(person: Person, world: World, content: PeopleContent, dishes: Dish[]): string {
   const gang = gangOf(person, content);
-  const place = person.job.building ? world.buildings.find((b) => b.id === person.job.building) : undefined;
+  const place = person.job.building ? buildingById(world, person.job.building) : undefined;
   const work = gang ? `${gang.name} ${person.job.role}` : place ? `${capitalize(person.job.role)} at ${place.name}` : capitalize(person.job.role);
-  const strongest = (Object.entries(person.traits) as Array<[keyof Traits, number]>).sort((a, b) => Math.abs(b[1] - 0.5) - Math.abs(a[1] - 0.5))[0];
+  // The trait furthest from the middle, the first of them on a tie.
+  let strongest: [keyof Traits, number] | undefined;
+  for (const entry of Object.entries(person.traits) as Array<[keyof Traits, number]>) if (!strongest || Math.abs(entry[1] - 0.5) > Math.abs(strongest[1] - 0.5)) strongest = entry;
   const line = strongest ? (strongest[1] >= 0.5 ? content.traitLines[strongest[0]].high : content.traitLines[strongest[0]].low) : '';
-  const dish = dishes.find((d) => d.id === person.likes.dish)?.name;
+  const dish = dishById(dishes, person.likes.dish)?.name;
   return `${work}, ${person.age}. ${line}${dish ? ` Never says no to ${dish}.` : ''}`.trim();
 }
 
@@ -702,7 +726,17 @@ function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** A dish by its id, from an index made once a menu of dishes. */
+const dishIndex = new WeakMap<Dish[], Map<string, Dish>>();
+function dishById(dishes: Dish[], id: string): Dish | undefined {
+  let index = dishIndex.get(dishes);
+  if (!index) dishIndex.set(dishes, (index = new Map(dishes.map((d) => [d.id, d]))));
+  return index.get(id);
+}
+
 function slug(text: string): string {
+  // Plain letters need none of the accent-stripping.
+  if (/^[A-Za-z0-9 ]*$/.test(text)) return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   return text
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')

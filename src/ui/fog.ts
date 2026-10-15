@@ -1,4 +1,5 @@
 import { CELL, cellCenter } from '../engine/game';
+import { WORLD } from '../engine/geography';
 import { createRng } from '../engine/rng';
 import type { MapState, Point, World } from '../engine/types';
 import { fitCanvas, type Px } from './draw-city';
@@ -6,7 +7,7 @@ import { fitCanvas, type Px } from './draw-city';
 /** The fog mask covers the map at this many pixels per map unit: enough for wisps of smoke close in. */
 const MASK_SCALE = 4;
 /** The mask's width and height, in pixels. */
-const SIZE = 100 * MASK_SCALE;
+const SIZE = WORLD * MASK_SCALE;
 /** How far the fog clears around a place you've been to, in map units. Places you've only heard of stay in the dark. */
 const CLEAR_VISITED = 6;
 const FOG = 'rgba(3, 4, 9, 0.92)';
@@ -290,7 +291,7 @@ export class Fog {
     const density = Math.min(view.dpr, 1) * FOG_DENSITY;
     fitCanvas(canvas, width, height, density);
     const o = view.project({ x: 0, y: 0 });
-    const e = view.project({ x: 100, y: 100 });
+    const e = view.project({ x: WORLD, y: WORLD });
     this.drawDark(width, height, density, o, e);
 
     f.setTransform(1, 0, 0, 1, 0, 0);
@@ -323,8 +324,8 @@ export class Fog {
     this.pattern ??= d.createPattern(this.smoke, 'repeat');
     const smoke = this.pattern;
     if (!smoke) return;
-    const ux = (e.x - o.x) / 100;
-    const uy = (e.y - o.y) / 100;
+    const ux = (e.x - o.x) / WORLD;
+    const uy = (e.y - o.y) / WORLD;
     for (const layer of SMOKE_LAYERS) {
       const k = layer.units / SMOKE_SIZE;
       const cos = Math.cos(layer.angle) * k;
@@ -458,8 +459,8 @@ export class Fog {
 
   private drawPuffs(f: CanvasRenderingContext2D, o: Px, e: Px, now: number): void {
     if (!this.puffs.length) return;
-    const kx = (e.x - o.x) / 100;
-    const ky = (e.y - o.y) / 100;
+    const kx = (e.x - o.x) / WORLD;
+    const ky = (e.y - o.y) / WORLD;
     for (const puff of this.puffs) {
       const t = (now - puff.born) / puff.life;
       const sprite = this.puffSprites[puff.sprite];

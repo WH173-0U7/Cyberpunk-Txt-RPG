@@ -1,7 +1,7 @@
 import { economyDay, healthOf, staffCostOf, type EconomyRules, type Till } from './economy';
 import type { Quality } from './food';
 import { bossOf } from './jobs';
-import { drawnTo, heartOf, INVERSE, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Spot, type Tie, type TieKind } from './people';
+import { drawnTo, heartOf, INVERSE, personById, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { createRng, type Rng } from './rng';
 import type { Building, World } from './types';
 
@@ -145,13 +145,20 @@ export function applyLife(population: Population, state: LifeState): void {
   for (const key of ['eddies', 'chips', 'hurt', 'hates', 'jobs', 'gangs', 'dead'] as const) for (const id of Object.keys(state[key])) if (!ids.has(id)) delete state[key][id];
   for (const key of Object.keys(state.since)) if (!key.split('|').every((id) => ids.has(id))) delete state.since[key];
   state.events = state.events.filter((e) => e.who.every((id) => ids.has(id)));
-  const broken = new Set(state.broken);
-  population.ties = population.ties.filter((t) => !broken.has(tieKey(t.from, t.to)));
-  const tied = new Set(population.ties.map((t) => `${t.from}|${t.to}`));
-  for (const t of state.made) {
-    if (tied.has(`${t.from}|${t.to}`)) continue;
-    tied.add(`${t.from}|${t.to}`).add(`${t.to}|${t.from}`);
-    population.ties.push({ ...t }, { from: t.to, to: t.from, kind: INVERSE[t.kind] });
+  // Only the ties of people with a broken or a made tie are looked at: tens of thousands of keys cost more than the few that matter.
+  if (state.broken.length) {
+    const broken = new Set(state.broken);
+    const involved = new Set(state.broken.flatMap((key) => key.split('|')));
+    population.ties = population.ties.filter((t) => !(involved.has(t.from) && broken.has(tieKey(t.from, t.to))));
+  }
+  if (state.made.length) {
+    const involved = new Set(state.made.flatMap((t) => [t.from, t.to]));
+    const tied = new Set(population.ties.filter((t) => involved.has(t.from)).map((t) => `${t.from}|${t.to}`));
+    for (const t of state.made) {
+      if (tied.has(`${t.from}|${t.to}`)) continue;
+      tied.add(`${t.from}|${t.to}`).add(`${t.to}|${t.from}`);
+      population.ties.push({ ...t }, { from: t.to, to: t.from, kind: INVERSE[t.kind] });
+    }
   }
   for (const person of population.people) {
     const eddies = state.eddies[person.id];
@@ -189,22 +196,46 @@ export function liveUntil(world: World, population: Population, state: LifeState
   if (state.day >= today) return [];
   const from = state.day < 0 ? today - 1 : Math.max(state.day + 1, today - rules.catchUpDays + 1);
   const happened: LifeEvent[] = [];
-  const hearts = new Map<string, Heart>();
+  const kept = keptFor(population, state);
+  // A heart stays worked out while what it's drawn from stays the same: their spouse, their gang, their work and role, their grudge.
   const heart = (p: Person): Heart => {
-    let h = hearts.get(p.id);
-    if (!h) hearts.set(p.id, (h = heartOf(p, world, content, population)));
+    const spouses = (book.web.get(p.id) ?? []).filter((t) => t.kind === 'spouse').map((t) => t.to);
+    const stamp = `${spouses.join(',')}|${p.gang ?? ''}|${p.job.building ?? ''}|${p.job.role}|${p.hates ?? ''}`;
+    const known = kept.hearts.get(p.id);
+    if (known?.stamp === stamp) return known.heart;
+    const h = heartOf(p, world, content, population, (id) => book.web.get(id) ?? []);
+    kept.hearts.set(p.id, { stamp, heart: h });
     return h;
   };
-  const ctx: DayContext = { tier, content, web: webFor(population), byId: new Map(population.people.map((p) => [p.id, p])), heart, spokenFor };
+  // The ties as the last days left them, unless something else has changed them since.
+  const book = kept.book && kept.book.settled === population.ties && kept.book.size === population.ties.length ? kept.book : (kept.book = tieBook(population, state));
+  // Who lives in each district, and its storefronts: neither changes as the days go by.
+  const residents = new Map<string, Person[]>();
+  for (const p of population.people) {
+    const list = residents.get(p.district);
+    if (list) list.push(p);
+    else residents.set(p.district, [p]);
+  }
+  const storefronts = new Map<string, Building[]>();
+  for (const b of world.buildings) {
+    if (!b.business) continue;
+    const list = storefronts.get(b.district);
+    if (list) list.push(b);
+    else storefronts.set(b.district, [b]);
+  }
+  const ctx: DayContext = { tier, content, book, byId: new Map(population.people.map((p) => [p.id, p])), residents, storefronts, heart, spokenFor };
   for (let day = from; day <= today; day++) {
     const rng = createRng(`${seed}:life:${day}`);
     for (const id of Object.keys(state.hurt)) if ((state.hurt[id] as number) < day) delete state.hurt[id];
     economyDay({ world, population, state, rules: rules.economy, tier, turf, base, seed, day, rng });
-    for (const district of Object.keys(world.districts)) happened.push(...liveDay(world, population, state, rules, district, day, rng, ctx));
+    for (const district of Object.keys(world.districts)) happened.push(...liveDay(population, state, rules, district, day, rng, ctx));
     state.day = day;
     // Forgotten day by day, so days caught up on all at once come out as they would have one at a time.
     state.events = state.events.filter((e) => e.day > day - (rules.lasting[e.kind] ?? rules.keepDays));
   }
+  settleTies(population, book);
+  book.settled = population.ties;
+  book.size = population.ties.length;
   for (const person of population.people) {
     const hurt = state.hurt[person.id];
     if (hurt !== undefined) person.hurtUntil = hurt;
@@ -214,51 +245,99 @@ export function liveUntil(world: World, population: Population, state: LifeState
 }
 
 
-/** Everyone's ties, by whose they are, kept up as the days change them. */
-type Web = Map<string, Tie[]>;
+/** Pronouns as bits, to test whom someone is drawn to with arithmetic. */
+const PRONOUN_BIT: Record<Pronouns, number> = { she: 1, he: 2, they: 4 };
 
-function webFor(population: Population): Web {
-  const web: Web = new Map();
+/**
+ * Everyone's ties while days are lived, by whose they are (the web), kept up as the days
+ * change them. The population's own list is brought up to date once the days are done
+ * (`settleTies`), in the same order as if every change had been made to it there and then:
+ * redoing a list of tens of thousands of ties for every change made a month away crawl.
+ */
+interface TieBook {
+  web: Map<string, Tie[]>;
+  /** The population's list of ties this book was last brought up to date with, and how long it was. */
+  settled: readonly Tie[];
+  size: number;
+  /** Ties taken out and ties made since the population's list was last brought up to date. */
+  gone: Set<Tie>;
+  added: Tie[];
+  /** `LifeState.broken`, to look up. */
+  broken: Set<string>;
+}
+
+function tieBook(population: Population, state: LifeState): TieBook {
+  const web = new Map<string, Tie[]>();
   for (const t of population.ties) {
     const list = web.get(t.from);
     if (list) list.push(t);
     else web.set(t.from, [t]);
   }
-  return web;
+  return { web, settled: population.ties, size: population.ties.length, gone: new Set(), added: [], broken: new Set(state.broken) };
+}
+
+/**
+ * What one day's living works out that the next can use again, kept with the population (and
+ * the life it's living): the book of ties, and the hearts. A single day lived at midnight would
+ * otherwise spend most of its time working them out afresh.
+ */
+const keeps = new WeakMap<Population, { state: LifeState; book: TieBook | null; hearts: Map<string, { stamp: string; heart: Heart }> }>();
+function keptFor(population: Population, state: LifeState): { book: TieBook | null; hearts: Map<string, { stamp: string; heart: Heart }> } {
+  let kept = keeps.get(population);
+  if (!kept || kept.state !== state) keeps.set(population, (kept = { state, book: null, hearts: new Map() }));
+  return kept;
+}
+
+/** Brings the population's ties up to date with the book. */
+function settleTies(population: Population, book: TieBook): void {
+  if (book.gone.size === 0 && book.added.length === 0) return;
+  population.ties = [...population.ties, ...book.added].filter((t) => !book.gone.has(t));
+  book.gone.clear();
+  book.added = [];
 }
 
 /**
  * Makes what `b` is to `a` this (or, null, nothing): whatever they were to each other goes,
- * on the population, in the web, and for the save (the pair's ties from the start are
- * written off in `broken`, and what they are now kept in `made`). One tie a pair, as people
- * are made.
+ * in the book, and for the save (the pair's ties from the start are written off in `broken`,
+ * and what they are now kept in `made`). One tie a pair, as people are made.
  */
-function setTie(population: Population, state: LifeState, web: Web, a: Person, b: Person, kind: TieKind | null): void {
+function setTie(state: LifeState, book: TieBook, a: Person, b: Person, kind: TieKind | null): void {
   const key = tieKey(a.id, b.id);
+  const mine = book.web.get(a.id) ?? [];
+  const theirs = book.web.get(b.id) ?? [];
   // Only a pair already tied has ties to take out (the web says, as quickly as asking it), and those only between them.
-  if ((web.get(a.id) ?? []).some((t) => t.to === b.id)) {
-    const between = (t: Tie) => (t.from === a.id && t.to === b.id) || (t.from === b.id && t.to === a.id);
-    population.ties = population.ties.filter((t) => !between(t));
-    state.made = state.made.filter((t) => !between(t));
+  if (mine.some((t) => t.to === b.id)) {
+    for (const t of mine) if (t.to === b.id) book.gone.add(t);
+    for (const t of theirs) if (t.to === a.id) book.gone.add(t);
+    state.made = state.made.filter((t) => !((t.from === a.id && t.to === b.id) || (t.from === b.id && t.to === a.id)));
   }
-  if (!state.broken.includes(key)) state.broken.push(key);
-  web.set(a.id, (web.get(a.id) ?? []).filter((t) => t.to !== b.id));
-  web.set(b.id, (web.get(b.id) ?? []).filter((t) => t.to !== a.id));
+  if (!book.broken.has(key)) {
+    book.broken.add(key);
+    state.broken.push(key);
+  }
+  const there: Tie[] = mine.filter((t) => t.to !== b.id);
+  const back: Tie[] = theirs.filter((t) => t.to !== a.id);
+  book.web.set(a.id, there);
+  book.web.set(b.id, back);
   if (!kind) return;
-  const there: Tie = { from: a.id, to: b.id, kind };
-  const back: Tie = { from: b.id, to: a.id, kind: INVERSE[kind] };
-  population.ties.push(there, back);
-  state.made.push(there);
-  web.get(a.id)?.push(there);
-  web.get(b.id)?.push(back);
+  const tie: Tie = { from: a.id, to: b.id, kind };
+  const inverse: Tie = { from: b.id, to: a.id, kind: INVERSE[kind] };
+  book.added.push(tie, inverse);
+  state.made.push(tie);
+  there.push(tie);
+  back.push(inverse);
 }
 
 /** What a district's day can draw on besides its people: the tier a place runs at, and the people data (roles to hire into, the gangs). */
 interface DayContext {
   tier: (spot: Spot) => Quality;
   content: PeopleContent;
-  web: Web;
+  book: TieBook;
   byId: Map<string, Person>;
+  /** Everyone, by the district they live in, in the population's order. */
+  residents: Map<string, Person[]>;
+  /** Every storefront, by district. */
+  storefronts: Map<string, Building[]>;
   /** Whom someone is drawn to (people.ts), worked out once a person. */
   heart: (person: Person) => Heart;
   /** People the player is seeing: no one else's to fall for. */
@@ -273,18 +352,18 @@ interface DayContext {
  * work (a busy place taking someone on, a struggling one letting someone go), then a gang
  * filling a dead member's place, and now and then the oldest dying of their years.
  */
-function liveDay(world: World, population: Population, state: LifeState, rules: LifeRules, district: string, day: number, rng: Rng, ctx: DayContext): LifeEvent[] {
-  const { web, byId, content } = ctx;
+function liveDay(population: Population, state: LifeState, rules: LifeRules, district: string, day: number, rng: Rng, ctx: DayContext): LifeEvent[] {
+  const { book, byId, content } = ctx;
   const events: LifeEvent[] = [];
   const alive = (p: Person | undefined): p is Person => Boolean(p) && (p as Person).diedOn === undefined;
-  const locals = population.people.filter((p) => p.district === district && alive(p) && (state.hurt[p.id] ?? -1) < day);
+  const locals = (ctx.residents.get(district) ?? []).filter((p) => alive(p) && (state.hurt[p.id] ?? -1) < day);
   const gangers = locals.filter((p) => p.gang);
   const civilians = locals.filter((p) => !p.gang);
-  const storefronts = world.buildings.filter((b) => b.district === district && b.business);
+  const storefronts = ctx.storefronts.get(district) ?? [];
   const shopIds = new Set(storefronts.map((b) => b.id));
   const workers = civilians.filter((p) => p.job.building && shopIds.has(p.job.building));
   const room = () => events.length < rules.perDistrict;
-  const tiesFrom = (id: string) => web.get(id) ?? [];
+  const tiesFrom = (id: string) => book.web.get(id) ?? [];
   const tieBetween = (a: string, b: string) => tiesFrom(a).find((t) => t.to === b)?.kind ?? null;
   const write = (kind: LifeKind, who: [Person, Person], gang: string | null, took: number, where: Spot | null): void => {
     const event: LifeEvent = { id: state.nextId++, day, kind, who: [who[0].id, who[1].id], gang, district, took, where };
@@ -426,7 +505,7 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
       const nerve = (p: Person) => p.traits.courage * 0.6 + p.traits.temper * 0.4 + rng.range(0, 0.5);
       const [winner, loser] = nerve(pair[0]) >= nerve(pair[1]) ? pair : [pair[1], pair[0]];
       const where = spot(loser) ?? spot(winner);
-      const crew = loser.gang ? population.people.filter((p) => p.gang === loser.gang && p.district === district && alive(p)).length : 0;
+      const crew = loser.gang ? (ctx.residents.get(district) ?? []).filter((p) => p.gang === loser.gang && alive(p)).length : 0;
       if (winner.gang && loser.gang && crew > rules.crewFloor && rng.chance(rules.deadly)) {
         die(loser);
         for (const t of tiesFrom(loser.id)) {
@@ -447,21 +526,29 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
     const free = locals.filter((p) => p.age >= rules.adultAt && !together(p) && !ctx.spokenFor.has(p.id));
     const freeIds = new Set(free.map((p) => p.id));
     const close = (a: Person, b: Person) => Math.abs(a.age - b.age) <= rules.ageGap && drawnTo(ctx.heart(a), b.pronouns) && drawnTo(ctx.heart(b), a.pronouns);
-    const byHangout = byHangoutOf(free);
+    // A crowd's pairs grow as its square, so each is tested on what's worked out once a person:
+    // their age, and their pronouns as a bit against the bits of whom they're drawn to (`close`).
+    const groups = [...byHangoutOf(free).values()].map((regulars) => ({
+      regulars,
+      age: Float64Array.from(regulars, (p) => p.age),
+      own: Uint8Array.from(regulars, (p) => PRONOUN_BIT[p.pronouns]),
+      wants: Uint8Array.from(regulars, (p) => ctx.heart(p).drawnTo.reduce((bits, q) => bits | PRONOUN_BIT[q], 0)),
+    }));
     const pair = pickPair((take) => {
       for (const a of free) for (const t of tiesFrom(a.id)) if (t.kind === 'friend' && a.id < t.to && freeIds.has(t.to) && close(a, byId.get(t.to) as Person) && take(a, byId.get(t.to) as Person)) return;
-      for (const regulars of byHangout.values()) {
+      for (const { regulars, age, own, wants } of groups) {
         for (let i = 0; i < regulars.length; i++) {
           for (let j = i + 1; j < regulars.length; j++) {
+            if (Math.abs((age[i] as number) - (age[j] as number)) > rules.ageGap || !((wants[i] as number) & (own[j] as number)) || !((wants[j] as number) & (own[i] as number))) continue;
             const a = regulars[i] as Person;
             const b = regulars[j] as Person;
-            if (close(a, b) && tieBetween(a.id, b.id) === null && take(a, b)) return;
+            if (tieBetween(a.id, b.id) === null && take(a, b)) return;
           }
         }
       }
     });
     if (pair) {
-      setTie(population, state, web, pair[0], pair[1], 'partner');
+      setTie(state, book, pair[0], pair[1], 'partner');
       state.since[tieKey(pair[0].id, pair[1].id)] = day;
       write('romance', pair, null, 0, pair[0].likes.hangout ?? pair[1].likes.hangout);
     }
@@ -476,7 +563,7 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
     }
     const pair = ready.length ? rng.pick(ready) : null;
     if (pair) {
-      setTie(population, state, web, pair[0], pair[1], 'spouse');
+      setTie(state, book, pair[0], pair[1], 'spouse');
       write('wedding', pair, null, 0, pair[0].likes.hangout ?? pair[1].likes.hangout);
     }
   }
@@ -489,7 +576,7 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
     }
     const pair = pairs.length ? rng.pick(pairs) : null;
     if (pair) {
-      setTie(population, state, web, pair[0], pair[1], null);
+      setTie(state, book, pair[0], pair[1], null);
       delete state.since[tieKey(pair[0].id, pair[1].id)];
       write('breakup', pair, null, 0, pair[0].likes.hangout);
     }
@@ -503,9 +590,10 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
     for (const regulars of byHangoutOf(locals).values()) {
       const place = new Map(regulars.map((p, i) => [p.id, i]));
       for (let i = 0; i < regulars.length; i++) {
-        const later = new Set<string>();
-        for (const t of tiesFrom((regulars[i] as Person).id)) if ((place.get(t.to) ?? -1) > i) later.add(t.to);
-        const free = regulars.length - 1 - i - later.size;
+        // One tie a pair, so each tie to someone later there is one pair fewer.
+        let later = 0;
+        for (const t of tiesFrom((regulars[i] as Person).id)) if ((place.get(t.to) ?? -1) > i) later++;
+        const free = regulars.length - 1 - i - later;
         if (free > 0) rows.push({ regulars, i, free });
         count += free;
       }
@@ -527,7 +615,7 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
       }
     }
     if (pair) {
-      setTie(population, state, web, pair[0], pair[1], 'friend');
+      setTie(state, book, pair[0], pair[1], 'friend');
       write('friends', pair, null, 0, pair[0].likes.hangout);
     }
   }
@@ -540,7 +628,7 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
     }
     const pair = pairs.length ? rng.pick(pairs) : null;
     if (pair) {
-      setTie(population, state, web, pair[0], pair[1], null);
+      setTie(state, book, pair[0], pair[1], null);
       write('fallout', pair, null, 0, pair[0].likes.hangout);
     }
   }
@@ -554,7 +642,7 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
     }
     const pair = pairs.length ? rng.pick(pairs) : null;
     if (pair) {
-      setTie(population, state, web, pair[0], pair[1], 'friend');
+      setTie(state, book, pair[0], pair[1], 'friend');
       write('makeup', pair, null, 0, pair[0].likes.hangout);
     }
   }
@@ -572,7 +660,7 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
       hire.hiredOn = day;
       staffIndex = null;
       state.jobs[hire.id] = { role, building: b.id, day };
-      for (const s of staff) if (tieBetween(hire.id, s.id) === null) setTie(population, state, web, hire, s, 'coworker');
+      for (const s of staff) if (tieBetween(hire.id, s.id) === null) setTie(state, book, hire, s, 'coworker');
       if (boss) write('hired', [boss, hire], null, 0, at(b));
     }
   }
@@ -592,7 +680,7 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
         delete gone.hiredOn;
         staffIndex = null;
         state.jobs[gone.id] = { role, building: null, day };
-        for (const t of [...tiesFrom(gone.id)]) if (t.kind === 'coworker') setTie(population, state, web, gone, byId.get(t.to) as Person, null);
+        for (const t of [...tiesFrom(gone.id)]) if (t.kind === 'coworker') setTie(state, book, gone, byId.get(t.to) as Person, null);
         write('laidOff', [boss, gone], null, 0, at(b));
       }
     }
@@ -617,7 +705,7 @@ function liveDay(world: World, population: Population, state: LifeState, rules: 
       state.jobs[recruit.id] = { role, building: null, day };
       const rival = colors.rivals.find((r) => Object.values(content.turf).some((t) => t.some(([g]) => g === r)));
       if (rival && !recruit.hates) hate(recruit, rival);
-      for (const m of population.people) if (m.gang === gang && m !== recruit && alive(m) && tieBetween(recruit.id, m.id) === null) setTie(population, state, web, recruit, m, 'crew');
+      for (const m of population.people) if (m.gang === gang && m !== recruit && alive(m) && tieBetween(recruit.id, m.id) === null) setTie(state, book, recruit, m, 'crew');
       write('joined', [recruiter, recruit], gang, 0, recruiter.likes.hangout);
     }
   }
@@ -655,8 +743,8 @@ const PRIVATE: ReadonlySet<LifeKind> = new Set<LifeKind>(['friends', 'fallout', 
 
 export function newsFor(person: Person, population: Population, state: LifeState, rules: LifeRules, today: number): News | null {
   if (person.diedOn !== undefined) return null;
-  const recent = [...state.events].filter((e) => e.day > today - (rules.lasting[e.kind] ?? rules.newsDays)).sort((a, b) => b.day - a.day || b.id - a.id);
-  const byId = new Map(population.people.map((p) => [p.id, p]));
+  const recent = state.events.filter((e) => e.day > today - (rules.lasting[e.kind] ?? rules.newsDays)).sort((a, b) => b.day - a.day || b.id - a.id);
+  const byId = { get: (id: string) => personById(population, id) };
   const ties = tiesOf(population, person.id);
   const besides = (event: LifeEvent, other: Person): Person | null => {
     const id = event.who[0] === other.id ? event.who[1] : event.who[0];

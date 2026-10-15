@@ -34,6 +34,33 @@ CD PROJEKT RED). Use it alongside the wiki:
   Card text and card numbers are theirs: keep the facts, write our own words, and set our
   own numbers.
 
+## The city
+
+Every city is all of Night City: every district of the real one and every neighborhood in
+them, about where they are on the real map, with different places, streets and weather:
+
+- `src/engine/generate.ts` builds it from the seed and `src/data/city.ts`. A district's
+  `anchor` (0–100, north up) and its neighborhoods' `areaAt` offsets from it place its
+  `Subdistrict`s: the wiki's sub-districts (Kabuki, Little China, Japantown, the Glen…), and
+  the Badlands' zones round the east and the south. Each game nudges them a little, and they
+  are scaled to the map, `WORLD` in `src/engine/geography.ts` (160 units across; anything
+  that knows where the map ends goes by it). Every block, street corner and place belongs to
+  the nearest neighborhood (`subdistrictAt`, and `districtAt` for its district), so a place
+  is always in its own; `Location.area` names it, and `Game.neighborhoodOf` the player's.
+- A neighborhood gets two or three places (one or two out in the Badlands): its own real ones
+  first (a `Landmark`'s `area`), then its district's with none, then made-up kinds the
+  district doesn't have yet. Corners are handed out a round at a time, a place for each
+  neighborhood each round, so none is crowded out by its neighbors. A made-up name fills
+  `{area}` with its own neighborhood and keeps to `SHORT_NAME` when its kind has a name that
+  short (the sign is a phone wide). A real building (`BuildingLandmark`) takes the building of
+  its kind nearest the middle of its `area` when it has one, else of its district. A new real
+  place goes in with the `area` the wiki gives it.
+- The map opens on the player (`OPENING_ZOOM`), and as it zooms in the district names fade
+  into their neighborhoods' (those with a place the player knows), which fade in turn; the
+  closest zoom is as close as it was on a smaller map (`MAX_ZOOM`). While it moves it draws at
+  one pixel a pixel. A district's name goes in the middle of its places, or on its own
+  neighborhood nearest it when that middle is someone else's ground (the Badlands').
+
 ## Inside buildings
 
 Going inside a building is in place, with nothing to do in there yet. What's added later
@@ -166,21 +193,29 @@ it needs no generator bump. The pieces:
   role from `roles.extra` by the building's category; residents `perHome`, more in a `tall`
   block and a `megabuilding`; the gangs again, by `gangs`); the third (`seed:people:crowd`,
   `PEOPLE.crowd`, the same shape) is the crowd that fills the homes, most of a city now
-  (about two thousand people in all, a few hundred in a small city, three thousand in a big
-  one). Make a city bigger or smaller with the last draw's numbers, or a fourth draw on a new
+  (about four thousand people in all, from three and a half to five thousand). Make a city bigger or smaller with the last draw's numbers, or a fourth draw on a new
   stream, never by changing an earlier one (`tests/people.test.ts` checks the first two come
   out the same with the crowd as without it). Families, ties and hangouts are made within a
   draw; coworkers, crews and bios over everyone at the end, except that the crowd knows only
   `crowdKnows` of the people they work with (on a stream of its own), not a whole tower.
-- A city that size has to stay quick on a phone (a month away caught up in well under a
-  second): nothing that runs per person or per day may scan every person or every tie.
+- A city that size has to stay quick on a phone, about four times slower than a desktop.
+  `npm run bench` (`tests/budget.test.ts`, skipped by `npm test`) times the slow things on
+  the biggest cities against `BUDGET` (a new game, a reload, a month away, a day, the people
+  at a spot, a save): run it before and after anything that touches the city or its people,
+  and keep inside it. Nothing that runs per person or per day may scan every person or tie.
   `tiesOf` and `personById` keep an index per list (a list of ties is only ever replaced by a
   filter or pushed to, never edited in place: keep it that way); `peopleAt` looks only at
   people whose home, work or hangout is the spot; `bossOf` takes the staff when the caller
   has them; `liveDay` keeps its storefronts' staff indexed until a hire, a layoff or a death,
   and picks a pair out of a crowd by counting (`pickPair`, and the fights and new friendships
   counted from per-gang lists and ties) instead of listing every pair, drawing the same one
-  `rng.pick` would; `setTie` only filters the ties of a pair already tied. A save's records
+  `rng.pick` would; residents and storefronts are grouped by district once a catch-up.
+  `liveUntil` keeps the ties in a `TieBook`: a day reads and changes the book's web, and the
+  population's list is settled once at the end, in the order changing it there and then
+  would have left (so anything in a day reads ties from the book, never `population.ties`);
+  the book and the hearts are kept between days with the population (`keptFor`), a heart
+  worked out again only when what it's drawn from (spouses, gang, work and role, grudge) changes. A
+  save's records
   are copied in with JSON (`copyOf`), never `structuredClone`, which in V8 makes the first
   write to each key of a big record slow (seconds, for a city's eddies).
 - A `Person` has a home, a job (`building` null for freelance work), maybe a `gang`,
@@ -206,7 +241,10 @@ it needs no generator bump. The pieces:
   or their look, and the facts known), `standingWith` (web) and `conversation`, never the
   `Person` or the population's ties directly; new ways of finding things out go through
   `learnOf`, `learnFact` and `learnLink` (`Game.look` for what's plain to see, the topics
-  in `talk`, `Game.ask` and `Game.askFact`), and everything said goes through `logLine`. A
+  in `talk`, `Game.ask` and `Game.askFact`), and everything said goes through `logLine`. The
+  Ask picker offers only `Game.worthAsking` to ask someone about (at most `ASK_ABOUT`, from
+  what the player knows: seen with them, their family name, here with them, talked to lately,
+  and none already asked), never everyone known, which grows with every name learned. A
   tie that has changed since (told of a couple, a wedding, a split, a falling out or a
   making up) is `relearnLink`, which replaces what the player knew.
 - People remember what the player did, thing by thing (`src/engine/memory.ts`): a `Memory`
@@ -332,8 +370,14 @@ it needs no generator bump. The pieces:
   `life` save. Anything new that moves eddies between people and places goes in
   `economyDay`; anything that reads them goes through `Game.trade` or the vars.
 - Gangs are canon (wiki): keep their turf, looks and rivalries true to it. Names are made
-  up in each community's style and must never be a real character's (`tests/people.test.ts`
-  checks a few).
+  up in each community's style and must never be a real character's: `tests/people.test.ts`
+  puts every given name of a community's pool with every family name of it against the
+  wiki's character pages (`tests/fixtures/canon-characters.txt`, the titles of its 2077,
+  Edgerunners, comic, fixer and vendor categories), and checks the pools are big enough for
+  a city: nobody needs a number to tell them apart. Grow a pool when a city grows, knowing
+  that any change to a pool renames everyone (names are picks from it, and ids are names), so
+  saved people no longer match: it needs `GENERATOR_VERSION` bumped like a change to the city,
+  for saves to start over rather than lose their people quietly.
 - People have hearts and the player can win one (`src/engine/romance.ts`, numbers in
   `SOCIETY.romance`). `heartOf(person)` (people.ts, on its own stream, from `PEOPLE.hearts`)
   is whom they're drawn to by pronouns (none at all for a few; a spouse always), the way in
@@ -457,7 +501,9 @@ Eateries sell food, into the inventory (eating it comes later):
 ## The header and the status drop-down
 
 The sign (`src/ui/hud.ts`) says where the player is and shrinks its letters to fit a long
-name; the address above it says only the district, and the clock only the time of day.
+name; the address above it says the neighborhood and the district, most particular first like
+a host name (`NCNET://kabuki.watson`, so a long one loses the district to the ellipsis), and
+the clock only the time of day.
 Nothing else on the screen repeats them: the panel's kicker says what's here ("You are
 here · Restaurant", "Inside · Block G1"), never the district, and has no title inside a
 building or at a place (the target view keeps its own, with the district, since it's

@@ -23,6 +23,7 @@ Other scripts:
 |---|---|
 | `npm test` | Runs the unit tests (game logic, plus checks on 500 generated cities) |
 | `npm run typecheck` | Checks the TypeScript for errors |
+| `npm run bench` | Times the slow things (a new game, a reload, a month away, a day) on the biggest cities against the performance budget |
 | `npm run build` | Builds a static site into `dist/` that can be hosted anywhere (e.g. GitHub Pages); `CHANNEL=beta` builds the beta, with its own save |
 
 Branches and releases: new work goes to `beta` by pull request, and a push to `beta` or `main`
@@ -34,23 +35,30 @@ on.
 
 ## Playing
 
-Every game is a new, procedurally generated Night City: a different mix of districts
-(Watson, Westbrook, City Center, Heywood, Santo Domingo, Pacifica, sometimes the Badlands),
-different places in them, weather and streets.
+Every game is a new, procedurally generated Night City, and all of it: every district
+(Watson, Westbrook, City Center, Heywood, Santo Domingo, Pacifica) and every neighborhood in
+them (Kabuki, Little China, Northside, Japantown, Charter Hill, Corpo Plaza, the Glen,
+Wellsprings, Arroyo, Dogtown…), with the Badlands around them, but different places in
+them, weather and streets.
 
-**Canon first.** Districts sit where they are in the real Night City (Watson north, City
-Center in the middle, Westbrook east, Heywood and Santo Domingo south, Pacifica south-west,
-the Pacific to the west and the Badlands to the east), nudged a little each game. Each
-district fills up with real places from Cyberpunk 2077 first (the Afterlife, Tom's Diner,
-Viktor's Clinic, Lizzie's Bar, Jig-Jig Street, Konpeki Plaza, El Coyote Cojo, the Sunset
-Motel…) and only makes up places once it runs out of those. The NCART uses the real 2077
+**Canon first.** Districts and their neighborhoods sit where they are in the real Night City
+(Watson north, City Center in the middle, Westbrook east, Heywood and Santo Domingo south,
+Pacifica south-west, the Pacific to the west, and the Badlands' zones round the east and the
+south: the oil fields, Red Peaks, Rocky Ridge, Laguna Bend, Sierra Sonora, the Jackson Plains
+and Biotechnica Flats), nudged a little each game. Each neighborhood fills up with its own
+real places from Cyberpunk 2077 first (the Afterlife and Tom's Diner in Little China, Lizzie's
+Bar in Kabuki, Jig-Jig Street in Japantown, Konpeki Plaza on the Arasaka Waterfront, El
+Coyote Cojo in the Glen, the Sunset Motel in Red Peaks…) and only makes up places once it
+runs out of those. The address over the sign says which neighborhood you're in. The NCART uses the real 2077
 network's station names (Eisenhower Street, MedCenter, Memorial Park, Monroe & Sagan…) and
 its line names and colors. Neighborhoods, gangs, corporations and street terms all come
 from the game. Arasaka Tower always stands downtown. Names, locations and lore are checked
 against the [Cyberpunk Wiki](https://cyberpunk.fandom.com); prices and times are the game's
 own.
 
-- **City map**: a street grid of city blocks, desert and coastline, tinted by district.
+- **City map**: a street grid of city blocks, desert and coastline, tinted by district. It
+  opens on you, close enough to read your neighborhood; zoomed out, it's the whole city with
+  the districts' names, which give way to their neighborhoods' as you zoom in.
   Unexplored areas sit under heavy fog. It only lifts along the streets you actually walk
   (the block either side, so nothing stays hidden for good) and around places you've been;
   riding the NCART doesn't clear it. Arriving
@@ -96,7 +104,7 @@ own.
   Au Cabanon, El Pinche Pollo, Kabuki Market…) have their own menus. **Buy** puts the dish in
   your inventory under consumables.
 - **People**: every city has its own people, made up for its seed and the same every time
-  you come back: around two thousand of them (a few hundred in a small city, three thousand in a big one), with names from their district's communities
+  you come back: around four thousand of them (three and a half to five thousand), with names from their district's communities
   (Watson's Asian neighborhoods, Heywood's barrios, the Haitian diaspora of Pacifica, corpos
   in City Center), homes in its apartment blocks and megabuildings, jobs in its storefronts,
   towers and factories (or none to speak of), families who share a name (couples, children,
@@ -206,8 +214,10 @@ own.
 - **Who knows whom**: the same rule. Opening **People** takes in everyone there, and any
   two who are actually connected you've *seen together* (connected somehow, you don't know
   how). Once someone likes you they drop names ("My sister Ana works at…"), which tells you
-  the relation and the name. And you can **Ask about** anyone whose name you have: they'll
-  tell you what the person is to them, that they've never heard of them, or nothing. Tap
+  the relation and the name. And you can **Ask about** the few worth asking about: anyone
+  you've seen them with, anyone who shares their family name, whoever's here with them and
+  the last people you've talked to (six at most, and nobody you've asked about already);
+  they'll tell you what the person is to them, that they've never heard of them, or nothing. Tap
   the card's facts line and their web unfolds under it: them in the middle and everyone you
   know them to know around them, each spoke labeled with the relation or "?" (dashed) when
   all you know is that they're connected; tap a name to open that person's card (even if
@@ -506,17 +516,19 @@ Effects that rely on motion are toned down when the OS "reduce motion" setting i
 Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
 
 - **Districts** have colors, weather options, where they sit on the map (`anchor`), their
-  real neighborhoods, their real places (`landmarks`, used before anything is made up), the
-  kinds of place they can make up, mood sentences and ambient lines (separate indoor and
-  outdoor sets).
+  real neighborhoods and where each sits from the anchor (`areas`, `areaAt`), their real
+  places (`landmarks`, each with the neighborhood it's in, used before anything is made up),
+  the kinds of place they can make up, mood sentences and ambient lines (separate indoor and
+  outdoor sets). Every city has every district and every neighborhood in it.
 - **Kinds of place** (bar, ripperdoc, night market, rooftop, nomad camp…) have name templates,
-  description sentences and ambient lines. In names, `{area}` becomes one of the district's
-  neighborhoods and `{n}` a small number: `{area} Night Market` → `Kabuki Night Market`.
+  description sentences and ambient lines. In names, `{area}` becomes the place's own
+  neighborhood and `{n}` a small number: `{area} Night Market` → `Kabuki Night Market`.
 - **Buildings**: each district's `zoning` weights what its blocks are built as, and `BUILDINGS`
   gives every kind of building its label, height range and name templates (which can also use
   `{corp}` and `{shop}`). A storefront's business comes from `businesses`, weighted by the
   district's `trade`; a `chain` business is named after its sign, and `where` keeps it to some
-  districts. Real eateries are `landmarks` with a `business`.
+  districts. Real eateries are `landmarks` with a `business` (and the neighborhood they're in,
+  where the wiki says).
 - **People** are in [`src/data/people.ts`](src/data/people.ts): name pools by community and
   which communities each district draws from, the gangs (their members' look, roles and
   rivals) and each district's turf, job roles by business, category and building kind,

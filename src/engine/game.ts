@@ -10,7 +10,7 @@ import { drink, freshInebriation, inebriationStatus, type InebriationRules, type
 import { bossAt, bossOf, canPromote, ladderFor, nextRung, rungOf, shiftOpen, shiftPay, type JobRules, type JobState, type JobStatus, type Rung } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
-import { dreamOf, drawnTo, generatePeople, handleOf, heartOf, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
@@ -51,7 +51,7 @@ import {
   type Standing,
   unpinnedIncidents,
 } from './society';
-import { districtAt } from './geography';
+import { districtAt, subdistrictAt, WORLD } from './geography';
 import type { Progress } from './save';
 import { pointAlong, snapToStreet } from './streets';
 import { planTrip, startTrip, tripProgress, walkedSoFar, type TravelRules } from './travel';
@@ -75,8 +75,11 @@ import type {
 } from './types';
 
 /** The fog lifts in square cells this many map units across (a couple of building widths). */
+/** The most people the Ask picker offers to ask someone about. */
+export const ASK_ABOUT = 6;
+
 export const CELL = 2;
-export const CELLS = Math.ceil(100 / CELL);
+export const CELLS = Math.ceil(WORLD / CELL);
 /**
  * Walking lifts the fog this far either side of the player, in map units: the street and the
  * block along it. Blocks run up to 9.5 across, so the deepest fog cell sits 5 from a street;
@@ -1553,14 +1556,13 @@ export class Game {
   }
 
   /** The tier a place runs at, for what an evening there costs, remembered per place. */
-  private readonly tiers = new Map<string, Quality>();
+  private readonly tiers: Record<Spot['kind'], Map<string, Quality>> = { building: new Map(), location: new Map() };
   private tierOfSpot(spot: Spot): Quality {
-    const key = `${spot.kind}:${spot.id}`;
-    const known = this.tiers.get(key);
+    const known = this.tiers[spot.kind].get(spot.id);
     if (known) return known;
     const at = spot.kind === 'building' ? this.world.buildings.find((b) => b.id === spot.id) : this.world.locations[spot.id];
     const tier: Quality = !at ? 'everyday' : spot.kind === 'building' ? this.tierOf(at as Building) : (menuFor(this.world, at, this.rules.food)?.venue.quality ?? drawQuality(this.world, at));
-    this.tiers.set(key, tier);
+    this.tiers[spot.kind].set(spot.id, tier);
     return tier;
   }
 
@@ -2081,6 +2083,39 @@ export class Game {
     this.noteFeedback(person, before, now, reaction.why);
     this.events.emit('societyChanged', { people: learned });
     return true;
+  }
+
+  /**
+   * Who it's worth asking someone about, from what the player can see or knows, never the
+   * ties as they are: anyone seen with them, connected somehow (how, the player can't tell);
+   * anyone who shares their family name; anyone here with them; the last few the player has
+   * talked to. Never anyone the player has asked them about already, or knows how they're
+   * tied; at most `ASK_ABOUT` of them, so it doesn't grow with every name the player learns.
+   */
+  worthAsking(id: string, now: number): Person[] {
+    const person = this.person(id);
+    if (!person) return [];
+    const named = (p: Person | undefined): p is Person => Boolean(p) && p?.id !== id && knowledgeOf(this.society, (p as Person).id).facts.includes('name');
+    // Not asked yet, nor told how they're tied: nothing known, or only that they're connected.
+    const open = (p: Person) => (linkOf(this.society, id, p.id)?.kind ?? null) === null;
+    const seenWith = Object.entries(this.society.links)
+      .filter(([key, link]) => link.kind === null && key.split('|').includes(id))
+      .map(([key]) => this.person(key.split('|').find((k) => k !== id) ?? ''));
+    const knownNamed = this.knownPeople().filter(named);
+    const family = knownNamed.filter((p) => p.family === person.family);
+    const here = this.peopleHere(now).map((p) => p.person);
+    const lately = knownNamed
+      .map((p) => ({ p, at: knowledgeOf(this.society, p.id).log.at(-1)?.at ?? 0 }))
+      .filter(({ at }) => at > 0)
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 3)
+      .map(({ p }) => p);
+    const picked: Person[] = [];
+    for (const p of [...seenWith, ...family, ...here, ...lately]) {
+      if (picked.length >= ASK_ABOUT) break;
+      if (named(p) && !picked.includes(p) && open(p)) picked.push(p);
+    }
+    return picked;
   }
 
   /**
@@ -2752,6 +2787,17 @@ export class Game {
     if (building) return `Outside ${building.name}`;
     const block = blockAt(this.world.layout, where);
     return block ? `Block ${block.address}` : 'The streets';
+  }
+
+  /** The neighborhood a spot is in: a place's own, else the one its streets belong to (null for a district without them). */
+  neighborhoodOf(where: Point & Partial<Whereabouts>): string | null {
+    const place = where.place ? this.world.locations[where.place] : undefined;
+    if (place) return place.area ?? null;
+    // A building's own neighborhood, its block's (the one its name was given in), not the street outside's.
+    const building = where.building ? buildingById(this.world, where.building) : undefined;
+    const block = building ? blockAt(this.world.layout, { x: building.x + building.w / 2, y: building.y + building.h / 2 }) : null;
+    const at = block ? { x: (block.x0 + block.x1) / 2, y: (block.y0 + block.y1) / 2 } : where;
+    return subdistrictAt(Object.values(this.world.districts), at)?.subdistrict?.name ?? null;
   }
 
   districtOf(where: Point & Partial<Whereabouts>): District | null {

@@ -164,6 +164,15 @@ export function readSave(raw: unknown): SaveData | null {
   };
 }
 
+/**
+ * What a save picks up with in this build: nothing when another version of the generator made
+ * it (the seed no longer builds the city it knew, so the game starts that city over), or when
+ * it doesn't fit the city (see `resume`).
+ */
+export function progressFor(world: World, save: SaveData, generator: number): Progress | null {
+  return save.generator === generator ? resume(world, save) : null;
+}
+
 /** The progress in a save, checked against the city rebuilt from its seed. Null if they don't match. */
 export function resume(world: World, save: SaveData): Progress | null {
   const known = (id: string) => id in world.locations;

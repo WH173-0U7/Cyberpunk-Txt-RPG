@@ -22,7 +22,7 @@ import type { Menu, Quality } from './engine/food';
 import { kinWord, type Approach, type Question } from './engine/dialogue';
 import type { InebriationStatus } from './engine/inebriation';
 import { randomSeed } from './engine/rng';
-import { createSave, readSave, resume, savedSeed, type Progress } from './engine/save';
+import { createSave, progressFor, readSave, savedSeed, type Progress } from './engine/save';
 import { snapToStreet } from './engine/streets';
 import { tripProgress } from './engine/travel';
 import type { Building, Item, TravelMode, Trip, TripPlan, Wallet, Weather, Whereabouts, World } from './engine/types';
@@ -967,7 +967,6 @@ function showPeople(): void {
   const how = { seen: 'seen together', told: 'told', asked: 'asked' };
   const nameOf = (id: string, fallback: string) => game.describe(id)?.name ?? fallback;
   const described = shown ? game.describe(shown.id, now) : null;
-  const named = (p: { id: string }) => game.describe(p.id)?.named ?? false;
   people.render({
     count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
     // The standing lines belong to the list; a card is about one person.
@@ -1003,7 +1002,8 @@ function showPeople(): void {
             questions: (Object.entries(LINES.questions) as Array<[Question, { label: string }]>)
               .filter(([fact]) => !standing.knowledge.facts.includes(fact))
               .map(([fact, q]) => ({ fact, label: q.label })),
-            askAbout: known.filter((p) => p.id !== shown.id && named(p)).map((p) => ({ id: p.id, name: p.name })),
+            // A few worth asking about (seen with them, family by the name, here with them, talked to lately), never everyone known.
+            askAbout: present ? game.worthAsking(shown.id, now).map((p) => ({ id: p.id, name: p.name })) : [],
             gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
             // A hot chip can be put to a netrunner the player can tell is one; the label says what it holds and what they'd keep.
             chops: present && game.canChop(shown.id) ? hot.map((c) => ({ id: c.id, label: `€$ ${c.balance ?? 0} chip · cut ${chipCut(c.balance ?? 0, MONEY)}` })) : [],
@@ -1108,7 +1108,7 @@ function wire(g: Game): void {
     skyNow = location?.weather ?? district?.weather ?? 'clear';
     weather.setWeather(skyNow);
     weather.setTint(theme.primary);
-    hud.setLocation(g.nameOf(where), district?.name ?? 'Night City');
+    hud.setLocation(g.nameOf(where), district?.name ?? 'Night City', g.neighborhoodOf(where));
     if (from) screen.glitch();
     place.scan();
     refresh();
@@ -1122,7 +1122,7 @@ function wire(g: Game): void {
     // Indoors, the weather stays outside.
     skyNow = building ? 'clear' : (district?.weather ?? 'clear');
     weather.setWeather(skyNow);
-    hud.setLocation(building ? building.name : g.nameOf(where), district?.name ?? 'Night City');
+    hud.setLocation(building ? building.name : g.nameOf(where), district?.name ?? 'Night City', g.neighborhoodOf(where));
     place.scan();
     refresh();
     queueSave();
@@ -1225,7 +1225,7 @@ function boot(): void {
   try {
     const saved = readSave(raw);
     const world = saved ? generateWorld(saved.seed, CITY) : null;
-    const progress = saved && world && saved.generator === GENERATOR_VERSION ? resume(world, saved) : null;
+    const progress = saved && world ? progressFor(world, saved, GENERATOR_VERSION) : null;
     if (world && progress) {
       begin(world, progress);
       return;
@@ -1239,7 +1239,7 @@ function boot(): void {
   // A save from before the game changed how cities (or saves) work: keep the city, start the map over.
   const oldSeed = savedSeed(raw);
   if (oldSeed) {
-    begin(generateWorld(oldSeed, CITY), undefined, 'Night City has changed since you were last here. Your map starts over.');
+    begin(generateWorld(oldSeed, CITY), undefined, 'Night City has changed since you were last here. You start over in it.');
     return;
   }
   const seedInAddress = location.hash.slice(1).toLowerCase();
