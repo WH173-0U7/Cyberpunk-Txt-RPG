@@ -17,7 +17,7 @@ export type Range = 'reach' | 'close' | 'far';
 export const RANGES: readonly Range[] = ['reach', 'close', 'far'];
 
 /** What a fighter can do in a beat: attack with what they've got, close in, back off, take cover (and reload), quickhack, talk it down, run; freezing is what happens when the clock runs out. */
-export type Move = 'attack' | 'advance' | 'back' | 'cover' | 'hack' | 'talk' | 'run' | 'freeze';
+export type Move = 'attack' | 'advance' | 'back' | 'cover' | 'hack' | 'heal' | 'talk' | 'run' | 'freeze';
 
 /** The ways of fighting: every class of weapon, bare fists, and the chrome in an arm. */
 export type FightClass = WeaponClass | 'fists' | 'mantis-blades' | 'gorilla-arms' | 'monowire' | 'launcher';
@@ -68,6 +68,9 @@ export interface Fighter {
   /** Damage a beat from something still burning in them (Overheat, Contagion), and for how many beats. */
   burn: number;
   burning: number;
+  /** Health back a beat from a med still working (Bounce Back), and for how many beats. */
+  regen: number;
+  regening: number;
   /** Uses left of chrome with charges (the launcher). */
   charges: number;
 }
@@ -84,9 +87,11 @@ export interface Edge {
   smart: boolean;
   /** Attacks against them miss more on the first beat (optical camo). */
   evade: number;
+  /** Multiplies what a gun, a blade, a wire or a launcher does: under 1 aiming to wound. */
+  wound: number;
 }
 
-export const NO_EDGE: Edge = { aim: 1, melee: 1, guard: 1, smart: false, evade: 0 };
+export const NO_EDGE: Edge = { aim: 1, melee: 1, guard: 1, smart: false, evade: 0, wound: 1 };
 
 /** A quickhack in a fight: what it does (the numbers are `src/data/quickhacks.ts`'s). */
 export interface HackEffect {
@@ -105,6 +110,10 @@ export interface CombatRules {
   classes: Record<FightClass, ClassRules>;
   /** The real time the player has to pick a move, in ms, before freezing. */
   window: number;
+  /** What a gun, a blade, a wire or a launcher does aiming to wound rather than kill. */
+  nonLethal: number;
+  /** The odds that someone put down by a quickhack or a burn is dead, aiming to kill. */
+  hackLethal: number;
   /** Multipliers on the odds of landing an attack. */
   odds: { cover: number; coverMelee: number; moving: number; running: number; blind: number; smartLink: number; smartless: number; hurt: number };
   /** Damage over armor: what's left is damage × soak / (soak + armor). */
@@ -138,6 +147,7 @@ export type BeatEvent =
   | { who: 'you' | 'them'; what: 'advance' | 'back' | 'cover' | 'reload' | 'freeze' | 'empty' | 'jammed' | 'stuck' | 'outOfReach' }
   | { who: 'you' | 'them'; what: 'talk' | 'run'; ok: boolean }
   | { who: 'you'; what: 'hack'; hack: string; dmg: number }
+  | { who: 'you'; what: 'heal' | 'regen'; dmg: number }
   | { who: 'you' | 'them'; what: 'burn'; dmg: number };
 
 /** Whether an attack with this arm can land at this range at all. */
@@ -189,6 +199,7 @@ export function damageOf(attacker: Fighter, edge: Edge, target: Fighter, targetE
   if (!cls) return 0;
   let dmg = rng.range(cls.damage[0], cls.damage[1]);
   if (cls.kind === 'blade' || cls.kind === 'blunt' || cls.kind === 'fists' || cls.kind === 'wire') dmg *= edge.melee;
+  if (cls.kind === 'gun' || cls.kind === 'blade' || cls.kind === 'wire' || cls.kind === 'launcher') dmg *= edge.wound;
   dmg *= rules.soak / (rules.soak + Math.max(0, target.armor));
   dmg *= targetEdge.guard;
   return Math.max(1, Math.round(dmg));
@@ -204,7 +215,7 @@ export function resolveBeat(
   state: FightState,
   yours: Move,
   theirs: Move,
-  ctx: { you: Edge; them: Edge; hack?: { id: string; ram: number; effect: HackEffect }; indoors: boolean; talkOdds: number; rng: Rng; rules: CombatRules },
+  ctx: { you: Edge; them: Edge; hack?: { id: string; ram: number; effect: HackEffect }; med?: { heal: number; regen?: { perBeat: number; beats: number } }; indoors: boolean; talkOdds: number; rng: Rng; rules: CombatRules },
 ): { state: FightState; events: BeatEvent[]; fled: 'you' | 'them' | null; talked: boolean } {
   const { rng, rules } = ctx;
   const s: FightState = { ...state, beat: state.beat + 1, you: { ...state.you }, them: { ...state.them } };
@@ -304,6 +315,16 @@ export function resolveBeat(
     if (effect.chromeOff) s.them.chromeOff = effect.chromeOff + 1;
     events.push({ who: 'you', what: 'hack', hack: ctx.hack.id, dmg });
   }
+  // A med taken this beat heals before what lands on the player does.
+  if (yours === 'heal' && ctx.med) {
+    const before = s.you.hp;
+    s.you.hp = Math.min(s.you.max, s.you.hp + ctx.med.heal);
+    if (ctx.med.regen) {
+      s.you.regen = ctx.med.regen.perBeat;
+      s.you.regening = ctx.med.regen.beats;
+    }
+    events.push({ who: 'you', what: 'heal', dmg: s.you.hp - before });
+  }
   for (const { target, dmg } of hits) target.hp = Math.max(0, target.hp - dmg);
   // Talking it down: it takes if they don't come at the player, or the odds hold even so.
   let talked = false;
@@ -324,6 +345,12 @@ export function resolveBeat(
       f.hp = Math.max(0, f.hp - f.burn);
       f.burning -= 1;
       events.push({ who, what: 'burn', dmg: f.burn });
+    }
+    if (f.regening > 0 && f.hp > 0) {
+      const before = f.hp;
+      f.hp = Math.min(f.max, f.hp + f.regen);
+      f.regening -= 1;
+      if (who === 'you' && f.hp > before) events.push({ who: 'you', what: 'regen', dmg: f.hp - before });
     }
     f.covered = (who === 'you' ? yours : theirs) === 'cover';
     for (const key of ['blind', 'jammed', 'crippled', 'chromeOff'] as const) if (f[key] > 0) f[key] -= 1;
@@ -432,6 +459,8 @@ export interface FightView {
   hacks: Array<{ id: string; name: string; ram: number; enabled: boolean }>;
   ram: number;
   ramMax: number;
+  /** Aiming to kill, or (the player's choice, kept between fights) to wound. */
+  lethal: boolean;
   over: FightOutcome | null;
   result: string;
 }

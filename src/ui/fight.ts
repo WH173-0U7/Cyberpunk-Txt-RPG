@@ -19,11 +19,14 @@ export interface FightElements extends OverlayElements {
   hacks: HTMLElement;
   result: HTMLElement;
   done: HTMLButtonElement;
+  lethal: HTMLButtonElement;
 }
 
 export interface FightHandlers {
   /** The player picked a move (a hack names its quickhack). */
   onMove(move: Move, hack?: string): void;
+  /** The player chose to fight to kill, or to wound. */
+  onLethal(on: boolean): void;
 }
 
 /**
@@ -48,6 +51,7 @@ export class FightPanel {
   ) {
     this.overlay = new MapOverlay(els, onOpen, onClose, reducedMotion);
     els.done.addEventListener('click', () => this.overlay.close());
+    els.lethal.addEventListener('click', () => this.handlers.onLethal(els.lethal.getAttribute('aria-pressed') !== 'true'));
     els.moves.addEventListener('click', (e) => {
       const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('[data-move]') : null;
       if (!button || button.disabled) return;
@@ -107,6 +111,12 @@ export class FightPanel {
         return button;
       }),
     );
+    // Aiming to wound, or to kill: pressed means to kill.
+    els.lethal.hidden = Boolean(view.over);
+    els.lethal.setAttribute('aria-pressed', String(view.lethal));
+    els.lethal.classList.toggle('is-lethal', view.lethal);
+    els.lethal.textContent = view.lethal ? 'Fighting to kill' : 'Aiming to wound';
+    els.lethal.title = view.lethal ? 'Tap to aim to wound instead' : 'Tap to fight to kill';
     els.result.hidden = !view.over;
     els.result.textContent = view.result;
     els.done.hidden = !view.over;

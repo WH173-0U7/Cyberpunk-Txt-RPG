@@ -148,7 +148,7 @@ describe('playing badly', () => {
     for (const seed of seeds) {
       const world = generateWorld(seed, CITY);
       const rng = createRng(`fuzz:${seed}`);
-      const stores = world.buildings.filter((b) => b.business && ['food', 'clothing', 'commodity', 'services', 'firearms', 'melee', 'cyberware', 'netrunning'].includes(b.category));
+      const stores = world.buildings.filter((b) => b.business && ['food', 'clothing', 'commodity', 'services', 'firearms', 'melee', 'cyberware', 'netrunning', 'medical'].includes(b.category));
       let progress: Progress = {
         where: { ...streetSpot(world.locations[world.start] ?? { x: 50, y: 50 }), place: world.start },
         visited: [world.start],
@@ -178,7 +178,7 @@ describe('playing badly', () => {
         game.start(now);
         const about = `${seed} step ${step} at ${at.name} (${at.business})`;
         for (let act = 0; act < 4; act++) {
-          const menu = game.menu();
+          const menu = game.menu(now);
           const people = game.peopleHere(now);
           const roll = rng.next();
           if (menu && roll < 0.35) {
@@ -215,6 +215,8 @@ describe('playing badly', () => {
             }
             else if (what < 0.45) game.rob(who, now);
             else if (what < 0.55 && game.attack(who, now)) {
+              // To kill, now and then; to wound, mostly.
+              game.setLethal(rng.chance(0.3));
               // A fight, played badly to the end: any move there is, or none in time.
               for (let beat = 0; beat < 40 && game.fighting; beat++) {
                 const view = game.fightView()!;

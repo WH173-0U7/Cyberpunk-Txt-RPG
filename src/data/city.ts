@@ -646,6 +646,14 @@ const KINDS: Record<string, LocationKind> = {
   },
 };
 
+/**
+ * What a hospital takes over, in that order: a clinic or a pharmacy, else a laundromat or a
+ * repair shop, else a bodega. Only a storefront, and never one people hang out at, so the
+ * people stay who they are; a district with none has no hospital of its own, and its hurt go
+ * to the nearest there is.
+ */
+const HOSPITAL_GROUND: Array<'medical' | 'services' | 'commodity'> = ['medical', 'services', 'commodity'];
+
 const BUILDINGS: BuildingContent = {
   styles: {
     tower: { label: 'Corporate tower', category: 'corporate', floors: [40, 96], names: ['{corp} Tower', '{corp} Plaza One', '{corp} Spire', '{corp} Regional HQ'] },
@@ -726,6 +734,16 @@ const BUILDINGS: BuildingContent = {
     { district: 'santo_domingo', kind: 'shops', name: 'BuryGer', business: 'diner' },
     { district: 'santo_domingo', kind: 'shops', name: 'Capitán Caliente', business: 'capitan-caliente' },
     { district: 'santo_domingo', kind: 'shops', name: 'Buck-A-Slice', business: 'buck-a-slice' },
+    // A hospital in every district but the Badlands, each in a clinic's building: Pacifica's is
+    // Dogtown's Haven Clinic; the rest the wiki doesn't name, so they're made up (named for the
+    // district where its neighborhood has few storefronts to take). Watson has the Night City
+    // Medical Center too (a place of its own, Trauma Team's) when the city draws it.
+    { district: 'watson', area: 'Kabuki', kind: 'shops', name: 'Kabuki Community Hospital', business: 'hospital', categories: HOSPITAL_GROUND },
+    { district: 'pacifica', area: 'Dogtown', kind: 'shops', name: 'Haven Clinic', business: 'hospital', categories: HOSPITAL_GROUND },
+    { district: 'westbrook', area: 'Charter Hill', kind: 'shops', name: 'Charter Hill Medical', business: 'hospital', categories: HOSPITAL_GROUND },
+    { district: 'city_center', area: 'Downtown', kind: 'shops', name: 'City Center General', business: 'hospital', categories: HOSPITAL_GROUND },
+    { district: 'heywood', area: 'Wellsprings', kind: 'shops', name: 'Wellsprings Community Hospital', business: 'hospital', categories: HOSPITAL_GROUND },
+    { district: 'santo_domingo', area: 'Arroyo', kind: 'shops', name: 'Santo Domingo General', business: 'hospital', categories: HOSPITAL_GROUND },
   ],
   // What a storefront can be. Its sign goes into its name ("Kabuki Gun Shop", "24/7 Bodega").
   businesses: [
@@ -768,6 +786,8 @@ const BUILDINGS: BuildingContent = {
     { id: 'ded-zed', sign: 'Ded-Zed', label: 'Clothing store', category: 'clothing', chain: true, where: ['watson'] },
     { id: 'pharmacy', sign: 'Pharmacy', label: 'Pharmacy', category: 'medical' },
     { id: 'street-clinic', sign: 'Clinic', label: 'Street clinic', category: 'medical' },
+    // Only the real hospitals above run one: none opens at random.
+    { id: 'hospital', sign: 'Hospital', label: 'Hospital', category: 'medical', where: [] },
     { id: 'garage', sign: 'Garage', label: 'Garage', category: 'vehicles' },
     { id: 'chop-shop', sign: 'Chop Shop', label: 'Chop shop', category: 'vehicles' },
     { id: 'braindance-parlor', sign: 'Braindance Parlor', label: 'Braindance parlor', category: 'entertainment' },

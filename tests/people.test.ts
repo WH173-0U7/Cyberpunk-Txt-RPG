@@ -16,6 +16,29 @@ const cities = seeds.map((seed) => {
 const FAMILY: TieKind[] = ['spouse', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew', 'kin'];
 
 describe('the people', () => {
+  it('are the same with hospitals in the city as without: a hospital takes only a storefront nobody hangs out at', () => {
+    const without = { ...CITY, buildings: { ...CITY.buildings, landmarks: CITY.buildings.landmarks!.filter((l) => l.business !== 'hospital'), businesses: CITY.buildings.businesses.filter((b) => b.id !== 'hospital') } };
+    for (const seed of seeds.slice(0, 4)) {
+      const before = generateWorld(seed, without);
+      const after = generateWorld(seed, CITY);
+      expect(after.locations).toEqual(before.locations);
+      const hospitals = new Set(after.buildings.filter((b) => b.business === 'hospital').map((b) => b.id));
+      expect(hospitals.size).toBeGreaterThan(0);
+      // Only the hospitals changed, and only their name and business.
+      for (const [i, b] of after.buildings.entries()) {
+        const was = before.buildings[i]!;
+        if (hospitals.has(b.id)) expect({ ...b, name: was.name, business: was.business, category: was.category, kindLabel: was.kindLabel }).toEqual(was);
+        else expect(b).toEqual(was);
+      }
+      // Everyone is who they were, but for the job titles of the staff where a hospital opened.
+      const a = generatePeople(before, PEOPLE, FOOD.dishes);
+      const b = generatePeople(after, PEOPLE, FOOD.dishes);
+      const plain = (p: (typeof a.people)[number]) => ({ ...p, bio: '', job: { ...p.job, role: p.job.building && hospitals.has(p.job.building) ? '' : p.job.role } });
+      expect(b.people.map(plain)).toEqual(a.people.map(plain));
+      expect(b.ties).toEqual(a.ties);
+    }
+  }, 120_000);
+
   it('are the same people every time for a seed', () => {
     const world = generateWorld('7f3a29c1', CITY);
     expect(generatePeople(world, PEOPLE, FOOD.dishes)).toEqual(generatePeople(world, PEOPLE, FOOD.dishes));

@@ -11,6 +11,8 @@ import { CHARISMA } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
 import { LIFE } from '../src/data/life';
 import { COMBAT } from '../src/data/combat';
+import { MEDICAL } from '../src/data/medical';
+import { priceFor } from '../src/engine/food';
 import { freshLife, newsFor, tieKey } from '../src/engine/life';
 import { FAMILY, openness } from '../src/engine/dialogue';
 import { bossOf } from '../src/engine/jobs';
@@ -133,7 +135,16 @@ const RULES: GameRules = {
 };
 
 const MINUTE = 60_000;
+const DAY = 24 * 60 * MINUTE;
 const T0 = Date.UTC(2077, 9, 12, 20, 0);
+/** Well after any test's clock: a meter written down then hasn't moved yet. */
+const LATER = Date.UTC(2077, 11, 1);
+
+/** The test city with a hospital along the top street, past the market. */
+const clinicWorld: World = {
+  ...world,
+  buildings: [...world.buildings, { id: 'b-hospital', block: 'C1', district: 'test', kind: 'shops', kindLabel: 'Hospital', category: 'medical', business: 'hospital', name: 'Test General', floors: 4, x: 52, y: 21, w: 4, h: 4 }],
+};
 const at = (id: string): Whereabouts => {
   const l = world.locations[id];
   return { ...streetSpot(l ?? { x: 0, y: 0 }), place: id };
@@ -2221,11 +2232,11 @@ describe('Game', () => {
         ...extra,
       });
       /** Someone at work at the noodle bar, on a weekday morning, and the game there. */
-      const atTheBar = (progress: Partial<Progress> = {}, combat = COMBAT) => {
+      const atTheBar = (progress: Partial<Progress> = {}, combat = COMBAT, city = world) => {
         for (let day = 0; day < 14; day++) {
           const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
           if (new Date(now).getUTCDay() % 6 === 0) continue;
-          const game = new Game(world, { ...RULES, combat }, { ...progressInside('b-noodle', 38, 20, [lexington]), money: { bills: 100, coins: 0, account: 0 }, ...progress });
+          const game = new Game(city, { ...RULES, combat }, { ...progressInside('b-noodle', 38, 20, [lexington]), money: { bills: 100, coins: 0, account: 0 }, ...progress });
           game.start(now);
           const worker = game.peopleHere(now).find((p) => p.person.job.building === 'b-noodle');
           if (worker) return { game, now, worker: worker.person, ...record(game) };
@@ -2239,7 +2250,7 @@ describe('Game', () => {
       };
 
       it('is an assault the moment it starts, and a killing writes the dead down for good, with the heat', () => {
-        const { game, now, worker } = atTheBar({}, brutal(500, 1));
+        const { game, now, worker } = atTheBar({ lethal: true }, brutal(500, 1));
         expect(game.attack(worker.id, now)).toBe(true);
         expect(game.fighting).toBe(true);
         expect(game.societySaved.incidents.map((i) => i.kind)).toEqual(['assault']);
@@ -2359,6 +2370,140 @@ describe('Game', () => {
         expect(game.health(t + 10 * HOUR).current).toBe(hurt.max);
         expect(hurt.fullAt).toBeGreaterThan(t);
         expect(game.healthSaved.value).toBeLessThan(hurt.max);
+      });
+
+      it('aims to wound unless told to kill: a killing blow lays them up in the hospital nearest home instead', () => {
+        const { game, now, worker } = atTheBar({}, brutal(500, 1), clinicWorld);
+        expect(game.lethal).toBe(false);
+        game.attack(worker.id, now);
+        expect(game.fightView()?.lethal).toBe(false);
+        fightOut(game, now);
+        expect(game.fightView()).toMatchObject({ over: 'won', result: expect.stringContaining('laid up in Test General') });
+        expect(worker.diedOn).toBeUndefined();
+        expect(game.societySaved.incidents.map((i) => i.kind)).toEqual(['assault']);
+        // The choice is kept, and said.
+        game.leaveFight();
+        game.setLethal(true);
+        expect(game.lethal).toBe(true);
+        expect(new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), lethal: game.lethal }).lethal).toBe(true);
+      });
+
+      it('heals in a fight with the strongest med carried, and it is used up', () => {
+        const meds: Item[] = [
+          { id: 'bounce-back', kind: 'consumable', name: 'Bounce Back', count: 1, in: 'jacket' },
+          { id: 'maxdoc', kind: 'consumable', name: 'MaxDoc', count: 1, in: 'jacket' },
+        ];
+        const { game, now, worker } = atTheBar({ items: meds, health: { value: 30, at: LATER } }, brutal(1, 0));
+        game.attack(worker.id, now);
+        expect(game.fightView()?.moves.find((m) => m.id === 'heal')).toMatchObject({ label: 'Heal', sub: 'MaxDoc', enabled: true });
+        expect(game.fightMove('heal', now + 1000)).toBe(true);
+        expect(game.inventory.map((i) => i.id)).toEqual(['bounce-back']);
+        if (game.fighting) expect(game.fightView()?.moves.find((m) => m.id === 'heal')?.sub).toBe('Bounce Back');
+        expect(game.fightView()?.log.join(' ')).toContain('MaxDoc');
+        expect(game.fightView()?.you.hp).toBeGreaterThanOrEqual(30 + MEDICAL.meds.maxdoc!.heal - 1);
+        // Nothing to heal with, no Heal.
+        const none = atTheBar({ items: [], health: { value: 30, at: LATER } });
+        none.game.attack(none.worker.id, none.now);
+        expect(none.game.fightView()?.moves.some((m) => m.id === 'heal')).toBe(false);
+        expect(none.game.fightMove('heal', none.now + 1000)).toBe(false);
+      });
+
+      it('has Trauma Team pick up a player on a plan who goes down: not robbed, dropped at the nearest hospital, and billed', () => {
+        const covered = { plan: 'silver', until: LATER };
+        const { game, now, worker } = atTheBar({ items: [], health: { value: 5, at: LATER }, coverage: covered, money: { bills: 100, coins: 0, account: 1000 } }, brutal(10, 0), clinicWorld);
+        const had = worker.eddies;
+        game.attack(worker.id, now);
+        const t = fightOut(game, now, 'cover');
+        expect(game.fightView()?.over).toBe('lost');
+        expect(game.fightView()?.result).toContain('Trauma Team picked you up and dropped you at Test General');
+        expect(game.fightView()?.log.join(' ')).toContain('Silver Package');
+        expect(game.wallet.eddies).toBe(100);
+        expect(worker.eddies).toBe(had);
+        expect(game.interior?.id).toBe('b-hospital');
+        // The Silver Package puts back half, and the bill is the hospital's whole fee for it.
+        const back = COMBAT.health.base * MEDICAL.plans['silver']!.restore;
+        expect(game.health(t).current).toBe(back);
+        expect(game.wallet.account).toBe(1000 - priceFor(back * MEDICAL.perPoint, 'everyday', FOOD));
+        expect(game.covered(t)?.id).toBe('silver');
+        // Short of the bill, they take what's in the account and drop the player from the plan.
+        const broke = atTheBar({ items: [], health: { value: 5, at: LATER }, coverage: covered, money: { bills: 0, coins: 0, account: 10 } }, brutal(10, 0), clinicWorld);
+        broke.game.attack(broke.worker.id, broke.now);
+        const u = fightOut(broke.game, broke.now, 'cover');
+        expect(broke.game.wallet.account).toBe(0);
+        expect(broke.game.covered(u)).toBeNull();
+        expect(broke.game.fightView()?.result).toContain('drop you from the plan');
+        // A hospital that's a place of its own (the Night City Medical Center), and they're left there, outside.
+        const medCenter: World = { ...world, locations: { ...world.locations, roof: { ...world.locations.roof!, kind: 'hospital', name: 'Test Med Center' } } };
+        const placed = atTheBar({ items: [], health: { value: 5, at: LATER }, coverage: covered }, brutal(10, 0), medCenter);
+        placed.game.attack(placed.worker.id, placed.now);
+        fightOut(placed.game, placed.now, 'cover');
+        expect(placed.game.fightView()?.result).toContain('dropped you at Test Med Center');
+        expect(placed.game.location?.id).toBe('roof');
+        expect(placed.game.interior).toBeNull();
+      });
+    });
+
+    describe('medicine', () => {
+      const atHospital = (progress: Partial<Progress> = {}) => {
+        const game = new Game(clinicWorld, { ...RULES, startingEddies: 100 }, { ...progressInside('b-hospital', 54, 20), money: { bills: 100, coins: 0, account: 5000 }, ...progress });
+        game.start(T0);
+        return game;
+      };
+
+      it('treats what is missing at a hospital, priced by what is missing, and has nothing to treat in someone whole', () => {
+        const game = atHospital({ health: { value: 40, at: T0 } });
+        const menu = game.menu(T0);
+        const missing = COMBAT.health.base - 40;
+        expect(menu?.items[0]).toMatchObject({ id: 'treatment', kind: 'treatment', price: priceFor(missing * MEDICAL.perPoint, 'everyday', FOOD), detail: `${missing} health to full` });
+        expect(menu?.items.filter((i) => i.kind === 'med').map((i) => i.id)).toEqual(Object.keys(MEDICAL.meds));
+        expect(menu?.items.filter((i) => i.kind === 'plan').map((i) => i.id)).toEqual(Object.keys(MEDICAL.plans));
+        expect(game.medical()).toMatchObject({ key: 'hospital', stock: { meds: true, treats: true, plans: true } });
+        // A service: nothing to carry, so it wants no room in a pocket.
+        expect(game.buy('treatment', T0)).toBe(true);
+        expect(game.health(T0).current).toBe(COMBAT.health.base);
+        expect(game.wallet.account).toBe(5000 - (menu?.items[0]?.price ?? 0));
+        expect(game.menu(T0)?.items.some((i) => i.kind === 'treatment')).toBe(false);
+        expect(game.canBuy('treatment', T0)).toBe('Not for sale here.');
+      });
+
+      it('sells meds that heal from the inventory, all at once out of a fight, and keep while the player is whole', () => {
+        const game = atHospital({ health: { value: 30, at: T0 } });
+        expect(game.buy('maxdoc', T0)).toBe(true);
+        expect(game.buy('bounce-back', T0)).toBe(true);
+        expect(game.inventory.find((i) => i.id === 'maxdoc')).toMatchObject({ kind: 'consumable', name: 'MaxDoc', count: 1 });
+        expect(game.consume('maxdoc', T0)).toBe(true);
+        expect(game.health(T0).current).toBe(70);
+        expect(game.consume('bounce-back', T0)).toBe(true);
+        expect(game.health(T0).current).toBe(COMBAT.health.base);
+        game.buy('maxdoc', T0);
+        expect(game.consume('maxdoc', T0)).toBe(false);
+        expect(game.inventory.find((i) => i.id === 'maxdoc')?.count).toBe(1);
+        // A pharmacy has the meds and nothing else; a street clinic patches up as well.
+        const shops = (business: string): World => ({ ...clinicWorld, buildings: clinicWorld.buildings.map((b) => (b.id === 'b-hospital' ? { ...b, business, kindLabel: business } : b)) });
+        const pharmacy = new Game(shops('pharmacy'), RULES, { ...progressInside('b-hospital', 54, 20), health: { value: 40, at: T0 } });
+        expect(pharmacy.menu(T0)?.items.map((i) => i.kind)).toEqual(Object.keys(MEDICAL.meds).map(() => 'med'));
+        const clinic = new Game(shops('street-clinic'), RULES, { ...progressInside('b-hospital', 54, 20), health: { value: 40, at: T0 } });
+        expect(clinic.menu(T0)?.items.map((i) => i.kind)).toEqual(['treatment', ...Object.keys(MEDICAL.meds).map(() => 'med')]);
+      });
+
+      it('signs the player up with Trauma Team, runs the same plan on from when it ends, and keeps it in a save', () => {
+        const game = atHospital();
+        expect(game.covered(T0)).toBeNull();
+        expect(game.buy('silver', T0)).toBe(true);
+        expect(game.covered(T0)).toMatchObject({ id: 'silver', until: T0 + 30 * DAY });
+        expect(game.buy('silver', T0)).toBe(true);
+        expect(game.covered(T0)?.until).toBe(T0 + 60 * DAY);
+        // Another plan starts now, in its place.
+        expect(game.buy('gold', T0)).toBe(true);
+        expect(game.covered(T0)).toMatchObject({ id: 'gold', until: T0 + 30 * DAY });
+        expect(game.covered(T0 + 31 * DAY)).toBeNull();
+        expect(game.wallet.account).toBe(5000 - 500 - 500 - 1500);
+        const again = new Game(clinicWorld, RULES, { ...progressInside('b-hospital', 54, 20), coverage: game.coverageSaved });
+        expect(again.covered(T0)?.id).toBe('gold');
+        // Platinum takes 90% off the meds at the counter.
+        const price = (g: Game) => g.menu(T0)?.items.find((i) => i.id === 'maxdoc')?.price ?? 0;
+        const platinum = atHospital({ coverage: { plan: 'platinum', until: LATER } });
+        expect(price(platinum)).toBe(Math.round(price(again) * 0.1));
       });
     });
 

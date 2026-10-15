@@ -6,6 +6,7 @@ import type { Quality } from './food';
 import type { You } from './romance';
 import type { ChromeStatus } from './cyberware';
 import type { FightView, HealthStatus } from './combat';
+import type { CoverageStatus } from './medical';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -313,7 +314,9 @@ export type GameEvents = {
   chromeChanged: ChromeStatus;
   /** A fight began, went a beat, or ended (null: none to show). */
   fightChanged: FightView | null;
-  /** The player was hurt (a fight ended). Healing on the clock doesn't fire this; ask `Game.health(now)`. */
+  /** The player was hurt (a fight ended) or patched up (treatment, a med). Healing on the clock doesn't fire this; ask `Game.health(now)`. */
   healthChanged: HealthStatus;
+  /** The player signed up with Trauma Team, or lost the plan (null: none now). Running out on the clock doesn't fire this; ask `Game.covered(now)`. */
+  coverageChanged: CoverageStatus | null;
   fx: { effect: FxName };
 };

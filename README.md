@@ -252,8 +252,9 @@ own.
   district, a few things happen between them where the people for them exist: a gang leans
   on a storefront for its cut or jumps someone on the way home (the victim loses eddies and
   comes to hate that gang, and earns the eddies back over the week); someone with the nerve
-  picks a fight with a gang they hate, or rival crews go at it, and the loser is laid up at
-  home for days (missing from the counter and the bar); two regulars of the same place become
+  picks a fight with a gang they hate, or rival crews go at it, and the loser is laid up in
+  the hospital nearest home for days (missing from the counter and the bar, and in a bed on
+  the ward); two regulars of the same place become
   friends; a hot temper ends a friendship, and some get patched up again. Hearts change too:
   two people who are free (friends, or regulars of the same bar, near enough in age) start
   seeing each other, marry after a couple of weeks or so, or one with a temper or a cold
@@ -382,17 +383,33 @@ own.
 - **Fighting**: **Attack** on someone's card (under **⋯**) starts a fight, and it's an
   assault the moment it does. Each beat you both pick a move at once and they land together:
   shoot, slash or punch with the best you have for the range, close in, back off, take cover
-  (and reload), quickhack, talk them down, or run. You have seven seconds to choose (more with
+  (and reload), quickhack, heal (a MaxDoc or a Bounce Back you carry), talk them down, or
+  run. You have seven seconds to choose (more with
   a Kerenzikov, a lot more with a Sandevistan); out of time, you freeze. Range matters: a
   blade or a fist wants arm's reach, a shotgun the room, a rifle the street. Sometimes you
   read what they're about to do, more often if you know their nature. People fight with what
   they carry: Tyger Claws with katanas, Maelstrom with shotguns and chrome, 6th Street and
   BARGHEST with rifles, the Animals with their fists; most people carry nothing. Chrome
   counts: armor, Mantis Blades and Gorilla Arms, a Smart Link for smart guns, a Second Heart.
-  Put someone down and they're laid up for days, or dead (a murder, the whole district hears);
-  a corpo's Trauma Team gets them out alive. Go down yourself and they go through your
-  pockets. Your health comes back on the clock; NCPD heat (stars in the status drop-down)
-  cools off.
+  You fight to wound unless you say otherwise (the button on the fight's strip, kept between
+  fights): nobody dies at your hand, and guns and blades hit a little softer. Fighting to
+  kill, few blows kill anyway, a sniper rifle's more than a club's. Put someone down and
+  they're laid up in the hospital nearest home for days, or dead (a murder, the whole
+  district hears); a corpo's Trauma Team gets them out alive. Go down yourself and they go
+  through your pockets, unless you're on a Trauma Team plan. Your health comes back on the
+  clock; NCPD heat (stars in the status drop-down) cools off.
+- **Hospitals and meds**: every district has a hospital (Watson's Kabuki Community Hospital,
+  and the Night City Medical Center when the city has it; Dogtown's Haven Clinic; one in
+  Westbrook, Heywood, and most cities' downtown and Santo Domingo), in a storefront of its
+  own. A hospital, a street clinic or a ripperdoc treats what's missing of your health for a
+  fee by how much and how good a place it is (**Treat** on the rack). Pharmacies, clinics and
+  hospitals sell the wiki's meds, the MaxDoc and the Bounce Back, to take from the inventory
+  (**Use**) or as the **Heal** move in a fight. Hospitals sign you up with Trauma Team's
+  2077 packages, Silver, Gold and Platinum, thirty days at a time: go down in a fight and an
+  AV picks you up instead of anyone robbing you, patches you up (Silver half way) and drops
+  you at the nearest hospital, billing your share of the treatment (all of it on Silver,
+  half on Gold, none on Platinum, which also takes 90% off meds). Can't pay, and you're off
+  the plan. The status drop-down says which you're on.
 - **Clothes**: you're dressed head to toe but the head, in the wiki's six slots (head, face,
   outer torso, inner torso, legs, feet), and every garment is a real piece of 2077 clothing
   from the wiki in one of its four styles (Entropism, Kitsch, Neomilitarism, Neokitsch),
@@ -505,7 +522,7 @@ src/
   engine/   Game rules and state: the city generator, the NCART network, street routes,
             trip planning on the real clock, the wallet and pass, energy (energy.ts),
             menus (food.ts), weapons and what stores stock them (weapons.ts), cyberware
-            and fitting it (cyberware.ts), fighting (combat.ts), drink
+            and fitting it (cyberware.ts), fighting (combat.ts), medicine (medical.ts), drink
             (inebriation.ts), the people (people.ts: who lives
             here and where they are), what they think of the player and what comes of it
             (society.ts, which also keeps what the player knows of people and of who knows
@@ -516,7 +533,8 @@ src/
             prices (travel.ts), energy's numbers (energy.ts), the kinds of item the
             inventory sorts by (items.ts), what there is to eat (food.ts), the guns,
             blades and ammo (weapons.ts), the implants and the body (cyberware.ts), the
-            quickhacks (quickhacks.ts), fighting's numbers and lines (combat.ts), the stages
+            quickhacks (quickhacks.ts), fighting's numbers and lines (combat.ts), the meds,
+            treatment and Trauma Team's plans (medical.ts), the stages
             of being drunk (inebriation.ts), the people's names, gangs, jobs and lines
             (people.ts), how grudges and reputations work (society.ts) and charisma's
             numbers (skills.ts).

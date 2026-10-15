@@ -3105,3 +3105,20 @@ button {
   text-transform: uppercase;
   cursor: pointer;
 }
+.fight-lethal {
+  min-height: 36px;
+  border: 1px solid color-mix(in srgb, var(--muted) 45%, transparent);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.fight-lethal.is-lethal {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: #ff8095;
+}
