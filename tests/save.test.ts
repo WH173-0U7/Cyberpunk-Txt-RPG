@@ -231,6 +231,25 @@ describe('saving', () => {
     expect(fresh.heat(now).stars).toBe(0);
   });
 
+  it('carries the choice to kill or to wound and the Trauma Team plan, and reads a save from before them as wounding and uncovered', () => {
+    const { game, now } = played(1);
+    const coverage = { plan: 'gold', until: now + 86_400_000 };
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), lethal: true, coverage })));
+    expect(read).toMatchObject({ lethal: true, coverage });
+    const again = new Game(world, rules, resume(world, read!)!);
+    expect(again.lethal).toBe(true);
+    expect(again.covered(now)?.plan.name).toBe('Gold Package');
+    expect(saveOf(again, now)).toMatchObject({ lethal: true, coverage });
+    expect(readSave({ ...saveOf(game, now), lethal: 'yes', coverage: { plan: 'gold', until: 'soon' } })).toMatchObject({ lethal: null, coverage: null });
+    const before: Record<string, unknown> = { ...saveOf(game, now) };
+    delete before.lethal;
+    delete before.coverage;
+    const fresh = new Game(world, rules, resume(world, readSave(before)!)!);
+    expect(fresh.lethal).toBe(false);
+    expect(fresh.covered(now)).toBeNull();
+    expect(saveOf(game, now)).toMatchObject({ lethal: false, coverage: null });
+  });
+
   it('carries charisma and what the player knows of people, and starts fresh without them', () => {
     const { game, now } = played(1);
     const charisma = { level: 3, xp: 12 };

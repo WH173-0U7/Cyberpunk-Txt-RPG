@@ -7,12 +7,13 @@ import { NO_EDGE, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, ty
 import { tillOf, tradeAt, turfFrom, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
+import { medDetail, medTotal, TREATMENT, type Coverage, type CoverageStatus, type MedicalStock, type MedKind } from './medical';
 import { answer, compose, deflect, describeStranger, drawnWord, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
 import { bossAt, bossOf, canPromote, ladderFor, nextRung, rungOf, shiftOpen, shiftPay, type JobRules, type JobState, type JobStatus, type Rung } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
-import { buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, isCorpo, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
@@ -263,6 +264,10 @@ export class Game {
   private heatState: Meter;
   /** The fight the player is in, or has just finished. */
   private fightState: Fight | null = null;
+  /** Whether the player fights to kill; they don't unless they say so. */
+  private lethalOn: boolean;
+  /** The Trauma Team plan the player is on, if any (it may have run out). */
+  private coverage: Coverage | null;
   private readonly baseEddies: ReadonlyMap<string, number>;
   /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
   private readonly home: { building: string; bed: boolean } | null = null;
@@ -303,6 +308,8 @@ export class Game {
     // Saves from before fighting start the player well, and nobody looking for them.
     this.healthState = progress?.health ? { ...progress.health } : { value: this.maxHealth(), at: 0 };
     this.heatState = progress?.heat ? { ...progress.heat } : { value: 0, at: 0 };
+    this.lethalOn = progress?.lethal ?? false;
+    this.coverage = progress?.coverage ? { ...progress.coverage } : null;
     // A job at a place this city doesn't have, or that doesn't hire anymore, is no job.
     const workplace = progress?.job ? world.buildings.find((b) => b.id === progress.job?.building) : undefined;
     this.job = progress?.job && workplace && ladderFor(workplace, rules.jobs) ? { ...progress.job } : null;
@@ -537,10 +544,18 @@ export class Game {
   }
 
   /** What's for sale where the player is: an eatery's menu, a store's rack, a ripperdoc's chrome, or nothing. */
-  menu(): Menu | null {
+  menu(now = Date.now()): Menu | null {
     const at = this.inside ?? this.location;
     if (!at) return null;
-    return menuFor(this.world, at, this.rules.food) ?? this.rack(at);
+    return menuFor(this.world, at, this.rules.food) ?? this.rack(at, now);
+  }
+
+  /** The medical counter where the player is, if there's one: what it does (meds, treatment, Trauma Team's plans), and the key it's kept under. */
+  medical(): { key: string; stock: MedicalStock } | null {
+    const at = this.inside ?? this.location;
+    const key = at ? this.chromeKey(at) : null;
+    const stock = key ? this.rules.gear.medical.stores[key] : undefined;
+    return key && stock ? { key, stock } : null;
   }
 
   /** What a store's chrome is kept under: a storefront's business, or the kind of place (a ripperdoc's clinic is either). */
@@ -552,16 +567,18 @@ export class Game {
    * A store's rack: garments at their own price, bags priced by how good a store it is; at a
    * weapon store, its guns or blades at their own price and boxes of rounds priced like the
    * bags; at a ripperdoc or a chrome dealer (a storefront, or a clinic that's a place of its
-   * own), its implants at their own price.
+   * own), its implants at their own price; at a hospital, a clinic or a ripperdoc, treatment
+   * for what's missing of the player's health, and meds and Trauma Team's plans where they're sold.
    */
-  private rack(at: Building | Location): Menu | null {
+  private rack(at: Building | Location, now: number): Menu | null {
     const { gear, food } = this.rules;
     const business = 'business' in at ? at.business : null;
     const key = business && (gear.racks[business] || gear.arms.stores[business]) ? business : null;
     const chromeKey = this.chromeKey(at);
     const chrome = chromeKey ? gear.chrome.stores[chromeKey] : undefined;
     const hackStock = business ? gear.hacks.stores[business] : undefined;
-    if (!key && !chrome && !hackStock) return null;
+    const care = chromeKey ? gear.medical.stores[chromeKey] : undefined;
+    if (!key && !chrome && !hackStock && !care) return null;
     const ids = key ? (gear.racks[key] ?? []) : [];
     const stock = key ? gear.arms.stores[key] : undefined;
     // A clothing store sells at its tier; a store with only bags on the rack prices them the way its district eats.
@@ -602,13 +619,24 @@ export class Game {
       }
       return [{ id, name: kind.name, note: kind.note ?? '', kind: 'gear' as const, price: priceFor(kind.price, quality, food) }];
     });
-    const all = [...ware, ...programs, ...weapons, ...ammo, ...items];
+    // Patching up first, when there's anything to patch; then the meds; then Trauma Team.
+    const health = this.health(now);
+    const missing = health.max - health.current;
+    const treatment: MenuItem[] =
+      care?.treats && missing > 0
+        ? [{ id: TREATMENT, name: gear.medical.treatment.name, note: gear.medical.treatment.note, kind: 'treatment', price: priceFor(missing * gear.medical.perPoint, quality, food), detail: `${missing} health to full` }]
+        : [];
+    // A plan with a discount on prescriptions takes it off the meds.
+    const off = this.covered(now)?.plan.medsOff ?? 0;
+    const meds = care?.meds ? Object.entries(gear.medical.meds).map(([id, m]): MenuItem => ({ id, name: m.name, note: m.note, kind: 'med', price: Math.max(1, Math.round(priceFor(m.price, quality, food) * (1 - off))), detail: medDetail(m) })) : [];
+    const plans = care?.plans ? Object.entries(gear.medical.plans).map(([id, p]): MenuItem => ({ id, name: p.name, note: p.note, kind: 'plan', price: p.price, detail: `Trauma Team · ${p.days} days` })) : [];
+    const all = [...treatment, ...ware, ...meds, ...plans, ...programs, ...weapons, ...ammo, ...items];
     return all.length ? { venue, items: all, kind: 'gear' } : null;
   }
 
   /** Whether the player can pay for something on the menu here: in cash, or by transfer where the counter takes one. */
-  affords(id: string): boolean {
-    const menu = this.menu();
+  affords(id: string, now = Date.now()): boolean {
+    const menu = this.menu(now);
     const item = menu?.items.find((i) => i.id === id);
     return Boolean(menu && item && this.canPay(item.price, this.takesTransfers(menu)));
   }
@@ -638,7 +666,7 @@ export class Game {
 
   /** Why the player can't buy something here, or null if they can: it isn't for sale, they're barred, short of eddies, or out of room. */
   canBuy(id: string, now = Date.now()): string | null {
-    const menu = this.menu();
+    const menu = this.menu(now);
     const item = menu?.items.find((i) => i.id === id);
     if (!menu || !item) return 'Not for sale here.';
     const barred = this.barred(now);
@@ -652,7 +680,9 @@ export class Game {
     // A program is a program: one copy runs as well as two.
     if (item.kind === 'quickhack' && this.items.some((i) => i.kind === 'quickhack' && i.id === item.id)) return `You've got ${item.name} already.`;
     if (!this.canPay(item.price, this.takesTransfers(menu))) return this.shortBy(item.name, item.price, this.takesTransfers(menu));
-    if (item.kind !== 'gear' && !fitting && !this.pocketFor(this.protoFor(item), this.boxOf(item))) {
+    // Treatment and a plan are services: nothing to carry.
+    const service = item.kind === 'treatment' || item.kind === 'plan';
+    if (item.kind !== 'gear' && !service && !fitting && !this.pocketFor(this.protoFor(item), this.boxOf(item))) {
       const proto = this.protoFor(item);
       // Something long wants a bag that takes it, and the pockets of your clothes never will.
       if (isLong(proto, this.rules.gear.arms)) return `No room for the ${item.name}: it's too long for a pocket. It wants a bag with room: a messenger bag, a backpack, a duffel or a gun case.`;
@@ -665,7 +695,7 @@ export class Game {
 
   /** Buys something off the menu here: a dish into a pocket with room, or a bag to wear. False, and why, if it can't be. */
   buy(id: string, now = Date.now()): boolean {
-    const menu = this.menu();
+    const menu = this.menu(now);
     const item = menu?.items.find((i) => i.id === id);
     if (!menu || !item) return false;
     const why = this.canBuy(id, now);
@@ -679,7 +709,13 @@ export class Game {
     const fitted = [...this.fitted];
     const chromed = item.kind === 'cyberware' && this.clinic() !== null;
     let bought: string;
-    if (chromed) {
+    const on = this.covered(now);
+    const plan = item.kind === 'plan' ? this.rules.gear.medical.plans[item.id] : undefined;
+    if (item.kind === 'treatment') {
+      bought = `Treated for ${item.price} €$: back to full health.`;
+    } else if (plan) {
+      bought = on?.id === item.id ? `Renewed ${plan.name} for ${item.price} €$: ${plan.days} more days.` : `Signed up with Trauma Team for ${item.price} €$: ${plan.name}, ${plan.days} days.${on ? ` It replaces your ${on.plan.name}.` : ''}`;
+    } else if (chromed) {
       bought = `Bought the ${item.name} for ${item.price} €$, and the doc fits it there and then.${this.fitIn(item.id, now)}`;
     } else if (item.kind === 'gear') {
       this.pockets.push({ id: newPocketId(item.id, this.pockets), kind: item.id, in: null });
@@ -712,10 +748,15 @@ export class Game {
     }
     // Spent at a storefront, it's in the till when the day is lived.
     if (this.inside?.business && menu.venue.id === this.inside.id) tillOf(this.life.tills, this.inside.id).pending += item.price;
+    if (item.kind === 'treatment') this.healthState = { value: this.maxHealth(), at: now };
+    // The same plan again runs on from when it ends; another starts now, in its place.
+    if (plan) this.coverage = { plan: item.id, until: (on?.id === item.id ? on.until : now) + plan.days * DAY };
     this.say(bought, 'system');
     this.events.emit('walletChanged', this.wallet);
     this.events.emit('inventoryChanged', this.inventory);
     if (chromed) this.events.emit('chromeChanged', this.chrome());
+    if (item.kind === 'treatment') this.events.emit('healthChanged', this.health(now));
+    if (plan) this.events.emit('coverageChanged', this.covered(now));
     return true;
   }
 
@@ -1031,6 +1072,40 @@ export class Game {
     return Math.round(this.rules.combat.health.base * (1 + bonus));
   }
 
+  /** Whether the player fights to kill (true) or to wound; kept between fights. */
+  get lethal(): boolean {
+    return this.lethalOn;
+  }
+
+  /** Fights to kill, or to wound, from now on: in a fight it counts from the next blow. */
+  setLethal(on: boolean): void {
+    if (on === this.lethalOn) return;
+    this.lethalOn = on;
+    this.say(on ? 'You fight to kill now.' : 'You fight to wound: nobody dies at your hand.', 'system');
+    if (this.fightState) this.events.emit('fightChanged', this.fightView());
+  }
+
+  /** The Trauma Team plan the player is on at `now`, or null (none, or it ran out). */
+  covered(now: number): CoverageStatus | null {
+    const c = this.coverage;
+    const plan = c ? this.rules.gear.medical.plans[c.plan] : undefined;
+    return c && plan && c.until > now ? { id: c.plan, plan, until: c.until } : null;
+  }
+
+  /** The Trauma Team plan, as last written down, for saving. */
+  get coverageSaved(): Coverage | null {
+    return this.coverage ? { ...this.coverage } : null;
+  }
+
+  /** The meds the player carries, the strongest first: what a Heal in a fight would take. */
+  private medsOnHand(): Array<{ item: Item; med: MedKind }> {
+    const { meds } = this.rules.gear.medical;
+    return this.items
+      .filter((i) => i.kind === 'consumable' && meds[i.id])
+      .map((item) => ({ item, med: meds[item.id]! }))
+      .sort((a, b) => b.med.heal - a.med.heal || medTotal(b.med) - medTotal(a.med));
+  }
+
   /** Whether a fight is on (one that's over waits on the player to look away from it). */
   get fighting(): boolean {
     return Boolean(this.fightState && !this.fightState.over);
@@ -1071,6 +1146,8 @@ export class Game {
       chromeOff: 0,
       burn: 0,
       burning: 0,
+      regen: 0,
+      regening: 0,
       charges: combat.classes[theirs.cls]?.charges ?? 0,
     };
     const ram = this.ramMax();
@@ -1106,6 +1183,9 @@ export class Game {
     const gun = combat.classes[you.arm.cls]?.kind === 'gun';
     const hacks = this.hacksOnHand();
     const deck = this.ramMax() > 0;
+    const meds = this.medsOnHand();
+    const next = meds[0];
+    const doses = meds.filter((m) => m.item.id === next?.item.id).reduce((n, m) => n + m.item.count, 0);
     const moves: FightView['moves'] = f.over
       ? []
       : [
@@ -1114,6 +1194,8 @@ export class Game {
           ...(s.range !== furthest ? [{ id: 'back' as const, label: 'Back off', sub: RANGE_LABEL[stepRange(s.range, 1, furthest)], enabled: s.you.crippled <= 0 }] : []),
           { id: 'cover', label: 'Cover', sub: gun && you.loaded < you.arm.magazine && you.spare > 0 ? 'and reload' : 'Duck', enabled: true },
           ...(deck && hacks.length ? [{ id: 'hack' as const, label: 'Hack', sub: `${s.ram}/${s.ramMax} RAM`, enabled: hacks.some((h) => h.ram <= s.ram) }] : []),
+          // Heal says the med it would take, and how many of that one there are.
+          ...(next ? [{ id: 'heal' as const, label: 'Heal', sub: `${next.med.name}${doses > 1 ? ` ×${doses}` : ''}`, enabled: s.you.hp < s.you.max }] : []),
           { id: 'talk', label: 'Talk down', sub: '', enabled: true },
           { id: 'run', label: 'Run', sub: '', enabled: s.you.crippled <= 0 },
         ];
@@ -1133,6 +1215,7 @@ export class Game {
       hacks: deck ? hacks.map((h) => ({ id: h.id, name: h.name, ram: h.ram, enabled: h.ram <= s.ram })) : [],
       ram: s.ram,
       ramMax: s.ramMax,
+      lethal: this.lethalOn,
       over: f.over,
       result: f.result,
     };
@@ -1152,6 +1235,9 @@ export class Game {
     const { combat, gear } = this.rules;
     const chosen = move === 'hack' ? this.hacksOnHand().find((h) => h.id === hack && h.ram <= f.state.ram) : undefined;
     if (move === 'hack' && !chosen) return false;
+    // A heal takes the strongest med carried, and it's used up whatever lands.
+    const dose = move === 'heal' ? this.medsOnHand()[0] : undefined;
+    if (move === 'heal' && !dose) return false;
     // What each side has in hand this beat: the player the best they carry for the range, they what they brought (fists, with their chrome knocked out).
     const you = this.yourFighter(f.state.range, f.state.you.hp);
     const state: FightState = { ...f.state, you: { ...f.state.you, arm: you.arm, loaded: you.loaded, spare: you.spare, armor: you.armor, max: f.state.you.max, charges: f.launched ? 0 : you.charges }, them: { ...f.state.them, arm: this.theirArmNow(f.state.them) } };
@@ -1162,6 +1248,7 @@ export class Game {
       you: this.yourEdge(state.you),
       them: { ...NO_EDGE, smart: state.them.arm.tech === 'Smart' },
       ...(chosen ? { hack: { id: chosen.id, ram: chosen.ram, effect: gear.hacks.hacks[chosen.id]!.effect } } : {}),
+      ...(dose ? { med: { heal: dose.med.heal, ...(dose.med.regen ? { regen: dose.med.regen } : {}) } } : {}),
       indoors: f.indoors,
       talkOdds: talkOdds(state, f.nerve, this.charismaState.level, armed, combat),
       rng,
@@ -1171,11 +1258,15 @@ export class Game {
     // The rounds fired and reloaded come out of what the player carries; a launcher's one shot is spent.
     this.spendRounds(state.you, s.you);
     if (combat.classes[state.you.arm.cls]?.charges && s.you.charges < state.you.charges) f.launched = true;
+    if (dose) {
+      this.takeOne(dose.item);
+      this.events.emit('inventoryChanged', this.inventory);
+    }
     // Their weapon is back in their hands for next time (a knocked-out arm comes back with the chrome).
     s.them.arm = f.state.them.arm;
     f.state = s;
     const speaker = this.speakerFor(person, 'hostile', '', now);
-    const vars = { ...speaker.vars, ...this.fightVars(person, state.you, state.them) };
+    const vars = { ...speaker.vars, ...this.fightVars(person, state.you, state.them), ...(dose ? { med: dose.med.name } : {}) };
     let finisher: FightClass | 'hack' | null = null;
     for (const e of result.events) {
       const key = this.eventLine(e);
@@ -1191,7 +1282,9 @@ export class Game {
       s.you.hp = s.you.max;
       this.fightLine('revive', person, vars);
     }
-    if (s.them.hp <= 0) this.endFight(person, finisher === 'hack' ? 0.5 : (combat.classes[finisher ?? 'fists']?.lethal ?? 0), rng, vars, now);
+    // Aiming to wound, nobody dies of it; aiming to kill, as often as what dropped them does.
+    const lethal = !this.lethalOn ? 0 : finisher === 'hack' ? combat.hackLethal : (combat.classes[finisher ?? 'fists']?.lethal ?? 0);
+    if (s.them.hp <= 0) this.endFight(person, lethal, rng, vars, now);
     else if (s.you.hp <= 0) this.endFight(person, 0, rng, vars, now, 'lost');
     else if (result.fled === 'you') this.endFight(person, 0, rng, vars, now, 'fled');
     else if (result.fled === 'them') this.endFight(person, 0, rng, vars, now, 'escaped');
@@ -1258,8 +1351,14 @@ export class Game {
         const until = day + rng.int(combat.hurtDays[0], combat.hurtDays[1]);
         this.life.hurt[person.id] = until;
         person.hurtUntil = until;
-        result = outcome === 'trauma' ? `Trauma Team got ${name} out. ${capitalize(vars.he ?? 'they')} will live.` : `${capitalize(name)} is down, and will be laid up for days.`;
+        // Laid up in the hospital nearest their home, if the city has one.
+        const ward = this.hospitalName(hospitalOf(person, this.world));
+        const where = ward ? ` in ${ward}` : '';
+        result = outcome === 'trauma' ? `Trauma Team got ${name} out. ${capitalize(vars.he ?? 'they')} will live, laid up${where} for days.` : `${capitalize(name)} is down, and will be laid up${where} for days.`;
       }
+    } else if (how === 'lost' && this.covered(now)) {
+      this.fightLine('youDown', person, vars);
+      result = this.pickedUp(this.covered(now)!, person, vars);
     } else if (how === 'lost') {
       this.fightLine('youDown', person, vars);
       const share = rng.range(combat.robbed[0], combat.robbed[1]);
@@ -1288,6 +1387,57 @@ export class Game {
     if (outcome === 'fled') this.leave();
     this.say(result, 'system');
     this.events.emit('healthChanged', this.health(now));
+  }
+
+  /** A hospital's name, by where it is. */
+  private hospitalName(spot: Spot | null): string | null {
+    return spot ? (hospitalsOf(this.world).find((h) => h.spot.kind === spot.kind && h.spot.id === spot.id)?.name ?? null) : null;
+  }
+
+  /**
+   * Trauma Team's pickup, for a player on a plan who went down: nobody robs them, they're
+   * patched up as far as the plan goes and dropped at the nearest hospital, and billed their
+   * share of the treatment there (from the account, else in cash). What they can't pay of it,
+   * Trauma Team takes from the account and drops them from the plan. What the result says.
+   */
+  private pickedUp(cover: CoverageStatus, person: Person, vars: Record<string, string>): string {
+    const f = this.fightState;
+    if (!f) return '';
+    const { gear, food } = this.rules;
+    const ward = nearestHospital(this.world, this.where);
+    const at = ward ? (ward.spot.kind === 'location' ? this.world.locations[ward.spot.id] : buildingById(this.world, ward.spot.id)) : undefined;
+    const restored = Math.max(1, Math.round(f.state.you.max * cover.plan.restore));
+    f.state.you.hp = restored;
+    // Their bill: the hospital's fee for what it put back, the plan's share of it.
+    const bill = Math.round(priceFor(restored * gear.medical.perPoint, at ? drawQuality(this.world, at) : 'everyday', food) * cover.plan.copay);
+    let billed = '';
+    if (bill > 0) {
+      if (this.canPay(bill, true) && this.pay(bill, true)) billed = ` The bill: ${bill} €$.`;
+      else {
+        const took = this.money.account;
+        this.money = { ...this.money, account: 0 };
+        this.coverage = null;
+        billed = ` The bill is ${bill} €$${took ? `; they take the ${took} €$ in your account` : ''}, and drop you from the plan.`;
+        this.events.emit('coverageChanged', null);
+      }
+      this.events.emit('walletChanged', this.wallet);
+    }
+    this.fightLine('traumaYou', person, { ...vars, plan: cover.plan.name, ward: at?.name ?? 'the hospital' });
+    if (at) this.carryTo(at);
+    return `Trauma Team picked you up${at ? ` and dropped you at ${at.name}` : ''}.${billed}`;
+  }
+
+  /** Puts the player somewhere at once (Trauma Team's AV): at a place, or inside a building, off any trip. */
+  private carryTo(at: Building | Location): void {
+    const from = { ...this.where };
+    const building = 'block' in at ? at : null;
+    this.inside = null;
+    this.where = building ? { ...streetSpot(snapToStreet(this.world.layout, { x: building.x + building.w / 2, y: building.y + building.h / 2 })), building: building.id } : { ...streetSpot(at), place: at.id };
+    if (building && canEnter(building)) this.inside = building;
+    this.settle(this.where);
+    this.emitArrived(from);
+    this.events.emit('interiorChanged', this.inside);
+    this.events.emit('mapChanged', this.mapState);
   }
 
   /** A line of the fight, told as part of the beat going on. */
@@ -1387,7 +1537,7 @@ export class Game {
     const best = [...options].sort((a, b) => score(b, range) - score(a, range))[0]!;
     const pick = score(best, range) > 0 ? best : [...options].sort((a, b) => Math.max(...RANGES.map((r) => score(b, r))) - Math.max(...RANGES.map((r) => score(a, r))))[0]!;
     const armor = this.fitted.reduce((sum, x) => sum + (combat.chrome[x.id]?.armor ?? 0), 0);
-    return { hp, max: this.maxHealth(), arm: pick.arm, loaded: pick.loaded, spare: pick.spare, armor, covered: false, blind: 0, jammed: 0, crippled: 0, chromeOff: 0, burn: 0, burning: 0, charges: combat.classes[pick.arm.cls]?.charges ?? 0 };
+    return { hp, max: this.maxHealth(), arm: pick.arm, loaded: pick.loaded, spare: pick.spare, armor, covered: false, blind: 0, jammed: 0, crippled: 0, chromeOff: 0, burn: 0, burning: 0, regen: 0, regening: 0, charges: combat.classes[pick.arm.cls]?.charges ?? 0 };
   }
 
   /** What the player's chrome and state do for them in a fight: a Sandevistan's aim, drink's lack of it, a Berserk's guard in a melee, a Smart Link, optical camo. */
@@ -1413,7 +1563,7 @@ export class Game {
       if (sys?.guard && (system !== 'berserk' || close)) guard *= sys.guard;
     }
     aim *= 1 - 0.3 * this.inebriation(Date.now()).severity;
-    return { aim, melee, guard, smart, evade };
+    return { aim, melee, guard, smart, evade, wound: this.lethalOn ? 1 : combat.nonLethal };
   }
 
   /** The time the player has for a move: the base, and more with reflex chrome (some of it only when they're hurt). */
@@ -1702,12 +1852,31 @@ export class Game {
    */
   consume(id: string, now: number, from?: string): boolean {
     const item = this.items.find((i) => i.id === id && i.kind === 'consumable' && (from === undefined || i.in === from));
+    const med = item ? this.rules.gear.medical.meds[id] : undefined;
+    if (item && med) return this.medicate(item, med, now);
     const dish = item ? this.rules.food.dishes.find((d) => d.id === id) : undefined;
     if (!item || !dish) return false;
     this.takeOne(item);
     if (dish.kind === 'alcohol') this.drink(dish.name, dish.alcohol ?? 0, now);
     else this.say(`You ${dish.kind === 'food' ? 'eat' : 'drink'} the ${dish.name}.`);
     this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  /** Takes a med out of a fight: all it gives back, at once. Not when the player is whole, and not mid-fight (that's the Heal move). */
+  private medicate(item: Item, med: MedKind, now: number): boolean {
+    if (this.fighting) return false;
+    const health = this.health(now);
+    if (health.current >= health.max) {
+      this.say(`You're not hurt: the ${med.name} keeps for when you are.`, 'system');
+      return false;
+    }
+    this.takeOne(item);
+    const value = Math.min(health.max, health.current + medTotal(med));
+    this.healthState = { value, at: now };
+    this.say(`You take the ${med.name}: +${value - health.current} health.`, 'system');
+    this.events.emit('inventoryChanged', this.inventory);
+    this.events.emit('healthChanged', this.health(now));
     return true;
   }
 

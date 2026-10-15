@@ -179,6 +179,7 @@ export const PEOPLE: PeopleContent = {
       'ded-zed': ['runs the shop'],
       pharmacy: ['pharmacist', 'counter clerk'],
       'street-clinic': ['street doc', 'nurse'],
+      hospital: ['doctor', 'nurse'],
       garage: ['mechanic', 'runs the garage'],
       'chop-shop': ['chop-shop mechanic', 'parts stripper'],
       'braindance-parlor': ['BD tech', 'runs the parlor'],

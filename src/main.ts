@@ -35,6 +35,8 @@ import { ARMS, ARMS_BLURBS } from './data/weapons';
 import { CHROME, CHROME_BLURBS } from './data/cyberware';
 import { COMBAT } from './data/combat';
 import { HACKS } from './data/quickhacks';
+import { MEDICAL } from './data/medical';
+import { medDetail } from './engine/medical';
 import { FightPanel } from './ui/fight';
 import { fitCheck, implantDetail, implantOf } from './engine/cyberware';
 import { isGun, weaponDetail, weaponOf } from './engine/weapons';
@@ -226,6 +228,7 @@ const fight = new FightPanel(
     hacks: $('#fight-hacks'),
     result: $('#fight-result'),
     done: $<HTMLButtonElement>('#fight-done'),
+    lethal: $<HTMLButtonElement>('#fight-lethal'),
   },
   () => {
     const view = game.fightView();
@@ -241,6 +244,10 @@ const fight = new FightPanel(
     onMove: (move, hack) => {
       lastActivity = performance.now();
       game.fightMove(move, Date.now(), hack);
+    },
+    onLethal: (on) => {
+      lastActivity = performance.now();
+      game.setLethal(on);
     },
   },
   reducedMotion,
@@ -717,6 +724,9 @@ function menuBlurb(menu: Menu): string {
     const decks = menu.items.every((i) => i.kind !== 'cyberware' || CHROME.implants[i.id]?.system === 'cyberdeck' || CHROME.implants[i.id]?.part === 'frontal-cortex');
     return CHROME_BLURBS[decks ? 'decks' : 'outlet'];
   }
+  // A hospital, a clinic or a pharmacy says what it does (a ripperdoc's chrome says it for one).
+  const medical = game.medical();
+  if (menu.kind === 'gear' && medical && MEDICAL.blurbs[medical.key]) return MEDICAL.blurbs[medical.key]!;
   if (menu.kind === 'gear') {
     const weapons = menu.items.filter((i) => i.kind === 'weapon');
     const guns = weapons.filter((i) => {
@@ -733,6 +743,9 @@ function menuBlurb(menu: Menu): string {
 
 /** "Luxury", "Cheap eats"…: the kind of eatery, as players read it. */
 function qualityLabel(menu: Menu): string {
+  // A hospital, a clinic or a pharmacy by the care it gives (a ripperdoc goes by its chrome).
+  const medical = game.medical();
+  if (menu.kind === 'gear' && medical && MEDICAL.blurbs[medical.key]) return MEDICAL.labels[menu.venue.quality];
   if (menu.kind === 'gear') return GEAR.labels[menu.venue.quality];
   return FOOD.labels[menu.venue.chain ? 'chain' : menu.venue.quality];
 }
@@ -947,12 +960,15 @@ function itemDetail(item: Item, tier: (p: { brand?: string; style?: PocketLoad['
   if (implant) return implantDetail(implant, CHROME);
   const hack = item.kind === 'quickhack' ? HACKS.hacks[item.id] : undefined;
   if (hack) return `${hack.type} · ${hack.ram} RAM`;
+  const med = item.kind === 'consumable' ? MEDICAL.meds[item.id] : undefined;
+  if (med) return medDetail(med);
   return undefined;
 }
 
-/** What can be done with something from the inventory: eat a dish, drink a drink, load a gun or unload it, have a ripperdoc fit an implant. */
+/** What can be done with something from the inventory: eat a dish, drink a drink, take a med, load a gun or unload it, have a ripperdoc fit an implant. */
 function useLabel(item: Item): string | undefined {
   if (item.kind === 'cyberware') return game.clinic() ? 'Fit' : undefined;
+  if (item.kind === 'consumable' && MEDICAL.meds[item.id]) return 'Use';
   if (item.kind === 'weapon') {
     const can = game.canLoad(item.id);
     return can.load ? 'Load' : can.unload ? 'Unload' : undefined;
@@ -1015,6 +1031,7 @@ function showStatus(now: number): void {
   const chrome = game.chrome();
   const health = game.health(now);
   const heat = game.heat(now);
+  const cover = game.covered(now);
   const hurt = health.current < health.max;
   const stars = heat.stars ? '★'.repeat(heat.stars) : '';
   const heart = game.romance(now);
@@ -1028,6 +1045,7 @@ function showStatus(now: number): void {
   const rows: StatusRow[] = [
     { label: 'Energy', value: `Lv ${energy.level} · ${energy.xp}/${energy.xpToNext} XP · ${refill}` },
     { label: 'Health', value: `${health.current}/${health.max}${health.fullAt ? ` · full in ${formatCountdown(health.fullAt - now)}` : ''}`, ...(health.current < health.max / 2 ? { tone: 'warn' as const } : {}) },
+    { label: 'Trauma Team', value: cover ? `${cover.plan.name} · until ${formatDay(cover.until)}` : 'Not covered' },
     ...(stars ? [{ label: 'NCPD', value: `${stars} · cools in ${formatCountdown((heat.coolAt ?? now) - now)}`, tone: 'bad' as const }] : []),
     { label: 'Charisma', value: `Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP` },
     { label: 'Eddies', value: `€$ ${wallet.eddies} on you${wallet.account ? ` · €$ ${wallet.account} banked` : ''}${wallet.chips ? ` · €$ ${wallet.chips} on chips` : ''}` },
@@ -1058,16 +1076,21 @@ function showShop(): void {
   const carried = new Map<string, number>();
   // A weapon counts by its model, each one its own item; rounds by the round.
   for (const item of game.inventory) carried.set(item.weapon ?? item.id, (carried.get(item.weapon ?? item.id) ?? 0) + item.count);
-  const barred = game.barred(Date.now());
+  const now = Date.now();
+  const barred = game.barred(now);
   const clinic = game.clinic();
   const chrome = game.chromeSaved;
+  const cover = game.covered(now);
   shop.render({
     kicker: qualityLabel(menu),
     blurb: barred ?? menuBlurb(menu),
     status: shopStatus,
     // Cash, or a transfer where this counter takes one: the game knows which.
     items: items.map((item) => {
-      const row = { ...item, affordable: !barred && game.affords(item.id), barred: Boolean(barred), carried: carried.get(item.id) ?? 0 };
+      const row = { ...item, affordable: !barred && game.affords(item.id, now), barred: Boolean(barred), carried: carried.get(item.id) ?? 0 };
+      // A service is had, not carried: treatment there and then, a plan signed (or renewed).
+      if (item.kind === 'treatment') return { ...row, verb: 'Treat' };
+      if (item.kind === 'plan') return { ...row, verb: cover?.id === item.id ? 'Renew' : 'Sign up', detail: cover?.id === item.id ? `${item.detail} · yours until ${formatDay(cover.until)}` : item.detail };
       if (item.kind !== 'cyberware' || !clinic) return row;
       // A ripperdoc fits what it sells: the rack says whether it would go in, and what it would take the place of.
       const check = fitCheck(chrome, item.id, CHROME.capacity, CHROME);
@@ -1302,7 +1325,13 @@ function wire(g: Game): void {
     if (view.over) queueSave();
   });
 
-  g.events.on('healthChanged', () => queueSave());
+  g.events.on('healthChanged', () => {
+    // Patched up, the treatment on the rack is for less.
+    if (shop.overlay.isOpen) showShop();
+    queueSave();
+  });
+
+  g.events.on('coverageChanged', () => queueSave());
 
   g.events.on('chromeChanged', () => {
     if (inventory.overlay.isOpen) showInventory();

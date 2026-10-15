@@ -2,6 +2,7 @@ import { CELLS } from './game';
 import type { PocketState } from './carry';
 import type { Fitted } from './cyberware';
 import type { Meter } from './combat';
+import type { Coverage } from './medical';
 import type { Money } from './money';
 import type { EnergyState } from './energy';
 import type { InebriationState } from './inebriation';
@@ -52,6 +53,10 @@ export interface Progress {
   /** The player's health and NCPD heat, as last written down (missing or null: a save from before fighting; well, and nobody looking). */
   health?: Meter | null;
   heat?: Meter | null;
+  /** Whether the player fights to kill (missing or null: a save from before; they don't). */
+  lethal?: boolean | null;
+  /** The Trauma Team plan the player signed up for (missing or null: a save from before, or none). */
+  coverage?: Coverage | null;
 }
 
 /** What a save takes from a game in progress (a `Game` has all of it). */
@@ -73,6 +78,8 @@ export interface SaveSource {
   readonly chromeSaved: readonly Fitted[];
   readonly healthSaved: Meter;
   readonly heatSaved: Meter;
+  readonly lethal: boolean;
+  readonly coverageSaved: Coverage | null;
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -113,6 +120,8 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     chrome: game.chromeSaved.map((f) => ({ ...f })),
     health: { ...game.healthSaved },
     heat: { ...game.heatSaved },
+    lethal: game.lethal,
+    coverage: game.coverageSaved ? { ...game.coverageSaved } : null,
     savedAt: now,
   };
 }
@@ -178,6 +187,9 @@ export function readSave(raw: unknown): SaveData | null {
     // And before there was fighting, the player was well and nobody was looking for them.
     health: isMeter(save.health) ? save.health : null,
     heat: isMeter(save.heat) ? save.heat : null,
+    lethal: typeof save.lethal === 'boolean' ? save.lethal : null,
+    // And before Trauma Team, nobody was signed up.
+    coverage: isCoverage(save.coverage) ? save.coverage : null,
     savedAt: save.savedAt,
   };
 }
@@ -199,12 +211,16 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, life, you, chrome, health, heat } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, life, you, chrome, health, heat, lethal, coverage } = save;
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && world.buildings.some((b) => b.id === job.building) ? job : null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
+}
+
+function isCoverage(value: unknown): value is Coverage {
+  return isObject(value) && typeof value.plan === 'string' && typeof value.until === 'number' && Number.isFinite(value.until);
 }
 
 function isItem(value: unknown): value is Item {

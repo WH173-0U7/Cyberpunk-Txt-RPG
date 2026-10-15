@@ -53,8 +53,15 @@ them, about where they are on the real map, with different places, streets and w
   neighborhood each round, so none is crowded out by its neighbors. A made-up name fills
   `{area}` with its own neighborhood and keeps to `SHORT_NAME` when its kind has a name that
   short (the sign is a phone wide). A real building (`BuildingLandmark`) takes the building of
-  its kind nearest the middle of its `area` when it has one, else of its district. A new real
-  place goes in with the `area` the wiki gives it.
+  its kind nearest the middle of its `area` when it has one, else of its district; one with
+  `categories` takes only a storefront of the first of them the district has, and none is
+  built without one. A new real place goes in with the `area` the wiki gives it.
+- Hospitals are building landmarks of the `hospital` business (never drawn at random:
+  `where: []`), one a district but the Badlands, in a clinic, a pharmacy, a laundromat or a
+  bodega (`HOSPITAL_GROUND`: never a storefront anyone hangs out at, and with the same number
+  of hands, so the people come out the same as without them; `tests/people.test.ts` checks),
+  and the Night City Medical Center, a place of kind `hospital`, when Little China draws it.
+  `hospitalsOf(world)` lists them, `nearestHospital` finds one.
 - The map opens on the player (`OPENING_ZOOM`), and as it zooms in the district names fade
   into their neighborhoods' (those with a place the player knows), which fade in turn; the
   closest zoom is as close as it was on a smaller map (`MAX_ZOOM`). While it moves it draws at
@@ -74,7 +81,7 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 ## The inventory
 
 Everything the player owns is in a pocket of something worn, but the chrome in them; food,
-drink, credchips, clothing, weapons, ammo, cyberware and quickhacks are the items so far:
+drink, meds, credchips, clothing, weapons, ammo, cyberware and quickhacks are the items so far:
 
 - An `Item` has a `kind` (`ItemKind`: weapon, ammo, attachment, cyberware, quickhack, clothing,
   consumable, shard, credchip, junk, component, after the wiki's 2077 item types plus the
@@ -199,6 +206,12 @@ drink, credchips, clothing, weapons, ammo, cyberware and quickhacks are the item
   with what it does in a fight (`effect`) and our price. A quickhack dealer (`HACKS.stores`)
   racks every one its tier sells, a tier up; a quickhack is an `Item` of kind `quickhack`
   named by its id, one copy each (`Game.canBuy` refuses a second).
+- Meds: `src/engine/medical.ts` and `src/data/medical.ts` (`MEDICAL`, on `GEAR.medical`). The
+  meds are the wiki's 2077 healing medication (the MaxDoc, the Bounce Back: its maker and
+  type; what they heal is ours), items of kind `consumable` named by their id, weighing their
+  own `grams`; `Game.consume` takes one (all it gives, at once; not at full health, not in a
+  fight), and in a fight they're the Heal move (see Fighting); where they're sold is under
+  Medicine.
 - `src/data/items.ts` names each kind and says what goes in it (the order items are listed
   in within a pocket). Real items take their names and details from the wiki and the TCG.
 - `src/ui/inventory.ts` shows a page at a time: the outfit (a row per slot, then the bags),
@@ -356,7 +369,8 @@ it needs no generator bump. The pieces:
   `Person.hiredOn`, so `bossOf` never makes a hire the boss), gangs, what's on someone's
   chip (`LifeState.chips`: a robbery takes the eddies and the chip off the victim for good),
   `Person.hurtUntil`
-  (laid up at home in `whereIs`) and `Person.diedOn` (the dead are nowhere, never live a day
+  (laid up in a bed at the hospital nearest home in `whereIs`, `hospitalOf`, or at home in a
+  city with none; `peopleAt` looks at the ward for them too) and `Person.diedOn` (the dead are nowhere, never live a day
   or spend a cent, and anyone dead who meant to come collect never comes; someone who dies in
   the day's fight is out of the rest of that day, and the dead feel nothing of an incident).
   Old events are forgotten day by day, so days caught up on at once come out as they would
@@ -462,12 +476,17 @@ move at once and both land together, the player against the clock:
   then the player's quickhack, then whatever burns; `theirMove` is what someone does (a blade
   closes in, a gun finds its range or ducks to reload, the scared run or back down when it
   turns on them), `talkOdds` the odds of talking them down, `hitChance`/`damageOf` the dice.
-  The moves are `Move`: attack, advance (close in), back (off), cover, hack, talk, run, and
-  freeze (the clock ran out). Ranges are `reach`, `close`, `far` (indoors, no further than
+  The moves are `Move`: attack, advance (close in), back (off), cover, hack, heal (a med:
+  `ctx.med`, before what lands that beat; a dose with `regen` gives more each beat after),
+  talk, run, and freeze (the clock ran out). Ranges are `reach`, `close`, `far` (indoors, no further than
   close). The numbers are `COMBAT` in `src/data/combat.ts`: every `FightClass` (each weapon
   class, fists, and the chrome in an arm) with its odds at each range, its damage, rounds a
-  go and how often a downing blow kills; the clock (`window`), cover, armor's `soak`, escape
-  and talk odds.
+  go and how often a downing blow kills (`lethal`, kept low: most people downed live); the
+  clock (`window`), cover, armor's `soak`, escape and talk odds.
+- The player fights to wound unless they've said to kill (`Game.lethal`, `setLethal`, saved
+  as `lethal`, the button on the fight's strip): aiming to wound, nobody dies of it and guns,
+  blades and wire hit for `nonLethal` of what they would (`Edge.wound`); fighting to kill, a
+  downing blow kills by its class's `lethal`, a quickhack's by `hackLethal`.
 - `Game.attack(id, now)` goes for someone here (from the `⋯` on their card): it's an `assault`
   incident at once (the cascade, the mask, witnesses add heat), and a fight in
   `Game`'s `fightState` until it's over. `Game.fightMove(move, now, hack?)` is a beat, their
@@ -492,7 +511,9 @@ move at once and both land together, the player against the clock:
 - How it ends (`FightOutcome`): them down (`killed` by the odds of what dropped them,
   written to `LifeState.dead` and `diedOn` with a `murder` incident and heat; `trauma` for a
   corpo, whose Trauma Team gets them out alive, with heat; else `won`, laid up for
-  `hurtDays` in `LifeState.hurt`), the player down (`lost`: robbed of some cash, left at 1),
+  `hurtDays` in `LifeState.hurt`, in the hospital nearest home, which the result names), the
+  player down (`lost`: robbed of some cash, left at 1; on a Trauma Team plan, picked up
+  instead, see Medicine),
   `fled` (out of the building), `escaped`, or `talked`. A Second Heart gets the player up once.
   Every line is `COMBAT.lines`, by what happened, filled with `fightVars` (who, their
   pronouns and the verbs that go with them, the arms on both sides); a named subject takes
@@ -505,8 +526,35 @@ move at once and both land together, the player against the clock:
   (`Meter`); they show in the status drop-down (and HP and stars on its line when there's
   any). Heat does nothing yet: when the NCPD comes looking, it's read from there.
 - `src/ui/fight.ts` is the overlay: both health bars, the range and beat on the strip, the
-  log, the tell, the clock, and the moves (Hack opens the quickhacks). It can't be closed
-  while the fight is on, and the header's buttons and the keys rest.
+  log, the tell, the clock, the moves (Hack opens the quickhacks) and the kill-or-wound
+  button. It can't be closed while the fight is on, and the header's buttons and the keys
+  rest.
+
+## Medicine
+
+Hospitals, street clinics, ripperdocs and pharmacies patch the player up; Trauma Team picks
+them up:
+
+- `src/engine/medical.ts` has the shapes (`MedKind`, `MedicalStock`, `CoveragePlan`,
+  `Coverage`), `src/data/medical.ts` the content (`MEDICAL`, on `GEAR.medical`): the meds,
+  what each counter does by business id or kind of place (`stores`: a pharmacy has meds, a
+  street clinic meds and treatment, a hospital those and Trauma Team's plans, a ripperdoc
+  treatment), the fee a point of health (`perPoint`), the plans and the counters' blurbs.
+- `Game.medical()` is the counter here; its part of `Game`'s rack (listed first) is
+  treatment (`TREATMENT`: what's missing of `Game.health(now)`, priced by the point and the
+  place's tier, only while the player is hurt), the meds priced like a dish, and the plans at
+  their price. Treatment and plans are services: no pocket. `Game.menu(now)`, `affords` and
+  `canBuy` take the clock for it.
+- Trauma Team's plans are its 2077 premium packages (Silver, Gold, Platinum; what each does
+  and costs is ours): `Game.covered(now)` is the one the player is on (the
+  `coverageChanged` event), saved as `coverage`. The same plan bought again runs on from when
+  it ends; another starts now in its place. Going down in a fight on one (`pickedUp`), nobody
+  robs the player: they're put back to the plan's `restore` share of their health, carried
+  (`carryTo`) inside the nearest hospital, and billed its `copay` share of the hospital's fee
+  for that (from the account, else cash); short of it, Trauma Team takes the account and
+  drops them from the plan. A plan's `medsOff` comes off the meds on the rack.
+- The rack's buttons say Treat, Sign up or Renew; the inventory says Use for a med; the
+  status drop-down has a Trauma Team row.
 
 ## Work
 

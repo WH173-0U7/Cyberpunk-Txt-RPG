@@ -470,8 +470,12 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
 
   // The dead are nowhere.
   if (person.diedOn !== undefined && day >= person.diedOn) return null;
-  // Laid up: home all day, nursing it.
-  if (person.hurtUntil !== undefined && day <= person.hurtUntil) return at(home, hour < 6 || hour >= 23 ? 'at home, asleep' : 'at home, laid up');
+  // Laid up: in a bed at the nearest hospital the whole time (at home, in a city with none).
+  if (person.hurtUntil !== undefined && day <= person.hurtUntil) {
+    const ward = hospitalOf(person, world);
+    const asleep = hour < 6 || hour >= 23;
+    return ward ? at(ward, asleep ? 'asleep in a hospital bed' : 'in a hospital bed') : at(home, asleep ? 'at home, asleep' : 'at home, laid up');
+  }
   // Night work (a bar, a club, the night desk): from six in the evening till three, asleep till late morning, the afternoon their own.
   if (work && worksNights(person, world)) {
     const off = hour < 3 ? offOn(day - 1, (weekday + 6) % 7) : dayOff;
@@ -517,12 +521,65 @@ export function peopleAt(population: Population, world: World, spot: Spot, clock
   for (const person of population.people) {
     // Nobody is ever anywhere but home, work or their hangout: anyone with none of them here isn't here.
     const hangout = person.likes.hangout;
-    const could = (spot.kind === 'building' && (person.home === spot.id || person.job.building === spot.id)) || (hangout?.kind === spot.kind && hangout.id === spot.id);
+    // ...or the hospital they're laid up in (few are, so the ward is only worked out for them).
+    const could =
+      (spot.kind === 'building' && (person.home === spot.id || person.job.building === spot.id)) ||
+      (hangout?.kind === spot.kind && hangout.id === spot.id) ||
+      (person.hurtUntil !== undefined && clock.day <= person.hurtUntil && sameSpot(hospitalOf(person, world), spot));
     if (!could) continue;
     const where = whereIs(person, world, clock, dishes);
     if (where && where.spot.kind === spot.kind && where.spot.id === spot.id) found.push({ person, doing: where.doing });
   }
   return found;
+}
+
+/** A hospital: a storefront that runs one, or a place that is one (the Night City Medical Center). */
+export interface Hospital {
+  spot: Spot;
+  name: string;
+  x: number;
+  y: number;
+}
+
+const hospitalLists = new WeakMap<World, Hospital[]>();
+const wards = new WeakMap<World, Map<string, Spot | null>>();
+
+/** Every hospital in the city, worked out once a city. */
+export function hospitalsOf(world: World): Hospital[] {
+  let list = hospitalLists.get(world);
+  if (!list) {
+    list = [
+      ...Object.values(world.locations).filter((l) => l.kind === 'hospital').map((l): Hospital => ({ spot: { kind: 'location', id: l.id }, name: l.name, x: l.x, y: l.y })),
+      ...world.buildings.filter((b) => b.business === 'hospital').map((b): Hospital => ({ spot: { kind: 'building', id: b.id }, name: b.name, x: b.x + b.w / 2, y: b.y + b.h / 2 })),
+    ];
+    hospitalLists.set(world, list);
+  }
+  return list;
+}
+
+function sameSpot(a: Spot | null, b: Spot): boolean {
+  return a !== null && a.kind === b.kind && a.id === b.id;
+}
+
+/** The hospital nearest a point, if the city has any. */
+export function nearestHospital(world: World, at: { x: number; y: number }): Hospital | null {
+  let best: Hospital | null = null;
+  for (const h of hospitalsOf(world)) if (!best || Math.hypot(h.x - at.x, h.y - at.y) < Math.hypot(best.x - at.x, best.y - at.y)) best = h;
+  return best;
+}
+
+/** Where someone laid up goes: the hospital nearest their home (or their district, without one). */
+export function hospitalOf(person: Person, world: World): Spot | null {
+  let known = wards.get(world);
+  if (!known) wards.set(world, (known = new Map()));
+  const had = known.get(person.id);
+  if (had !== undefined) return had;
+  const home = person.home ? buildingById(world, person.home) : undefined;
+  const district = world.districts[person.district];
+  const from = home ? { x: home.x + home.w / 2, y: home.y + home.h / 2 } : district ? { x: district.x, y: district.y } : { x: 0, y: 0 };
+  const ward = nearestHospital(world, from)?.spot ?? null;
+  known.set(person.id, ward);
+  return ward;
 }
 
 /** Whether someone works for a corporation: in a tower, or with a corporate title. */

@@ -9,7 +9,7 @@ import { healthOf, staffCostOf, turfFrom, weekdayOf } from '../src/engine/econom
 import { bossOf } from '../src/engine/jobs';
 import { drawQuality, menuFor, type Quality } from '../src/engine/food';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, tieKey, type LifeEvent } from '../src/engine/life';
-import { drawnTo, generatePeople, heartOf, INVERSE, tiesOf, whereIs, type Person, type Population, type Spot } from '../src/engine/people';
+import { drawnTo, generatePeople, heartOf, hospitalOf, INVERSE, peopleAt, tiesOf, whereIs, type Person, type Population, type Spot } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 
@@ -233,19 +233,27 @@ describe("the people's own days", () => {
     expect([...kinds].sort()).toEqual(['breakup', 'death', 'fallout', 'fight', 'friends', 'hired', 'joined', 'laidOff', 'makeup', 'robbery', 'romance', 'shakedown', 'wedding']);
   });
 
-  it('keeps the laid up at home', () => {
+  it('keeps the laid up in the hospital nearest home, all day', () => {
     const { world, population, events } = lived(seeds[0] as string, 20);
     // A fight whose loser is still alive (the dead are nowhere, laid up or not).
     const fight = events.find((e) => e.kind === 'fight' && population.people.find((p) => p.id === e.who[1])?.diedOn === undefined);
+    expect(fight).toBeDefined();
     if (fight) {
       const loser = population.people.find((p) => p.id === fight.who[1]) as Person;
-      const hurt = { ...loser, hurtUntil: fight.day + 2 };
+      // Laid up for a couple of days, in this population.
+      const hurt = loser;
+      hurt.hurtUntil = fight.day + 2;
+      const ward = hospitalOf(loser, world);
+      expect(ward).not.toBeNull();
       for (const hour of [3, 11, 20]) {
-        const where = whereIs(hurt, world, { hour, weekday: 2, day: fight.day + 1 }, FOOD.dishes);
-        expect(where?.spot.id, `${loser.name} at ${hour}`).toBe(loser.home ?? undefined);
-        if (loser.home) expect(where?.doing).toMatch(/laid up|asleep/);
+        const clock = { hour, weekday: 2, day: fight.day + 1 };
+        const where = whereIs(hurt, world, clock, FOOD.dishes);
+        expect(where?.spot, `${loser.name} at ${hour}`).toEqual(ward);
+        expect(where?.doing).toMatch(/hospital bed/);
+        // And anyone at the hospital then sees them there.
+        expect(peopleAt(population, world, ward!, clock, FOOD.dishes).map((p) => p.person.id)).toContain(loser.id);
       }
-      expect(whereIs(hurt, world, { hour: 11, weekday: 2, day: fight.day + 3 }, FOOD.dishes)?.doing ?? '').not.toMatch(/laid up/);
+      expect(whereIs(hurt, world, { hour: 11, weekday: 2, day: fight.day + 3 }, FOOD.dishes)?.doing ?? '').not.toMatch(/laid up|hospital bed/);
     }
   });
 

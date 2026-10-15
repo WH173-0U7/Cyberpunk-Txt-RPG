@@ -395,6 +395,36 @@ describe('buildings', () => {
     expect(share('city_center', 'clothing')).toBeGreaterThan(share('pacifica', 'clothing'));
   });
 
+  it('opens a hospital in a clinic, a pharmacy, a laundromat or a bodega of each district, by the name it has', () => {
+    const named = new Map((CITY.buildings.landmarks ?? []).filter((l) => l.business === 'hospital').map((l) => [l.name, l.district]));
+    const areas = new Map((CITY.buildings.landmarks ?? []).filter((l) => l.business === 'hospital').map((l) => [l.name, l.area]));
+    const without = new Map<string, number>();
+    let hospitalsSeen = 0;
+    let inArea = 0;
+    for (const world of worlds) {
+      const hospitals = world.buildings.filter((b) => b.business === 'hospital');
+      // The Night City Medical Center, when there is one, is a place of its own in Watson.
+      for (const l of Object.values(world.locations).filter((l) => l.kind === 'hospital')) expect([l.name, l.district]).toEqual(['Night City Medical Center', 'watson']);
+      for (const b of hospitals) {
+        expect(b.kind).toBe('shops');
+        expect(b.category).toBe('medical');
+        expect(named.get(b.name), b.name).toBe(b.district);
+        // One named for its neighborhood is in it.
+        const area = areas.get(b.name);
+        if (area && b.name.includes(area)) {
+          hospitalsSeen++;
+          if (subdistrictAt(Object.values(world.districts), { x: b.x + b.w / 2, y: b.y + b.h / 2 })?.subdistrict?.name === area) inArea++;
+        }
+      }
+      expect(new Set(hospitals.map((b) => b.name)).size).toBe(hospitals.length);
+      for (const district of named.values()) if (!hospitals.some((b) => b.district === district)) without.set(district, (without.get(district) ?? 0) + 1);
+    }
+    // The big districts always have one; downtown and Santo Domingo, with few storefronts, now and then go without.
+    for (const district of ['watson', 'pacifica', 'westbrook', 'heywood']) expect(without.get(district) ?? 0, district).toBeLessThan(worlds.length * 0.02);
+    // In the neighborhood its name says, nearly always.
+    expect(inArea / hospitalsSeen).toBeGreaterThan(0.9);
+  });
+
   it('builds the Badlands out of shacks and containers, and keeps them sparse', () => {
     for (const world of worlds) {
       const desert = world.buildings.filter((b) => world.districts[b.district]?.terrain === 'desert');

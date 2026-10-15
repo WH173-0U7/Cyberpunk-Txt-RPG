@@ -53,6 +53,12 @@ export interface BuildingLandmark {
   kind: BuildingKind;
   name: string;
   business?: string;
+  /**
+   * Only a storefront of one of these categories, the first there is one of (a hospital takes a
+   * clinic, else a laundromat), in its `area` when there's one there; none in the district, and
+   * it isn't built. Not said, any building of its kind.
+   */
+  categories?: BuildingCategory[];
 }
 
 export interface BuildingContent {
@@ -199,7 +205,13 @@ export function generateBuildings(
     if (!district) continue;
     const middle = district.subdistricts.find((s) => s.name === landmark.area) ?? district;
     const away = (b: Building) => Math.hypot(b.x + b.w / 2 - middle.x, b.y + b.h / 2 - middle.y);
-    const candidates = buildings.filter((b) => b.district === landmark.district && b.kind === landmark.kind && !taken.has(b));
+    const free = buildings.filter((b) => b.district === landmark.district && b.kind === landmark.kind && !taken.has(b));
+    // One that wants a certain kind of storefront takes it in its own neighborhood when there's one there, else anywhere in its district.
+    const inArea = (b: Building) => subdistrictAt(districts, { x: b.x + b.w / 2, y: b.y + b.h / 2 })?.subdistrict?.name === landmark.area;
+    const { categories } = landmark;
+    const pool = categories && landmark.area && free.some((b) => categories.includes(b.category) && inArea(b)) ? free.filter(inArea) : free;
+    const first = categories?.find((c) => pool.some((b) => b.category === c));
+    const candidates = categories ? pool.filter((b) => b.category === first) : pool;
     const nearest = candidates.reduce<Building | null>((best, b) => (!best || away(b) < away(best) ? b : best), null);
     if (!nearest) continue;
     taken.add(nearest);

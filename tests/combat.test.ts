@@ -4,7 +4,7 @@ import { CHROME } from '../src/data/cyberware';
 import { HACKS } from '../src/data/quickhacks';
 import { ARMS } from '../src/data/weapons';
 import { createRng } from '../src/engine/rng';
-import { hitChance, NO_EDGE, resolveBeat, stepRange, talkOdds, theirMove, type Arm, type Fighter, type FightState, type Move } from '../src/engine/combat';
+import { damageOf, hitChance, NO_EDGE, resolveBeat, stepRange, talkOdds, theirMove, type Arm, type Fighter, type FightState, type Move } from '../src/engine/combat';
 
 /**
  * Each quickhack as its page on the Cyberpunk Wiki has it (checked 2026-10-15, through the
@@ -23,10 +23,11 @@ const CANON: Record<string, [string, string, number, number]> = {
 
 const lexington: Arm = { id: 'lexington', name: 'M-10AF Lexington', short: 'Lexington', cls: 'pistol', tech: 'Power', magazine: 20 };
 const katana: Arm = { id: 'katana', name: 'Katana', short: 'katana', cls: 'katana', magazine: 0 };
+const FISTS_ARM: Arm = { id: 'fists', name: 'Fists', short: 'fists', cls: 'fists', magazine: 0 };
 const tactician: Arm = { id: 'tactician', name: 'M2038 Tactician', short: 'Tactician', cls: 'shotgun', tech: 'Power', magazine: 8 };
 
 function fighter(arm: Arm, extra: Partial<Fighter> = {}): Fighter {
-  return { hp: 100, max: 100, arm, loaded: arm.magazine, spare: arm.magazine, armor: 0, covered: false, blind: 0, jammed: 0, crippled: 0, chromeOff: 0, burn: 0, burning: 0, charges: 0, ...extra };
+  return { hp: 100, max: 100, arm, loaded: arm.magazine, spare: arm.magazine, armor: 0, covered: false, blind: 0, jammed: 0, crippled: 0, chromeOff: 0, burn: 0, burning: 0, regen: 0, regening: 0, charges: 0, ...extra };
 }
 
 function fight(you: Arm, them: Arm, extra: Partial<FightState> = {}): FightState {
@@ -63,13 +64,13 @@ describe('the numbers', () => {
   });
 
   it('has a line for everything that can happen, with nothing in one but the vars a fight fills', () => {
-    const vars = new Set(['who', 'Who', 'he', 'He', 'him', 'his', 'His', 's', 'es', 'ies', 'is', 'has', 'arm', 'theirArm', 'dmg', 'hack', 'took']);
+    const vars = new Set(['who', 'Who', 'he', 'He', 'him', 'his', 'His', 's', 'es', 'ies', 'is', 'has', 'arm', 'theirArm', 'dmg', 'hack', 'took', 'med', 'plan', 'ward']);
     for (const [key, pool] of Object.entries(COMBAT.lines)) {
       expect(pool.length, key).toBeGreaterThan(0);
       for (const line of pool) for (const [, name] of line.matchAll(/\{(\w+)\}/g)) expect(vars.has(name!), `${key}: {${name}}`).toBe(true);
     }
     const kinds = ['Shoot', 'Cut', 'Bash', 'Punch', 'Lash', 'Blast'];
-    const needed = [...kinds.flatMap((k) => [`you${k}`, `they${k}`]), 'youMissShot', 'youMissSwing', 'youMissPunch', 'theyMissShot', 'theyMissSwing', 'theyMissPunch', 'youAdvance', 'theyAdvance', 'youBack', 'theyBack', 'youCover', 'theyCover', 'youReload', 'theyReload', 'youFreeze', 'youEmpty', 'theyEmpty', 'theyJammed', 'youStuck', 'theyStuck', 'youReachless', 'theyReachless', 'youTalkOk', 'youTalkNo', 'theyBackDown', 'theyBegIgnored', 'youRunOk', 'youRunNo', 'theyRunOk', 'theyRunNo', 'hackDamage', 'hackBurn', 'hackBlind', 'hackJam', 'hackCripple', 'hackChrome', 'youBurn', 'theyBurn', 'start', 'theyDown', 'theyDie', 'trauma', 'youDown', 'revive', 'robbed', 'tellAttack', 'tellAdvance', 'tellBack', 'tellCover', 'tellRun', 'tellTalk'];
+    const needed = [...kinds.flatMap((k) => [`you${k}`, `they${k}`]), 'youMissShot', 'youMissSwing', 'youMissPunch', 'theyMissShot', 'theyMissSwing', 'theyMissPunch', 'youAdvance', 'theyAdvance', 'youBack', 'theyBack', 'youCover', 'theyCover', 'youReload', 'theyReload', 'youFreeze', 'youEmpty', 'theyEmpty', 'theyJammed', 'youStuck', 'theyStuck', 'youReachless', 'theyReachless', 'youTalkOk', 'youTalkNo', 'theyBackDown', 'theyBegIgnored', 'youRunOk', 'youRunNo', 'theyRunOk', 'theyRunNo', 'hackDamage', 'hackBurn', 'hackBlind', 'hackJam', 'hackCripple', 'hackChrome', 'youBurn', 'theyBurn', 'youHeal', 'youRegen', 'start', 'theyDown', 'theyDie', 'trauma', 'youDown', 'revive', 'robbed', 'traumaYou', 'tellAttack', 'tellAdvance', 'tellBack', 'tellCover', 'tellRun', 'tellTalk'];
     for (const key of needed) expect(COMBAT.lines[key], key).toBeDefined();
   });
 });
@@ -105,6 +106,38 @@ describe('a beat', () => {
     const near = hitChance(fighter(tactician), NO_EDGE, fighter(katana), NO_EDGE, 'attack', 'reach', 2, COMBAT);
     const far = hitChance(fighter(tactician), NO_EDGE, fighter(katana), NO_EDGE, 'attack', 'far', 2, COMBAT);
     expect(near).toBeGreaterThan(far * 3);
+  });
+
+  it('heals a med taken before what lands that beat, and a dose that keeps working gives more for beats after', () => {
+    const hurt = (extra: Partial<Fighter> = {}) => fight(lexington, lexington, { you: fighter(lexington, { hp: 30, ...extra }) });
+    const once = resolveBeat(hurt(), 'heal', 'cover', ctx('h', { med: { heal: 40 } }));
+    expect(once.events).toContainEqual({ who: 'you', what: 'heal', dmg: 40 });
+    expect(once.state.you.hp).toBe(70);
+    // Never past the most there is.
+    expect(resolveBeat(hurt({ hp: 90 }), 'heal', 'cover', ctx('h', { med: { heal: 40 } })).state.you.hp).toBe(100);
+    const dose = resolveBeat(hurt(), 'heal', 'cover', ctx('i', { med: { heal: 15, regen: { perBeat: 8, beats: 4 } } }));
+    expect(dose.state.you.hp).toBe(30 + 15 + 8);
+    expect(dose.state.you.regening).toBe(3);
+    const after = resolveBeat(dose.state, 'cover', 'cover', ctx('j'));
+    expect(after.events).toContainEqual({ who: 'you', what: 'regen', dmg: 8 });
+    expect(after.state.you.hp).toBe(30 + 15 + 16);
+  });
+
+  it('hits for less aiming to wound, with a gun or a blade, and the same with fists', () => {
+    const wound = { ...NO_EDGE, wound: COMBAT.nonLethal };
+    const hit = (arm: Arm, edge: typeof NO_EDGE, seed: string) => damageOf(fighter(arm), edge, fighter(lexington), NO_EDGE, createRng(seed), COMBAT);
+    let gun = 0;
+    let gunWounding = 0;
+    for (let n = 0; n < 50; n++) {
+      gun += hit(lexington, NO_EDGE, `w${n}`);
+      gunWounding += hit(lexington, wound, `w${n}`);
+      expect(hit(FISTS_ARM, wound, `w${n}`)).toBe(hit(FISTS_ARM, NO_EDGE, `w${n}`));
+    }
+    expect(gunWounding).toBeLessThan(gun);
+    expect(gunWounding).toBeGreaterThan(gun * (COMBAT.nonLethal - 0.05));
+    // And far fewer of the downed die than not: a pistol kills a few in ten, fists never.
+    expect(COMBAT.classes.pistol?.lethal).toBeLessThan(0.25);
+    expect(COMBAT.classes.fists?.lethal).toBe(0);
   });
 
   it('makes cover harder to hit and reloads behind it; a run gets away more often from further off', () => {
