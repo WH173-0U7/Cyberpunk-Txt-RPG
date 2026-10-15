@@ -967,7 +967,6 @@ function showPeople(): void {
   const how = { seen: 'seen together', told: 'told', asked: 'asked' };
   const nameOf = (id: string, fallback: string) => game.describe(id)?.name ?? fallback;
   const described = shown ? game.describe(shown.id, now) : null;
-  const named = (p: { id: string }) => game.describe(p.id)?.named ?? false;
   people.render({
     count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
     // The standing lines belong to the list; a card is about one person.
@@ -1003,7 +1002,8 @@ function showPeople(): void {
             questions: (Object.entries(LINES.questions) as Array<[Question, { label: string }]>)
               .filter(([fact]) => !standing.knowledge.facts.includes(fact))
               .map(([fact, q]) => ({ fact, label: q.label })),
-            askAbout: known.filter((p) => p.id !== shown.id && named(p)).map((p) => ({ id: p.id, name: p.name })),
+            // A few worth asking about (seen with them, family by the name, here with them, talked to lately), never everyone known.
+            askAbout: present ? game.worthAsking(shown.id, now).map((p) => ({ id: p.id, name: p.name })) : [],
             gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
             // A hot chip can be put to a netrunner the player can tell is one; the label says what it holds and what they'd keep.
             chops: present && game.canChop(shown.id) ? hot.map((c) => ({ id: c.id, label: `€$ ${c.balance ?? 0} chip · cut ${chipCut(c.balance ?? 0, MONEY)}` })) : [],

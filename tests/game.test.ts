@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
+import { ASK_ABOUT, cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
 import { outfit, type GearContent } from '../src/engine/carry';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
@@ -17,7 +17,7 @@ import { memoriesOf } from '../src/engine/memory';
 import { dreamOf, handleOf, tiesOf, type Person, type Pronouns } from '../src/engine/people';
 import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
-import { freshSociety, type SocietyState } from '../src/engine/society';
+import { freshSociety, linkKey, type SocietyState } from '../src/engine/society';
 import type { TravelRules } from '../src/engine/travel';
 import type { Building, GameEvents, Item, Location, Whereabouts, World } from '../src/engine/types';
 
@@ -876,6 +876,32 @@ describe('Game', () => {
         expect(game.energy(due + 1).current).toBe(0);
         expect(game.societySaved.threats).toEqual([]);
       }
+    });
+
+    it('offers a few people worth asking about, from what the player knows, however many names they have', () => {
+      const { game: probe, now, worker } = shiftAt();
+      const everyone = probe.population.people.filter((p) => p.id !== worker.id);
+      // Every name in the city known, someone seen with them, someone already asked about.
+      const [seen, asked] = everyone as [Person, Person];
+      const society: SocietyState = {
+        ...freshSociety(),
+        known: Object.fromEntries(everyone.map((p) => [p.id, { met: true, seen: true, told: false, facts: ['name'], log: [] }])),
+        links: { [linkKey(worker.id, seen.id)]: { kind: null, how: 'seen', at: now }, [linkKey(worker.id, asked.id)]: { kind: 'none', how: 'asked', at: now } },
+      };
+      const inside = { ...carryingProgress([]), where: outside('b-noodle', 38, 20), inside: 'b-noodle' };
+      const game = new Game(world, { ...RULES, startingEddies: 100 }, { ...inside, society });
+      game.start(now);
+      const offered = game.worthAsking(worker.id, now).map((p) => p.id);
+      expect(everyone.length).toBeGreaterThan(ASK_ABOUT);
+      expect(offered.length).toBeLessThanOrEqual(ASK_ABOUT);
+      expect(offered[0]).toBe(seen.id);
+      expect(offered).not.toContain(asked.id);
+      expect(offered).not.toContain(worker.id);
+      // Family by the name come before strangers; nobody the player can't name.
+      for (const p of everyone.filter((q) => q.family === worker.family)) if (offered.length < ASK_ABOUT && p.id !== asked.id) expect(offered).toContain(p.id);
+      const stranger = new Game(world, RULES, inside);
+      stranger.start(now);
+      expect(stranger.worthAsking(worker.id, now)).toEqual([]);
     });
 
     it('tells people apart by their look until introduced, and learns the rest by watching, talking and asking', () => {

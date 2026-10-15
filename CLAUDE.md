@@ -240,7 +240,10 @@ it needs no generator bump. The pieces:
   or their look, and the facts known), `standingWith` (web) and `conversation`, never the
   `Person` or the population's ties directly; new ways of finding things out go through
   `learnOf`, `learnFact` and `learnLink` (`Game.look` for what's plain to see, the topics
-  in `talk`, `Game.ask` and `Game.askFact`), and everything said goes through `logLine`. A
+  in `talk`, `Game.ask` and `Game.askFact`), and everything said goes through `logLine`. The
+  Ask picker offers only `Game.worthAsking` to ask someone about (at most `ASK_ABOUT`, from
+  what the player knows: seen with them, their family name, here with them, talked to lately,
+  and none already asked), never everyone known, which grows with every name learned. A
   tie that has changed since (told of a couple, a wedding, a split, a falling out or a
   making up) is `relearnLink`, which replaces what the player knew.
 - People remember what the player did, thing by thing (`src/engine/memory.ts`): a `Memory`

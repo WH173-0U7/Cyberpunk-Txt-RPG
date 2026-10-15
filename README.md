@@ -214,8 +214,10 @@ own.
 - **Who knows whom**: the same rule. Opening **People** takes in everyone there, and any
   two who are actually connected you've *seen together* (connected somehow, you don't know
   how). Once someone likes you they drop names ("My sister Ana works at…"), which tells you
-  the relation and the name. And you can **Ask about** anyone whose name you have: they'll
-  tell you what the person is to them, that they've never heard of them, or nothing. Tap
+  the relation and the name. And you can **Ask about** the few worth asking about: anyone
+  you've seen them with, anyone who shares their family name, whoever's here with them and
+  the last people you've talked to (six at most, and nobody you've asked about already);
+  they'll tell you what the person is to them, that they've never heard of them, or nothing. Tap
   the card's facts line and their web unfolds under it: them in the middle and everyone you
   know them to know around them, each spoke labeled with the relation or "?" (dashed) when
   all you know is that they're connected; tap a name to open that person's card (even if

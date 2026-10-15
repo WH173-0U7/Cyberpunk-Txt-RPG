@@ -75,6 +75,9 @@ import type {
 } from './types';
 
 /** The fog lifts in square cells this many map units across (a couple of building widths). */
+/** The most people the Ask picker offers to ask someone about. */
+export const ASK_ABOUT = 6;
+
 export const CELL = 2;
 export const CELLS = Math.ceil(WORLD / CELL);
 /**
@@ -2080,6 +2083,39 @@ export class Game {
     this.noteFeedback(person, before, now, reaction.why);
     this.events.emit('societyChanged', { people: learned });
     return true;
+  }
+
+  /**
+   * Who it's worth asking someone about, from what the player can see or knows, never the
+   * ties as they are: anyone seen with them, connected somehow (how, the player can't tell);
+   * anyone who shares their family name; anyone here with them; the last few the player has
+   * talked to. Never anyone the player has asked them about already, or knows how they're
+   * tied; at most `ASK_ABOUT` of them, so it doesn't grow with every name the player learns.
+   */
+  worthAsking(id: string, now: number): Person[] {
+    const person = this.person(id);
+    if (!person) return [];
+    const named = (p: Person | undefined): p is Person => Boolean(p) && p?.id !== id && knowledgeOf(this.society, (p as Person).id).facts.includes('name');
+    // Not asked yet, nor told how they're tied: nothing known, or only that they're connected.
+    const open = (p: Person) => (linkOf(this.society, id, p.id)?.kind ?? null) === null;
+    const seenWith = Object.entries(this.society.links)
+      .filter(([key, link]) => link.kind === null && key.split('|').includes(id))
+      .map(([key]) => this.person(key.split('|').find((k) => k !== id) ?? ''));
+    const knownNamed = this.knownPeople().filter(named);
+    const family = knownNamed.filter((p) => p.family === person.family);
+    const here = this.peopleHere(now).map((p) => p.person);
+    const lately = knownNamed
+      .map((p) => ({ p, at: knowledgeOf(this.society, p.id).log.at(-1)?.at ?? 0 }))
+      .filter(({ at }) => at > 0)
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 3)
+      .map(({ p }) => p);
+    const picked: Person[] = [];
+    for (const p of [...seenWith, ...family, ...here, ...lately]) {
+      if (picked.length >= ASK_ABOUT) break;
+      if (named(p) && !picked.includes(p) && open(p)) picked.push(p);
+    }
+    return picked;
   }
 
   /**
