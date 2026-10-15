@@ -4,13 +4,17 @@ export interface ShopItemView {
   id: string;
   name: string;
   note: string;
-  kind: 'food' | 'drink' | 'alcohol' | 'gear' | 'clothing' | 'weapon' | 'ammo';
-  /** For clothing: the slot, the style, the brand; for a weapon, its class and maker; for ammo, the box: in place of the kind's label. */
+  kind: 'food' | 'drink' | 'alcohol' | 'gear' | 'clothing' | 'weapon' | 'ammo' | 'cyberware';
+  /** For clothing: the slot, the style, the brand; for a weapon, its class and maker; for ammo, the box; for an implant, the part of the body: in place of the kind's label. */
   detail?: string;
   price: number;
   affordable: boolean;
   /** The counter won't serve the player (what they did here, or a mask). */
   barred?: boolean;
+  /** What the button says, when it isn't Buy: a ripperdoc's chrome is bought and fitted ("Fit"). */
+  verb?: string;
+  /** Why it can't be had, when that isn't the eddies or the counter: an implant in you already, or no capacity left for it. */
+  why?: string;
   /** How many the player already carries. */
   carried: number;
 }
@@ -32,7 +36,7 @@ export interface ShopElements extends OverlayElements {
   list: HTMLElement;
 }
 
-const KIND_LABEL: Record<ShopItemView['kind'], string> = { food: 'Food', drink: 'Drink', alcohol: 'Alcohol', gear: 'Gear', clothing: 'Clothing', weapon: 'Weapon', ammo: 'Ammo' };
+const KIND_LABEL: Record<ShopItemView['kind'], string> = { food: 'Food', drink: 'Drink', alcohol: 'Alcohol', gear: 'Gear', clothing: 'Clothing', weapon: 'Weapon', ammo: 'Ammo', cyberware: 'Cyberware' };
 
 /**
  * An eatery's menu, or a store's rack, over the map. It shows whatever view it's given; the
@@ -85,8 +89,9 @@ function row(item: ShopItemView): HTMLElement {
   buy.type = 'button';
   buy.dataset.id = item.id;
   buy.disabled = !item.affordable;
-  buy.append(el('span', 'shop-buy-label', 'Buy'), el('span', 'shop-price', `${item.price} €$`));
-  buy.setAttribute('aria-label', `Buy ${item.name}, ${item.price} eddies${item.affordable ? '' : item.barred ? ", they won't serve you" : ', not enough eddies'}`);
+  const verb = item.verb ?? 'Buy';
+  buy.append(el('span', 'shop-buy-label', verb), el('span', 'shop-price', `${item.price} €$`));
+  buy.setAttribute('aria-label', `${verb} ${item.name}, ${item.price} eddies${item.affordable ? '' : item.barred ? ", they won't serve you" : item.why ? `, ${item.why}` : ', not enough eddies'}`);
   li.append(text, buy);
   return li;
 }

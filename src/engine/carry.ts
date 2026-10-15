@@ -1,3 +1,4 @@
+import { implantGrams, implantOf, type ChromeContent } from './cyberware';
 import type { Dish, Quality } from './food';
 import type { Money } from './money';
 import type { Item, ItemKind } from './types';
@@ -69,6 +70,8 @@ export interface GearContent {
   items: Record<ItemKind, { grams: number; perSlot: number }>;
   /** Weapons and ammo: what each weighs, how many rounds share a slot, which are too long for a pocket (src/data/weapons.ts). */
   arms: ArmsContent;
+  /** Cyberware: what an implant carried weighs, by the part of the body it's for (src/data/cyberware.ts). */
+  chrome: ChromeContent;
   /** Grams by kind of dish, unless the dish says its own. */
   dish: Record<Dish['kind'], number>;
   kinds: Record<string, PocketKind>;
@@ -139,6 +142,8 @@ export function itemGrams(item: Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | '
     const ammo = gear.arms.ammo[item.id];
     if (ammo) return ammo.grams;
   }
+  const implant = implantOf(item, gear.chrome);
+  if (implant) return implantGrams(implant, gear.chrome);
   return gear.items[item.kind]?.grams ?? 250;
 }
 

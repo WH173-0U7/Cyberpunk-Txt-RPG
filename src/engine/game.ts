@@ -2,6 +2,7 @@ import { blockAt, canEnter } from './buildings';
 import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
+import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { tillOf, tradeAt, turfFrom, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
@@ -220,6 +221,8 @@ export class Game {
   private life: LifeState;
   /** The player, as people see them: the pronouns they go by. */
   private you: You;
+  /** The chrome a ripperdoc has fitted into the player. */
+  private fitted: Fitted[];
   private readonly baseEddies: ReadonlyMap<string, number>;
   /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
   private readonly home: { building: string; bed: boolean } | null = null;
@@ -254,6 +257,9 @@ export class Game {
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
     // Saves from before the player said otherwise go by they.
     this.you = progress?.you ? { ...progress.you } : { pronouns: 'they' };
+    // Implants the game no longer has are gone, and one fitted twice is fitted once.
+    const implants = rules.gear.chrome.implants;
+    this.fitted = (progress?.chrome ?? []).filter((f, i, all) => f.id in implants && all.findIndex((g) => g.id === f.id) === i).map((f) => ({ ...f }));
     // A job at a place this city doesn't have, or that doesn't hire anymore, is no job.
     const workplace = progress?.job ? world.buildings.find((b) => b.id === progress.job?.building) : undefined;
     this.job = progress?.job && workplace && ladderFor(workplace, rules.jobs) ? { ...progress.job } : null;
@@ -487,25 +493,43 @@ export class Game {
     }
   }
 
-  /** What's for sale where the player is: an eatery's menu, a store's rack of bags, or nothing. */
+  /** What's for sale where the player is: an eatery's menu, a store's rack, a ripperdoc's chrome, or nothing. */
   menu(): Menu | null {
     const at = this.inside ?? this.location;
     if (!at) return null;
-    return menuFor(this.world, at, this.rules.food) ?? (this.inside ? this.rack(this.inside) : null);
+    return menuFor(this.world, at, this.rules.food) ?? this.rack(at);
   }
 
-  /** A store's rack: garments at their own price, bags priced by how good a store it is; at a weapon store, its guns or blades at their own price and boxes of rounds priced like the bags. */
-  private rack(building: Building): Menu | null {
+  /** What a store's chrome is kept under: a storefront's business, or the kind of place (a ripperdoc's clinic is either). */
+  private chromeKey(at: Building | Location): string | null {
+    return 'business' in at ? at.business : at.kind;
+  }
+
+  /**
+   * A store's rack: garments at their own price, bags priced by how good a store it is; at a
+   * weapon store, its guns or blades at their own price and boxes of rounds priced like the
+   * bags; at a ripperdoc or a chrome dealer (a storefront, or a clinic that's a place of its
+   * own), its implants at their own price.
+   */
+  private rack(at: Building | Location): Menu | null {
     const { gear, food } = this.rules;
-    const key = building.business && (gear.racks[building.business] || gear.arms.stores[building.business]) ? building.business : null;
-    if (!key) return null;
-    const ids = gear.racks[key] ?? [];
-    const stock = gear.arms.stores[key];
+    const business = 'business' in at ? at.business : null;
+    const key = business && (gear.racks[business] || gear.arms.stores[business]) ? business : null;
+    const chromeKey = this.chromeKey(at);
+    const chrome = chromeKey ? gear.chrome.stores[chromeKey] : undefined;
+    if (!key && !chrome) return null;
+    const ids = key ? (gear.racks[key] ?? []) : [];
+    const stock = key ? gear.arms.stores[key] : undefined;
     // A clothing store sells at its tier; a store with only bags on the rack prices them the way its district eats.
-    const quality = gear.quality[key] ?? drawQuality(this.world, building);
-    const venue: Venue = { id: building.id, name: building.name, district: building.district, kindLabel: building.kindLabel, quality, chain: false };
-    // The weapons first, then the rounds, then whatever carries them.
-    const arms = stock ? stockFor(this.world.seed, building.id, building.district, quality, stock, gear.arms) : [];
+    const quality = (key ? gear.quality[key] : undefined) ?? drawQuality(this.world, at);
+    const venue: Venue = { id: at.id, name: at.name, district: at.district, kindLabel: at.kindLabel, quality, chain: false };
+    // The chrome first, then the weapons, then the rounds, then whatever carries them.
+    const implants = chrome ? chromeStockFor(this.world.seed, at.id, quality, chrome, gear.chrome) : [];
+    const ware = implants.flatMap((id): MenuItem[] => {
+      const implant = gear.chrome.implants[id];
+      return implant ? [{ id, name: implant.name, note: implant.note, kind: 'cyberware', price: implant.price, detail: implantDetail(implant, gear.chrome) }] : [];
+    });
+    const arms = stock ? stockFor(this.world.seed, at.id, at.district, quality, stock, gear.arms) : [];
     const weapons = arms.flatMap((id): MenuItem[] => {
       const weapon = gear.arms.weapons[id];
       if (!weapon) return [];
@@ -525,7 +549,7 @@ export class Game {
       }
       return [{ id, name: kind.name, note: kind.note ?? '', kind: 'gear' as const, price: priceFor(kind.price, quality, food) }];
     });
-    const all = [...weapons, ...ammo, ...items];
+    const all = [...ware, ...weapons, ...ammo, ...items];
     return all.length ? { venue, items: all, kind: 'gear' } : null;
   }
 
@@ -549,6 +573,7 @@ export class Game {
       return { id: item.id, kind: 'weapon', weapon: item.id, ...(weapon && isGun(weapon, this.rules.gear.arms) ? { loaded: weapon.disposable ? (weapon.magazine ?? 0) : 0 } : {}) };
     }
     if (item.kind === 'ammo') return { id: item.id, kind: 'ammo' };
+    if (item.kind === 'cyberware') return { id: item.id, kind: 'cyberware' };
     return { id: item.id, kind: 'consumable' };
   }
 
@@ -564,12 +589,19 @@ export class Game {
     if (!menu || !item) return 'Not for sale here.';
     const barred = this.barred(now);
     if (barred) return barred;
+    // A ripperdoc fits what it sells there and then: it wants the room in the body, not a pocket.
+    const fitting = item.kind === 'cyberware' && this.clinic() !== null;
+    if (fitting) {
+      const why = this.cantFit(item.id);
+      if (why) return why;
+    }
     if (!this.canPay(item.price, this.takesTransfers(menu))) return this.shortBy(item.name, item.price, this.takesTransfers(menu));
-    if (item.kind !== 'gear' && !this.pocketFor(this.protoFor(item), this.boxOf(item))) {
+    if (item.kind !== 'gear' && !fitting && !this.pocketFor(this.protoFor(item), this.boxOf(item))) {
       const proto = this.protoFor(item);
       // Something long wants a bag that takes it, and the pockets of your clothes never will.
       if (isLong(proto, this.rules.gear.arms)) return `No room for the ${item.name}: it's too long for a pocket. It wants a bag with room: a messenger bag, a backpack, a duffel or a gun case.`;
       if (item.kind === 'ammo') return `No room for a box of ${item.name}: a box wants a slot with room for its weight. Drop something, or carry a bag.`;
+      if (item.kind === 'cyberware') return `No room to carry the ${item.name}: it wants a slot with room for its weight. Drop something, or carry a bag.`;
       return `No room for ${item.name}: your pockets are full. Eat something, or drop something.`;
     }
     return null;
@@ -588,8 +620,12 @@ export class Game {
     // What's bought goes in its pocket before it's paid for, so the change only comes back where there's room left for it.
     const pockets = [...this.pockets];
     const items = this.items.map((i) => ({ ...i }));
+    const fitted = [...this.fitted];
+    const chromed = item.kind === 'cyberware' && this.clinic() !== null;
     let bought: string;
-    if (item.kind === 'gear') {
+    if (chromed) {
+      bought = `Bought the ${item.name} for ${item.price} €$, and the doc fits it there and then.${this.fitIn(item.id, now)}`;
+    } else if (item.kind === 'gear') {
       this.pockets.push({ id: newPocketId(item.id, this.pockets), kind: item.id, in: null });
       bought = `Bought a ${item.name.toLowerCase()} for ${item.price} €$. More room.`;
     } else if (item.kind === 'weapon') {
@@ -615,6 +651,7 @@ export class Game {
     if (!this.pay(item.price, this.takesTransfers(menu))) {
       this.pockets.splice(0, this.pockets.length, ...pockets);
       this.items.splice(0, this.items.length, ...items);
+      this.fitted = fitted;
       return false;
     }
     // Spent at a storefront, it's in the till when the day is lived.
@@ -622,6 +659,7 @@ export class Game {
     this.say(bought, 'system');
     this.events.emit('walletChanged', this.wallet);
     this.events.emit('inventoryChanged', this.inventory);
+    if (chromed) this.events.emit('chromeChanged', this.chrome());
     return true;
   }
 
@@ -754,6 +792,148 @@ export class Game {
       this.say(`You drop the ${item.name}.`);
     }
     this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  // ───────────── Cyberware ─────────────
+
+  /** The chrome in the player: each implant with its part of the body, and the capacity it takes of what there is. */
+  chrome(): ChromeStatus {
+    return chromeStatus(this.fitted, this.rules.gear.chrome.capacity, this.rules.gear.chrome);
+  }
+
+  /** The chrome fitted, for saving. */
+  get chromeSaved(): Fitted[] {
+    return this.fitted.map((f) => ({ ...f }));
+  }
+
+  /** The ripperdoc the player is at (a storefront or a clinic of its own), and its fee for fitting chrome bought elsewhere, or taking chrome out. Null anywhere else. */
+  clinic(): { name: string; fee: number } | null {
+    const at = this.inside ?? this.location;
+    const key = at ? this.chromeKey(at) : null;
+    if (!at || !key || !this.rules.gear.chrome.stores[key]?.fits) return null;
+    return { name: at.name, fee: priceFor(this.rules.gear.chrome.fitting, drawQuality(this.world, at), this.rules.food) };
+  }
+
+  /** Why an implant can't go in, or null if it can: it's in already, or it would take more capacity than is left. */
+  private cantFit(id: string): string | null {
+    const { chrome } = this.rules.gear;
+    const check = fitCheck(this.fitted, id, chrome.capacity, chrome);
+    if (check.ok) return null;
+    const implant = chrome.implants[id];
+    if (!implant) return 'The doc has never heard of it.';
+    if (check.why === 'fitted') return `You've got the ${implant.name} in you already.`;
+    return `Not enough capacity for the ${implant.name}: it takes ${implant.capacity}, and you've ${Math.max(0, check.left)} left of ${chrome.capacity}.`;
+  }
+
+  /**
+   * Fits an implant there and then (the check has passed). A part with every slot taken gives
+   * up the implant fitted there longest: it comes out into a pocket with room, or, with none,
+   * the doc keeps it. What to say about that, if anything.
+   */
+  private fitIn(id: string, now: number): string {
+    const { chrome } = this.rules.gear;
+    const check = fitCheck(this.fitted, id, chrome.capacity, chrome);
+    if (!check.ok) return '';
+    let out = '';
+    if (check.replaces) {
+      const old = chrome.implants[check.replaces];
+      const name = old?.name ?? check.replaces;
+      this.fitted = this.fitted.filter((f) => f.id !== check.replaces);
+      const item: Item = { id: check.replaces, kind: 'cyberware', name, count: 1 };
+      const home = this.pocketFor(item);
+      const stack = home ? this.items.find((i) => i.id === item.id && i.kind === 'cyberware' && i.in === home) : undefined;
+      if (stack) stack.count++;
+      else if (home) this.items.push({ ...item, in: home });
+      const pocket = this.pockets.find((p) => p.id === home);
+      out = pocket ? ` The ${name} comes out, into your ${this.rules.gear.kinds[pocket.kind]?.name.toLowerCase() ?? 'pocket'}.` : ` The ${name} comes out, and with no room to carry it, the doc keeps it.`;
+    }
+    this.fitted = [...this.fitted, { id, since: now }];
+    return out;
+  }
+
+  /** Why a ripperdoc can't fit an implant the player carries (from the pocket `from`), or null if one can: not at a clinic, barred, no room in the body, or short of the fee. */
+  canInstall(id: string, now = Date.now(), from?: string): string | null {
+    const item = this.items.find((i) => i.id === id && i.kind === 'cyberware' && (from === undefined || i.in === from));
+    const implant = item ? implantOf(item, this.rules.gear.chrome) : null;
+    if (!item || !implant) return 'Nothing like that on you.';
+    const clinic = this.clinic();
+    if (!clinic) return 'Only a ripperdoc can fit chrome. Take it to one.';
+    const barred = this.barred(now);
+    if (barred) return barred;
+    const why = this.cantFit(id);
+    if (why) return why;
+    const transfers = this.rules.money.transfers.gear;
+    return this.canPay(clinic.fee, transfers) ? null : this.shortBy(`Fitting the ${implant.name}`, clinic.fee, transfers);
+  }
+
+  /** Has the ripperdoc here fit an implant the player carries, for the fee. False, and why, if it can't be. */
+  install(id: string, now = Date.now(), from?: string): boolean {
+    const why = this.canInstall(id, now, from);
+    const clinic = this.clinic();
+    const item = this.items.find((i) => i.id === id && i.kind === 'cyberware' && (from === undefined || i.in === from));
+    if (why || !clinic || !item) {
+      this.say(why ?? 'Nothing like that on you.', 'error');
+      return false;
+    }
+    // Out of the pocket first, so the room it leaves can take what comes out in its place.
+    const items = this.items.map((i) => ({ ...i }));
+    const fitted = [...this.fitted];
+    this.takeOne(item);
+    const out = this.fitIn(id, now);
+    if (!this.pay(clinic.fee, this.rules.money.transfers.gear)) {
+      this.items.splice(0, this.items.length, ...items);
+      this.fitted = fitted;
+      return false;
+    }
+    if (this.inside?.business) tillOf(this.life.tills, this.inside.id).pending += clinic.fee;
+    this.say(`The doc fits the ${item.name}: ${clinic.fee} €$.${out}`, 'system');
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('inventoryChanged', this.inventory);
+    this.events.emit('chromeChanged', this.chrome());
+    return true;
+  }
+
+  /** Why a ripperdoc can't take an implant out, or null if one can: not at a clinic, barred, nowhere to carry it, or short of the fee. */
+  canUninstall(id: string, now = Date.now()): string | null {
+    const implant = this.fitted.some((f) => f.id === id) ? this.rules.gear.chrome.implants[id] : undefined;
+    if (!implant) return "That isn't in you.";
+    const clinic = this.clinic();
+    if (!clinic) return 'Only a ripperdoc takes chrome out.';
+    const barred = this.barred(now);
+    if (barred) return barred;
+    if (!this.pocketFor({ id, kind: 'cyberware' })) return `No room to carry the ${implant.name} once it's out. Make room first.`;
+    const transfers = this.rules.money.transfers.gear;
+    return this.canPay(clinic.fee, transfers) ? null : this.shortBy(`Taking out the ${implant.name}`, clinic.fee, transfers);
+  }
+
+  /** Has the ripperdoc here take an implant out, for the fee: it goes in a pocket with room. False, and why, if it can't be. */
+  uninstall(id: string, now = Date.now()): boolean {
+    const why = this.canUninstall(id, now);
+    const clinic = this.clinic();
+    const implant = this.rules.gear.chrome.implants[id];
+    if (why || !clinic || !implant) {
+      this.say(why ?? "That isn't in you.", 'error');
+      return false;
+    }
+    const items = this.items.map((i) => ({ ...i }));
+    const fitted = [...this.fitted];
+    const home = this.pocketFor({ id, kind: 'cyberware' }) ?? undefined;
+    const stack = this.items.find((i) => i.id === id && i.kind === 'cyberware' && i.in === home);
+    if (stack) stack.count++;
+    else this.items.push({ id, kind: 'cyberware', name: implant.name, count: 1, in: home });
+    this.fitted = this.fitted.filter((f) => f.id !== id);
+    if (!this.pay(clinic.fee, this.rules.money.transfers.gear)) {
+      this.items.splice(0, this.items.length, ...items);
+      this.fitted = fitted;
+      return false;
+    }
+    if (this.inside?.business) tillOf(this.life.tills, this.inside.id).pending += clinic.fee;
+    const pocket = this.pockets.find((p) => p.id === home);
+    this.say(`The doc takes out the ${implant.name}: ${clinic.fee} €$. It goes in your ${pocket ? (this.rules.gear.kinds[pocket.kind]?.name.toLowerCase() ?? 'pocket') : 'pocket'}.`, 'system');
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('inventoryChanged', this.inventory);
+    this.events.emit('chromeChanged', this.chrome());
     return true;
   }
 

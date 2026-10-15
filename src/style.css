@@ -1581,6 +1581,25 @@ button {
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
+/* The chrome page: a part of the body as a heading over what's fitted in it */
+.inv-part {
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 6px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid color-mix(in srgb, var(--muted) 25%, transparent);
+  color: var(--muted);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.inv-part.is-empty {
+  opacity: 0.6;
+}
+.inv-part-count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
 .inv-row.is-bare .inv-item-name {
   color: var(--muted);
   font-style: italic;

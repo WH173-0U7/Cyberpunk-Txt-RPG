@@ -80,8 +80,8 @@ export interface Venue {
   chain: boolean;
 }
 
-/** What's for sale: something to eat or drink, a bag to carry things in, something to wear, a weapon, or a box of rounds. */
-export type MenuKind = Dish['kind'] | 'gear' | 'clothing' | 'weapon' | 'ammo';
+/** What's for sale: something to eat or drink, a bag to carry things in, something to wear, a weapon, a box of rounds, or an implant. */
+export type MenuKind = Dish['kind'] | 'gear' | 'clothing' | 'weapon' | 'ammo' | 'cyberware';
 
 export interface MenuItem {
   id: string;
@@ -89,7 +89,7 @@ export interface MenuItem {
   note: string;
   kind: MenuKind;
   price: number;
-  /** A word on what it is: for clothing, the slot, the style, the brand; for a weapon, its class, maker and magazine; for ammo, the box and what it's for. */
+  /** A word on what it is: for clothing, the slot, the style, the brand; for a weapon, its class, maker and magazine; for ammo, the box and what it's for; for an implant, the part of the body, the maker and the capacity. */
   detail?: string;
 }
 

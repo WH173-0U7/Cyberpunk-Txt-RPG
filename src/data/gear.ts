@@ -1,5 +1,6 @@
 import type { GearContent } from '../engine/carry';
 import { GARMENTS, SLOTS, STORE_QUALITY, STORES, STYLES } from './clothing';
+import { CHROME } from './cyberware';
 import { ARMS } from './weapons';
 
 /**
@@ -32,6 +33,7 @@ export const GEAR: GearContent = {
     component: { grams: 100, perSlot: 5 },
   },
   arms: ARMS,
+  chrome: CHROME,
   dish: { food: 250, drink: 350, alcohol: 650 },
   kinds: {
     wallet: { name: 'Wallet', slots: 0, maxGrams: 0, grams: 40, holds: 1000, chips: 4 },
