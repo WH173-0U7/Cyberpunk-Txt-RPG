@@ -92,6 +92,18 @@ function speakerOf(p: Person, over: Partial<Speaker> = {}, vars: Record<string, 
 const standing = (extra: Partial<Standing> = {}): Standing => ({ met: false, rapport: 0, grudge: 0, at: T0, talks: 0, lastTalkAt: 0, gifts: 0, lastGiftAt: 0, robbedAt: 0, asks: 0, refused: {}, ...extra });
 
 describe('dialogue', () => {
+  it('never says the same thing twice running while there is anything else to say', () => {
+    const plain = speakerOf(person('Ana'));
+    const pool = ['One.', 'Two.', 'Three.'];
+    // Said just now, whole or as part of something longer: it gives way to what's left.
+    for (let i = 0; i < 40; i++) expect(line(pool, { ...plain, recent: ['"One."', 'Two. And then some.'] }, createRng(`fresh-${i}`))).toBe('Three.');
+    // With nothing else that fits, it's said again rather than nothing at all.
+    expect(line(['Only.'], { ...plain, recent: ['Only.'] }, createRng('only'))).toBe('Only.');
+    // Without a record, any of them.
+    const said = new Set(Array.from({ length: 40 }, (_, i) => line(pool, plain, createRng(`any-${i}`))));
+    expect(said.size).toBe(3);
+  });
+
   it('picks fragments by who is talking, what they are doing and how they feel', () => {
     const rosa = speakerOf(person('rosa', { traits: { warmth: 0.9, temper: 0.2, loyalty: 0.5, greed: 0.5, courage: 0.5, chatty: 0.7 } }), { mood: 'busy', stance: 'warm', history: 'regular' });
     expect(fits(undefined, rosa)).toBe(true);

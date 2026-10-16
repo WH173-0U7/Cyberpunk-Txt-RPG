@@ -8,7 +8,7 @@ import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
 import { medDetail, medTotal, TREATMENT, type Coverage, type CoverageStatus, type MedicalStock, type MedKind } from './medical';
-import { answer, compose, deflect, describeStranger, drawnWord, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
+import { answer, compose, deflect, describeStranger, drawnWord, eloquenceOf, FAMILY, fill, finish, historyOf, saidIn, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
 import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobRules, type JobState, type JobStatus, type Ladder, type Rung, type ShiftChoice, type ShiftEventKind } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
@@ -1517,7 +1517,11 @@ export class Game {
     const pool = this.rules.combat.lines[key];
     if (!f || !pool?.length) return;
     const rng = createRng(`${this.world.seed}:fightline:${person.id}:${f.startedAt}:${f.log.length}:${f.beatLines.length}:${key}`);
-    f.beatLines.push(finish(rng.pick(pool)!, vars));
+    // Not what the last few beats said, while there's another way to tell it.
+    const lately = [...f.log.slice(-4), ...f.beatLines];
+    const filled = pool.map((text) => finish(text, vars));
+    const fresh = filled.filter((text) => !saidIn(lately, text));
+    f.beatLines.push(rng.pick(fresh.length ? fresh : filled));
   }
 
   /** The beat's lines, kept as one entry of the fight's log. */
@@ -2457,7 +2461,7 @@ export class Game {
     const event = weighed.find((o) => (roll -= events.weights[o.kind]) < 0) ?? (weighed[weighed.length - 1] as (typeof weighed)[number]);
     const state = { kind: event.kind, building: building.id, job, pay, ...(event.person ? { person: event.person.id } : {}), ...(event.gang ? { gang: event.gang } : {}), text: '' };
     const vars = this.shiftVars(state, now);
-    state.text = fill(rng.pick(events.lines[`${event.kind}Open`] ?? ['']), vars);
+    state.text = this.narration(events.lines[`${event.kind}Open`] ?? [], vars, rng);
     // The panel tells it, and waits on the choice; the feed is left for what comes of it.
     this.shiftEventState = state;
     // The coworker asks, and the one come for the cut says what they want.
@@ -2510,7 +2514,7 @@ export class Game {
     const before = person ? this.snapshot(person, now) : null;
     const vars = this.shiftVars(state, now);
     const boss = bossOf(building, this.population);
-    const tell = (key: string, more: Record<string, string> = {}) => this.say(fill(rng.pick(events.lines[key] ?? ['']), { ...vars, ...more }), 'system');
+    const tell = (key: string, more: Record<string, string> = {}) => this.say(this.narration(events.lines[key] ?? [], { ...vars, ...more }, rng), 'system');
     const to = (who: Person | null | undefined, by: { rapport?: number; grudge?: number }) => {
       if (who) changeStanding(this.society, who.id, by, society, timeScale, now);
     };
@@ -3219,6 +3223,24 @@ export class Game {
   /** Writes down a line of a conversation, on the record for that person. */
   private logged(id: string, who: LogEntry['who'], text: string, now: number, tone?: LogEntry['tone']): void {
     logLine(this.society, id, who, text, now, tone);
+    // What the player says, they say to everyone: kept a while, so they don't put it the same way twice running.
+    if (who === 'you') this.heard(text);
+  }
+
+  /** The player's own lines and the narration lately, which lines steer clear of (not saved). */
+  private readonly saidLately: string[] = [];
+  private heard(text: string): void {
+    this.saidLately.push(text);
+    if (this.saidLately.length > 16) this.saidLately.shift();
+  }
+
+  /** A line of narration from a pool, filled in, never what was just told while there's another. */
+  private narration(pool: readonly string[], vars: Record<string, string>, rng: Rng): string {
+    const filled = pool.map((text) => fill(text, vars));
+    const fresh = filled.filter((text) => !saidIn(this.saidLately, text));
+    const text = rng.pick(fresh.length ? fresh : filled.length ? filled : ['']);
+    this.heard(text);
+    return text;
   }
 
   /** How far the player's words go. */
@@ -3327,7 +3349,9 @@ export class Game {
       ...this.momentVars(person, now),
       ...this.heartVars(person, standing),
     };
-    return { person, voice, mood: moodOf(doing), stance, history: historyOf(standing, timeScale, now), eloquence: eloquenceOf(this.charismaState.level), vars };
+    // What they said to the player lately, and what the player's been saying, which their lines steer clear of.
+    const recent = [...knowledgeOf(this.society, person.id).log.filter((e) => e.who !== 'note').slice(-8).map((e) => e.text), ...this.saidLately];
+    return { person, voice, mood: moodOf(doing), stance, history: historyOf(standing, timeScale, now), eloquence: eloquenceOf(this.charismaState.level), vars, recent };
   }
 
   /**
