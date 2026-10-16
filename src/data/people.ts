@@ -264,11 +264,11 @@ export const PEOPLE: PeopleContent = {
   // else anywhere. Nerve and temper make a fighter, warmth and chattiness a talker.
   skills: {
     walks: {
-      gang: { brawler: [4, 7], toughness: [4, 7], arms: [4, 7], charisma: [1, 4] },
-      guard: { brawler: [4, 6], toughness: [4, 7], arms: [5, 7], charisma: [2, 5] },
-      corpo: { brawler: [1, 3], toughness: [1, 3], arms: [2, 4], charisma: [5, 8] },
-      elder: { brawler: [1, 3], toughness: [1, 2], arms: [1, 3], charisma: [4, 8] },
-      street: { brawler: [2, 5], toughness: [2, 5], arms: [2, 5], charisma: [2, 6] },
+      gang: { brawler: [4, 7], toughness: [4, 7], arms: [4, 7], charisma: [1, 4], trading: [2, 5] },
+      guard: { brawler: [4, 6], toughness: [4, 7], arms: [5, 7], charisma: [2, 5], trading: [2, 4] },
+      corpo: { brawler: [1, 3], toughness: [1, 3], arms: [2, 4], charisma: [5, 8], trading: [4, 7] },
+      elder: { brawler: [1, 3], toughness: [1, 2], arms: [1, 3], charisma: [4, 8], trading: [3, 6] },
+      street: { brawler: [2, 5], toughness: [2, 5], arms: [2, 5], charisma: [2, 6], trading: [2, 5] },
     },
     traits: 1.5,
     most: 10,
@@ -276,6 +276,14 @@ export const PEOPLE: PeopleContent = {
       fight: [[2, 'Harmless'], [3, 'No fighter'], [4, 'Ordinary'], [6, 'Can handle themselves'], [10, 'Dangerous']],
       talk: [[2, 'Tongue-tied'], [4, 'Plain-spoken'], [6, 'Smooth'], [10, 'Silver-tongued']],
       talks: 2,
+    },
+    // Practice: a day's worth by what they do (a ganger's rackets, a guard's watch, a corpo's
+    // meetings, a counter's customers), and what a fight teaches. On the player's curves, so a
+    // counter hand goes up a level of trading in a few weeks at first, and in months later on.
+    practice: {
+      walks: { gang: { brawler: 3, toughness: 3, arms: 3, trading: 1 }, guard: { arms: 3, brawler: 2, toughness: 2 }, corpo: { charisma: 3, trading: 2 }, elder: {}, street: {} },
+      staff: { trading: 4, charisma: 2 },
+      fight: { brawler: 12, toughness: 12, arms: 8 },
     },
   },
   // Credchips (the wiki's 2020 chips of eurodollars): corpos nearly always carry one with real money on it; the street often, with less; gangers deal in cash.

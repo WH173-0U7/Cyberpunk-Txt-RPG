@@ -380,7 +380,7 @@ describe("people's own levels", () => {
     const { world, population } = cities[1]!;
     const person = population.people[7]!;
     expect(skillsOf(person, world, PEOPLE)).toEqual(skillsOf(person, world, PEOPLE));
-    expect(skillsOf(person, world, { ...PEOPLE, skills: undefined })).toEqual({ brawler: 4, toughness: 4, arms: 4, charisma: 4 });
+    expect(skillsOf(person, world, { ...PEOPLE, skills: undefined })).toEqual({ brawler: 4, toughness: 4, arms: 4, charisma: 4, trading: 4 });
   });
 
   it('read as a word, the first step whose top they are under', () => {

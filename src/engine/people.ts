@@ -653,6 +653,8 @@ export interface PersonSkills {
   toughness: number;
   arms: number;
   charisma: number;
+  /** Buying and selling: what they let a thing go for, and what they'll pay. */
+  trading: number;
 }
 
 /**
@@ -667,12 +669,19 @@ export interface SkillProfiles {
   traits: number;
   most: number;
   reads: { fight: Array<[number, string]>; talk: Array<[number, string]>; talks: number };
+  /**
+   * What people get better at, from what they spend their days doing: experience a day (on the
+   * player's own curves, every level harder than the last) by walk of life, and for working a
+   * storefront's counter (`staff`), counted from the day the city started or they took on what
+   * they do now; and experience for every fight they've been in.
+   */
+  practice: { walks: Record<SkillWalk, Partial<Record<keyof PersonSkills, number>>>; staff: Partial<Record<keyof PersonSkills, number>>; fight: Partial<Record<keyof PersonSkills, number>> };
 }
 
 /** Someone's own levels, drawn on their own stream, so they're the same every time; everyone ordinary without the profiles. */
 export function skillsOf(person: Person, world: World, content: PeopleContent): PersonSkills {
   const profile = content.skills;
-  if (!profile) return { brawler: 4, toughness: 4, arms: 4, charisma: 4 };
+  if (!profile) return { brawler: 4, toughness: 4, arms: 4, charisma: 4, trading: 4 };
   const ranges = profile.walks[walkOf(person, world)];
   const rng = createRng(`${person.id}:skills`);
   const t = person.traits;
@@ -685,6 +694,7 @@ export function skillsOf(person: Person, world: World, content: PeopleContent): 
     toughness: draw('toughness', (t.courage - 0.5) * 2),
     arms: draw('arms', t.courage - 0.5),
     charisma: draw('charisma', t.warmth + t.chatty - 1),
+    trading: draw('trading', t.greed + t.chatty - 1),
   };
 }
 

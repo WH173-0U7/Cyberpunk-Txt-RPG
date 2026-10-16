@@ -9,7 +9,7 @@ import { chipCut } from './engine/money';
 import { INEBRIATION } from './data/inebriation';
 import { LINES } from './data/dialogue';
 import { PEOPLE } from './data/people';
-import { CHARISMA } from './data/skills';
+import { CHARISMA, TRADING } from './data/skills';
 import { JOBS } from './data/jobs';
 import { LIFE } from './data/life';
 import { SOCIETY } from './data/society';
@@ -1239,6 +1239,7 @@ function showStatus(now: number): void {
   const charisma = game.charisma();
   const brawler = game.brawler();
   const toughness = game.toughness();
+  const trading = game.trading();
   const wallet = game.wallet;
   const drunk = game.inebriation(now);
   const mask = game.masked();
@@ -1272,6 +1273,7 @@ function showStatus(now: number): void {
     { label: 'Charisma', value: `Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP` },
     { label: 'Street Brawler', value: `Lv ${brawler.level} · ${brawler.xp}/${brawler.xpToNext} XP` },
     { label: 'Toughness', value: `Lv ${toughness.level} · ${toughness.xp}/${toughness.xpToNext} XP` },
+    { label: 'Trading', value: `Lv ${trading.level} · ${trading.xp}/${trading.xpToNext} XP` },
     // Every kind of weapon the player has fought with, best known first.
     { label: 'Weapons', value: game.mastery().types.map((t) => `${t.label} Lv ${t.status.level}`).join(' · ') || 'None used yet' },
     { label: 'Eddies', value: `€$ ${wallet.eddies} on you${wallet.account ? ` · €$ ${wallet.account} banked` : ''}${wallet.chips ? ` · €$ ${wallet.chips} on chips` : ''}` },
@@ -1319,7 +1321,8 @@ function showShop(): void {
   const chrome = game.chromeSaved;
   const cover = game.covered(now);
   shop.render({
-    kicker: menu.staff ? `${qualityLabel(menu)} · staff −${Math.round(menu.staff * 100)}%` : qualityLabel(menu),
+    // The staff price at work; anywhere else, what haggling made of the prices, if anything.
+    kicker: menu.staff ? `${qualityLabel(menu)} · staff −${Math.round(menu.staff * 100)}%` : menu.haggle && Math.round(menu.haggle * 100) ? `${qualityLabel(menu)} · prices ${menu.haggle > 0 ? '+' : '−'}${Math.abs(Math.round(menu.haggle * 100))}%` : qualityLabel(menu),
     blurb: barred ?? menuBlurb(menu),
     status: shopStatus,
     // Cash, or a transfer where this counter takes one: the game knows which.
@@ -1702,7 +1705,11 @@ function wire(g: Game): void {
     queueSave();
   });
 
-  g.events.on('skillChanged', () => queueSave());
+  g.events.on('skillChanged', () => {
+    // A better trader gets better prices: the rack here says so at once.
+    if (shop.overlay.isOpen) showShop();
+    queueSave();
+  });
 
   g.events.on('youChanged', () => {
     if (settings.overlay.isOpen) showSettings();
@@ -1722,7 +1729,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, police: POLICE, join: JOIN }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, police: POLICE, join: JOIN }, progress);
   wire(game);
   map.setWorld(world);
   try {

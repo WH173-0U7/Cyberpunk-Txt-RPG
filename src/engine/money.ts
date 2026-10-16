@@ -28,6 +28,10 @@ export interface MoneyRules {
   withdrawals: number[];
   /** Who takes a transfer from the account (or a credchip) instead of cash. */
   transfers: { chain: boolean; luxury: boolean; gear: boolean; ncart: boolean };
+  /** How far Trading moves a price: the seller's Trading over the player's, to this power (0: not at all). Only with the rules for Trading. */
+  haggle?: number;
+  /** Trading experience a purchase gives. */
+  tradeXp?: number;
   /** A netrunner's cut for chopping a stolen credchip (0.25: a quarter of what's on it). */
   chopCut: number;
 }

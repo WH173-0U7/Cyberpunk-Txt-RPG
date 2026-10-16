@@ -92,3 +92,19 @@ export const STANDING: Array<{ from: number; line: string }> = [
   { from: 4, line: 'Few are better at it.' },
   { from: 6, line: 'A professional.' },
 ];
+
+/**
+ * Trading (the tabletop games' skill for buying and selling): every purchase is experience,
+ * and every sale. At level 1 the player pays over what anyone would (and gets under it when
+ * they sell); from level 4 each level gets them a twentieth more of a good price. What they
+ * pay is their Trading against the seller's (`MONEY.haggle`), so a sharp shopkeeper costs more.
+ */
+export const TRADING: SkillRules = {
+  xpFirstLevel: 30,
+  xpGrowth: 1.6,
+  average: AVERAGE,
+  floor: 0.85,
+  perLevel: 0.05,
+  levelLine: 'Trading level {level}. You get a better price, buying and selling. {standing}',
+};
+
