@@ -4,6 +4,7 @@ import { LINES } from '../src/data/dialogue';
 import { FOOD } from '../src/data/food';
 import { PEOPLE } from '../src/data/people';
 import { SOCIETY } from '../src/data/society';
+import { CHARISMA } from '../src/data/skills';
 import {
   answer,
   compose,
@@ -34,6 +35,7 @@ import {
 import { generateWorld } from '../src/engine/generate';
 import { generatePeople, tiesOf, type Person, type Population } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
+import { skillEdge } from '../src/engine/skills';
 import type { Asked, Stance, Standing } from '../src/engine/society';
 import type { World } from '../src/engine/types';
 
@@ -179,12 +181,17 @@ describe('dialogue', () => {
   it('opens up with charisma and warmth, and less the more a question asks', () => {
     const rules = SOCIETY.openness;
     const plain = person('p').traits;
-    // A stranger with no way with words: name yes, work a coin toss, age mostly a non-answer (now and then an answer), home and enemies a no.
-    expect(replyTo(openness('name', 'neutral', 1, plain, rules), rules, createRng('a'))).toBe('answer');
-    expect(openness('job', 'neutral', 1, plain, rules)).toBe(0);
-    expect(openness('age', 'neutral', 1, plain, rules)).toBe(-0.6);
+    // Charisma by its level: past an ordinary person's, or short of it.
+    const at = (level: number) => skillEdge(CHARISMA, level);
+    // The player starts with no way with words at all: a stranger gives a name now and then, and next to nothing else.
+    expect(openness('job', 'neutral', at(1), plain, rules)).toBeLessThan(openness('job', 'neutral', at(4), plain, rules) - 1);
+    expect(replyTo(openness('job', 'neutral', at(1), plain, rules), rules, createRng('a'))).toBe('refuse');
+    // An ordinary way with words: name yes, work a coin toss, age mostly a non-answer (now and then an answer), home and enemies a no.
+    expect(replyTo(openness('name', 'neutral', at(4), plain, rules), rules, createRng('a'))).toBe('answer');
+    expect(openness('job', 'neutral', at(4), plain, rules)).toBe(0);
+    expect(openness('age', 'neutral', at(4), plain, rules)).toBe(-0.6);
     const odds = (asked: Asked) => {
-      const replies = Array.from({ length: 200 }, (_, i) => replyTo(openness(asked, 'neutral', 1, plain, rules), rules, createRng(`o${i}`)));
+      const replies = Array.from({ length: 200 }, (_, i) => replyTo(openness(asked, 'neutral', at(4), plain, rules), rules, createRng(`o${i}`)));
       return { answer: replies.filter((r) => r === 'answer').length / 200, refuse: replies.filter((r) => r === 'refuse').length / 200 };
     };
     expect(odds('age').refuse).toBe(0);
@@ -194,29 +201,30 @@ describe('dialogue', () => {
     expect(odds('hates').refuse).toBe(1);
     // A friend tells everything; so does a stranger to someone with charisma enough; the hostile nothing.
     for (const asked of ['name', 'job', 'age', 'home', 'likes', 'hates', 'kin'] as Asked[]) {
-      expect(replyTo(openness(asked, 'friend', 1, plain, rules), rules, createRng('a')), asked).toBe('answer');
-      expect(replyTo(openness(asked, 'neutral', 9, plain, rules), rules, createRng('a')), asked).toBe('answer');
-      expect(replyTo(openness(asked, 'hostile', 9, plain, rules), rules, createRng('a')), asked).toBe('refuse');
-      expect(openness(asked, 'neutral', 3, plain, rules)).toBeGreaterThan(openness(asked, 'neutral', 1, plain, rules));
-      expect(openness(asked, 'warm', 1, plain, rules)).toBeGreaterThan(openness(asked, 'neutral', 1, plain, rules));
+      expect(replyTo(openness(asked, 'friend', at(4), plain, rules), rules, createRng('a')), asked).toBe('answer');
+      expect(replyTo(openness(asked, 'neutral', at(9), plain, rules), rules, createRng('a')), asked).toBe('answer');
+      expect(replyTo(openness(asked, 'hostile', at(9), plain, rules), rules, createRng('a')), asked).toBe('refuse');
+      expect(openness(asked, 'neutral', at(6), plain, rules)).toBeGreaterThan(openness(asked, 'neutral', at(4), plain, rules));
+      expect(openness(asked, 'neutral', at(4), plain, rules)).toBeGreaterThan(openness(asked, 'neutral', at(1), plain, rules));
+      expect(openness(asked, 'warm', at(4), plain, rules)).toBeGreaterThan(openness(asked, 'neutral', at(4), plain, rules));
     }
     // Their nature: the talkative and the warm say more; the loyal say less of their people; the brave more of their enemies; the greedy chop a chip sooner.
     const chatty = { ...plain, chatty: 0.9, warmth: 0.9 };
-    expect(openness('age', 'neutral', 1, chatty, rules)).toBeGreaterThan(openness('age', 'neutral', 1, plain, rules));
-    expect(openness('kin', 'neutral', 1, { ...plain, loyalty: 0.9 }, rules)).toBeLessThan(openness('kin', 'neutral', 1, plain, rules));
-    expect(openness('hates', 'neutral', 1, { ...plain, courage: 0.9 }, rules)).toBeGreaterThan(openness('hates', 'neutral', 1, plain, rules));
-    expect(openness('chop', 'neutral', 1, { ...plain, greed: 0.9 }, rules)).toBeGreaterThan(openness('chop', 'neutral', 1, plain, rules));
+    expect(openness('age', 'neutral', at(4), chatty, rules)).toBeGreaterThan(openness('age', 'neutral', at(4), plain, rules));
+    expect(openness('kin', 'neutral', at(4), { ...plain, loyalty: 0.9 }, rules)).toBeLessThan(openness('kin', 'neutral', at(4), plain, rules));
+    expect(openness('hates', 'neutral', at(4), { ...plain, courage: 0.9 }, rules)).toBeGreaterThan(openness('hates', 'neutral', at(4), plain, rules));
+    expect(openness('chop', 'neutral', at(4), { ...plain, greed: 0.9 }, rules)).toBeGreaterThan(openness('chop', 'neutral', at(4), plain, rules));
     // A mask on the player costs with everyone: a stranger in one gets a name out of people now and then and their work never; a friend still tells most things.
-    expect(openness('name', 'neutral', 1, plain, rules, true)).toBeCloseTo(openness('name', 'neutral', 1, plain, rules) - rules.mask, 5);
-    expect(replyTo(openness('job', 'neutral', 1, plain, rules, true), rules, createRng('a'))).toBe('refuse');
-    expect(replyTo(openness('job', 'friend', 1, plain, rules, true), rules, createRng('a'))).toBe('answer');
-    expect(replyTo(openness('home', 'friend', 1, plain, rules, true), rules, createRng('a'))).not.toBe('answer');
+    expect(openness('name', 'neutral', at(4), plain, rules, true)).toBeCloseTo(openness('name', 'neutral', at(4), plain, rules) - rules.mask, 5);
+    expect(replyTo(openness('job', 'neutral', at(4), plain, rules, true), rules, createRng('a'))).toBe('refuse');
+    expect(replyTo(openness('job', 'friend', at(4), plain, rules, true), rules, createRng('a'))).toBe('answer');
+    expect(replyTo(openness('home', 'friend', at(4), plain, rules, true), rules, createRng('a'))).not.toBe('answer');
     const inMask = speakerOf(person('m'), {}, { mask: 'gas mask' });
-    expect(new Set(Array.from({ length: 40 }, (_, i) => openTopics(inMask, 1, rules, createRng(`m${i}`), true)).flat())).not.toContain('job');
+    expect(new Set(Array.from({ length: 40 }, (_, i) => openTopics(inMask, 0, rules, createRng(`m${i}`), true)).flat())).not.toContain('job');
     // A stranger chops a hot chip a little less readily than they talk about their work; a friend without a second thought.
-    expect(openness('chop', 'neutral', 1, plain, rules)).toBeLessThan(openness('job', 'neutral', 1, plain, rules));
-    expect(openness('chop', 'neutral', 1, plain, rules)).toBeGreaterThan(rules.deflectAt);
-    expect(replyTo(openness('chop', 'friend', 1, plain, rules), rules, createRng('a'))).toBe('answer');
+    expect(openness('chop', 'neutral', 0, plain, rules)).toBeLessThan(openness('job', 'neutral', 0, plain, rules));
+    expect(openness('chop', 'neutral', 0, plain, rules)).toBeGreaterThan(rules.deflectAt);
+    expect(replyTo(openness('chop', 'friend', 0, plain, rules), rules, createRng('a'))).toBe('answer');
     // In between, the odds rise with the score; at the edges they're certain.
     const answers = (score: number) => Array.from({ length: 200 }, (_, i) => replyTo(score, rules, createRng(`r${i}`))).filter((r) => r === 'answer').length;
     expect(answers(-1)).toBe(0);
@@ -225,7 +233,7 @@ describe('dialogue', () => {
     expect(answers(1)).toBe(200);
     // What a stranger brings up on their own: the neighborhood and their lot, never their people or their enemies.
     const stranger = speakerOf(person('s', { hates: 'valentinos' }));
-    const topics = new Set(Array.from({ length: 40 }, (_, i) => openTopics(stranger, 1, rules, createRng(`t${i}`), true)).flat());
+    const topics = new Set(Array.from({ length: 40 }, (_, i) => openTopics(stranger, 0, rules, createRng(`t${i}`), true)).flat());
     expect(topics).toContain('district');
     expect(topics).toContain('life');
     expect(topics).toContain('here');
@@ -233,8 +241,8 @@ describe('dialogue', () => {
     expect(topics).not.toContain('kin');
     // A friend, with family to mention: everything, and their people only once that's earned.
     const friend = speakerOf(person('f', { hates: 'valentinos' }), { stance: 'friend' }, { kinName: 'Ana', kinWord: 'sister', kinWork: 'the grill' });
-    expect(openTopics(friend, 1, rules, createRng('t'), true)).toEqual(['district', 'life', 'here', 'job', 'likes', 'hates', 'kin', 'dream', 'views']);
-    expect(openTopics(friend, 1, rules, createRng('t'), false)).not.toContain('kin');
+    expect(openTopics(friend, 0, rules, createRng('t'), true)).toEqual(['district', 'life', 'here', 'job', 'likes', 'hates', 'kin', 'dream', 'views']);
+    expect(openTopics(friend, 0, rules, createRng('t'), false)).not.toContain('kin');
     const chat = smallTalk(friend, ['kin'], LINES, createRng('k'));
     expect(chat.topic).toBe('kin');
     expect(chat.said).toContain('Ana');
@@ -246,7 +254,7 @@ describe('dialogue', () => {
   it('opens up or closes by the moment: a drink, a shift, one question too many, the gang they hate in the room, grief, the small hours, a drunk asking', () => {
     const rules = SOCIETY.openness;
     const plain = person('p').traits;
-    const at = (asked: Asked, moment = {}, stance: Stance = 'neutral') => openness(asked, stance, 1, plain, rules, false, moment);
+    const at = (asked: Asked, moment = {}, stance: Stance = 'neutral') => openness(asked, stance, 0, plain, rules, false, moment);
     expect(at('age', { mood: 'drinking' })).toBeGreaterThan(at('age'));
     expect(at('age', { mood: 'busy' })).toBeLessThan(at('age'));
     // Busy at work, the work itself is still fair game.
@@ -423,7 +431,7 @@ describe('dialogue', () => {
         }
         // A counter that won't serve the player is always named.
         check(line(LINES.barred, { ...speaker, vars: { ...vars, work: 'El Pinche Grill' } }, rng), `${about} barred`);
-        for (const pool of [LINES.brushOff, LINES.grudge, LINES.hostile, LINES.asleep, LINES.talkedOut, LINES.refuse, LINES.pressed, LINES.gift.thanks, LINES.gift.favorite, LINES.gift.refuse, LINES.insult.reply, LINES.insult.shove, LINES.rob.done, LINES.rob.nothing, LINES.rob.fought, LINES.chop.done, LINES.chop.refuse]) {
+        for (const pool of [LINES.brushOff, LINES.grudge, LINES.hostile, LINES.asleep, LINES.talkedOut, LINES.refuse, LINES.pressed, LINES.gift.thanks, LINES.gift.favorite, LINES.gift.refuse, LINES.insult.reply, LINES.insult.shove, LINES.rob.done, LINES.rob.nothing, LINES.rob.fought, LINES.rob.cold, LINES.rob.coldNothing, LINES.chop.done, LINES.chop.refuse]) {
           check(line(pool, speaker, rng), `${about} pool`);
         }
         // Every way into a chat, from the player in every way with words, and every way it can land.
@@ -520,7 +528,7 @@ describe('dialogue', () => {
           lines += 3;
         }
         for (const eloquence of eloquences) {
-          for (const pool of [LINES.you.talk, LINES.you.gift, LINES.you.insult, LINES.you.rob, LINES.you.chop]) check(line(pool, { ...speaker, eloquence }, rng), `${about} you ${eloquence}`);
+          for (const pool of [LINES.you.talk, LINES.you.gift, LINES.you.insult, LINES.you.rob, LINES.you.robCold, LINES.you.chop]) check(line(pool, { ...speaker, eloquence }, rng), `${about} you ${eloquence}`);
         }
         lines += 30;
       }

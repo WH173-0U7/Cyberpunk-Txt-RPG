@@ -307,7 +307,7 @@ export type GameEvents = {
   /** Charisma earned experience or a level. */
   charismaChanged: SkillStatus;
   /** A fighting skill gained experience or a level: Street Brawler, or Toughness. */
-  skillChanged: { skill: 'brawler' | 'toughness'; status: SkillStatus };
+  skillChanged: { skill: 'brawler' | 'toughness' | 'weapon'; status: SkillStatus };
   /** The player got a job, worked a shift, moved up, quit or was let go (null: no job now). */
   jobChanged: JobStatus | null;
   /** The player changed the pronouns they go by. */

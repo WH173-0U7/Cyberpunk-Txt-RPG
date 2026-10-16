@@ -56,6 +56,7 @@ export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'type'
  */
 export interface OpennessRules {
   stance: Record<Stance, number>;
+  /** Openness a level of charisma past an ordinary person's is worth (and a level short of it costs). */
   perLevel: number;
   /** How much each trait moves it: chatty and warmth on everything, loyalty on their people (against), courage on who they hate (for), greed on chopping a chip (for). */
   traits: { chatty: number; warmth: number; loyalty: number; courage: number; greed: number };

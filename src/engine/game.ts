@@ -3,7 +3,7 @@ import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergySt
 import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
-import { NO_EDGE, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type HealthStatus, type HeatStatus, type Meter, type Move, type Range } from './combat';
+import { masteryEdge, NO_EDGE, perkFamily, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type HealthStatus, type HeatStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
 import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
@@ -17,7 +17,7 @@ import { allHours, buildingById, dreamOf, drawnTo, generatePeople, handleOf, hea
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
-import { freshSkill, gainXp, skillStatus, type SkillRules, type SkillState, type SkillStatus } from './skills';
+import { freshSkill, gainXp, skillEdge, skillStatus, type SkillRules, type SkillState, type SkillStatus } from './skills';
 import {
   applyIncident,
   attitude,
@@ -262,6 +262,8 @@ export class Game {
   /** The fighting skills: Street Brawler (blows landed bare-handed) and Toughness (blows taken). */
   private brawlerState: SkillState;
   private toughnessState: SkillState;
+  /** How well the player knows each kind of weapon, and each weapon. */
+  private armsState: Arms;
   /** Whoever's been knocked out cold, till when and where they lie (not saved: they come to). */
   private readonly outColdState = new Map<string, { until: number; spot: Spot }>();
   /** The jobs the player holds: the main one, and maybe a side gig whose hours don't clash with it. */
@@ -317,6 +319,7 @@ export class Game {
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
     this.brawlerState = progress?.brawler ? { ...progress.brawler } : freshSkill();
     this.toughnessState = progress?.toughness ? { ...progress.toughness } : freshSkill();
+    this.armsState = { types: { ...progress?.arms?.types }, models: { ...progress?.arms?.models } };
     // Saves from before the player said otherwise go by they.
     this.you = progress?.you ? { ...progress.you } : { pronouns: 'they' };
     // Implants the game no longer has are gone, and one fitted twice is fitted once.
@@ -1326,7 +1329,7 @@ export class Game {
       ...(chosen ? { hack: { id: chosen.id, ram: chosen.ram, effect: gear.hacks.hacks[chosen.id]!.effect } } : {}),
       ...(dose ? { med: { heal: dose.med.heal, ...(dose.med.regen ? { regen: dose.med.regen } : {}) } } : {}),
       indoors: f.indoors,
-      talkOdds: talkOdds(state, f.nerve, this.charismaState.level, armed, combat),
+      talkOdds: talkOdds(state, f.nerve, this.charismaEdge, armed, combat),
       rng,
       rules: combat,
     });
@@ -1349,10 +1352,11 @@ export class Game {
       if (!key) continue;
       if (e.what === 'hack') this.fightLine(this.hackLine(e.hack), person, { ...vars, hack: gear.hacks.hacks[e.hack]?.name ?? 'The hack', dmg: String(e.dmg) });
       else this.fightLine(key, person, { ...vars, dmg: 'dmg' in e ? String(e.dmg) : '' });
+      if (e.what === 'hit' && e.who === 'you' && e.crit) this.fightLine('youCrit', person, vars);
       if (e.who === 'you' && (e.what === 'hit' || e.what === 'hack') && s.them.hp <= 0 && !finisher) finisher = e.what === 'hack' ? 'hack' : state.you.arm.cls;
     }
     if (s.them.hp <= 0 && !finisher) finisher = 'hack';
-    this.trainFrom(result.events, state.you.arm.cls);
+    this.trainFrom(result.events, state.you.arm, s.them.hp <= 0 && finisher !== 'hack');
     // How it stands: someone down, someone gone, or talked out of it.
     if (s.you.hp <= 0 && !f.revived && this.fitted.some((x) => combat.chrome[x.id]?.revive)) {
       f.revived = true;
@@ -1387,7 +1391,7 @@ export class Game {
     const rng = createRng(`${this.world.seed}:fight:${f.with}:${f.startedAt}:${f.state.beat}:next`);
     f.next = theirMove({ ...f.state, them: { ...f.state.them, arm: this.theirArmNow(f.state.them) } }, f.nerve, f.indoors, rng, combat);
     // Whether the player catches what they're about to do: likelier knowing their nature, and with charisma.
-    const odds = combat.tell.base + (knowledgeOf(this.society, person.id).facts.includes('nature') ? combat.tell.nature : 0) + this.charismaState.level * combat.tell.charisma;
+    const odds = combat.tell.base + (knowledgeOf(this.society, person.id).facts.includes('nature') ? combat.tell.nature : 0) + this.charismaEdge * combat.tell.charisma;
     const key = `tell${f.next[0]!.toUpperCase()}${f.next.slice(1)}`;
     const pool = combat.lines[key];
     f.tell = pool?.length && rng.chance(odds) ? finish(rng.pick(pool)!, { ...this.speakerFor(person, 'hostile', '', now).vars, ...this.fightVars(person, f.state.you, f.state.them) }) : null;
@@ -1658,11 +1662,15 @@ export class Game {
       if (sys?.guard && (system !== 'berserk' || close)) guard *= sys.guard;
     }
     aim *= 1 - 0.3 * this.inebriation(Date.now()).severity;
-    // A Street Brawler's blows, bare-handed or with a club or Gorilla Arms: a little surer, harder, and likelier to put someone out.
+    // A Street Brawler's fists: surer and harder (weaker than anyone's at first); with a club or Gorilla Arms, only likelier to put someone out.
     const brawl = kind === 'fists' || kind === 'blunt' ? this.brawler().bonus : 1;
-    aim *= 1 + (brawl - 1) * 0.25;
-    melee *= brawl;
-    return { aim, melee, guard, smart, evade, wound: this.lethalOn ? 1 : combat.nonLethal, ko: brawl, steady: 1 / this.toughness().bonus };
+    if (kind === 'fists') {
+      aim *= 1 + (brawl - 1) * 0.25;
+      melee *= brawl;
+    }
+    const edge: Edge = { ...NO_EDGE, aim, melee, guard, smart, evade, wound: this.lethalOn ? 1 : combat.nonLethal, ko: brawl, steady: 1 / this.toughness().bonus };
+    // Any weapon: how well the player knows its kind and it, and the perks it's brought.
+    return perkFamily(you.arm, combat) ? masteryEdge(edge, this.weaponType(you.arm.cls).bonus, this.weaponModel(you.arm.id).bonus, this.weaponPerks(you.arm), combat.mastery) : edge;
   }
 
   /** The time the player has for a move: the base, and more with reflex chrome (some of it only when they're hurt). */
@@ -1709,7 +1717,7 @@ export class Game {
 
   /** What someone carries into a fight, drawn on their own stream: by their gang, their job, their walk of life. Most people carry nothing and fight with their fists. */
   armOf(person: Person): Arm {
-    const { combat, gear } = this.rules;
+    const { combat } = this.rules;
     const rng = createRng(`${person.id}:arms`);
     const guard = GUARD.test(person.job.role);
     const corpo = isCorpo(person, this.world);
@@ -1726,12 +1734,18 @@ export class Game {
         break;
       }
     }
+    return this.armFor(id) ?? FISTS;
+  }
+
+  /** A weapon or an implant that fights, by its id, as an arm; null for anything else. */
+  private armFor(id: string): Arm | null {
+    const { combat, gear } = this.rules;
     const weapon = gear.arms.weapons[id];
     if (weapon) return { id, name: weapon.name, short: weapon.short, cls: weapon.class, ...(weapon.tech ? { tech: weapon.tech } : {}), magazine: weapon.magazine ?? 0 };
     const implant = gear.chrome.implants[id];
     const cls = combat.chrome[id]?.arm;
     if (implant && cls) return { id, name: implant.name, short: implant.short, cls, magazine: 0 };
-    return FISTS;
+    return null;
   }
 
   /** Their arm this beat: chrome knocked out by a quickhack leaves them their fists. */
@@ -2145,7 +2159,7 @@ export class Game {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      const reply = replyTo(openness('hire', stance, this.charismaState.level, person.traits, society.openness), society.openness, rng);
+      const reply = replyTo(openness('hire', stance, this.charismaEdge, person.traits, society.openness), society.openness, rng);
       if (reply === 'answer') {
         hired = true;
         // The new job takes the place of the one handed in: a day job for a day job.
@@ -2591,7 +2605,7 @@ export class Game {
       tell('cutPay');
       says(person, lines.work.cutPaid);
     } else if (choice === 'stand') {
-      const odds = Math.min(0.9, events.cut.odds + this.charismaState.level * events.cut.perLevel);
+      const odds = Math.min(0.9, events.cut.odds + this.charismaEdge * events.cut.perLevel);
       const backed = rng.chance(odds);
       if (state.gang) changeRep(this.society, `gang:${state.gang}`, -events.cut.gangRep, society, timeScale, now);
       to(person, { grudge: events.cut.grudge });
@@ -3340,6 +3354,11 @@ export class Game {
     return skillStatus(this.charismaState, this.rules.charisma);
   }
 
+  /** Charisma as levels past an ordinary person's (short of it, below nothing): what openness and the odds of a word landing go by. */
+  private get charismaEdge(): number {
+    return skillEdge(this.rules.charisma, this.charismaState.level);
+  }
+
   get charismaSaved(): SkillState {
     return { ...this.charismaState };
   }
@@ -3362,6 +3381,79 @@ export class Game {
     return { ...this.toughnessState };
   }
 
+  /** How well the player knows a kind of weapon (pistols, katanas, Mantis Blades…). */
+  weaponType(cls: FightClass): SkillStatus {
+    return skillStatus(this.armsState.types[cls] ?? freshSkill(), this.rules.combat.mastery.types);
+  }
+
+  /** How well the player knows one weapon, the model (a Lexington, the Gorilla Arms). */
+  weaponModel(id: string): SkillStatus {
+    return skillStatus(this.armsState.models[id] ?? freshSkill(), this.rules.combat.mastery.models);
+  }
+
+  /** What a kind of weapon is called: its class's label, or for chrome that fights, the implant's name. */
+  private typeLabel(cls: FightClass): string {
+    const { gear, combat } = this.rules;
+    const label = (gear.arms.classes as Partial<Record<string, { label: string }>>)[cls]?.label;
+    if (label) return label;
+    const implant = Object.keys(combat.chrome).find((id) => combat.chrome[id]?.arm === cls);
+    return (implant && gear.chrome.implants[implant]?.name) || cls;
+  }
+
+  /** The perks a weapon has brought the player so far, at its level. */
+  private weaponPerks(arm: Arm): Perk[] {
+    const { combat } = this.rules;
+    const family = perkFamily(arm, combat);
+    const level = this.weaponModel(arm.id).level;
+    return family ? combat.mastery.perks[family].filter((p) => p.at <= level) : [];
+  }
+
+  /** A weapon as the player knows it: its kind's level and its own, the perks it's brought and the next one; null for fists or anything that isn't one. */
+  masteryOf(id: string): WeaponMastery | null {
+    const arm = this.armFor(id);
+    const family = arm ? perkFamily(arm, this.rules.combat) : null;
+    if (!arm || !family) return null;
+    const model = this.weaponModel(id);
+    const perks = this.rules.combat.mastery.perks[family];
+    return { id, name: arm.short, cls: arm.cls, type: this.typeLabel(arm.cls), typeStatus: this.weaponType(arm.cls), status: model, perks: perks.filter((p) => p.at <= model.level), next: perks.find((p) => p.at > model.level) ?? null };
+  }
+
+  /** Every kind of weapon and every weapon the player has used, best known first. */
+  mastery(): { types: Array<{ cls: FightClass; label: string; status: SkillStatus }>; models: WeaponMastery[] } {
+    const best = (a: SkillState, b: SkillState) => b.level - a.level || b.xp - a.xp;
+    const types = (Object.keys(this.armsState.types) as FightClass[]).map((cls) => ({ cls, label: this.typeLabel(cls), status: this.weaponType(cls) })).sort((a, b) => best(a.status, b.status));
+    const models = Object.keys(this.armsState.models).flatMap((id) => this.masteryOf(id) ?? []).sort((a, b) => best(a.status, b.status));
+    return { types, models };
+  }
+
+  get armsSaved(): Arms {
+    return { types: { ...this.armsState.types }, models: { ...this.armsState.models } };
+  }
+
+  /** Where a level leaves the player, past (or short of) an ordinary person's. */
+  private standingLine(rules: SkillRules, level: number): string {
+    const past = level - rules.average;
+    return [...this.rules.combat.mastery.standing].reverse().find((s) => past >= s.from)?.line ?? '';
+  }
+
+  /** Experience for the weapon the player fought with, and its kind: a line on each level, and on each perk it brings. */
+  private trainArm(arm: Arm, amount: number): void {
+    const { mastery } = this.rules.combat;
+    if (amount <= 0 || !perkFamily(arm, this.rules.combat)) return;
+    const type = gainXp(this.armsState.types[arm.cls] ?? freshSkill(), amount, mastery.types);
+    const model = gainXp(this.armsState.models[arm.id] ?? freshSkill(), amount, mastery.models);
+    this.armsState = { types: { ...this.armsState.types, [arm.cls]: type.state }, models: { ...this.armsState.models, [arm.id]: model.state } };
+    if (type.levels) this.say(fill(mastery.types.levelLine, { type: this.typeLabel(arm.cls), level: String(type.state.level), standing: this.standingLine(mastery.types, type.state.level) }), 'system');
+    if (model.levels) {
+      const before = model.state.level - model.levels;
+      const family = perkFamily(arm, this.rules.combat)!;
+      const won = mastery.perks[family].filter((p) => p.at > before && p.at <= model.state.level);
+      const line = fill(mastery.models.levelLine, { weapon: arm.short, level: String(model.state.level), standing: this.standingLine(mastery.models, model.state.level) });
+      this.say([line, ...won.map((p) => `${p.name}: ${p.note}.`)].join(' '), 'system');
+    }
+    this.events.emit('skillChanged', { skill: 'weapon', status: this.weaponModel(arm.id) });
+  }
+
   /** Experience for a fighting skill, and the line when it goes up a level. */
   private train(skill: 'brawler' | 'toughness', amount: number): void {
     if (amount <= 0) return;
@@ -3369,22 +3461,36 @@ export class Game {
     const { state, levels } = gainXp(skill === 'brawler' ? this.brawlerState : this.toughnessState, amount, rules);
     if (skill === 'brawler') this.brawlerState = state;
     else this.toughnessState = state;
-    if (levels) this.say(fill(rules.levelLine, { level: String(state.level) }), 'system');
+    if (levels) this.say(fill(rules.levelLine, { level: String(state.level), standing: this.standingLine(rules, state.level) }), 'system');
     this.events.emit('skillChanged', { skill, status: skill === 'brawler' ? this.brawler() : this.toughness() });
   }
 
-  /** What a beat trains: every blow the player lands bare-handed or with Gorilla Arms (a club less), a knockout more; every blow they take, more for one that could have knocked them out. */
-  private trainFrom(events: BeatEvent[], cls: FightClass): void {
-    const { brawler, toughness } = this.rules.combat.training;
+  /**
+   * What a beat trains: Street Brawler, every blow the player lands bare-handed or with
+   * Gorilla Arms (a club less), a knockout more; Toughness, every blow they take, more for one
+   * that could have knocked them out; the weapon they fought with and its kind, every go with
+   * it, a hit more, and the blow that ends it (`downed`) most.
+   */
+  private trainFrom(events: BeatEvent[], arm: Arm, downed: boolean): void {
+    const { training, mastery } = this.rules.combat;
+    const { brawler, toughness } = training;
     let brawl = 0;
     let tough = 0;
+    let used = 0;
     for (const e of events) {
-      if (e.what === 'hit' && e.who === 'you') brawl += e.kind === 'fists' || cls === 'gorilla-arms' ? brawler.hit : e.kind === 'blunt' ? brawler.blunt : 0;
+      if (e.what === 'hit' && e.who === 'you') {
+        brawl += e.kind === 'fists' || arm.cls === 'gorilla-arms' ? brawler.hit : e.kind === 'blunt' ? brawler.blunt : 0;
+        used += mastery.training.hit;
+      } else if (e.what === 'miss' && e.who === 'you') used += mastery.training.swing;
       else if (e.what === 'hit' && e.who === 'them') tough += toughness.hit + (e.kind === 'fists' || e.kind === 'blunt' ? toughness.blow : 0);
-      else if (e.what === 'out' && e.who === 'them') brawl += brawler.knockout;
+      else if (e.what === 'out' && e.who === 'them') {
+        brawl += brawler.knockout;
+        downed = true;
+      }
     }
     this.train('brawler', brawl);
     this.train('toughness', tough);
+    this.trainArm(arm, used + (downed ? mastery.training.down : 0));
   }
 
   /** How hard someone is to knock out: the brave less likely, a ganger less again. */
@@ -3403,7 +3509,7 @@ export class Game {
   private gainCharisma(amount: number): void {
     const { state, levels } = gainXp(this.charismaState, amount, this.rules.charisma);
     this.charismaState = state;
-    if (levels) this.say(fill(this.rules.charisma.levelLine, { level: String(state.level) }), 'system');
+    if (levels) this.say(fill(this.rules.charisma.levelLine, { level: String(state.level), standing: this.standingLine(this.rules.charisma, state.level) }), 'system');
     this.events.emit('charismaChanged', this.charisma());
   }
 
@@ -3620,7 +3726,7 @@ export class Game {
       this.speech(person, line(lines.grudge, speaker, rng), now);
     } else {
       // They bring up what they're open about with this player: the neighborhood and their lot for a stranger, their life and their people for a friend; asked for the word, the news; asked how they are, their lot.
-      const topics = openTopics(speaker, this.charismaState.level, society.openness, rng, standing.rapport >= society.talk.revealAt);
+      const topics = openTopics(speaker, this.charismaEdge, society.openness, rng, standing.rapport >= society.talk.revealAt);
       const prefer: Topic[] = approach === 'gossip' ? ['news', 'rumor', 'here', 'district'] : approach === 'care' ? ['life', 'kin'] : [];
       const chat = smallTalk(speaker, topics, lines, rng, prefer);
       // Come at a way they took, and with nothing more to say, they leave it at their answer to it.
@@ -3716,7 +3822,7 @@ export class Game {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      const score = openness(fact, stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked()), momentOf(speaker, grilled)) + reaction.score * society.reactions.openness;
+      const score = openness(fact, stance, this.charismaEdge, person.traits, society.openness, Boolean(this.masked()), momentOf(speaker, grilled)) + reaction.score * society.reactions.openness;
       const reply = replyTo(score, society.openness, rng);
       if (reply === 'answer') {
         answered = true;
@@ -3826,18 +3932,20 @@ export class Game {
    * takes note, and someone with a grudge and the nerve for it will come to collect.
    */
   rob(id: string, now: number): boolean {
-    const here = this.isHere(id, now);
+    // Someone out cold here can be robbed too, with nobody to stop it.
+    const cold = this.outCold(id, now) ? this.peopleHere(now).find((p) => p.person.id === id) : undefined;
+    const here = this.isHere(id, now) ?? cold;
     if (!here) return false;
     const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);
     const rng = createRng(`${this.world.seed}:${id}:rob:${now}`);
     const emptied = standing.robbedAt && now - standing.robbedAt < (7 * 24 * HOUR) / timeScale;
-    // What the player pulls on them: fewer fight back against a gun (loaded or not; they can't tell), more against a blade, most against bare hands.
+    // What the player pulls on them: fewer fight back against a gun (loaded or not; they can't tell), more against a blade, most against bare hands. Out cold, nobody fights, and the pockets come out near enough empty.
     const arms = this.rules.gear.arms;
     const drawn = drawWeapon(this.items, arms);
-    const fought = !emptied && rng.chance(person.traits.courage * (drawn ? (drawn.gun ? arms.rob.gun : arms.rob.melee) : arms.rob.bare));
-    const wanted = emptied ? 0 : Math.round(person.eddies * rng.range(0.4, 0.8) * (fought ? 0.5 : 1));
+    const fought = !cold && !emptied && rng.chance(person.traits.courage * (drawn ? (drawn.gun ? arms.rob.gun : arms.rob.melee) : arms.rob.bare));
+    const wanted = emptied ? 0 : Math.round(person.eddies * (cold ? rng.range(0.8, 1) : rng.range(0.4, 0.8)) * (fought ? 0.5 : 1));
     // Their credchip too, if they carry one and there's a slot for it: it comes locked, and wants chopping before any of it is yours.
     const chipWanted = emptied ? 0 : person.chip;
     const chipPocket = chipWanted ? this.pocketFor({ id: 'credchip', kind: 'credchip' }) : null;
@@ -3859,9 +3967,12 @@ export class Game {
     learnOf(this.society, id, 'met');
     // Robbed is robbed, mask or not: their pockets stay empty a while. Whose doing it was, they know only with the face.
     changeStanding(this.society, id, mask ? { robbedAt: now } : { met: true, robbedAt: now }, society, timeScale, now);
-    this.logged(id, 'you', line(lines.you.rob, speaker, rng), now);
+    this.logged(id, 'you', line(cold ? lines.you.robCold : lines.you.rob, speaker, rng), now);
     const got = take > 0 || chip > 0;
-    const outcome = (wanted || chipWanted) && !got ? `No room on you for the eddies. ${person.given} keeps ${speaker.vars.his}${mask ? '.' : ', and remembers your face.'}` : line(got ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
+    const outcome =
+      (wanted || chipWanted) && !got
+        ? `No room on you for the eddies. ${person.given} keeps ${speaker.vars.his}${mask || cold ? '.' : ', and remembers your face.'}`
+        : line(cold ? (got ? lines.rob.cold : lines.rob.coldNothing) : got ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
     this.logged(id, 'them', outcome, now);
     if (got) {
       this.money = { ...this.money, bills: this.money.bills + bills, coins: this.money.coins + coins };
@@ -3936,7 +4047,7 @@ export class Game {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      const reply = replyTo(openness('chop', stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked())), society.openness, rng);
+      const reply = replyTo(openness('chop', stance, this.charismaEdge, person.traits, society.openness, Boolean(this.masked())), society.openness, rng);
       if (reply === 'answer') {
         done = true;
         chip.locked = false;

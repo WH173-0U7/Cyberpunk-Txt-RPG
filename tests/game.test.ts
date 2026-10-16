@@ -19,6 +19,7 @@ import { freshLife, newsFor, tieKey } from '../src/engine/life';
 import { FAMILY, openness } from '../src/engine/dialogue';
 import { bossOf, type JobRules, type JobState, type ShiftEventKind } from '../src/engine/jobs';
 import { memoriesOf } from '../src/engine/memory';
+import { skillBonus, skillEdge, xpToNext } from '../src/engine/skills';
 import { dreamOf, handleOf, sexOf, tiesOf, type Person, type Pronouns } from '../src/engine/people';
 import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
@@ -811,14 +812,16 @@ describe('Game', () => {
       const { take, outputs } = record(stocked);
       expect(stocked.gift(worker.id, other.id, now)).toBe(true);
       const plain = stocked.standingWith(worker.id, now)?.standing.rapport ?? 0;
-      expect(plain).toBe(SOCIETY.gift.base);
+      // Worth less from someone with no way with words (charisma at level 1), as everything they do with people is.
+      const pathetic = skillBonus(CHARISMA, 1);
+      expect(plain).toBe(Math.round(SOCIETY.gift.base * pathetic));
       expect(stocked.inventory.find((i) => i.id === other.id)?.count).toBe(1);
       expect(take().map((e) => e.type)).toEqual(['output', 'inventoryChanged', 'societyChanged']);
       // The favorite, the next day so it counts in full.
       const tomorrow = now + 25 * HOUR;
       expect(stocked.gift(worker.id, favorite, tomorrow)).toBe(true);
       expect(outputs(take())[0]?.text).toContain(dish.name);
-      expect(stocked.standingWith(worker.id, tomorrow)?.standing.rapport).toBe(SOCIETY.gift.base + SOCIETY.gift.favorite);
+      expect(stocked.standingWith(worker.id, tomorrow)?.standing.rapport).toBe(Math.round(SOCIETY.gift.base * pathetic) + Math.round(SOCIETY.gift.favorite * pathetic));
       expect(stocked.inventory.find((i) => i.id === favorite)).toBeUndefined();
     });
 
@@ -914,7 +917,7 @@ describe('Game', () => {
       const { game, now, worker } = shiftAt();
       const { take, outputs } = record(game);
       // Nobody tells a stranger with no way with words where they live.
-      expect(openness('home', 'neutral', 1, worker.traits, SOCIETY.openness)).toBeLessThan(SOCIETY.openness.deflectAt);
+      expect(openness('home', 'neutral', skillEdge(CHARISMA, 1), worker.traits, SOCIETY.openness)).toBeLessThan(SOCIETY.openness.deflectAt);
       expect(game.askFact(worker.id, 'home', now)).toBe(true);
       expect(game.describe(worker.id)?.facts.home).toBeUndefined();
       const said = outputs(take());
@@ -1594,8 +1597,8 @@ describe('Game', () => {
         expect(game.standingWith(worker.id, now)?.standing).toMatchObject({ grudge: 0, rapport: 0 });
         expect(game.societySaved.incidents[0]).toMatchObject({ kind: 'insult', pinned: false });
         // A mask gets less out of people: the same stranger, asked the same thing, with the mask on and off.
-        const open = (g: Game, asked: Parameters<typeof openness>[0]) => openness(asked, g.standingWith(worker.id, now)?.stance ?? 'neutral', 1, worker.traits, SOCIETY.openness, Boolean(g.masked()));
-        expect(open(game, 'job')).toBe(open(bare, 'job') - SOCIETY.openness.mask);
+        const open = (g: Game, asked: Parameters<typeof openness>[0]) => openness(asked, g.standingWith(worker.id, now)?.stance ?? 'neutral', skillEdge(CHARISMA, g.charisma().level), worker.traits, SOCIETY.openness, Boolean(g.masked()));
+        expect(open(game, 'job')).toBeCloseTo(open(bare, 'job') - SOCIETY.openness.mask, 6);
       });
 
       it('serves no mask at any counter, the bank and a stall included, until it comes off', () => {
@@ -2159,7 +2162,7 @@ describe('Game', () => {
           const dish = FOOD.dishes.find((d) => d.id === probe.worker.likes.dish) as (typeof FOOD.dishes)[number];
           const { game, now, worker } = atWork('b-noodle', 38, 20, { items: [{ id: dish.id, kind: 'consumable', name: dish.name, count: 1 }] });
           expect(game.gift(worker.id, dish.id, now)).toBe(true);
-          expect(notes(game, worker.id).at(-1)).toMatchObject({ tone: 'good', text: expect.stringMatching(new RegExp(`^${dish.name} is \\w+ favorite · Rapport \\+${SOCIETY.gift.favorite} · Charisma \\+3 XP`)) });
+          expect(notes(game, worker.id).at(-1)).toMatchObject({ tone: 'good', text: expect.stringMatching(new RegExp(`^${dish.name} is \\w+ favorite · Rapport \\+${Math.round(SOCIETY.gift.favorite * skillBonus(CHARISMA, 1))} · Charisma \\+3 XP`)) });
           expect(game.insult(worker.id, now + MINUTE)).toBe(true);
           expect(notes(game, worker.id).at(-1)).toMatchObject({ tone: 'bad', text: expect.stringMatching(new RegExp(`Rapport −${SOCIETY.insult.rapport + Math.round(SOCIETY.severity.insult / 3)} · Grudge \\+${SOCIETY.severity.insult}`)) });
         });
@@ -2550,11 +2553,13 @@ describe('Game', () => {
         ...extra,
       });
       /** Someone at work at the noodle bar, on a weekday morning, and the game there. */
+      /** A player who shoots a pistol, and the Lexington, as well as anyone (an ordinary level: no better, no worse). */
+      const ordinary = { types: { pistol: { level: 4, xp: 0 } }, models: { lexington: { level: 4, xp: 0 } } };
       const atTheBar = (progress: Partial<Progress> = {}, combat = COMBAT, city = world) => {
         for (let day = 0; day < 14; day++) {
           const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
           if (new Date(now).getUTCDay() % 6 === 0) continue;
-          const game = new Game(city, { ...RULES, combat }, { ...progressInside('b-noodle', 38, 20, [lexington]), money: { bills: 100, coins: 0, account: 0 }, ...progress });
+          const game = new Game(city, { ...RULES, combat }, { ...progressInside('b-noodle', 38, 20, [lexington]), money: { bills: 100, coins: 0, account: 0 }, arms: ordinary, ...progress });
           game.start(now);
           const worker = game.peopleHere(now).find((p) => p.person.job.building === 'b-noodle');
           if (worker) return { game, now, worker: worker.person, ...record(game) };
@@ -2676,6 +2681,65 @@ describe('Game', () => {
           expect(old.game.toughness().bonus).toBeGreaterThan(green.game.toughness().bonus);
           expect(old.game.brawlerSaved).toEqual({ level: 6, xp: 0 });
           expect(old.game.toughnessSaved).toEqual({ level: 6, xp: 0 });
+          // Both start the player off worse than anyone: weaker fists, and easier to put out.
+          expect(green.game.brawler().bonus).toBeLessThan(1);
+          expect(green.game.toughness().bonus).toBeLessThan(1);
+        });
+
+        it('lets the player go through the pockets of someone out cold: no fight, near enough everything, and once a week', () => {
+          const { game, now, worker } = atTheBar({ items: [] }, knockouts);
+          worker.eddies = 200;
+          game.attack(worker.id, now);
+          const t = fightOut(game, now);
+          expect(game.fightView()?.over).toBe('out');
+          game.leaveFight();
+          const before = game.wallet.eddies;
+          expect(game.rob(worker.id, t)).toBe(true);
+          // Four fifths of what they carry at the least, which is as much as anyone gives up face to face.
+          const took = game.wallet.eddies - before;
+          expect(took).toBeGreaterThanOrEqual(160);
+          expect(worker.eddies).toBe(200 - took);
+          const said = spoken(game, worker.id).slice(-2).map((l) => l.text);
+          expect(LINES.you.robCold.map((l) => (typeof l === 'string' ? l : l.text)).some((l) => said[0]?.startsWith(l.slice(0, 8)))).toBe(true);
+          expect(game.societySaved.incidents.map((i) => i.kind)).toEqual(['assault', 'robbery']);
+          // Gone through once, there's nothing left to take.
+          expect(game.rob(worker.id, t + 1000)).toBe(true);
+          expect(game.wallet.eddies - before).toBe(took);
+          // Come to, they're past robbing like that: it's the usual business, face to face.
+          expect(game.outCold(worker.id, t + 11 * MINUTE)).toBe(false);
+        });
+      });
+
+      describe('weapon levels', () => {
+        it('start the player off worse than anyone with every kind of weapon and every weapon, and grow with each go', () => {
+          const { game, now, worker } = atTheBar({ arms: null });
+          expect(game.weaponType('pistol')).toMatchObject({ level: 1, xp: 0 });
+          expect(game.weaponType('pistol').bonus).toBeLessThan(1);
+          expect(game.weaponModel('lexington').bonus).toBeLessThan(1);
+          expect(game.masteryOf('lexington')).toMatchObject({ name: 'Lexington', type: 'Pistol', perks: [], next: { at: 5, name: 'Ricochet' } });
+          expect(game.masteryOf('fists')).toBeNull();
+          expect(game.mastery()).toEqual({ types: [], models: [] });
+          game.attack(worker.id, now);
+          game.fightMove('attack', now + 1000);
+          // A shot or two in, the pistol and the Lexington both have experience.
+          expect(game.weaponType('pistol').xp).toBeGreaterThan(0);
+          expect(game.weaponModel('lexington').xp).toBe(game.weaponType('pistol').xp);
+          expect(game.mastery().types.map((t) => t.label)).toEqual(['Pistol']);
+          expect(game.mastery().models.map((m) => m.id)).toEqual(['lexington']);
+          expect(game.armsSaved).toEqual({ types: { pistol: { level: 1, xp: game.weaponType('pistol').xp } }, models: { lexington: { level: 1, xp: game.weaponModel('lexington').xp } } });
+        });
+
+        it('brings a weapon its perks at its levels, and says so when one comes', () => {
+          const known = atTheBar({ arms: { types: { pistol: { level: 6, xp: 0 } }, models: { lexington: { level: 7, xp: 0 } } } });
+          expect(known.game.masteryOf('lexington')).toMatchObject({ status: { level: 7 }, typeStatus: { level: 6 }, perks: [{ name: 'Ricochet' }, { name: 'Steady hand' }], next: { name: 'Stopping power', at: 10 } });
+          expect(known.game.weaponModel('lexington').bonus).toBeGreaterThan(1);
+          // One shot short of level 5: the next one brings Ricochet.
+          const close = atTheBar({ arms: { types: { pistol: { level: 4, xp: 0 } }, models: { lexington: { level: 4, xp: xpToNext(COMBAT.mastery.models, 4) - 1 } } } }, brutal(1, 0));
+          close.game.attack(close.worker.id, close.now);
+          close.game.fightMove('attack', close.now + 1000);
+          expect(close.game.weaponModel('lexington').level).toBe(5);
+          expect(close.outputs(close.take()).some((o) => /Your Lexington, level 5\..*Ricochet: /.test(o.text))).toBe(true);
+          expect(close.game.masteryOf('lexington')?.perks.map((p) => p.name)).toEqual(['Ricochet']);
         });
       });
 

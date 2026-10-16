@@ -4,7 +4,7 @@ import { CHROME } from '../src/data/cyberware';
 import { HACKS } from '../src/data/quickhacks';
 import { ARMS } from '../src/data/weapons';
 import { createRng } from '../src/engine/rng';
-import { damageOf, hitChance, knockoutOdds, NO_EDGE, resolveBeat, stepRange, talkOdds, theirMove, type Arm, type Fighter, type FightState, type Move } from '../src/engine/combat';
+import { damageOf, hitChance, knockoutOdds, masteryEdge, NO_EDGE, perkFamily, resolveBeat, stepRange, talkOdds, theirMove, type Arm, type Fighter, type FightState, type Move } from '../src/engine/combat';
 
 /**
  * Each quickhack as its page on the Cyberpunk Wiki has it (checked 2026-10-15, through the
@@ -232,5 +232,55 @@ describe('knockouts', () => {
     const down = resolveBeat(fight(FISTS_ARM, FISTS_ARM, { range: 'reach', them: fighter(FISTS_ARM, { hp: 1 }) }), 'attack', 'cover', ctx('ko3', { rules: sure }));
     expect(down.state.them.hp).toBe(0);
     expect(down.out).toBeNull();
+  });
+});
+
+describe('weapon levels', () => {
+  it('make a weapon known badly hit less and softer than anyone, and one known well more and harder', () => {
+    const pathetic = masteryEdge(NO_EDGE, 0.6, 0.85, [], COMBAT.mastery);
+    const ordinary = masteryEdge(NO_EDGE, 1, 1, [], COMBAT.mastery);
+    const pro = masteryEdge(NO_EDGE, 1.3, 1.2, [], COMBAT.mastery);
+    expect(ordinary).toEqual(NO_EDGE);
+    expect(pathetic.aim).toBeLessThan(1);
+    expect(pathetic.power).toBeCloseTo(0.51);
+    expect(pro.aim).toBeGreaterThan(1);
+    const them = fighter(katana);
+    const hit = (edge: typeof NO_EDGE) => hitChance(fighter(lexington), edge, them, NO_EDGE, 'attack', 'close', 2, COMBAT);
+    expect(hit(pathetic)).toBeLessThan(hit(ordinary));
+    expect(hit(pro)).toBeGreaterThan(hit(ordinary));
+    const dmg = (edge: typeof NO_EDGE) => damageOf(fighter(lexington), edge, them, NO_EDGE, createRng('d'), COMBAT);
+    expect(dmg(pathetic)).toBeLessThan(dmg(ordinary));
+    expect(dmg(pro)).toBeGreaterThan(dmg(ordinary));
+  });
+
+  it('give perks by what a weapon is: a gun by its technology, the rest by their hits, fists none', () => {
+    expect(perkFamily(lexington, COMBAT)).toBe('Power');
+    expect(perkFamily({ ...lexington, tech: 'Smart' }, COMBAT)).toBe('Smart');
+    expect(perkFamily(katana, COMBAT)).toBe('blade');
+    expect(perkFamily(FISTS_ARM, COMBAT)).toBeNull();
+    for (const perks of Object.values(COMBAT.mastery.perks)) {
+      expect(perks.length).toBeGreaterThan(0);
+      for (const p of perks) expect(p.at).toBeGreaterThan(COMBAT.mastery.models.average);
+    }
+  });
+
+  it('get round cover, go through armor, and now and then land just right', () => {
+    const covered = fighter(katana, { covered: true });
+    const flanking = { ...NO_EDGE, flank: 0.5 };
+    const open = hitChance(fighter(lexington), NO_EDGE, fighter(katana), NO_EDGE, 'attack', 'close', 2, COMBAT);
+    const behind = hitChance(fighter(lexington), NO_EDGE, covered, NO_EDGE, 'attack', 'close', 2, COMBAT);
+    const round = hitChance(fighter(lexington), flanking, covered, NO_EDGE, 'attack', 'close', 2, COMBAT);
+    expect(round).toBeGreaterThan(behind);
+    expect(round).toBeLessThan(open);
+    const armored = fighter(katana, { armor: 150 });
+    expect(damageOf(fighter(lexington), { ...NO_EDGE, pierce: 1 }, armored, NO_EDGE, createRng('p'), COMBAT)).toBe(damageOf(fighter(lexington), NO_EDGE, fighter(katana), NO_EDGE, createRng('p'), COMBAT));
+    // A sure clean hit: half as much again, and said so.
+    const sure = { ...COMBAT, classes: { ...COMBAT.classes, pistol: { ...COMBAT.classes.pistol!, hit: { reach: 1, close: 1, far: 1 } } } };
+    const plain = resolveBeat(fight(lexington, katana), 'attack', 'cover', ctx('c', { rules: sure }));
+    const clean = resolveBeat(fight(lexington, katana), 'attack', 'cover', ctx('c', { rules: sure, you: { ...NO_EDGE, crit: 1 } }));
+    const hitOf = (r: typeof plain) => r.events.find((e) => e.what === 'hit' && e.who === 'you');
+    expect(hitOf(clean)).toMatchObject({ crit: true });
+    expect(hitOf(plain)).not.toHaveProperty('crit');
+    expect(COMBAT.lines.youCrit?.length).toBeGreaterThan(2);
   });
 });
