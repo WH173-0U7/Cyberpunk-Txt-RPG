@@ -16,6 +16,7 @@ import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
 import { Game, type Description, type PersonStanding, type Presence, streetSpot } from './engine/game';
+import { hasRooms, type RoomAccess } from './engine/rooms';
 import type { JobStatus } from './engine/jobs';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu, Quality } from './engine/food';
@@ -37,6 +38,7 @@ import { COMBAT } from './data/combat';
 import { HACKS } from './data/quickhacks';
 import { MEDICAL } from './data/medical';
 import { HOURS } from './data/hours';
+import { ROOMS } from './data/rooms';
 import { medDetail } from './engine/medical';
 import { FightPanel } from './ui/fight';
 import { fitCheck, implantDetail, implantOf } from './engine/cyberware';
@@ -46,6 +48,7 @@ import { Hud, WEATHER_LABEL } from './ui/hud';
 import { EnergyMeter } from './ui/energy';
 import { StatusPanel, type StatusRow } from './ui/status';
 import { Bank } from './ui/bank';
+import { RoomsPanel } from './ui/rooms';
 import { Inventory, type ChromePageView, type InventoryItemView, type InventoryView, type PocketRowView } from './ui/inventory';
 import { MapOverlay } from './ui/overlay';
 import { stripMarkup } from './ui/markup';
@@ -87,6 +90,7 @@ const place = new PlacePanel(
     root: $('#place'),
     beam: $('#scan-beam'),
     kicker: $('#place-kicker'),
+    room: $<HTMLButtonElement>('#place-room'),
     title: $('#place-title'),
     meta: $('#place-meta'),
     description: $('#place-desc'),
@@ -112,6 +116,10 @@ const place = new PlacePanel(
     onAction: (id) => act(id),
     // The corner button leaves the building the player is in; otherwise it drops what they picked.
     onClose: () => (game.interior && !target ? game.leave() : select(null)),
+    onRooms: () => {
+      roomsStatus = '';
+      rooms.overlay.show($('#place-room'));
+    },
     onGlitchText: registerGlitch,
     announce: (text) => transmissions.announce(text),
   },
@@ -298,6 +306,70 @@ const bank = new Bank(
 /** What the counter last said, and whether the sums to withdraw are unfolded. */
 let bankStatus = '';
 let withdrawOpen = false;
+
+const rooms = new RoomsPanel(
+  {
+    root: $('#rooms'),
+    close: $<HTMLButtonElement>('#rooms-close'),
+    floor: $('#rooms-floor'),
+    list: $('#rooms-list'),
+    status: $('#rooms-status'),
+    floors: $('#rooms-floors'),
+  },
+  () => showRooms(),
+  {
+    // Walking into a room closes the overlay on it; a door that won't open says why, and stays.
+    onGo: (id) => atTheDoor(() => game.goRoom(id, Date.now()), true),
+    onKnock: (id) => atTheDoor(() => game.knock(id, Date.now()) && game.room()?.id === id, true),
+    onFloor: (floor) => atTheDoor(() => game.goFloor(floor, Date.now()), false),
+  },
+  reducedMotion,
+);
+/** What the last door said. */
+let roomsStatus = '';
+
+/** Tries a door; what the game says about it becomes the overlay's line, and going through one closes the overlay when `closes`. */
+function atTheDoor(act: () => boolean, closes: boolean): void {
+  lastActivity = performance.now();
+  const said: string[] = [];
+  const off = game.events.on('output', ({ text }) => said.push(text));
+  const through = act();
+  off();
+  roomsStatus = said.at(-1) ?? '';
+  if (through && closes) rooms.overlay.close();
+  else showRooms();
+}
+
+/** A small number from a string, the same every time: which of a room's blurbs a building has. */
+function hashOf(text: string): number {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/** Fills the rooms overlay: the floor the player is on, its rooms, and the stairs. */
+function showRooms(): void {
+  const view = game.roomsView(Date.now());
+  if (!view) {
+    rooms.overlay.close();
+    return;
+  }
+  const note: Record<RoomAccess, string> = { here: 'You are here', open: '', staff: 'Staff only', locked: 'Locked', yours: 'Your room' };
+  rooms.render({
+    floorLabel: view.floors > 1 ? (view.floor === 1 ? `Ground floor of ${view.floors}` : `Floor ${view.floor} of ${view.floors}`) : 'Ground floor',
+    floor: view.floor,
+    floors: view.floors,
+    status: roomsStatus,
+    rooms: view.rooms.map(({ room, access }) => ({
+      id: room.id,
+      name: room.name,
+      note: note[access],
+      open: access === 'open' || access === 'yours',
+      knock: access === 'locked' && room.kind === 'unit',
+      here: access === 'here',
+    })),
+  });
+}
 
 /** Does something at the bank's counter; whatever the game says about it becomes the counter's line. */
 function atTheCounter(act: () => boolean): void {
@@ -719,6 +791,29 @@ function insideView(building: Building): PanelView {
       announce: `On shift at ${building.name}. ${moment.text} ${moment.choices.map((c) => c.label).join(' or ')}?`,
     };
   }
+  const room = game.room();
+  // A building with more than one room shows the one the player is in, which opens the rest.
+  const roomChip = room && hasRooms(building, ROOMS) ? room.name : undefined;
+  if (room && room.kind !== 'main') {
+    const count = game.peopleHere(now).length;
+    const job = game.jobStatus(now);
+    const blurbs = ROOMS.blurbs[room.kind];
+    const blurb = blurbs.length ? blurbs[hashOf(`${building.id}:${room.id}`) % blurbs.length]! : '';
+    const yours = game.rented(now)?.room === room.id;
+    const description = [blurb, yours ? `It's yours till ${formatClock(game.rented(now)!.until)}.` : ''].filter(Boolean).join(' ');
+    return {
+      mode: 'inside',
+      kicker: `Inside · Block ${building.block}`,
+      room: roomChip,
+      meta: [room.floor > 1 ? `Floor ${room.floor}` : '', building.kindLabel].filter(Boolean).join(' · '),
+      description,
+      // Out back on a shift's day, the shift can be worked from here too.
+      actions: [peopleAction(count), ...(room.kind === 'back' && job?.here ? [workAction(job, now)] : [])],
+      closable: true,
+      closeLabel: `Leave ${building.name}`,
+      announce: `${room.name}, in ${building.name}. ${description} ${count ? `${count} people here.` : ''} Leave with the corner button.`,
+    };
+  }
   const menu = game.menu();
   const here = game.peopleHere(now).length;
   const barred = game.barred(now);
@@ -734,6 +829,7 @@ function insideView(building: Building): PanelView {
   return {
     mode: 'inside',
     kicker: `Inside · Block ${building.block}`,
+    room: roomChip,
     meta: [menu ? '' : categoryOf(building).label, building.kindLabel, heightOf(building)].filter(Boolean).join(' · '),
     description,
     actions: [
@@ -758,6 +854,9 @@ function peopleAction(count: number): PanelAction {
 
 /** The menu button: how much there is to eat (the prices are on the menu); a store's rack says how many things are on it. */
 function menuAction(menu: Menu): PanelAction {
+  // A motel's or a capsule hotel's desk: a room for the night, or the one that's the player's.
+  const room = menu.items.find((i) => i.kind === 'room');
+  if (room) return { id: 'menu', label: 'Desk', sub: game.rented(Date.now()) ? 'Your room till noon' : `A room · ${room.price} €$` };
   if (menu.kind === 'gear') {
     const n = menu.items.length;
     return { id: 'menu', label: 'Shop', sub: n ? `${n} ${n === 1 ? 'thing' : 'things'}` : 'Nothing on the rack', disabled: !n };
@@ -769,6 +868,8 @@ function menuAction(menu: Menu): PanelAction {
 
 /** What the panel says about the place's menu or rack. */
 function menuBlurb(menu: Menu): string {
+  const lodging = menu.items.some((i) => i.kind === 'room') ? game.interior?.business : undefined;
+  if (lodging && ROOMS.rent[lodging]) return ROOMS.rent[lodging]!.desk;
   if (menu.kind === 'gear' && menu.items.some((i) => i.kind === 'cyberware')) {
     if (game.clinic()) return CHROME_BLURBS[menu.venue.quality];
     // A deck shop has only decks and the RAM for them; an outlet, a bit of everything.
@@ -1161,6 +1262,8 @@ function showShop(): void {
       const row = { ...item, affordable: !barred && game.affords(item.id, now), barred: Boolean(barred), carried: carried.get(item.id) ?? 0 };
       // A service is had, not carried: treatment there and then, a plan signed (or renewed).
       if (item.kind === 'treatment') return { ...row, verb: 'Treat' };
+      // A room for the night: rented, or kept another night.
+      if (item.kind === 'room') return { ...row, verb: game.rented(now) ? 'Stay on' : 'Rent' };
       if (item.kind === 'plan') return { ...row, verb: cover?.id === item.id ? 'Renew' : 'Sign up', detail: cover?.id === item.id ? `${item.detail} · yours until ${formatDay(cover.until)}` : item.detail };
       if (item.kind !== 'cyberware' || !clinic) return row;
       // A ripperdoc fits what it sells: the rack says whether it would go in, and what it would take the place of.
@@ -1330,7 +1433,8 @@ function buyFromShop(id: string): void {
   const bought = !why && game.buy(id);
   const how = bought && game.wallet.account < before.account ? 'by transfer' : bought && game.wallet.chips < before.chips ? 'by chip' : 'in cash';
   const what = item.kind === 'ammo' ? `a box of ${item.name} (${ARMS.ammo[item.id]?.box ?? 0} rounds)` : item.name;
-  shopStatus = why ?? (bought ? `Bought ${what} for ${item.price} €$ ${how} · €$ ${game.wallet.eddies} on you${game.wallet.account ? `, €$ ${game.wallet.account} banked` : ''}` : '');
+  const verb = item.kind === 'room' ? `Rented ${item.detail?.split(' · ')[0] ?? 'a room'} till noon` : `Bought ${what}`;
+  shopStatus = why ?? (bought ? `${verb} for ${item.price} €$ ${how} · €$ ${game.wallet.eddies} on you${game.wallet.account ? `, €$ ${game.wallet.account} banked` : ''}` : '');
   showShop();
 }
 
@@ -1409,6 +1513,7 @@ function wire(g: Game): void {
 
   g.events.on('interiorChanged', (building) => {
     people.overlay.close();
+    rooms.overlay.close();
     const where = g.whereabouts;
     const district = g.districtOf(where);
     map.setInside(building?.id ?? null);
@@ -1416,6 +1521,15 @@ function wire(g: Game): void {
     skyNow = building ? 'clear' : (district?.weather ?? 'clear');
     weather.setWeather(skyNow);
     hud.setLocation(building ? building.name : g.nameOf(where), district?.name ?? 'Night City', g.neighborhoodOf(where));
+    place.scan();
+    refresh();
+    queueSave();
+  });
+
+  // Another room: who's here is whoever's in it now.
+  g.events.on('roomChanged', () => {
+    if (people.overlay.isOpen) showPeople();
+    if (rooms.overlay.isOpen) showRooms();
     place.scan();
     refresh();
     queueSave();
@@ -1521,7 +1635,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS }, progress);
   wire(game);
   map.setWorld(world);
   try {

@@ -536,9 +536,9 @@ export function worksNights(person: Person, world: World): boolean {
   return work?.category === 'nightlife';
 }
 
-/** A place that never closes: a hospital, and anywhere whose sign says 24/7. */
+/** A place that never closes: a hospital, a motel's or a capsule hotel's desk, and anywhere whose sign says 24/7. */
 export function allHours(building: Building): boolean {
-  return building.business === 'hospital' || building.name.startsWith('24/7 ');
+  return building.business === 'hospital' || building.category === 'lodging' || building.name.startsWith('24/7 ');
 }
 
 /** Everyone to be found at a spot right now. */

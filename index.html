@@ -187,6 +187,19 @@
             <button id="fight-done" class="fight-done" type="button" hidden>Done</button>
           </div>
         </div>
+        <div id="rooms" class="overlay rooms" role="dialog" aria-labelledby="rooms-title" hidden>
+          <div class="overlay-strip">
+            <span class="overlay-barcode" aria-hidden="true"></span>
+            <span id="rooms-title" class="overlay-label">NCNET//ROOMS</span>
+            <span id="rooms-floor" class="overlay-detail"></span>
+            <button id="rooms-close" class="icon-btn overlay-close" type="button" aria-label="Close rooms" title="Close (Esc)"></button>
+          </div>
+          <div class="overlay-body rooms-body">
+            <ul id="rooms-list" class="rooms-list"></ul>
+            <p id="rooms-status" class="shop-status" role="status" hidden></p>
+            <div id="rooms-floors" class="rooms-floors" role="toolbar" aria-label="Stairs" hidden></div>
+          </div>
+        </div>
         <div id="bank" class="overlay bank" role="dialog" aria-labelledby="bank-title" hidden>
           <div class="overlay-strip">
             <span class="overlay-barcode" aria-hidden="true"></span>
@@ -204,7 +217,10 @@
         <div id="place" class="place">
           <div class="scan-clip" aria-hidden="true"><div id="scan-beam" class="scan-beam"></div></div>
           <div class="place-text">
-            <p id="place-kicker" class="place-kicker"></p>
+            <div class="place-kicker-row">
+              <p id="place-kicker" class="place-kicker"></p>
+              <button id="place-room" class="place-room" type="button" aria-controls="rooms" hidden></button>
+            </div>
             <h2 id="place-title" class="place-title" hidden></h2>
             <p id="place-meta" class="place-meta" hidden></p>
             <p id="place-desc" class="place-desc"></p>

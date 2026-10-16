@@ -2,6 +2,7 @@ import { CELLS } from './game';
 import type { PocketState } from './carry';
 import type { Fitted } from './cyberware';
 import type { Arms, Meter } from './combat';
+import type { Lodging } from './rooms';
 import type { Coverage } from './medical';
 import type { Money } from './money';
 import type { EnergyState } from './energy';
@@ -47,6 +48,10 @@ export interface Progress {
   toughness?: SkillState | null;
   /** How well the player knows each kind of weapon and each weapon. */
   arms?: Arms | null;
+  /** The room the player is in, inside a building. */
+  room?: string | null;
+  /** The room the player has rented for the night. */
+  lodging?: Lodging | null;
   /** The player's main job (null: none); every job they hold is `jobs`. */
   job: JobState | null;
   /** Every job the player holds, the main one first (missing or null: a save from before side gigs; just `job`). */
@@ -84,6 +89,8 @@ export interface SaveSource {
   readonly brawlerSaved: SkillState;
   readonly toughnessSaved: SkillState;
   readonly armsSaved: Arms;
+  readonly roomSaved: string | null;
+  readonly lodgingSaved: Lodging | null;
   readonly jobSaved: JobState | null;
   readonly jobsSaved: readonly JobState[];
   readonly careerSaved: Record<string, number>;
@@ -131,6 +138,8 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     brawler: { ...game.brawlerSaved },
     toughness: { ...game.toughnessSaved },
     arms: game.armsSaved,
+    room: game.roomSaved,
+    lodging: game.lodgingSaved,
     job: game.jobSaved ? { ...game.jobSaved } : null,
     jobs: game.jobsSaved.map((j) => ({ ...j })),
     career: { ...game.careerSaved },
@@ -198,6 +207,8 @@ export function readSave(raw: unknown): SaveData | null {
     brawler: isSkill(save.brawler) ? save.brawler : null,
     toughness: isSkill(save.toughness) ? save.toughness : null,
     arms: armsOf(save.arms),
+    room: typeof save.room === 'string' ? save.room : null,
+    lodging: isLodging(save.lodging) ? save.lodging : null,
     // And before there was work, the player had none.
     job: isJob(save.job) ? save.job : null,
     jobs: Array.isArray(save.jobs) ? save.jobs.filter(isJob).map(jobOf) : null,
@@ -235,13 +246,13 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, toughness, arms, job, jobs, career, life, you, chrome, health, heat, lethal, coverage } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, toughness, arms, room, lodging, job, jobs, career, life, you, chrome, health, heat, lethal, coverage } = save;
   const exists = (j: JobState) => world.buildings.some((b) => b.id === j.building);
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, toughness: toughness ?? null, arms: arms ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
 }
 
 function isCoverage(value: unknown): value is Coverage {
@@ -386,6 +397,10 @@ function jobOf(j: JobState): JobState {
 function isJob(value: unknown): value is JobState {
   const j = value as Record<string, unknown> | null;
   return typeof j === 'object' && j !== null && typeof j.building === 'string' && Number.isInteger(j.rung) && (j.rung as number) >= 0 && isNumber(j.trust) && j.trust >= 0 && Number.isInteger(j.shifts) && (j.shifts as number) >= 0 && Number.isInteger(j.lastShiftDay);
+}
+
+function isLodging(value: unknown): value is Lodging {
+  return isObject(value) && typeof value.building === 'string' && typeof value.room === 'string' && isNumber(value.until);
 }
 
 function isSkill(value: unknown): value is SkillState {

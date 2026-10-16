@@ -19,6 +19,8 @@ export interface PanelAction {
 export interface PanelView {
   mode: 'here' | 'inside' | 'target' | 'trip';
   kicker: string;
+  /** Inside a building with more than one room: the one the player is in, which opens the rest. */
+  room?: string;
   title?: string;
   meta?: string;
   /** Typed out, and only when it changes. */
@@ -37,6 +39,7 @@ export interface PlaceElements {
   root: HTMLElement;
   beam: HTMLElement;
   kicker: HTMLElement;
+  room: HTMLButtonElement;
   title: HTMLElement;
   meta: HTMLElement;
   description: HTMLElement;
@@ -49,6 +52,7 @@ export interface PlaceElements {
 export interface PlaceHandlers {
   onAction(id: ActionId): void;
   onClose(): void;
+  onRooms(): void;
   onGlitchText(el: HTMLElement, text: string): void;
   announce(text: string): void;
 }
@@ -68,6 +72,7 @@ export class PlacePanel {
       button.addEventListener('click', () => handlers.onAction(id));
     }
     els.close.addEventListener('click', () => handlers.onClose());
+    els.room.addEventListener('click', () => handlers.onRooms());
   }
 
   show(view: PanelView): void {
@@ -75,6 +80,9 @@ export class PlacePanel {
     els.root.classList.remove('is-here', 'is-inside', 'is-target', 'is-trip');
     els.root.classList.add(`is-${view.mode}`);
     els.kicker.textContent = view.kicker;
+    els.room.hidden = !view.room;
+    els.room.textContent = view.room ? `${view.room} ▾` : '';
+    els.room.setAttribute('aria-label', view.room ? `${view.room}: other rooms` : '');
     setText(els.title, view.title);
     setText(els.meta, view.meta);
 
