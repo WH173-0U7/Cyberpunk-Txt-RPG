@@ -117,7 +117,7 @@ export interface Threat {
   amount: number;
 }
 
-/** How the player came to know of someone, or of a tie between two people. */
+/** How the player came to know of someone, or of a tie between two people (`asked`: in an older save, from asking someone about them). */
 export type KnownHow = 'seen' | 'told' | 'asked';
 
 /** Something about a person that takes asking (or watching, or being told) to know; `dead`, that they are, takes being told. */

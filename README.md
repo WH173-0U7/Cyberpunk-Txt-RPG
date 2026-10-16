@@ -117,6 +117,12 @@ own.
   in their pocket. They keep hours on your phone's clock: home at night, work by day (with
   days off), their hangout in the evening, out on the streets in between. Inside a building
   or at a place, **People** lists who's there and what they're doing; tap one for their card.
+  Its **Known** tab lists everyone you've met or know by name, the latest first, so you can
+  open anyone's card from anywhere. A card has two tabs: **Talk**, the conversation, and
+  **Profile**: how they feel about you (stance, rapport, ♥, grudge), how often you've talked,
+  their sex (plain to see), everything you know about them (work, age, home, what they eat and drink, who they hate,
+  their type, what they want, their nature), what's still unknown, what they remember of you
+  ("Gift: Ramen ×2 · last week", "You walked out · today") and their web.
 - **An economy**: the eddies move while you're away. Payday is Friday, when everyone draws a
   week's money (a gang's members from the gang's chest, filled by the cut it takes from the
   storefronts on its turf), and every day living takes some back; most evenings the chatty go
@@ -214,11 +220,7 @@ own.
 - **Who knows whom**: the same rule. Opening **People** takes in everyone there, and any
   two who are actually connected you've *seen together* (connected somehow, you don't know
   how). Once someone likes you they drop names ("My sister Ana works at…"), which tells you
-  the relation and the name. And you can **Ask about** the few worth asking about: anyone
-  you've seen them with, anyone who shares their family name, whoever's here with them and
-  the last people you've talked to (six at most, and nobody you've asked about already);
-  they'll tell you what the person is to them, that they've never heard of them, or nothing. Tap
-  the card's facts line and their web unfolds under it: them in the middle and everyone you
+  the relation and the name, and the news they tell does too. On the card's Profile tab their web closes the page: them in the middle and everyone you
   know them to know around them, each spoke labeled with the relation or "?" (dashed) when
   all you know is that they're connected; tap a name to open that person's card (even if
   they're not here, then you can only look).
@@ -276,9 +278,8 @@ own.
   Jun last week"), what their gang did, or what they heard around the district; a death or a
   wedding they bring up for weeks. Being told of someone is an introduction (the name, and
   the tie when it was family), and being told who got together, married, split up or fell
-  out puts that right in what you know of them. Ask someone about a relative who's died and
-  they'll tell you (the card says **Dead** after); ask about an ex and they're done with
-  them. Wherever you are, the people there are with each other too: a couple
+  out puts that right in what you know of them; told of a death, the card says **Dead**
+  after. Wherever you are, the people there are with each other too: a couple
   sharing a table or not speaking, family arguing, friends drinking, a crew holding court,
   coworkers on a break, a ganger leaning on the help, rivals staring each other down. The
   **People** list says who is with whom.
@@ -426,6 +427,15 @@ own.
   district hears); a corpo's Trauma Team gets them out alive. Go down yourself and they go
   through your pockets, unless you're on a Trauma Team plan. Your health comes back on the
   clock; NCPD heat (stars in the status drop-down) cools off.
+- **Knockouts and fighting skills**: a hard punch or a club can knock someone out cold
+  before they're beaten, likelier the more worn down they are. They lie where they fell for
+  a few minutes, hurt no worse than a headache, and nobody can talk to them till they come
+  to. It works on you too: knocked out, you're robbed, but come to with the health you had.
+  Two skills grow as you fight: **Street Brawler** (the 2077 skill for fists and blunt
+  weapons) with every blow you land bare-handed or with Gorilla Arms, and more for a
+  knockout, makes those blows land surer and harder and put people out more often;
+  **Toughness** with every blow you take and every fight you walk away from, makes you
+  harder to knock out. Both are in the status drop-down.
 - **Hospitals and meds**: every district has a hospital (Watson's Kabuki Community Hospital,
   and the Night City Medical Center when the city has it; Dogtown's Haven Clinic; one in
   Westbrook, Heywood, and most cities' downtown and Santo Domingo), in a storefront of its
@@ -517,7 +527,7 @@ own.
 - **Status**: the sign says where you are, the address above it the district, and the clock
   the time of day; under the energy bar one line says your energy, its level, when the next
   point comes, and anything the matter (drunk, masked, on a shift somewhere). Tap it and a
-  drop-down unfolds the rest: energy and charisma experience, your cash, the bank and your
+  drop-down unfolds the rest: energy, charisma and fighting experience, your cash, the bank and your
   chips, the NCART pass, your job, your condition, your mask, every reputation that stands at
   anything, how much of the city you've mapped, the weather, the date, and the way into the
   settings. Nothing else repeats it.
@@ -607,8 +617,11 @@ Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
   gives every kind of building its label, height range and name templates (which can also use
   `{corp}` and `{shop}`). A storefront's business comes from `businesses`, weighted by the
   district's `trade`; a `chain` business is named after its sign, and `where` keeps it to some
-  districts. Real eateries are `landmarks` with a `business` (and the neighborhood they're in,
-  where the wiki says).
+  districts. Every other storefront makes up a name of its own in its neighborhood's flavor
+  ("Menya Hotaru" in Japantown, "Cantina La Esquina" in the Glen, "Bon Bagay Bar" in
+  Pacifica) or goes by its neighborhood ("Kabuki Noodles"), from the words in
+  [`src/data/storefronts.ts`](src/data/storefronts.ts). Real eateries are `landmarks` with a
+  `business` (and the neighborhood they're in, where the wiki says).
 - **People** are in [`src/data/people.ts`](src/data/people.ts): name pools by community and
   which communities each district draws from, the gangs (their members' look, roles and
   rivals) and each district's turf, job roles by business, category and building kind,

@@ -304,12 +304,28 @@ describe('saving', () => {
     expect(readSave({ ...saved, charisma: { level: 0, xp: 1 } })?.charisma).toBeNull();
   });
 
+  it('carries the fighting skills, and an old save starts them at the first level', () => {
+    const { game, now } = played(1);
+    const saved = { ...saveOf(game, now), brawler: { level: 4, xp: 9 }, toughness: { level: 2, xp: 3 } };
+    const read = readSave(JSON.parse(JSON.stringify(saved)));
+    expect(read).toMatchObject({ brawler: { level: 4, xp: 9 }, toughness: { level: 2, xp: 3 } });
+    const again = new Game(world, rules, resume(world, read!)!);
+    expect(again.brawler()).toMatchObject({ level: 4, xp: 9 });
+    expect(again.toughness()).toMatchObject({ level: 2, xp: 3 });
+    const { brawler: _b, toughness: _t, ...old } = saveOf(game, now);
+    const oldRead = readSave(JSON.parse(JSON.stringify(old)));
+    expect(oldRead?.brawler).toBeNull();
+    expect(new Game(world, rules, resume(world, oldRead!)!).brawler()).toMatchObject({ level: 1, xp: 0 });
+    expect(readSave({ ...saved, toughness: { level: -1, xp: 0 } })?.toughness).toBeNull();
+  });
+
   it('carries what people remember of the player, and forgets what it cannot read', () => {
     const { game, now } = played(1);
     const someone = game.population.people[0];
     if (!someone) throw new Error('no people');
     const memory = { kind: 'wronged' as const, at: now, what: 'robbery', amount: 30, times: 1, said: 0 };
-    const society = { ...game.societySaved, memories: { [someone.id]: [memory, { kind: 'gift', at: 'yesterday' }], nobody: 'x' } };
+    // A kind the game no longer has (being asked about someone) is forgotten with the rest.
+    const society = { ...game.societySaved, memories: { [someone.id]: [memory, { kind: 'gift', at: 'yesterday' }, { kind: 'asked', at: now, about: someone.id, times: 1, said: 0 }], nobody: 'x' } };
     const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), society })));
     expect(read?.society?.memories).toEqual({ [someone.id]: [memory] });
     const progress = read && resume(world, read);

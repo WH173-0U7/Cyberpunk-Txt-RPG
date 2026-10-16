@@ -423,7 +423,7 @@ describe('dialogue', () => {
         }
         // A counter that won't serve the player is always named.
         check(line(LINES.barred, { ...speaker, vars: { ...vars, work: 'El Pinche Grill' } }, rng), `${about} barred`);
-        for (const pool of [LINES.brushOff, LINES.grudge, LINES.hostile, LINES.asleep, LINES.talkedOut, LINES.refuse, LINES.pressed, LINES.ask.unknown, LINES.ask.repeat, LINES.gift.thanks, LINES.gift.favorite, LINES.gift.refuse, LINES.insult.reply, LINES.insult.shove, LINES.rob.done, LINES.rob.nothing, LINES.rob.fought, LINES.chop.done, LINES.chop.refuse]) {
+        for (const pool of [LINES.brushOff, LINES.grudge, LINES.hostile, LINES.asleep, LINES.talkedOut, LINES.refuse, LINES.pressed, LINES.gift.thanks, LINES.gift.favorite, LINES.gift.refuse, LINES.insult.reply, LINES.insult.shove, LINES.rob.done, LINES.rob.nothing, LINES.rob.fought, LINES.chop.done, LINES.chop.refuse]) {
           check(line(pool, speaker, rng), `${about} pool`);
         }
         // Every way into a chat, from the player in every way with words, and every way it can land.
@@ -448,10 +448,6 @@ describe('dialogue', () => {
           check(line(LINES.you.date, { ...speaker, eloquence, vars: { ...vars, item: 'Sake' } }, rng), `${about} you date ${eloquence}`);
         }
         lines += 25;
-        // Asked about someone of theirs, by what they are to them.
-        for (const tieFlag of ['tieFamily', 'tieFriend', 'tieCrew', 'tieWork']) {
-          check(compose(LINES.ask.knows, { ...speaker, vars: { ...vars, other: 'Ana', otherHe: 'she', otherHim: 'her', word: 'cousin', [tieFlag]: 'yes' } }, LINES, rng), `${about} ask knows ${tieFlag}`);
-        }
         check(compose(LINES.chop.done, speaker, LINES, rng), `${about} chop done`);
         check(deflect(speaker, 'chop', LINES, rng), `${about} deflect chop`);
         // What happened between people lately, of every kind, from every side it can be told from.
@@ -494,7 +490,7 @@ describe('dialogue', () => {
         }
         for (const took of ['60', '']) recalls.push({ memSettled: 'yes', memTook: took }, { memChopped: 'yes', memTook: took });
         recalls.push({ memGift: 'yes', memItem: 'Taco', memFavorite: 'yes' }, { memGift: 'yes', memItem: 'Taco' }, { memGift: 'yes' });
-        for (const word of ['sister', '']) recalls.push({ memGoodWord: 'yes', memWord: word }, { memAsked: 'yes', memWord: word });
+        for (const word of ['sister', '']) recalls.push({ memGoodWord: 'yes', memWord: word });
         for (const title of ['prep', '']) recalls.push({ memPromoted: 'yes', memTitle: title }, { memQuit: 'yes', memTitle: title });
         recalls.push({ memHired: 'yes' }, { memFired: 'yes' });
         for (const memory of deep ? recalls : []) {
@@ -503,11 +499,6 @@ describe('dialogue', () => {
           if (memory.memQuit || memory.memFired) check(line(LINES.work.rehire, remembering, rng), `${about} rehire ${JSON.stringify(memory)}`);
           lines += 1;
         }
-        // Asked about someone who's dead, or someone they're done with.
-        const asking: Speaker = { ...speaker, vars: { ...vars, other: 'Ana', otherHe: 'she', otherHim: 'her', otherHis: 'her', word: 'cousin', otherAgo: 'last week' } };
-        check(compose(LINES.ask.dead, asking, LINES, rng), `${about} ask dead`);
-        check(compose(LINES.ask.ex, { ...asking, vars: { ...asking.vars, word: '', otherAgo: '' } }, LINES, rng), `${about} ask ex`);
-        lines += 2;
         // A boss, asked for work: every answer, in and out of a mask, with a place to name.
         const bossing: Speaker = { ...speaker, vars: { ...vars, work: 'El Pinche Grill' } };
         for (const pool of [LINES.work.hire, LINES.work.refuse, LINES.work.shift, LINES.work.promote, LINES.work.quit, LINES.work.notice, LINES.work.coverAsk, LINES.work.coverThanks, LINES.work.coverSnub, LINES.work.cutDemand, LINES.work.cutPaid, LINES.work.cutBack, LINES.work.cutWorse, LINES.work.caught, LINES.work.stood]) check(line(pool, bossing, rng), `${about} work pool`);
@@ -529,7 +520,7 @@ describe('dialogue', () => {
           lines += 3;
         }
         for (const eloquence of eloquences) {
-          for (const pool of [LINES.you.talk, LINES.you.askAbout, LINES.you.gift, LINES.you.insult, LINES.you.rob, LINES.you.chop]) check(line(pool, { ...speaker, eloquence }, rng), `${about} you ${eloquence}`);
+          for (const pool of [LINES.you.talk, LINES.you.gift, LINES.you.insult, LINES.you.rob, LINES.you.chop]) check(line(pool, { ...speaker, eloquence }, rng), `${about} you ${eloquence}`);
         }
         lines += 30;
       }

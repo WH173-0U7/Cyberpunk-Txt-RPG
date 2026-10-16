@@ -121,6 +121,7 @@
           </div>
           <div class="overlay-body">
             <p id="people-rep" class="people-rep" hidden></p>
+            <div id="people-tabs" class="people-tabs" role="tablist" aria-label="Who to show"></div>
             <p id="people-empty" class="people-empty" hidden></p>
             <ul id="people-list" class="people-list"></ul>
             <div id="person" class="person-card" hidden>
@@ -131,9 +132,10 @@
                   <span id="person-stance" class="stance"></span>
                 </div>
                 <p id="person-kicker" class="person-kicker"></p>
-                <button id="person-facts" class="person-facts" type="button" aria-expanded="false" title="What you know"></button>
+                <button id="person-facts" class="person-facts" type="button" title="Their profile"></button>
               </div>
-              <div id="person-web" class="person-web-box" hidden></div>
+              <div id="person-tabs" class="people-tabs person-tabs" role="tablist" aria-label="Their card"></div>
+              <div id="person-profile" class="person-profile" hidden><div id="person-web" class="person-web-box"></div></div>
               <ol id="person-log" class="person-log" aria-label="What was said" aria-live="polite"></ol>
               <div id="person-picker" class="person-picker" hidden></div>
               <div id="person-commands" class="person-commands" role="toolbar" aria-label="What to do"></div>

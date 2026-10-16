@@ -46,12 +46,19 @@ export interface PersonCardView {
   stanceLabel: string;
   /** Gang colors, what they're doing (or that they're not here). */
   kicker: string;
-  /** What the player knows of them, or a line saying nothing yet; one line until unfolded, with the web. */
+  /** What the player knows of them, or a line saying nothing yet: one line, on the Talk tab. */
   facts: string;
-  factsOpen: boolean;
+  /** Which tab of the card is showing: the conversation, or their profile. */
+  tab: CardTab;
+  /** The profile: how they stand with the player, then each thing known of them, label and value. */
+  profile: Array<{ label: string; value: string }>;
+  /** What the player hasn't found out yet, to ask: "Age", "Home"… */
+  unknown: string[];
+  /** What they remember of the player, freshest first. */
+  between: string[];
   /** Whether they're here to be dealt with. */
   here: boolean;
-  /** Who the player knows them to be connected to: unfolded with the facts, in the transcript's place. */
+  /** Who the player knows them to be connected to: on the profile, under the rest. */
   web: WebNodeView[];
   webHint: string;
   picker: Picker;
@@ -60,7 +67,6 @@ export interface PersonCardView {
   /** Things to ask them about themselves. */
   questions: Array<{ fact: string; label: string }>;
   /** People the player knows of, to ask this person about. */
-  askAbout: Array<{ id: string; name: string }>;
   /** What the player could give them. */
   gifts: Array<{ id: string; name: string; count: number }>;
   /** Locked credchips this person could chop, with what's on each and their cut; empty unless they're a netrunner the player can tell. */
@@ -77,8 +83,14 @@ export interface PersonCardView {
   log: LogLineView[];
 }
 
+/** The People overlay's two lists: who's here, and everyone the player has met or knows by name. */
+export type PeopleTab = 'here' | 'known';
+/** A person's card: what's been said, or who they are. */
+export type CardTab = 'talk' | 'profile';
+
 export interface PeopleView {
   count: string;
+  tab: PeopleTab;
   /** "Charisma Lv 2 · 7/91 XP", "Valentinos −28"… */
   reputation: string[];
   rows: PersonRowView[];
@@ -97,7 +109,10 @@ export interface PeopleElements extends OverlayElements {
   cardStance: HTMLElement;
   cardKicker: HTMLElement;
   cardFacts: HTMLButtonElement;
+  cardTabs: HTMLElement;
+  cardProfile: HTMLElement;
   cardWeb: HTMLElement;
+  tabs: HTMLElement;
   cardLog: HTMLElement;
   cardPicker: HTMLElement;
   cardCommands: HTMLElement;
@@ -113,12 +128,13 @@ export interface PeopleHandlers {
   onGift(id: string, itemId: string): void;
   /** The player asked a person to chop a locked credchip. */
   onChop(id: string, chipId: string): void;
-  onAsk(id: string, aboutId: string): void;
   onQuestion(id: string, fact: string): void;
   /** The player made a move of the heart: asked them out, took them out, asked to make it official, ended it. */
   onHeart(id: string, move: HeartMove): void;
-  /** The facts line was tapped: what's known of them and their web unfold, or fold away. */
-  onToggleFacts(): void;
+  /** A tab of the card was picked (the facts line is the way to the profile too). */
+  onCardTab(tab: CardTab): void;
+  /** A list was picked: who's here, or everyone known. */
+  onTab(tab: PeopleTab): void;
   /** A day on the roster was tapped, with the player's boss: on it, or off it. */
   onRoster(id: string, day: number): void;
   onPicker(picker: Picker): void;
@@ -127,10 +143,12 @@ export interface PeopleHandlers {
 export const STANCE_LABEL: Record<Stance, string> = STANCES;
 
 /**
- * Who's here, over the map: a list of everyone at the place the player is, and one person's
- * card: who they are as far as the player knows (the facts line unfolds the rest, and their
- * web), the conversation so far, and one row of things to do, each unfolding its choices
- * only when tapped. The game decides who is here and what comes of it.
+ * Who's here, over the map: a list of everyone at the place the player is (or, on the Known
+ * tab, everyone they've met or know by name), and one person's card: who they are as far as
+ * the player knows, the conversation so far on its Talk tab and all that's known of them on
+ * its Profile tab (how they stand, each fact, what they remember of the player, their web),
+ * and one row of things to do, each unfolding its choices only when tapped. The game decides
+ * who is here and what comes of it.
  */
 export class People {
   readonly overlay: MapOverlay;
@@ -147,18 +165,25 @@ export class People {
       if (row?.dataset.id) handlers.onSelect(row.dataset.id);
     });
     els.back.addEventListener('click', () => handlers.onSelect(null));
-    els.cardFacts.addEventListener('click', () => handlers.onToggleFacts());
+    els.cardFacts.addEventListener('click', () => handlers.onCardTab('profile'));
+    els.cardTabs.addEventListener('click', (e) => {
+      const tab = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-cardtab]')?.dataset.cardtab : undefined;
+      if (tab === 'talk' || tab === 'profile') handlers.onCardTab(tab);
+    });
+    els.tabs.addEventListener('click', (e) => {
+      const tab = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-tab]')?.dataset.tab : undefined;
+      if (tab === 'here' || tab === 'known') handlers.onTab(tab);
+    });
     // Everything on the card goes through one listener: commands, the choices they unfold, names in the web.
     els.card.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
-      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-about], [data-item], [data-chip], [data-action], [data-heart], [data-open], [data-day]');
+      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-item], [data-chip], [data-action], [data-heart], [data-open], [data-day]');
       if (!button) return;
-      const { cmd, approach, fact, about, item, chip, action, heart, open, id, day } = button.dataset;
+      const { cmd, approach, fact, item, chip, action, heart, open, id, day } = button.dataset;
       if (cmd === 'talk' || cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'heart' || cmd === 'more') handlers.onPicker(cmd);
       else if (heart && id) handlers.onHeart(id, heart as HeartMove);
       else if (approach && id) handlers.onTalk(id, approach);
       else if (fact && id) handlers.onQuestion(id, fact);
-      else if (about && id) handlers.onAsk(id, about);
       else if (item && id) handlers.onGift(id, item);
       else if (chip && id) handlers.onChop(id, chip);
       else if (day !== undefined && id) handlers.onRoster(id, Number(day));
@@ -173,8 +198,11 @@ export class People {
     els.reputation.replaceChildren(...view.reputation.map((line) => el('span', 'people-rep-item', line)));
     els.reputation.hidden = view.reputation.length === 0;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'approach', 'fact', 'about', 'item', 'chip', 'action', 'heart', 'open', 'id'].includes(key)) : undefined;
+    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'approach', 'fact', 'about', 'item', 'chip', 'action', 'heart', 'open', 'id', 'tab', 'cardtab'].includes(key)) : undefined;
     const focusedId = active?.dataset.id;
+    // The two lists' tabs, over the list; a card has its own.
+    els.tabs.hidden = Boolean(view.card);
+    els.tabs.replaceChildren(...(['here', 'known'] as const).map((tab) => tabButton(tab === 'here' ? 'Here' : 'Known', { tab }, tab === view.tab)));
     if (view.card) {
       els.list.hidden = true;
       els.empty.hidden = true;
@@ -191,7 +219,7 @@ export class People {
     if (focused) {
       const [key, value] = focused;
       const selector = key === 'id' ? `[data-id="${value}"]` : `[data-${key}="${value}"]${focusedId ? `[data-id="${focusedId}"]` : ''}`;
-      const scope = view.card ? els.card : els.list;
+      const scope = view.card ? els.card : key === 'tab' ? els.tabs : els.list;
       (scope.querySelector<HTMLElement>(selector) ?? (view.card ? els.back : null))?.focus({ preventScroll: true });
     }
   }
@@ -202,16 +230,31 @@ export class People {
     els.cardStance.textContent = card.stanceLabel;
     els.cardStance.className = `stance is-${card.stance}`;
     els.cardKicker.textContent = card.kicker;
+    const profile = card.tab === 'profile';
+    // On the Talk tab, one line of what's known; the Profile has all of it.
+    els.cardFacts.hidden = profile;
     els.cardFacts.replaceChildren(el('span', 'person-facts-text', card.facts));
-    els.cardFacts.classList.toggle('is-open', card.factsOpen);
-    els.cardFacts.setAttribute('aria-expanded', String(card.factsOpen));
-    // The web unfolds with the facts and stands in for the transcript while it's open, so the card never grows and the commands stay put.
-    els.cardWeb.hidden = !card.factsOpen;
-    els.cardWeb.replaceChildren(card.web.length ? web(card) : emptyWeb(card.webHint));
+    els.cardTabs.replaceChildren(tabButton('Talk', { cardtab: 'talk' }, !profile), tabButton('Profile', { cardtab: 'profile' }, profile));
+    // The profile stands in the transcript's place, so the card never grows and the commands stay put.
+    els.cardProfile.hidden = !profile;
+    if (profile) {
+      const rows = el('dl', 'person-profile-rows');
+      for (const { label, value } of card.profile) rows.append(el('dt', 'person-profile-label', label), el('dd', 'person-profile-value', value));
+      if (card.unknown.length) rows.append(el('dt', 'person-profile-label', 'Unknown'), el('dd', 'person-profile-value is-unknown', card.unknown.join(' · ')));
+      if (card.between.length) {
+        rows.append(el('dt', 'person-profile-label', 'Between you'));
+        const list = el('dd', 'person-profile-value');
+        list.append(...card.between.map((line) => el('span', 'person-profile-line', line)));
+        rows.append(list);
+      }
+      els.cardProfile.replaceChildren(rows, els.cardWeb);
+      els.cardWeb.classList.toggle('is-empty', !card.web.length);
+      els.cardWeb.replaceChildren(el('p', 'person-profile-label person-web-title', 'Knows'), card.web.length ? web(card) : emptyWeb(card.webHint));
+    }
 
     // Your lines after a prompt mark; theirs bare (the card says who they are).
     const { cardLog } = els;
-    cardLog.hidden = card.factsOpen;
+    cardLog.hidden = profile;
     cardLog.replaceChildren(
       ...(card.log.length
         ? card.log.map((line) => {
@@ -231,8 +274,7 @@ export class People {
     if (card.here && card.picker === 'talk') {
       picker.push(...card.approaches.map((a) => chip(a.label, { id: card.id, approach: a.id }, 'person-chip')));
     } else if (card.here && card.picker === 'ask') {
-      if (card.questions.length) picker.push(...card.questions.map((q) => chip(q.label, { id: card.id, fact: q.fact }, 'person-chip')));
-      if (card.askAbout.length) picker.push(el('span', 'person-gifts-label', 'About'), ...card.askAbout.map((a) => chip(a.name, { id: card.id, about: a.id }, 'person-chip')));
+      picker.push(...card.questions.map((q) => chip(q.label, { id: card.id, fact: q.fact }, 'person-chip')));
     } else if (card.here && card.picker === 'give') {
       picker.push(...card.gifts.map((g) => chip(g.count > 1 ? `${g.name} ×${g.count}` : g.name, { id: card.id, item: g.id }, 'person-gift')));
     } else if (card.here && card.picker === 'chop') {
@@ -264,7 +306,7 @@ export class People {
     const commands: Array<{ cmd: string; label: string; active?: boolean; quiet?: boolean }> = card.here
       ? [
           { cmd: 'talk', label: 'Talk', active: card.picker === 'talk' },
-          ...(card.questions.length || card.askAbout.length ? [{ cmd: 'ask', label: 'Ask', active: card.picker === 'ask' }] : []),
+          ...(card.questions.length ? [{ cmd: 'ask', label: 'Ask', active: card.picker === 'ask' }] : []),
           ...(card.gifts.length ? [{ cmd: 'give', label: 'Give', active: card.picker === 'give' }] : []),
           ...(card.chops.length ? [{ cmd: 'chop', label: 'Chop', active: card.picker === 'chop' }] : []),
           ...(card.work ? [{ cmd: 'work', label: 'Work', active: card.picker === 'work' }] : []),
@@ -365,6 +407,14 @@ function emptyWeb(hint: string): HTMLElement {
   const box = el('div', 'person-web-empty');
   box.append(el('span', 'person-web-empty-ring'), el('p', 'person-web-hint', hint));
   return box;
+}
+
+/** A tab: a list's, or a card's. */
+function tabButton(label: string, data: Record<string, string>, on: boolean): HTMLButtonElement {
+  const button = chip(label, data, `people-tab${on ? ' is-on' : ''}`);
+  button.setAttribute('role', 'tab');
+  button.setAttribute('aria-selected', String(on));
+  return button;
 }
 
 function chip(label: string, data: Record<string, string>, className = 'person-chip'): HTMLButtonElement {

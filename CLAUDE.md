@@ -56,6 +56,23 @@ them, about where they are on the real map, with different places, streets and w
   its kind nearest the middle of its `area` when it has one, else of its district; one with
   `categories` takes only a storefront of the first of them the district has, and none is
   built without one. A new real place goes in with the `area` the wiki gives it.
+- A storefront's name: a chain's outlet goes by its sign (and its neighborhood when the
+  template has `{area}`), a real one by its landmark, and every other one makes its own up
+  (`ownName` in `src/engine/buildings.ts`, from `STOREFRONT_NAMES` in `src/data/storefronts.ts`,
+  `BuildingContent.shopNames`): a word of a flavor its neighborhood names shops in (`where`,
+  by neighborhood, else district: Japanese in Japantown, Cantonese in Little China, Kabuki's
+  own East Asian and street mix, Spanish in Heywood and most of Santo Domingo, Kreyòl and
+  French in Pacifica, the docks' and the plants' in Northside and the Arasaka Waterfront,
+  glass and money downtown and up the hills), with a noun for what it sells (`kinds`, or the
+  flavor's own tongue: "Izakaya Hotaru", "Farmacia La Paloma"), or, where the template has
+  `{area}`, its neighborhood and a plain noun ("Kabuki Noodles", "Glen Diner"). Never longer
+  than `SHOP_NAME`, a landmark's or a place's name, or another storefront's. The template,
+  the neighborhood and the business are still drawn on the buildings' stream in the same
+  draws as ever; the made-up part is drawn after them on the shop's own (`seed:shop:<id>`), so
+  a name never moves a building or changes what it sells, and `24/7 ` stays on the names that
+  had it (`allHours`). Every word is checked against the wiki like any name, and the lists it
+  was checked against are in `tests/fixtures/canon-places.txt`; a new word goes through the
+  same check.
 - Hospitals are building landmarks of the `hospital` business (never drawn at random:
   `where: []`), one a district but the Badlands, in a clinic, a pharmacy, a laundromat or a
   bodega (`HOSPITAL_GROUND`: never a storefront anyone hangs out at, and with the same number
@@ -293,26 +310,28 @@ it needs no generator bump. The pieces:
   `saidBy`: asked one again, they say they've said it, `LINES.repeat`; known any other way,
   they just answer); and
   the `log` of what was said, the last `LOG_CAP` lines) and `links` (what the player knows
-  of a tie, keyed `a|b`; `kind` null for "connected somehow", `'none'` for "asked, and
-  they'd never heard of them"). The UI shows a person only through `Game.describe` (name
+  of a tie, keyed `a|b`; `kind` null for "connected somehow", `'none'` for "they'd never
+  heard of them", in an older save that could ask). The UI shows a person only through `Game.describe` (name
   or their look, and the facts known), `standingWith` (web) and `conversation`, never the
   `Person` or the population's ties directly; new ways of finding things out go through
   `learnOf`, `learnFact` and `learnLink` (`Game.look` for what's plain to see, the topics
-  in `talk`, `Game.ask` and `Game.askFact`), and everything said goes through `logLine`. The
-  Ask picker offers only `Game.worthAsking` to ask someone about (at most `ASK_ABOUT`, from
-  what the player knows: seen with them, their family name, here with them, talked to lately,
-  and none already asked), never everyone known, which grows with every name learned. A
-  tie that has changed since (told of a couple, a wedding, a split, a falling out or a
+  in `talk` and `Game.askFact`), and everything said goes through `logLine`. The Ask picker
+  asks someone about themselves only: there's no asking one person about another (it went,
+  as more odd than useful; the web fills from being seen together, names dropped and the
+  news). Someone's sex is plain to see from the first look (`sexOf` in people.ts: a woman's
+  female, a man's male, someone who goes by they either, on its own stream; `Description.sex`,
+  the Profile's Sex row). A tie that has changed since (told of a couple, a wedding, a split, a falling out or a
   making up) is `relearnLink`, which replaces what the player knew.
 - People remember what the player did, thing by thing (`src/engine/memory.ts`): a `Memory`
   is a `kind` (`MemoryKind`: wronged, heard, saw, settled, gift, goodWord, hired, promoted,
-  quit, fired, chopped, asked), when, `about` whom, `what`, an `amount`, how many `times` and
+  quit, notice, fired, chopped, date, dumped, cheated; `MEMORY_KINDS`, which a save is read
+  by, so a kind the game drops is forgotten), when, `about` whom, `what`, an `amount`, how many `times` and
   how often it's been `said`, kept per person in `SocietyState.memories` (saved under
   `society`), with the numbers in `SOCIETY.memory` (days each kind lasts, its weight, how
   often it's brought up, the `cap`). The incident cascade writes what was done, seen and
   heard (from `heardAt` grudge up); `Game`'s private `remember` writes the rest (gifts, a
   good word through `passGoodWord` to the people closest to whoever got one, work, chops,
-  questions, someone collecting). `Game.talk` brings up `recall`'s pick (`memory.recall` of
+  dates, someone collecting). `Game.talk` brings up `recall`'s pick (`memory.recall` of
   the time) from `LINES.memory`, filled by `memoryVars` (`mem`, `mem<Kind>`, `memWho`,
   `memWord`, `memAgo`, `memTook`, `memItem`, `memTwice`…); a grievance (`GRIEVANCES`) is all
   they say. What memory changes goes through it too: a boss with `quit` or `fired` on their
@@ -320,8 +339,8 @@ it needs no generator bump. The pieces:
   to remember is another `MemoryKind` with its numbers and lines (the dialogue test pins
   every memory line, and every news line, to exactly one kind).
 - `src/engine/skills.ts` is a skill that grows with use (experience, levels, a bonus per
-  level); charisma is the one so far (`src/data/skills.ts`), applied in `Game.talk`,
-  `gift` and `ask`. A new skill is another `SkillRules` in `src/data/skills.ts`, a state on
+  level); charisma (`src/data/skills.ts`), applied in `Game.talk`, `gift` and `askFact`, and
+  the two fighting skills, Street Brawler and Toughness (see Fighting). A new skill is another `SkillRules` in `src/data/skills.ts`, a state on
   `Game`, a save field and an event.
 - `src/engine/dialogue.ts` puts lines together from fragments in `src/data/dialogue.ts`
   (our own words; slang from the wiki's Streetslang page, by voice through the `lexicon`).
@@ -371,7 +390,7 @@ it needs no generator bump. The pieces:
   `LINES.approaches` for the player's line and the liked/flat/disliked reply). The
   speaker's `touchy`/`keen` vars let answers show it. A new thing to react to is another list
   there and a pool of lines.
-- After every exchange (`talk`, `ask`, `askFact`, `gift`, `insult`, `rob`, `chop`,
+- After every exchange (`talk`, `askFact`, `gift`, `insult`, `rob`, `chop`,
   `askForWork`, `quit`, `askOut`, `date`, `makeOfficial`, `endRomance`) `Game`'s private `noteFeedback` writes a `note` on the record (a
   `LogEntry` with `who: 'note'` and a `tone`): the reasons (`LINES.notes`, a reaction's
   why), rapport and grudge moved, charisma XP or the level, and the stance if it changed,
@@ -415,9 +434,7 @@ it needs no generator bump. The pieces:
   `newsWith` the other one in it, `newsGang` the gang's name, `newsWord`, `newsAgo`,
   `newsTook`, `newsWon`, `newsHurt`, `newsKilled`) for the `news` topic, whose lines in
   `src/data/dialogue.ts` fit by kind and role; telling it is an introduction to whoever it
-  was about, and teaches the player the tie as it is now (or the death). Asked about someone
-  dead, their people say so (`LINES.ask.dead`); about an ex, they're done with them
-  (`LINES.ask.ex`). `scenesAt` pairs the people at a spot by their ties
+  was about, and teaches the player the tie as it is now (or the death). `scenesAt` pairs the people at a spot by their ties
   (and a ganger on their turf with the help, who gets the `leanedOn` side of it, rivals with
   each other) with a phrase from
   `LIFE.scenes`, drawn for the place, the day and the three-hour block; it's `Presence.scene`,
@@ -485,15 +502,20 @@ it needs no generator bump. The pieces:
   ends it. Lines are `LINES.romance`, `LINES.approaches.flirt`, `LINES.you.askOut`/`date`/
   `official`/`endIt`, and memory lines for `date`, `dumped` and `cheated`.
 - `src/ui/people.ts` is the overlay (a `MapOverlay` off the panel's **People** action); the
-  game decides who is here and what the actions do. A person's card is deliberately spare:
-  a header whose facts line unfolds (`factsOpen`) into everything known and their web, in
-  the transcript's place; the transcript (your lines after a `›`, theirs bare, the notes
-  small and colored by tone); one command row (Talk, which unfolds the ways in, Ask, Give,
+  game decides who is here and what the actions do. Its list has two tabs (`PeopleTab`):
+  **Here**, and **Known**, everyone the player has met or knows by name, the latest dealt
+  with first (`Game.acquaintances`), any of them opening their card here or not. A person's
+  card is deliberately spare: a header with one line of what's known; two tabs (`CardTab`),
+  **Talk**, the transcript (your lines after a `›`, theirs bare, the notes small and colored
+  by tone), and **Profile**, in the transcript's place (the facts line opens it too): how they
+  stand (stance, rapport, ♥, grudge), how often you've talked, their sex, each fact known as a
+  label and a value (`profileOf` in `main.ts`), what's still unknown, what they remember of the player
+  (`Game.between`, a few words a memory) and their web; one command row (Talk, which unfolds the ways in, Ask, Give,
   Chop, Work, ♥ for the heart's moves, `⋯` for the hostile acts (insult, rob, attack), each only when it can be
   done; ♥ shows on the card of the one the player is seeing even when they're not here, to
   end it by message)
   whose choices (`Picker`) unfold only while open; keep new things to do with a person
-  behind a command, not as another row, and new things to know behind the facts line. Lines
+  behind a command, not as another row, and new things to know on the Profile tab. Lines
   a person says use the `talk` tone, which the feed skips while the card is open.
 
 ## Fighting
@@ -503,7 +525,7 @@ move at once and both land together, the player against the clock:
 
 - `src/engine/combat.ts` is the engine, pure: `resolveBeat(state, yours, theirs, ctx)` moves
   first (a step in or out, a run), then cover and reloads, then the attacks at the range left,
-  then the player's quickhack, then whatever burns; `theirMove` is what someone does (a blade
+  then the player's quickhack, then a knockout, then whatever burns; `theirMove` is what someone does (a blade
   closes in, a gun finds its range or ducks to reload, the scared run or back down when it
   turns on them), `talkOdds` the odds of talking them down, `hitChance`/`damageOf` the dice.
   The moves are `Move`: attack, advance (close in), back (off), cover, hack, heal (a med:
@@ -543,8 +565,27 @@ move at once and both land together, the player against the clock:
   corpo, whose Trauma Team gets them out alive, with heat; else `won`, laid up for
   `hurtDays` in `LifeState.hurt`, in the hospital nearest home, which the result names), the
   player down (`lost`: robbed of some cash, left at 1; on a Trauma Team plan, picked up
-  instead, see Medicine),
+  instead, see Medicine), someone knocked out cold (`out`, `knocked`; below),
   `fled` (out of the building), `escaped`, or `talked`. A Second Heart gets the player up once.
+- Knockouts: a blow from fists or anything blunt (`COMBAT.knockout.kinds`, the wiki's blunt
+  weapons being its non-lethal ones) that leaves someone standing can knock them out cold,
+  by `knockoutOdds`: its share of their health past `least`, more the more worn down they
+  are, times the attacker's `Edge.ko` and the target's `Edge.steady`, capped at `most`;
+  `resolveBeat` says who in `out` (the player's blow first). Them out (`out`): not hurt, not
+  dead, they lie where they fell for `knockout.minutes` (`Game`'s `outColdState`, not
+  saved), listed by `peopleHere` as "out cold" wherever their day would have them, past
+  talking to (`Game.outCold`; `isHere` refuses them, the card shows no commands). The player
+  out (`knocked`): robbed like `lost`, but their health is what it was, and no Trauma Team
+  comes for it. How steady someone is is `COMBAT.steady` (the brave and gangers steadier).
+- The fighting skills grow with use (`COMBAT.skills`, `SkillRules` in `src/data/skills.ts`;
+  the XP is `COMBAT.training`, trained by `Game`'s private `trainFrom` after every beat):
+  Street Brawler (the wiki's 2077 skill for fists and blunt weapons), for every blow the
+  player lands with fists or Gorilla Arms (a club less) and more for a knockout, adds its
+  bonus to their melee damage, a quarter of it to their aim, and all of it to `ko`;
+  Toughness (ours), for every blow taken (more for fists and clubs) and for every fight
+  walked away from, divides the player's `steady`. Both are `Game.brawler()`/`toughness()`,
+  saved as `brawler` and `toughness`, the `skillChanged` event, and rows in the status
+  drop-down.
   Every line is `COMBAT.lines`, by what happened, filled with `fightVars` (who, their
   pronouns and the verbs that go with them, the arms on both sides); a named subject takes
   the singular verb, so `{s}`/`{es}`/`{ies}`/`{is}`/`{has}` only follow `{he}`. A tell
@@ -725,7 +766,7 @@ building or at a place (the target view keeps its own, with the district, since 
 elsewhere). The energy bar has no words: one line under it (`src/ui/status.ts`, filled by
 `showStatus` in `main.ts` on every tick) says the figure, the level, when the next point
 comes, and anything the matter (drunk, masked, a shift on elsewhere and the walk there, else the job's rung); tapping it unfolds
-everything else about the player: experience, charisma, eddies and the bank, the pass, the
+everything else about the player: experience, charisma, the fighting skills, eddies and the bank, the pass, the
 job, the condition, the mask, every reputation, the map count, the weather, the date, and
 last the **Settings** link (the drop-down's `foot`, which `StatusPanel.render` keeps at the
 bottom). Anything new the player should know about themselves goes in there as a row, not
@@ -774,7 +815,9 @@ npm run build
   `tests/save.test.ts`. The fingerprint test fails as a reminder.
 - Saves also point at buildings, so `tests/save.test.ts` pins every building's id, kind,
   footprint and height. A building's name, category and business can change freely (each
-  part of a name takes one random draw); moving or resizing buildings needs the same bump.
+  part of a name takes one random draw, and the words of a storefront's own name are drawn
+  on its own stream, so `src/data/storefronts.ts` can grow as it likes; a style's templates
+  keep their number and placeholders); moving or resizing buildings needs the same bump.
 - `TRAVEL.timeScale` in `src/data/travel.ts` is 60 while testing; 1 is real time.
 - Two builds live on GitHub Pages: the stable release at the root
   (https://wh173-0u7.github.io/Cyberpunk-Txt-RPG/, from `main`) and the beta under `/beta/`

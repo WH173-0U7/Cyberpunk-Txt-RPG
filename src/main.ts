@@ -15,7 +15,7 @@ import { LIFE } from './data/life';
 import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
-import { Game, type Presence, streetSpot } from './engine/game';
+import { Game, type Description, type PersonStanding, type Presence, streetSpot } from './engine/game';
 import type { JobStatus } from './engine/jobs';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu, Quality } from './engine/food';
@@ -50,7 +50,7 @@ import { Inventory, type ChromePageView, type InventoryItemView, type InventoryV
 import { MapOverlay } from './ui/overlay';
 import { stripMarkup } from './ui/markup';
 import { CityMap, type Target } from './ui/map';
-import { People, STANCE_LABEL, type PersonAction, type Picker } from './ui/people';
+import { People, STANCE_LABEL, type CardTab, type PeopleTab, type PersonAction, type Picker } from './ui/people';
 import { PlacePanel, type ActionId, type PanelAction, type PanelView } from './ui/place';
 import { saveSlot } from './ui/save-slot';
 import { Settings } from './ui/settings';
@@ -324,7 +324,10 @@ const people = new People(
     cardStance: $('#person-stance'),
     cardKicker: $('#person-kicker'),
     cardFacts: $<HTMLButtonElement>('#person-facts'),
+    cardTabs: $('#person-tabs'),
+    cardProfile: $('#person-profile'),
     cardWeb: $('#person-web'),
+    tabs: $('#people-tabs'),
     cardLog: $('#person-log'),
     cardPicker: $('#person-picker'),
     cardCommands: $('#person-commands'),
@@ -338,13 +341,13 @@ const people = new People(
   {
     onSelect: (id) => {
       personShown = id;
-      factsOpen = false;
+      cardTab = 'talk';
       picker = null;
       showPeople();
     },
     onQuestion: (id, fact) => {
       lastActivity = performance.now();
-      factsOpen = false;
+      cardTab = 'talk';
       game.askFact(id, fact as Question, Date.now());
     },
     onRoster: (id, day) => {
@@ -355,10 +358,16 @@ const people = new People(
       game.setRoster(id, days.includes(day) ? days.filter((d) => d !== day) : [...days, day], now);
       showPeople();
     },
-    onToggleFacts: () => {
-      // Unfolding what's known folds any command's choices away, so the web has the card to itself.
-      factsOpen = !factsOpen;
-      if (factsOpen) picker = null;
+    onCardTab: (tab) => {
+      // The profile folds any command's choices away, so it has the card to itself.
+      cardTab = tab;
+      if (tab === 'profile') picker = null;
+      showPeople();
+    },
+    onTab: (tab) => {
+      peopleTab = tab;
+      personShown = null;
+      picker = null;
       showPeople();
     },
     onPicker: (which) => {
@@ -368,36 +377,31 @@ const people = new People(
     onAction: (action, id) => {
       // Insulting or robbing folds the row away again; anything said brings the transcript back over the facts and the web.
       if (action !== 'talk') picker = null;
-      factsOpen = false;
+      cardTab = 'talk';
       actOn(action, id);
     },
     onTalk: (id, approach) => {
       lastActivity = performance.now();
       picker = null;
-      factsOpen = false;
+      cardTab = 'talk';
       game.talk(id, Date.now(), approach as Approach);
     },
     onGift: (id, itemId) => {
       lastActivity = performance.now();
       picker = null;
-      factsOpen = false;
+      cardTab = 'talk';
       game.gift(id, itemId, Date.now());
     },
     onChop: (id, chipId) => {
       lastActivity = performance.now();
       picker = null;
-      factsOpen = false;
+      cardTab = 'talk';
       game.chop(id, chipId, Date.now());
-    },
-    onAsk: (id, aboutId) => {
-      lastActivity = performance.now();
-      factsOpen = false;
-      game.ask(id, aboutId, Date.now());
     },
     onHeart: (id, move) => {
       lastActivity = performance.now();
       picker = null;
-      factsOpen = false;
+      cardTab = 'talk';
       const now = Date.now();
       if (move === 'askOut') game.askOut(id, now);
       else if (move === 'date') game.date(id, now);
@@ -410,8 +414,9 @@ const people = new People(
 );
 /** The person whose card is open, if any: someone here, or anyone the player knows of. */
 let personShown: string | null = null;
-/** Whether what's known of them and their web are unfolded; and which command's choices are. */
-let factsOpen = false;
+/** Which list the People overlay shows, which tab of a card, and which command's choices are unfolded. */
+let peopleTab: PeopleTab = 'here';
+let cardTab: CardTab = 'talk';
 let picker: Picker = null;
 
 const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill') });
@@ -1065,11 +1070,13 @@ function showCondition(status: InebriationStatus): void {
 /**
  * The status drop-down: the line under the energy bar says the energy level, when the next
  * point comes, and anything the matter (drunk, masked, on a shift somewhere); unfolded, the
- * rest: experience, charisma, eddies and the bank, the pass, the job, every reputation, the map.
+ * rest: experience, charisma and the fighting skills, eddies and the bank, the pass, the job, every reputation, the map.
  */
 function showStatus(now: number): void {
   const energy = game.energy(now);
   const charisma = game.charisma();
+  const brawler = game.brawler();
+  const toughness = game.toughness();
   const wallet = game.wallet;
   const drunk = game.inebriation(now);
   const mask = game.masked();
@@ -1100,6 +1107,8 @@ function showStatus(now: number): void {
     { label: 'Trauma Team', value: cover ? `${cover.plan.name} · until ${formatDay(cover.until)}` : 'Not covered' },
     ...(stars ? [{ label: 'NCPD', value: `${stars} · cools in ${formatCountdown((heat.coolAt ?? now) - now)}`, tone: 'bad' as const }] : []),
     { label: 'Charisma', value: `Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP` },
+    { label: 'Street Brawler', value: `Lv ${brawler.level} · ${brawler.xp}/${brawler.xpToNext} XP` },
+    { label: 'Toughness', value: `Lv ${toughness.level} · ${toughness.xp}/${toughness.xpToNext} XP` },
     { label: 'Eddies', value: `€$ ${wallet.eddies} on you${wallet.account ? ` · €$ ${wallet.account} banked` : ''}${wallet.chips ? ` · €$ ${wallet.chips} on chips` : ''}` },
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
@@ -1168,12 +1177,25 @@ function showPeople(): void {
   const how = { seen: 'seen together', told: 'told', asked: 'asked' };
   const nameOf = (id: string, fallback: string) => game.describe(id)?.name ?? fallback;
   const described = shown ? game.describe(shown.id, now) : null;
+  // Everyone met or known by name, for the Known tab: here now, else when last dealt with.
+  const acquainted = peopleTab === 'known' ? game.acquaintances(now) : [];
+  const hereIds = new Set(here.map((p) => p.person.id));
   people.render({
-    count: `${here.length} ${here.length === 1 ? 'person' : 'people'}`,
+    count: peopleTab === 'known' ? `${acquainted.length} known` : `${here.length} here`,
+    tab: peopleTab,
     // The standing lines belong to the list; a card is about one person.
     // What's on the player that people here can see; the rest of their standing is the status drop-down's.
     reputation: shown || !mask ? [] : [`Masked · they see a ${mask.word}, not a face`],
-    rows: here.map(({ person, doing, stance, scene }) => {
+    rows: peopleTab === 'known'
+      ? acquainted.map(({ person, name, stance, job, dead, last }) => ({
+          id: person.id,
+          name,
+          sub: [gangOf(person.gang) ? `${gangOf(person.gang)} colors` : undefined, person.gang ? undefined : job].filter(Boolean).join(' · '),
+          doing: dead ? 'Dead' : hereIds.has(person.id) ? 'Here' : last ? `Last ${agoText(now - last)}` : 'Heard of',
+          stance,
+          stanceLabel: STANCE_LABEL[stance],
+        }))
+      : here.map(({ person, doing, stance, scene }) => {
       const about = game.describe(person.id);
       return {
         id: person.id,
@@ -1185,7 +1207,10 @@ function showPeople(): void {
         stanceLabel: STANCE_LABEL[stance],
       };
     }),
-    empty: 'Nobody here right now. People keep hours: workers by day, regulars in the evening, residents at night.',
+    empty:
+      peopleTab === 'known'
+        ? 'Nobody yet. Anyone you talk to, or learn the name of, is kept here.'
+        : 'Nobody here right now. People keep hours: workers by day, regulars in the evening, residents at night.',
     card:
       shown && standing && described
         ? {
@@ -1195,16 +1220,19 @@ function showPeople(): void {
             stanceLabel: STANCE_LABEL[standing.stance],
             kicker: [gangOf(shown.gang) && described.named ? `${gangOf(shown.gang)} colors` : undefined, present ? withCompany(present.doing, present.scene) : described.facts.dead ? 'Dead' : 'Not here'].filter(Boolean).join(' · '),
             facts: described.lines.length ? described.lines.join(' · ') : described.named ? 'That\'s all you know.' : 'Nothing known yet. Talk, watch, ask.',
-            factsOpen,
-            here: Boolean(present),
+            tab: cardTab,
+            profile: profileOf(standing, described),
+            // What's still to find out: the questions not yet answered.
+            unknown: (Object.entries(LINES.questions) as Array<[Question, { label: string }]>).filter(([fact]) => !standing.knowledge.facts.includes(fact)).map(([, q]) => q.label),
+            between: game.between(shown.id, now),
+            // Out cold, they're here but past talking to.
+            here: Boolean(present) && !game.outCold(shown.id, now),
             web: standing.web.map((link) => ({ id: link.person.id, name: nameOf(link.person.id, link.person.name), label: link.kind ? kinWord(shown, link.kind, link.person) : '?', how: how[link.how] })),
-            webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Ask about people you've met, watch who they keep company with, or get them talking.`,
+            webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Watch who they keep company with, or get them talking.`,
             picker,
             questions: (Object.entries(LINES.questions) as Array<[Question, { label: string }]>)
               .filter(([fact]) => !standing.knowledge.facts.includes(fact))
               .map(([fact, q]) => ({ fact, label: q.label })),
-            // A few worth asking about (seen with them, family by the name, here with them, talked to lately), never everyone known.
-            askAbout: present ? game.worthAsking(shown.id, now).map((p) => ({ id: p.id, name: p.name })) : [],
             gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
             // A hot chip can be put to a netrunner the player can tell is one; the label says what it holds and what they'd keep.
             chops: present && game.canChop(shown.id) ? hot.map((c) => ({ id: c.id, label: `€$ ${c.balance ?? 0} chip · cut ${chipCut(c.balance ?? 0, MONEY)}` })) : [],
@@ -1218,6 +1246,49 @@ function showPeople(): void {
           }
         : null,
   });
+}
+
+/** A person's profile, label and value: how they stand with the player, how much has passed, and each thing known of them. */
+function profileOf(standing: PersonStanding, described: Description): Array<{ label: string; value: string }> {
+  const { standing: s, stance } = standing;
+  const rows: Array<{ label: string; value: string }> = [
+    { label: 'Standing', value: [STANCE_LABEL[stance], `rapport ${Math.round(s.rapport)}`, (s.spark ?? 0) >= 1 ? `♥ ${Math.round(s.spark ?? 0)}` : '', s.grudge >= 1 ? `grudge ${Math.round(s.grudge)}` : ''].filter(Boolean).join(' · ') },
+  ];
+  const met = [s.talks ? (s.talks === 1 ? 'Once' : `${s.talks} times`) : '', s.gifts ? `${s.gifts} ${s.gifts === 1 ? 'gift' : 'gifts'}` : ''].filter(Boolean).join(' · ');
+  if (met) rows.push({ label: 'Talked', value: met });
+  const f = described.facts;
+  const known = new Set(Object.values(f));
+  // Seeing the player comes first in what's known, and isn't one of the facts.
+  const heart = described.lines.find((line) => !known.has(line));
+  if (heart) rows.push({ label: 'With you', value: heart });
+  const facts: Array<[keyof typeof f, string, RegExp?]> = [
+    ['dead', 'Died', /^Died /],
+    ['job', 'Work'],
+    ['age', 'Age'],
+    ['home', 'Home', /^Lives at /],
+    ['likes', 'Eats', /^Likes /],
+    ['drinks', 'Drinks', /^Drinks /],
+    ['hates', 'Hates', /^Hates /],
+    ['type', 'Type'],
+    ['dream', 'Wants'],
+    ['nature', 'Nature'],
+  ];
+  for (const [fact, label, prefix] of facts) {
+    // Plain to see, from the first look.
+    if (fact === 'age') rows.push({ label: 'Sex', value: described.sex });
+    const value = f[fact];
+    if (value) rows.push({ label, value: prefix ? value.replace(prefix, '') : value });
+  }
+  return rows;
+}
+
+/** How long ago something was, on the phone's clock: "just now", "12 min ago", "3 h ago", "2 days ago". */
+function agoText(ms: number): string {
+  const minutes = ms / 60_000;
+  if (minutes < 2) return 'just now';
+  if (minutes < 60) return `${Math.round(minutes)} min ago`;
+  if (minutes < 60 * 36) return `${Math.round(minutes / 60)} h ago`;
+  return `${Math.round(minutes / 1440)} days ago`;
 }
 
 /** The week at the job someone gives the player, a chip a day: whether the player is on it. */
@@ -1419,6 +1490,8 @@ function wire(g: Game): void {
     queueSave();
   });
 
+  g.events.on('skillChanged', () => queueSave());
+
   g.events.on('youChanged', () => {
     if (settings.overlay.isOpen) showSettings();
     queueSave();
@@ -1517,7 +1590,7 @@ document.addEventListener('keydown', (event) => {
   else if (event.key === 'Escape' && people.overlay.isOpen && personShown) {
     const was = personShown;
     personShown = null;
-    factsOpen = false;
+    cardTab = 'talk';
     picker = null;
     showPeople();
     (document.querySelector<HTMLElement>(`#people-list [data-id="${was}"]`) ?? $('#people-close')).focus({ preventScroll: true });

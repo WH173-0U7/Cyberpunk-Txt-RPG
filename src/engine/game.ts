@@ -13,7 +13,7 @@ import { drink, freshInebriation, inebriationStatus, type InebriationRules, type
 import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobRules, type JobState, type JobStatus, type Ladder, type Rung, type ShiftChoice, type ShiftEventKind } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
-import { allHours, buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { allHours, buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
@@ -28,7 +28,6 @@ import {
   heardFrom,
   knowledgeOf,
   knownPeople,
-  knowsOf,
   learnFact,
   learnLink,
   learnOf,
@@ -80,9 +79,6 @@ import type {
 } from './types';
 
 /** The fog lifts in square cells this many map units across (a couple of building widths). */
-/** The most people the Ask picker offers to ask someone about. */
-export const ASK_ABOUT = 6;
-
 export const CELL = 2;
 export const CELLS = Math.ceil(WORLD / CELL);
 /**
@@ -181,6 +177,8 @@ export interface Description {
   facts: Partial<Record<Fact, string>>;
   /** The same, in order, for reading out. */
   lines: string[];
+  /** Their sex, plain to see ("Female", "Male · goes by they"). */
+  sex: string;
 }
 
 const HOUR = 3_600_000;
@@ -261,6 +259,11 @@ export class Game {
   readonly population: Population;
   private society: SocietyState;
   private charismaState: SkillState;
+  /** The fighting skills: Street Brawler (blows landed bare-handed) and Toughness (blows taken). */
+  private brawlerState: SkillState;
+  private toughnessState: SkillState;
+  /** Whoever's been knocked out cold, till when and where they lie (not saved: they come to). */
+  private readonly outColdState = new Map<string, { until: number; spot: Spot }>();
   /** The jobs the player holds: the main one, and maybe a side gig whose hours don't clash with it. */
   private jobs: JobState[];
   /** Shifts worked in each line of work (by the ladder's key), the experience a new job starts higher with. */
@@ -312,6 +315,8 @@ export class Game {
     applyLife(this.population, this.life);
     this.society = progress?.society ? { ...freshSociety(), ...copyOf(progress.society) } : freshSociety();
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
+    this.brawlerState = progress?.brawler ? { ...progress.brawler } : freshSkill();
+    this.toughnessState = progress?.toughness ? { ...progress.toughness } : freshSkill();
     // Saves from before the player said otherwise go by they.
     this.you = progress?.you ? { ...progress.you } : { pronouns: 'they' };
     // Implants the game no longer has are gone, and one fitted twice is fitted once.
@@ -1317,7 +1322,7 @@ export class Game {
     const armed = Boolean(drawWeapon(this.items, gear.arms)?.gun);
     const result = resolveBeat(state, move, theirs, {
       you: this.yourEdge(state.you),
-      them: { ...NO_EDGE, smart: state.them.arm.tech === 'Smart' },
+      them: { ...NO_EDGE, smart: state.them.arm.tech === 'Smart', steady: this.steadyOf(person) },
       ...(chosen ? { hack: { id: chosen.id, ram: chosen.ram, effect: gear.hacks.hacks[chosen.id]!.effect } } : {}),
       ...(dose ? { med: { heal: dose.med.heal, ...(dose.med.regen ? { regen: dose.med.regen } : {}) } } : {}),
       indoors: f.indoors,
@@ -1347,6 +1352,7 @@ export class Game {
       if (e.who === 'you' && (e.what === 'hit' || e.what === 'hack') && s.them.hp <= 0 && !finisher) finisher = e.what === 'hack' ? 'hack' : state.you.arm.cls;
     }
     if (s.them.hp <= 0 && !finisher) finisher = 'hack';
+    this.trainFrom(result.events, state.you.arm.cls);
     // How it stands: someone down, someone gone, or talked out of it.
     if (s.you.hp <= 0 && !f.revived && this.fitted.some((x) => combat.chrome[x.id]?.revive)) {
       f.revived = true;
@@ -1357,6 +1363,8 @@ export class Game {
     const lethal = !this.lethalOn ? 0 : finisher === 'hack' ? combat.hackLethal : (combat.classes[finisher ?? 'fists']?.lethal ?? 0);
     if (s.them.hp <= 0) this.endFight(person, lethal, rng, vars, now);
     else if (s.you.hp <= 0) this.endFight(person, 0, rng, vars, now, 'lost');
+    else if (result.out === 'them') this.endFight(person, 0, rng, vars, now, 'out');
+    else if (result.out === 'you') this.endFight(person, 0, rng, vars, now, 'knocked');
     else if (result.fled === 'you') this.endFight(person, 0, rng, vars, now, 'fled');
     else if (result.fled === 'them') this.endFight(person, 0, rng, vars, now, 'escaped');
     else if (result.talked) this.endFight(person, 0, rng, vars, now, 'talked');
@@ -1430,8 +1438,9 @@ export class Game {
     } else if (how === 'lost' && this.covered(now)) {
       this.fightLine('youDown', person, vars);
       result = this.pickedUp(this.covered(now)!, person, vars);
-    } else if (how === 'lost') {
-      this.fightLine('youDown', person, vars);
+    } else if (how === 'lost' || how === 'knocked') {
+      // Put down, or knocked out cold: either way they go through the player's pockets.
+      this.fightLine(how === 'knocked' ? 'youOut' : 'youDown', person, vars);
       const share = rng.range(combat.robbed[0], combat.robbed[1]);
       const { money, taken } = takeCash(this.money, Math.round(cash(this.money) * share));
       this.money = money;
@@ -1441,8 +1450,15 @@ export class Game {
         this.fightLine('robbed', person, { ...vars, took: String(taken) });
         this.events.emit('walletChanged', this.wallet);
       }
-      f.state.you.hp = 1;
-      result = `${capitalize(name)} put you down${taken ? `, and took ${taken} €$` : ''}.`;
+      if (how === 'lost') f.state.you.hp = 1;
+      result = how === 'knocked' ? `${capitalize(name)} knocked you out cold${taken ? `, and took ${taken} €$` : ''}. You come to on the floor.` : `${capitalize(name)} put you down${taken ? `, and took ${taken} €$` : ''}.`;
+    } else if (how === 'out') {
+      // Out cold, not hurt past a night's sleep: they lie where they fell for a while, then come to.
+      this.fightLine('theyOut', person, vars);
+      const minutes = rng.int(combat.knockout.minutes[0], combat.knockout.minutes[1]);
+      const spot = this.spot;
+      if (spot) this.outColdState.set(person.id, { until: now + (minutes * 60_000) / this.rules.timeScale, spot });
+      result = `${capitalize(name)} is out cold, and won't come to for a while.`;
     } else if (how === 'fled') {
       result = `You got away from ${name}.`;
     } else if (how === 'escaped') {
@@ -1452,6 +1468,8 @@ export class Game {
     }
     f.over = outcome;
     f.result = result;
+    // Walking away from it on their own feet toughens the player up.
+    if (outcome !== 'lost' && outcome !== 'knocked' && f.state.beat > 0) this.train('toughness', combat.training.toughness.stood);
     f.tell = null;
     this.healthState = { value: Math.max(1, f.state.you.hp), at: now };
     this.drainEnergy(Math.min(4, f.state.beat), now);
@@ -1544,6 +1562,8 @@ export class Game {
     if (e.what === 'outOfReach') return `${who}Reachless`;
     if (e.what === 'jammed') return e.who === 'them' ? 'theyJammed' : null;
     if (e.what === 'freeze') return e.who === 'you' ? 'youFreeze' : null;
+    // A knockout is told as the fight ends.
+    if (e.what === 'out') return null;
     return `${who}${e.what[0]!.toUpperCase()}${e.what.slice(1)}`;
   }
 
@@ -1638,7 +1658,11 @@ export class Game {
       if (sys?.guard && (system !== 'berserk' || close)) guard *= sys.guard;
     }
     aim *= 1 - 0.3 * this.inebriation(Date.now()).severity;
-    return { aim, melee, guard, smart, evade, wound: this.lethalOn ? 1 : combat.nonLethal };
+    // A Street Brawler's blows, bare-handed or with a club or Gorilla Arms: a little surer, harder, and likelier to put someone out.
+    const brawl = kind === 'fists' || kind === 'blunt' ? this.brawler().bonus : 1;
+    aim *= 1 + (brawl - 1) * 0.25;
+    melee *= brawl;
+    return { aim, melee, guard, smart, evade, wound: this.lethalOn ? 1 : combat.nonLethal, ko: brawl, steady: 1 / this.toughness().bonus };
   }
 
   /** The time the player has for a move: the base, and more with reflex chrome (some of it only when they're hurt). */
@@ -2618,13 +2642,25 @@ export class Game {
     const spot = this.spot;
     if (!spot) return [];
     const clock = this.clockAt(now);
-    const present = peopleAt(this.population, this.world, spot, clock, this.rules.food.dishes, this.rules.people.out);
-    const scenes = scenesAt(present.map((p) => p.person), this.population, spot, clock, this.world, this.rules.people.turf, (gang) => this.rules.people.gangs[gang]?.rivals ?? [], this.rules.life, this.world.seed);
+    // Whoever was knocked out lies where they fell till they come to, wherever their day would have them.
+    const cold: string[] = [];
+    const elsewhere = new Set<string>();
+    for (const [id, o] of this.outColdState) {
+      if (!this.outCold(id, now)) continue;
+      if (o.spot.kind === spot.kind && o.spot.id === spot.id) cold.push(id);
+      else elsewhere.add(id);
+    }
+    const present = peopleAt(this.population, this.world, spot, clock, this.rules.food.dishes, this.rules.people.out).filter((p) => !elsewhere.has(p.person.id));
+    for (const id of cold) {
+      const person = this.person(id);
+      if (person && person.diedOn === undefined && !present.some((p) => p.person.id === id)) present.push({ person, doing: 'out cold' });
+    }
+    const scenes = scenesAt(present.map((p) => p.person).filter((p) => !cold.includes(p.id)), this.population, spot, clock, this.world, this.rules.people.turf, (gang) => this.rules.people.gangs[gang]?.rivals ?? [], this.rules.life, this.world.seed);
     return present.map(({ person, doing }) => ({
       person,
-      doing,
+      doing: cold.includes(person.id) ? 'out cold' : doing,
       stance: this.stanceOf(person, now),
-      scene: scenes.get(person.id) ?? null,
+      scene: cold.includes(person.id) ? null : (scenes.get(person.id) ?? null),
     }));
   }
 
@@ -3203,7 +3239,8 @@ export class Game {
     // Seeing the player: that first.
     const romance = this.society.romance?.with === id ? this.society.romance : null;
     const heart = romance ? `${romance.stage === 'together' ? 'Together with you' : 'Seeing you'} · ${romance.dates} ${romance.dates === 1 ? 'date' : 'dates'}` : '';
-    return { name: named ? name : describeStranger(person, people), named, facts, lines: [heart, ...order.map((f) => facts[f])].filter((line): line is string => Boolean(line)) };
+    const sex = `${capitalize(sexOf(person))}${person.pronouns === 'they' ? ' · goes by they' : ''}`;
+    return { name: named ? name : describeStranger(person, people), named, facts, lines: [heart, ...order.map((f) => facts[f])].filter((line): line is string => Boolean(line)), sex };
   }
 
   /** Someone's type, as the card says it: whom they're drawn to, what wins them over, the look they like. */
@@ -3213,6 +3250,61 @@ export class Game {
     if (!who) return this.rules.lines.romance.notLooking;
     const style = heart.style ? this.rules.gear.styleLabels[heart.style] : '';
     return [`Into ${who}`, this.rules.lines.romance.wants[heart.wants], style ? `Likes ${style}` : ''].filter(Boolean).join(' · ');
+  }
+
+  /**
+   * What someone remembers of the player, freshest first, as a profile lists it: a few words
+   * a memory ("Gift: Ramen ×2 · last week", "Heard you robbed Ana · today"), at most `limit`.
+   */
+  between(id: string, now: number, limit = 4): string[] {
+    const { society, timeScale, food } = this.rules;
+    const nameOf = (other?: string) => (other ? this.describe(other, now)?.name : undefined) ?? 'someone';
+    const did: Record<string, [string, string]> = { robbery: ['robbed', 'rob'], insult: ['insulted', 'insult'], assault: ['attacked', 'attack'], murder: ['killed', 'kill'] };
+    return memoriesOf(this.society, id, society.memory, timeScale, now)
+      .slice(0, limit)
+      .map((m) => {
+        const [past, base] = did[m.what ?? ''] ?? ['crossed', 'cross'];
+        const eddies = m.amount ? ` ${m.amount} €$` : '';
+        const said: Record<Memory['kind'], string> = {
+          wronged: m.what === 'robbery' ? `Robbed by you${eddies ? ` of${eddies}` : ''}` : m.what === 'insult' ? 'Insulted by you' : m.what === 'assault' ? 'Attacked by you' : 'Wronged by you',
+          heard: `Heard you ${past} ${nameOf(m.about)}`,
+          saw: `Saw you ${base} ${nameOf(m.about)}`,
+          settled: `Collected${eddies || ' what you owed'} off you`,
+          gift: `Gift: ${food.dishes.find((d) => d.id === m.what)?.name ?? 'something'}`,
+          goodWord: `A good word from ${nameOf(m.about)}`,
+          hired: 'Took you on',
+          promoted: `Moved you up${m.what ? ` to ${m.what}` : ''}`,
+          quit: 'You walked out',
+          notice: 'You gave notice',
+          fired: 'Let you go',
+          chopped: `Chopped a chip for you${eddies ? ` (${eddies.trim()})` : ''}`,
+          date: `A date${m.what ? ` at ${m.what}` : ''}`,
+          dumped: 'You ended it',
+          cheated: `Caught you with ${nameOf(m.about)}`,
+        };
+        return `${said[m.kind]}${m.times > 1 ? ` ×${m.times}` : ''} · ${this.agoWord(daysSince(m.at, timeScale, now))}`;
+      });
+  }
+
+  /**
+   * Everyone the player has met or knows by name, the latest dealt with first: for a list to
+   * open anyone from, here or not. Their name or look, how they feel, what's known of their
+   * work, whether they're dead, and when the player last had to do with them.
+   */
+  acquaintances(now: number): Array<{ person: Person; name: string; stance: Stance; job?: string; dead: boolean; last: number }> {
+    const { society, timeScale } = this.rules;
+    return knownPeople(this.society)
+      .flatMap((id) => {
+        const person = this.person(id);
+        const k = knowledgeOf(this.society, id);
+        if (!person || !(k.met || k.facts.includes('name'))) return [];
+        const described = this.describe(id, now);
+        const standing = standingOf(this.society, id, society, timeScale, now);
+        // When they last had to do with the player: the last line between them, or a talk (0: only ever heard of).
+        const last = Math.max(k.log.at(-1)?.at ?? 0, standing.lastTalkAt ?? 0);
+        return [{ person, name: described?.name ?? person.name, stance: this.stanceOf(person, now), ...(described?.facts.job ? { job: described.facts.job } : {}), dead: person.diedOn !== undefined && k.facts.includes('dead'), last }];
+      })
+      .sort((a, b) => b.last - a.last || a.name.localeCompare(b.name));
   }
 
   /** What has passed between the player and a person, oldest first. */
@@ -3250,6 +3342,62 @@ export class Game {
 
   get charismaSaved(): SkillState {
     return { ...this.charismaState };
+  }
+
+  /** Street Brawler: how the player's bare hands (and clubs, and Gorilla Arms) do. */
+  brawler(): SkillStatus {
+    return skillStatus(this.brawlerState, this.rules.combat.skills.brawler);
+  }
+
+  /** Toughness: how much it takes to knock the player out. */
+  toughness(): SkillStatus {
+    return skillStatus(this.toughnessState, this.rules.combat.skills.toughness);
+  }
+
+  get brawlerSaved(): SkillState {
+    return { ...this.brawlerState };
+  }
+
+  get toughnessSaved(): SkillState {
+    return { ...this.toughnessState };
+  }
+
+  /** Experience for a fighting skill, and the line when it goes up a level. */
+  private train(skill: 'brawler' | 'toughness', amount: number): void {
+    if (amount <= 0) return;
+    const rules = this.rules.combat.skills[skill];
+    const { state, levels } = gainXp(skill === 'brawler' ? this.brawlerState : this.toughnessState, amount, rules);
+    if (skill === 'brawler') this.brawlerState = state;
+    else this.toughnessState = state;
+    if (levels) this.say(fill(rules.levelLine, { level: String(state.level) }), 'system');
+    this.events.emit('skillChanged', { skill, status: skill === 'brawler' ? this.brawler() : this.toughness() });
+  }
+
+  /** What a beat trains: every blow the player lands bare-handed or with Gorilla Arms (a club less), a knockout more; every blow they take, more for one that could have knocked them out. */
+  private trainFrom(events: BeatEvent[], cls: FightClass): void {
+    const { brawler, toughness } = this.rules.combat.training;
+    let brawl = 0;
+    let tough = 0;
+    for (const e of events) {
+      if (e.what === 'hit' && e.who === 'you') brawl += e.kind === 'fists' || cls === 'gorilla-arms' ? brawler.hit : e.kind === 'blunt' ? brawler.blunt : 0;
+      else if (e.what === 'hit' && e.who === 'them') tough += toughness.hit + (e.kind === 'fists' || e.kind === 'blunt' ? toughness.blow : 0);
+      else if (e.what === 'out' && e.who === 'them') brawl += brawler.knockout;
+    }
+    this.train('brawler', brawl);
+    this.train('toughness', tough);
+  }
+
+  /** How hard someone is to knock out: the brave less likely, a ganger less again. */
+  private steadyOf(person: Person): number {
+    const { steady } = this.rules.combat;
+    return (steady.base - person.traits.courage * steady.courage) * (person.gang ? steady.gang : 1);
+  }
+
+  /** Whether someone is lying out cold, knocked out, and not come to yet. */
+  outCold(id: string, now: number): boolean {
+    const out = this.outColdState.get(id);
+    if (out && out.until <= now) this.outColdState.delete(id);
+    return Boolean(out && out.until > now);
   }
 
   private gainCharisma(amount: number): void {
@@ -3306,6 +3454,7 @@ export class Game {
   }
 
   private isHere(id: string, now: number): Presence | undefined {
+    if (this.outCold(id, now)) return undefined;
     return this.peopleHere(now).find((p) => p.person.id === id);
   }
 
@@ -3525,125 +3674,6 @@ export class Game {
     // Practice: a little more for what landed, a little less for what didn't.
     this.gainCharisma(2 + Math.sign(reaction.score));
     this.noteFeedback(person, before, now, reaction.why);
-    this.events.emit('societyChanged', { people: learned });
-    return true;
-  }
-
-  /**
-   * Who it's worth asking someone about, from what the player can see or knows, never the
-   * ties as they are: anyone seen with them, connected somehow (how, the player can't tell);
-   * anyone who shares their family name; anyone here with them; the last few the player has
-   * talked to. Never anyone the player has asked them about already, or knows how they're
-   * tied; at most `ASK_ABOUT` of them, so it doesn't grow with every name the player learns.
-   */
-  worthAsking(id: string, now: number): Person[] {
-    const person = this.person(id);
-    if (!person) return [];
-    const named = (p: Person | undefined): p is Person => Boolean(p) && p?.id !== id && knowledgeOf(this.society, (p as Person).id).facts.includes('name');
-    // Not asked yet, nor told how they're tied: nothing known, or only that they're connected.
-    const open = (p: Person) => (linkOf(this.society, id, p.id)?.kind ?? null) === null;
-    const seenWith = Object.entries(this.society.links)
-      .filter(([key, link]) => link.kind === null && key.split('|').includes(id))
-      .map(([key]) => this.person(key.split('|').find((k) => k !== id) ?? ''));
-    const knownNamed = this.knownPeople().filter(named);
-    const family = knownNamed.filter((p) => p.family === person.family);
-    const here = this.peopleHere(now).map((p) => p.person);
-    const lately = knownNamed
-      .map((p) => ({ p, at: knowledgeOf(this.society, p.id).log.at(-1)?.at ?? 0 }))
-      .filter(({ at }) => at > 0)
-      .sort((a, b) => b.at - a.at)
-      .slice(0, 3)
-      .map(({ p }) => p);
-    const picked: Person[] = [];
-    for (const p of [...seenWith, ...family, ...here, ...lately]) {
-      if (picked.length >= ASK_ABOUT) break;
-      if (named(p) && !picked.includes(p) && open(p)) picked.push(p);
-    }
-    return picked;
-  }
-
-  /**
-   * Asks someone here about someone the player knows of. Whether they answer is their
-   * openness: how they feel about the player, the player's charisma, how loyal they are;
-   * what they say is the truth. Asked what they've said already, they say so; asked again
-   * soon after a no, they think less of the player.
-   */
-  ask(id: string, aboutId: string, now: number): boolean {
-    const here = this.isHere(id, now);
-    const other = this.person(aboutId);
-    // Only someone the player can name.
-    if (!here || !other || aboutId === id || !knowsOf(this.society, aboutId) || !knowledgeOf(this.society, aboutId).facts.includes('name')) return false;
-    const { person, stance, doing } = here;
-    const { society, timeScale, lines } = this.rules;
-    const standing = standingOf(this.society, id, society, timeScale, now);
-    const before = this.snapshot(person, now);
-    const { sitting, grilled } = this.grilling(standing, now);
-    learnOf(this.society, id, 'met');
-    const otherPronouns = pronounsOf(other);
-    const tie = tiesOf(this.population, id).find((t) => t.to === aboutId);
-    const today = this.clockAt(now).day;
-    // Someone they're done with lately: an ex, a friend fallen out with, and nothing between them since.
-    const ex = !tie && this.life.events.some((e) => (e.kind === 'breakup' || e.kind === 'fallout') && e.who.includes(id) && e.who.includes(aboutId));
-    const speaker = this.speakerFor(person, stance, doing, now);
-    speaker.vars = {
-      ...speaker.vars,
-      other: other.given,
-      otherHe: otherPronouns.he,
-      otherHim: otherPronouns.him,
-      otherHis: otherPronouns.his,
-      word: tie ? kinWord(person, tie.kind, other) : '',
-      otherAgo: other.diedOn !== undefined ? this.agoWord(today - other.diedOn) : '',
-      // What the other is to them, broadly, for how they'd talk about them: family, a friend, the crew, work.
-      tieFamily: tie && FAMILY.includes(tie.kind) ? 'yes' : '',
-      tieFriend: tie?.kind === 'friend' ? 'yes' : '',
-      tieCrew: tie?.kind === 'crew' ? 'yes' : '',
-      tieWork: tie?.kind === 'coworker' ? 'yes' : '',
-      grilled: grilled ? 'yes' : '',
-    };
-    // How they take being asked about one of their own, or an ex.
-    const reaction = reactionTo(society.reactions.asked.kin, { ...speaker, vars: { ...speaker.vars, ex: ex ? 'yes' : '' } });
-    speaker.vars.touchy = reaction.score < 0 ? 'yes' : '';
-    const rng = createRng(`${this.world.seed}:${id}:ask:${aboutId}:${standing.asks}`);
-    this.logged(id, 'you', line(lines.you.askAbout, speaker, rng), now);
-    const key = `about:${aboutId}`;
-    const known = linkOf(this.society, id, aboutId);
-    const refused = { ...standing.refused };
-    const learned = [id];
-    let pressed = false;
-    if (speaker.mood === 'asleep' || stance === 'hostile') {
-      this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
-    } else if (known && known.kind !== null) {
-      // Told already they're done with them (heard of the split), they say so; else that they've said.
-      if (known.kind === 'none' && ex) this.speech(person, compose(lines.ask.ex, speaker, lines, rng), now);
-      else this.speech(person, line(lines.ask.repeat, speaker, rng), now);
-    } else if (this.pressing(standing, key, now)) {
-      pressed = true;
-      this.speech(person, line(lines.pressed, speaker, rng), now);
-    } else {
-      const reply = replyTo(openness('kin', stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked()), momentOf(speaker, grilled)) + reaction.score * society.reactions.openness, society.openness, rng);
-      if (reply === 'answer') {
-        const dead = other.diedOn !== undefined;
-        this.speech(person, compose(tie ? (dead ? lines.ask.dead : lines.ask.knows) : ex ? lines.ask.ex : lines.ask.unknown, speaker, lines, rng), now);
-        if (tie) {
-          learnLink(this.society, id, aboutId, tie.kind, 'asked', now);
-          learnOf(this.society, aboutId, 'told');
-          if (dead) learnFact(this.society, aboutId, 'dead');
-          learned.push(aboutId);
-          this.gainCharisma(2);
-        } else {
-          relearnLink(this.society, id, aboutId, 'none', 'asked', now);
-        }
-      } else {
-        this.speech(person, reply === 'deflect' ? deflect(speaker, 'kin', lines, rng) : line(lines.refuse, speaker, rng), now);
-        refused[key] = now;
-      }
-    }
-    // Awake and willing to hear it, they remember being asked, and take it how they take it.
-    const heard = speaker.mood !== 'asleep' && stance !== 'hostile';
-    if (heard) this.remember(id, { kind: 'asked', at: now, about: aboutId }, now);
-    const rapport = heard ? (pressed ? -society.openness.press : 0) + Math.round(reaction.score * society.reactions.rapport) - grilled * society.openness.grill.rapport : 0;
-    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport, ...(heard ? { lastAskAt: now, sitting } : {}) }, society, timeScale, now);
-    this.noteFeedback(person, before, now, !heard ? '' : [pressed ? lines.notes.pressed : '', grilled ? lines.notes.grilled : '', reaction.why].filter(Boolean).join(' · '), speaker.vars);
     this.events.emit('societyChanged', { people: learned });
     return true;
   }

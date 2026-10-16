@@ -1,5 +1,6 @@
 import type { BuildingContent } from '../engine/buildings';
 import type { CityContent, DistrictTemplate, LocationKind } from '../engine/generate';
+import { STOREFRONT_NAMES } from './storefronts';
 
 /*
  * Everything the city generator builds from. Each game picks some districts, fills them
@@ -659,8 +660,10 @@ const BUILDINGS: BuildingContent = {
     tower: { label: 'Corporate tower', category: 'corporate', floors: [40, 96], names: ['{corp} Tower', '{corp} Plaza One', '{corp} Spire', '{corp} Regional HQ'] },
     apartments: { label: 'Apartment block', category: 'residential', floors: [8, 26], names: ['{area} Block {n}', '{area} Residences', '{area} Heights', 'Unit Block {n}'] },
     megabuilding: { label: 'Megabuilding', category: 'residential', floors: [60, 110], names: ['{area} Arcology', 'Megabuilding {n}'] },
-    // A storefront's category and label come from its business.
-    shops: { label: 'Storefront', category: 'commodity', floors: [2, 5], names: ['{shop}', '{area} {shop}', 'Neon {shop}', '24/7 {shop}'] },
+    // A storefront's category and label come from its business. An independent's `{shop}` is a
+    // name of its own (src/data/storefronts.ts), with `{area}` what it sells; a 24/7 never closes.
+    // Each template's draws are what lay the city out: change the words, never their placeholders.
+    shops: { label: 'Storefront', category: 'commodity', floors: [2, 5], names: ['{shop}', '{area} {shop}', '{shop}', '24/7 {shop}'] },
     warehouse: { label: 'Warehouse', category: 'storage', floors: [2, 4], names: ['Warehouse {n}', '{corp} Depot', 'Cold Storage {n}', 'Freight Hall {n}'] },
     factory: { label: 'Factory', category: 'industrial', floors: [3, 7], names: ['{corp} Assembly {n}', '{area} Works', 'Fab Plant {n}', 'Refinery {n}'] },
     derelict: { label: 'Abandoned building', category: 'abandoned', floors: [3, 16], names: ['Derelict Block {n}', 'Unfinished Hotel', 'Gutted Tower {n}', 'Condemned Flats {n}'] },
@@ -745,7 +748,8 @@ const BUILDINGS: BuildingContent = {
     { district: 'heywood', area: 'Wellsprings', kind: 'shops', name: 'Wellsprings Community Hospital', business: 'hospital', categories: HOSPITAL_GROUND },
     { district: 'santo_domingo', area: 'Arroyo', kind: 'shops', name: 'Santo Domingo General', business: 'hospital', categories: HOSPITAL_GROUND },
   ],
-  // What a storefront can be. Its sign goes into its name ("Kabuki Gun Shop", "24/7 Bodega").
+  // What a storefront can be. A chain's sign is its name ("Buck-A-Slice Kabuki"); every other
+  // business makes one up (`shopNames`), and has names to do it with there.
   businesses: [
     { id: 'bodega', sign: 'Bodega', label: 'Bodega', category: 'commodity' },
     { id: 'general-store', sign: 'General Store', label: 'General store', category: 'commodity' },
@@ -801,6 +805,7 @@ const BUILDINGS: BuildingContent = {
     { id: 'capsule-hotel', sign: 'Capsule Hotel', label: 'Capsule hotel', category: 'lodging' },
     { id: 'motel', sign: 'Motel', label: 'Motel', category: 'lodging' },
   ],
+  shopNames: STOREFRONT_NAMES,
 };
 
 /**

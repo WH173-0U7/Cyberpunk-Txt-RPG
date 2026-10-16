@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ASK_ABOUT, cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
+import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
 import { outfit, type GearContent } from '../src/engine/carry';
 import { FOOD } from '../src/data/food';
 import { GEAR as ALL_GEAR } from '../src/data/gear';
@@ -19,10 +19,10 @@ import { freshLife, newsFor, tieKey } from '../src/engine/life';
 import { FAMILY, openness } from '../src/engine/dialogue';
 import { bossOf, type JobRules, type JobState, type ShiftEventKind } from '../src/engine/jobs';
 import { memoriesOf } from '../src/engine/memory';
-import { dreamOf, handleOf, tiesOf, type Person, type Pronouns } from '../src/engine/people';
+import { dreamOf, handleOf, sexOf, tiesOf, type Person, type Pronouns } from '../src/engine/people';
 import { SOCIETY } from '../src/data/society';
 import type { Progress } from '../src/engine/save';
-import { freshSociety, linkKey, type SocietyState } from '../src/engine/society';
+import { freshSociety, type SocietyState } from '../src/engine/society';
 import type { TravelRules } from '../src/engine/travel';
 import type { Building, GameEvents, Item, Location, Whereabouts, World } from '../src/engine/types';
 
@@ -768,7 +768,7 @@ describe('Game', () => {
       expect(game.charisma().xp + (game.charisma().level - 1) * CHARISMA.xpFirstLevel).toBeGreaterThanOrEqual(chats * 2 - 1);
     });
 
-    it('only knows who someone knows by seeing them together, being told, or asking', () => {
+    it('only knows who someone knows by seeing them together, or being told', () => {
       const { game, now, worker, here } = shiftAt();
       const { take, outputs } = record(game);
       // Nothing is known of anyone until the player looks.
@@ -787,34 +787,6 @@ describe('Game', () => {
         expect(game.population.ties.some((t) => t.from === worker.id && t.to === link.person.id)).toBe(true);
       }
 
-      // Asking about someone the player doesn't know of isn't possible; about someone they do, it is.
-      const relative = game.population.ties.find((t) => t.from === worker.id && ['spouse', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew', 'kin', 'friend'].includes(t.kind));
-      if (!relative) throw new Error('the worker knows nobody');
-      expect(game.ask(worker.id, relative.to, now)).toBe(false);
-      // Seen about, then: and with charisma high enough, a neutral person always answers.
-      const stranger = game.population.people.find((p) => p.id !== worker.id && !game.population.ties.some((t) => t.from === worker.id && t.to === p.id));
-      if (!stranger) throw new Error('everyone knows everyone');
-      // Seen about, then: and with charisma high enough, anyone not hostile answers.
-      const told = new Game(world, { ...RULES, startingEddies: 100 }, {
-        ...carryingProgress([]),
-        where: outside('b-noodle', 38, 20),
-        inside: 'b-noodle',
-        society: { ...game.societySaved, known: { [relative.to]: { met: false, seen: true, told: false, facts: ['name'], log: [] }, [stranger.id]: { met: true, seen: false, told: false, facts: ['name'], log: [] } } },
-        charisma: { level: 12, xp: 0 },
-      });
-      told.start(now);
-      const recorded = record(told);
-      expect(told.ask(worker.id, relative.to, now)).toBe(true);
-      const answer = recorded.outputs(recorded.take())[0]?.text ?? '';
-      expect(answer).toContain(`${worker.given}: "`);
-      expect(told.standingWith(worker.id, now)?.web.find((l) => l.person.id === relative.to)).toMatchObject({ kind: relative.kind, how: 'asked' });
-      expect(told.standingWith(relative.to, now)?.knowledge.told).toBe(true);
-      // Asked again, they've said already.
-      expect(told.ask(worker.id, relative.to, now + MINUTE)).toBe(true);
-      expect(spoken(told, worker.id).at(-1)?.text).toMatch(/told you|last I checked/i);
-      expect(told.ask(worker.id, stranger.id, now)).toBe(true);
-      expect(told.standingWith(worker.id, now)?.web.some((l) => l.person.id === stranger.id)).toBe(false);
-      expect(told.societySaved.links[[worker.id, stranger.id].sort().join('|')]?.kind).toBe('none');
       expect(outputs(take())).toEqual([]);
     });
 
@@ -896,32 +868,6 @@ describe('Game', () => {
       }
     });
 
-    it('offers a few people worth asking about, from what the player knows, however many names they have', () => {
-      const { game: probe, now, worker } = shiftAt();
-      const everyone = probe.population.people.filter((p) => p.id !== worker.id);
-      // Every name in the city known, someone seen with them, someone already asked about.
-      const [seen, asked] = everyone as [Person, Person];
-      const society: SocietyState = {
-        ...freshSociety(),
-        known: Object.fromEntries(everyone.map((p) => [p.id, { met: true, seen: true, told: false, facts: ['name'], log: [] }])),
-        links: { [linkKey(worker.id, seen.id)]: { kind: null, how: 'seen', at: now }, [linkKey(worker.id, asked.id)]: { kind: 'none', how: 'asked', at: now } },
-      };
-      const inside = { ...carryingProgress([]), where: outside('b-noodle', 38, 20), inside: 'b-noodle' };
-      const game = new Game(world, { ...RULES, startingEddies: 100 }, { ...inside, society });
-      game.start(now);
-      const offered = game.worthAsking(worker.id, now).map((p) => p.id);
-      expect(everyone.length).toBeGreaterThan(ASK_ABOUT);
-      expect(offered.length).toBeLessThanOrEqual(ASK_ABOUT);
-      expect(offered[0]).toBe(seen.id);
-      expect(offered).not.toContain(asked.id);
-      expect(offered).not.toContain(worker.id);
-      // Family by the name come before strangers; nobody the player can't name.
-      for (const p of everyone.filter((q) => q.family === worker.family)) if (offered.length < ASK_ABOUT && p.id !== asked.id) expect(offered).toContain(p.id);
-      const stranger = new Game(world, RULES, inside);
-      stranger.start(now);
-      expect(stranger.worthAsking(worker.id, now)).toEqual([]);
-    });
-
     it('tells people apart by their look until introduced, and learns the rest by watching, talking and asking', () => {
       const { game, now, worker } = shiftAt();
       const { take, outputs } = record(game);
@@ -929,6 +875,11 @@ describe('Game', () => {
       const stranger = game.describe(worker.id);
       expect(stranger).toMatchObject({ named: false, lines: [] });
       expect(stranger?.name).toMatch(/^(A|An) (young |older )?(man|woman|person)/);
+      // Their sex is plain to see: a woman's female, a man's male, and someone who goes by they either.
+      expect(stranger?.sex).toBe(worker.pronouns === 'she' ? 'Female' : worker.pronouns === 'he' ? 'Male' : `${sexOf(worker) === 'female' ? 'Female' : 'Male'} · goes by they`);
+      const they = game.population.people.filter((p) => p.pronouns === 'they');
+      expect(new Set(they.map((p) => game.describe(p.id)?.sex))).toEqual(new Set(['Female · goes by they', 'Male · goes by they']));
+      expect(game.population.people.every((p) => (p.pronouns === 'they' || sexOf(p) === (p.pronouns === 'she' ? 'female' : 'male')))).toBe(true);
       expect(spoken(game, worker.id)).toEqual([]);
       // Looking around the noodle bar: whoever is at work here plainly works here.
       game.look(now);
@@ -957,9 +908,6 @@ describe('Game', () => {
       expect(LINES.questions.age.lines.map((l) => `"${typeof l === 'string' ? l : l.text}"`)).toContain(asked?.text);
       expect(spoken(game, worker.id).at(-1)?.who).toBe('them');
       expect(game.askFact('nobody', 'age', now)).toBe(false);
-      // Only someone whose name the player has can be asked about.
-      const other = game.population.people.find((p) => p.id !== worker.id);
-      if (other) expect(game.ask(worker.id, other.id, now)).toBe(false);
     });
 
     it('tells a stranger only what charisma earns: home is a no, pressing costs rapport, and a smooth talker hears it all', () => {
@@ -2308,6 +2256,25 @@ describe('Game', () => {
           expect(game.societySaved.memories[worker.id]?.find((m) => m.kind === 'gift')).toMatchObject({ what: dish.id, times: 2 });
         });
 
+        it('says what someone remembers of the player in a few words, and keeps everyone met in a list, the latest first', () => {
+          const { game, now, boss } = withBoss('b-noodle', 38, 20);
+          expect(game.between(boss.id, now)).toEqual([]);
+          expect(game.acquaintances(now).map((a) => a.person.id)).not.toContain(boss.id);
+          expect(game.askForWork(boss.id, now)).toBe(true);
+          expect(game.quit(now + MINUTE, boss.id)).toBe(true);
+          // Freshest first: walked out, after being taken on.
+          expect(game.between(boss.id, now + MINUTE)).toEqual(['You walked out · today', 'Took you on · today']);
+          expect(game.between(boss.id, now + MINUTE, 1)).toEqual(['You walked out · today']);
+          // Talked to, they're on the Known list, by name, and the latest dealt with comes first.
+          const known = game.acquaintances(now + MINUTE);
+          expect(known[0]).toMatchObject({ person: { id: boss.id }, name: expect.stringContaining(boss.given), dead: false });
+          const other = game.peopleHere(now).find((p) => p.person.id !== boss.id);
+          if (other) {
+            expect(game.talk(other.person.id, now + 2 * MINUTE)).toBe(true);
+            expect(game.acquaintances(now + 2 * MINUTE)[0]?.person.id).toBe(other.person.id);
+          }
+        });
+
         it("won't be taken back by a boss they walked out on, while the boss remembers it", () => {
           const { game, now, boss } = withBoss('b-noodle', 38, 20);
           expect(game.askForWork(boss.id, now)).toBe(true);
@@ -2320,7 +2287,7 @@ describe('Game', () => {
           expect(memoriesOf(game.societySaved, boss.id, SOCIETY.memory, 1, now + 22 * DAY).some((m) => m.kind === 'quit')).toBe(false);
         });
 
-        it("keeps the dead out of everywhere, and has their people say so when asked about them", () => {
+        it('keeps the dead out of everywhere', () => {
           const probe = atWork('b-noodle', 38, 20);
           const ties = tiesOf(probe.game.population, probe.worker.id);
           const tie = ties.find((t) => FAMILY.includes(t.kind)) ?? ties[0];
@@ -2333,10 +2300,8 @@ describe('Game', () => {
           expect(game.person(tie.to)?.diedOn).toBe(today - 3);
           expect(game.peopleHere(probe.now).some((p) => p.person.id === tie.to)).toBe(false);
           expect(game.talk(tie.to, probe.now)).toBe(false);
+          // Nobody's told the player yet.
           expect(game.describe(tie.to, probe.now)?.facts.dead).toBeUndefined();
-          expect(game.ask(probe.worker.id, tie.to, probe.now)).toBe(true);
-          expect(spoken(game, probe.worker.id).at(-1)?.text).toMatch(/died|buried|gone|was my/i);
-          expect(game.describe(tie.to, probe.now)?.facts.dead).toBe('Died a few days back');
         });
 
         it('hears who got married from one of the two, and knows them for a couple after', () => {
@@ -2654,6 +2619,64 @@ describe('Game', () => {
         hearty.game.fightMove('cover', hearty.now + 1000);
         expect(hearty.game.fightView()?.log.join(' ')).toContain('Second Heart');
         expect(hearty.game.fightView()?.you.hp).toBe(hearty.game.fightView()?.you.max);
+      });
+
+      describe('bare-handed', () => {
+        /** Everyone fights with their fists, every blow lands, and a blow that lands knocks someone out cold. */
+        const knockouts = brutal(5, 0, { carry: { ...COMBAT.carry, chance: { gang: 0, guard: 0, corpo: 0, street: 0, elder: 0 } }, knockout: { ...COMBAT.knockout, kinds: { fists: 100, blunt: 100 }, least: 0, most: 1, minutes: [10, 10] } });
+
+        it('knocks someone out cold, and they lie where they fell, past talking to, till they come to', () => {
+          const { game, now, worker } = atTheBar({ items: [] }, knockouts);
+          expect(game.brawler()).toMatchObject({ level: 1, xp: 0 });
+          game.attack(worker.id, now);
+          const t = fightOut(game, now);
+          expect(game.fightView()?.over).toBe('out');
+          expect(game.fightView()?.result).toContain('out cold');
+          const told = COMBAT.lines.theyOut!.map((l) => new RegExp(`^${l.replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\{\w+\}/g, '.*')}$`, 'i'));
+          expect(game.fightView()?.log.some((line) => told.some((re) => re.test(line)))).toBe(true);
+          // Not hurt, not dead: out.
+          expect(worker.diedOn).toBeUndefined();
+          expect(worker.hurtUntil).toBeUndefined();
+          game.leaveFight();
+          expect(game.peopleHere(t).find((p) => p.person.id === worker.id)).toMatchObject({ doing: 'out cold', scene: null });
+          expect(game.outCold(worker.id, t)).toBe(true);
+          expect(game.talk(worker.id, t)).toBe(false);
+          expect(game.attack(worker.id, t)).toBe(false);
+          // Ten minutes on, they've come to.
+          const later = t + 11 * MINUTE;
+          expect(game.outCold(worker.id, later)).toBe(false);
+          expect(game.peopleHere(later).find((p) => p.person.id === worker.id)?.doing).not.toBe('out cold');
+          // The punches and the knockout trained Street Brawler.
+          expect(game.brawler().xp).toBeGreaterThanOrEqual(COMBAT.training.brawler.hit + COMBAT.training.brawler.knockout);
+        });
+
+        it('knocks the player out and goes through their pockets, but leaves their health; taking blows trains toughness', () => {
+          const { game, now, worker } = atTheBar({ items: [] }, knockouts);
+          const had = worker.eddies;
+          game.attack(worker.id, now);
+          const t = fightOut(game, now, 'cover');
+          expect(game.fightView()?.over).toBe('knocked');
+          expect(game.fightView()?.result).toContain('knocked you out cold');
+          expect(game.wallet.eddies).toBeLessThan(100);
+          expect(worker.eddies).toBe(had + (100 - game.wallet.eddies));
+          expect(game.health(t).current).toBeGreaterThan(1);
+          expect(game.toughness().xp).toBeGreaterThan(0);
+          // A gun's no knockout: nobody is ever out cold from one.
+          const shot = atTheBar({}, brutal(5, 0, { knockout: knockouts.knockout }));
+          shot.game.attack(shot.worker.id, shot.now);
+          shot.game.fightMove('attack', shot.now + 1000);
+          expect(shot.game.fightView()?.over).not.toBe('out');
+          expect(shot.game.brawler().xp).toBe(0);
+        });
+
+        it('makes a brawler hit harder and a tough player harder to put out, and keeps both through a save', () => {
+          const green = atTheBar({ items: [] });
+          const old = atTheBar({ items: [], brawler: { level: 6, xp: 0 }, toughness: { level: 6, xp: 0 } });
+          expect(old.game.brawler().bonus).toBeGreaterThan(green.game.brawler().bonus);
+          expect(old.game.toughness().bonus).toBeGreaterThan(green.game.toughness().bonus);
+          expect(old.game.brawlerSaved).toEqual({ level: 6, xp: 0 });
+          expect(old.game.toughnessSaved).toEqual({ level: 6, xp: 0 });
+        });
       });
 
       it('gets away out the door on a run, and ends in words when it is talked down', () => {

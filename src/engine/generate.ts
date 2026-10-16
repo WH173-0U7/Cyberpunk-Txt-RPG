@@ -235,7 +235,8 @@ export function generateWorld(seed: string, content: CityContent): World {
     layout,
     districts,
     locations,
-    buildings: generateBuildings(seed, layout, Object.values(districts), plans, content.buildings),
+    // A storefront never takes a real place's name, nor one of this city's places'.
+    buildings: generateBuildings(seed, layout, Object.values(districts), plans, content.buildings, [...realNames, ...Object.values(locations).map((l) => l.name)]),
     transit: generateTransit(seed, layout, Object.values(districts), Object.values(locations), areas, content.ncart),
   };
 }
