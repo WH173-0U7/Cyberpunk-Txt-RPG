@@ -331,7 +331,8 @@ it needs no generator bump. The pieces:
   things people can say are new pools (or new `When` conditions), never new code paths; a
   new variable goes in `varsFor` or `speakerFor` and is guarded with `needs`/`lacks`.
   `tests/dialogue.test.ts` sweeps whole cities for holes (`{...}` left unfilled, empty
-  lines), so a pool that can come up empty for some speaker fails there. Combine conditions
+  lines, a var empty mid-sentence leaving a space before the punctuation), so a pool that
+  can come up empty for some speaker fails there. Combine conditions
   with `both` (it adds `needs`/`lacks` up; it never replaces them). Personality comes through
   the vars: a gang's own slang (`gangLexicon`, over the gang voice), a street name
   (`handleOf`, on its own stream: most gangers, a few others, corpos never; checked against
@@ -342,7 +343,7 @@ it needs no generator bump. The pieces:
   Nobody says the same thing twice running: a `Speaker`'s `recent` (what they said to the
   player lately, from the log, and what the player has said to anyone, `Game`'s
   `saidLately`) steers `pickFragment` clear of a line said lately (`saidIn`, whole or inside
-  something longer) while anything else fits; narration (`Game`'s private `narration`, the
+  something longer, whatever numbers are in it) while anything else fits; narration (`Game`'s private `narration`, the
   shift moments) and a fight's beats (`fightLine`, against the last few beats) do the same.
   So a pool wants enough lines that the ones left still fit whoever's talking: three or more
   for any speaker, more for what comes up every time (greetings, the player's questions).

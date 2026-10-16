@@ -239,9 +239,11 @@ export function pickFragment(pool: Line[], speaker: Speaker, rng: Rng): Fragment
   return fitting[fitting.length - 1] ?? null;
 }
 
-/** Whether a line, filled in, is in what was said lately (whole, or as part of something longer). */
+/** Whether a line, filled in, is in what was said lately (whole, or as part of something longer), whatever numbers are in it: the same blow for 12 or for 18 is the same line. */
 export function saidIn(recent: readonly string[], text: string): boolean {
-  return text.length > 0 && recent.some((said) => said.includes(text));
+  const bare = (t: string) => t.replace(/\d+/g, '#');
+  const line = bare(text);
+  return line.length > 0 && recent.some((said) => bare(said).includes(line));
 }
 
 /** One line from a pool, filled in; empty when nothing fits. */
