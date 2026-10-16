@@ -1075,11 +1075,13 @@ function showCondition(status: InebriationStatus): void {
 /**
  * The status drop-down: the line under the energy bar says the energy level, when the next
  * point comes, and anything the matter (drunk, masked, on a shift somewhere); unfolded, the
- * rest: experience, charisma, eddies and the bank, the pass, the job, every reputation, the map.
+ * rest: experience, charisma and the fighting skills, eddies and the bank, the pass, the job, every reputation, the map.
  */
 function showStatus(now: number): void {
   const energy = game.energy(now);
   const charisma = game.charisma();
+  const brawler = game.brawler();
+  const toughness = game.toughness();
   const wallet = game.wallet;
   const drunk = game.inebriation(now);
   const mask = game.masked();
@@ -1110,6 +1112,8 @@ function showStatus(now: number): void {
     { label: 'Trauma Team', value: cover ? `${cover.plan.name} · until ${formatDay(cover.until)}` : 'Not covered' },
     ...(stars ? [{ label: 'NCPD', value: `${stars} · cools in ${formatCountdown((heat.coolAt ?? now) - now)}`, tone: 'bad' as const }] : []),
     { label: 'Charisma', value: `Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP` },
+    { label: 'Street Brawler', value: `Lv ${brawler.level} · ${brawler.xp}/${brawler.xpToNext} XP` },
+    { label: 'Toughness', value: `Lv ${toughness.level} · ${toughness.xp}/${toughness.xpToNext} XP` },
     { label: 'Eddies', value: `€$ ${wallet.eddies} on you${wallet.account ? ` · €$ ${wallet.account} banked` : ''}${wallet.chips ? ` · €$ ${wallet.chips} on chips` : ''}` },
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
@@ -1226,7 +1230,8 @@ function showPeople(): void {
             // What's still to find out: the questions not yet answered.
             unknown: (Object.entries(LINES.questions) as Array<[Question, { label: string }]>).filter(([fact]) => !standing.knowledge.facts.includes(fact)).map(([, q]) => q.label),
             between: game.between(shown.id, now),
-            here: Boolean(present),
+            // Out cold, they're here but past talking to.
+            here: Boolean(present) && !game.outCold(shown.id, now),
             web: standing.web.map((link) => ({ id: link.person.id, name: nameOf(link.person.id, link.person.name), label: link.kind ? kinWord(shown, link.kind, link.person) : '?', how: how[link.how] })),
             webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Ask about people you've met, watch who they keep company with, or get them talking.`,
             picker,
@@ -1489,6 +1494,8 @@ function wire(g: Game): void {
     if (people.overlay.isOpen) showPeople();
     queueSave();
   });
+
+  g.events.on('skillChanged', () => queueSave());
 
   g.events.on('youChanged', () => {
     if (settings.overlay.isOpen) showSettings();

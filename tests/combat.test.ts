@@ -4,7 +4,7 @@ import { CHROME } from '../src/data/cyberware';
 import { HACKS } from '../src/data/quickhacks';
 import { ARMS } from '../src/data/weapons';
 import { createRng } from '../src/engine/rng';
-import { damageOf, hitChance, NO_EDGE, resolveBeat, stepRange, talkOdds, theirMove, type Arm, type Fighter, type FightState, type Move } from '../src/engine/combat';
+import { damageOf, hitChance, knockoutOdds, NO_EDGE, resolveBeat, stepRange, talkOdds, theirMove, type Arm, type Fighter, type FightState, type Move } from '../src/engine/combat';
 
 /**
  * Each quickhack as its page on the Cyberpunk Wiki has it (checked 2026-10-15, through the
@@ -70,7 +70,7 @@ describe('the numbers', () => {
       for (const line of pool) for (const [, name] of line.matchAll(/\{(\w+)\}/g)) expect(vars.has(name!), `${key}: {${name}}`).toBe(true);
     }
     const kinds = ['Shoot', 'Cut', 'Bash', 'Punch', 'Lash', 'Blast'];
-    const needed = [...kinds.flatMap((k) => [`you${k}`, `they${k}`]), 'youMissShot', 'youMissSwing', 'youMissPunch', 'theyMissShot', 'theyMissSwing', 'theyMissPunch', 'youAdvance', 'theyAdvance', 'youBack', 'theyBack', 'youCover', 'theyCover', 'youReload', 'theyReload', 'youFreeze', 'youEmpty', 'theyEmpty', 'theyJammed', 'youStuck', 'theyStuck', 'youReachless', 'theyReachless', 'youTalkOk', 'youTalkNo', 'theyBackDown', 'theyBegIgnored', 'youRunOk', 'youRunNo', 'theyRunOk', 'theyRunNo', 'hackDamage', 'hackBurn', 'hackBlind', 'hackJam', 'hackCripple', 'hackChrome', 'youBurn', 'theyBurn', 'youHeal', 'youRegen', 'start', 'theyDown', 'theyDie', 'trauma', 'youDown', 'revive', 'robbed', 'traumaYou', 'tellAttack', 'tellAdvance', 'tellBack', 'tellCover', 'tellRun', 'tellTalk'];
+    const needed = [...kinds.flatMap((k) => [`you${k}`, `they${k}`]), 'youMissShot', 'youMissSwing', 'youMissPunch', 'theyMissShot', 'theyMissSwing', 'theyMissPunch', 'youAdvance', 'theyAdvance', 'youBack', 'theyBack', 'youCover', 'theyCover', 'youReload', 'theyReload', 'youFreeze', 'youEmpty', 'theyEmpty', 'theyJammed', 'youStuck', 'theyStuck', 'youReachless', 'theyReachless', 'youTalkOk', 'youTalkNo', 'theyBackDown', 'theyBegIgnored', 'youRunOk', 'youRunNo', 'theyRunOk', 'theyRunNo', 'hackDamage', 'hackBurn', 'hackBlind', 'hackJam', 'hackCripple', 'hackChrome', 'youBurn', 'theyBurn', 'youHeal', 'youRegen', 'start', 'theyDown', 'theyOut', 'youOut', 'theyDie', 'trauma', 'youDown', 'revive', 'robbed', 'traumaYou', 'tellAttack', 'tellAdvance', 'tellBack', 'tellCover', 'tellRun', 'tellTalk'];
     for (const key of needed) expect(COMBAT.lines[key], key).toBeDefined();
   });
 });
@@ -197,5 +197,40 @@ describe('their moves', () => {
     const moves = new Set<Move>();
     for (let n = 0; n < 50; n++) moves.add(theirMove(fight(lexington, lexington, { them: fighter(lexington, { hp: 10 }) }), { courage: 0.05, temper: 0.2 }, false, createRng(`b${n}`), COMBAT));
     expect([...moves].some((m) => m === 'run' || m === 'talk')).toBe(true);
+  });
+});
+
+describe('knockouts', () => {
+  it('come of fists and clubs, never a gun or a blade, likelier the harder the blow and the more worn down', () => {
+    const them = fighter(FISTS_ARM, { hp: 60, max: 100 });
+    expect(knockoutOdds('fists', 12, them, NO_EDGE, NO_EDGE, COMBAT)).toBeGreaterThan(0);
+    expect(knockoutOdds('blunt', 12, them, NO_EDGE, NO_EDGE, COMBAT)).toBeGreaterThan(knockoutOdds('fists', 12, them, NO_EDGE, NO_EDGE, COMBAT));
+    for (const kind of ['gun', 'blade', 'wire'] as const) expect(knockoutOdds(kind, 40, them, NO_EDGE, NO_EDGE, COMBAT), kind).toBe(0);
+    // A tap is no knockout, and a fresh face takes more of it than a worn one.
+    expect(knockoutOdds('fists', 2, them, NO_EDGE, NO_EDGE, COMBAT)).toBe(0);
+    expect(knockoutOdds('fists', 12, fighter(FISTS_ARM, { hp: 100 }), NO_EDGE, NO_EDGE, COMBAT)).toBeLessThan(knockoutOdds('fists', 12, them, NO_EDGE, NO_EDGE, COMBAT));
+    // Never a sure thing.
+    expect(knockoutOdds('blunt', 99, fighter(FISTS_ARM, { hp: 1 }), { ...NO_EDGE, ko: 5 }, NO_EDGE, COMBAT)).toBe(COMBAT.knockout.most);
+  });
+
+  it('come easier to a brawler, and harder to the tough', () => {
+    const them = fighter(FISTS_ARM, { hp: 70 });
+    const plain = knockoutOdds('fists', 12, them, NO_EDGE, NO_EDGE, COMBAT);
+    expect(knockoutOdds('fists', 12, them, { ...NO_EDGE, ko: 1.4 }, NO_EDGE, COMBAT)).toBeCloseTo(plain * 1.4);
+    expect(knockoutOdds('fists', 12, them, NO_EDGE, { ...NO_EDGE, steady: 0.5 }, COMBAT)).toBeCloseTo(plain * 0.5);
+  });
+
+  it('end the beat with someone out cold, the player first, and nobody out who is already down', () => {
+    const sure = { ...COMBAT, knockout: { ...COMBAT.knockout, kinds: { fists: 100 }, least: 0, most: 1 }, classes: { ...COMBAT.classes, fists: { ...COMBAT.classes.fists!, hit: { reach: 1, close: 1, far: 1 } } } };
+    const both = resolveBeat(fight(FISTS_ARM, FISTS_ARM, { range: 'reach' }), 'attack', 'attack', ctx('ko', { rules: sure }));
+    expect(both.out).toBe('them');
+    expect(both.events).toContainEqual({ who: 'them', what: 'out' });
+    expect(both.events.some((e) => e.what === 'out' && e.who === 'you')).toBe(false);
+    const theirs = resolveBeat(fight(FISTS_ARM, FISTS_ARM, { range: 'reach' }), 'freeze', 'attack', ctx('ko2', { rules: sure }));
+    expect(theirs.out).toBe('you');
+    // A blow that puts them down for good is no knockout.
+    const down = resolveBeat(fight(FISTS_ARM, FISTS_ARM, { range: 'reach', them: fighter(FISTS_ARM, { hp: 1 }) }), 'attack', 'cover', ctx('ko3', { rules: sure }));
+    expect(down.state.them.hp).toBe(0);
+    expect(down.out).toBeNull();
   });
 });

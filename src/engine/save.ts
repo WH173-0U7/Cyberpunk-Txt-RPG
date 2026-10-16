@@ -42,6 +42,9 @@ export interface Progress {
   society: SocietyState | null;
   /** Charisma, as last written down (null: a new player's). */
   charisma: SkillState | null;
+  /** The fighting skills (null or missing: an older save, level 1). */
+  brawler?: SkillState | null;
+  toughness?: SkillState | null;
   /** The player's main job (null: none); every job they hold is `jobs`. */
   job: JobState | null;
   /** Every job the player holds, the main one first (missing or null: a save from before side gigs; just `job`). */
@@ -76,6 +79,8 @@ export interface SaveSource {
   readonly inebriationSaved: InebriationState;
   readonly societySaved: SocietyState;
   readonly charismaSaved: SkillState;
+  readonly brawlerSaved: SkillState;
+  readonly toughnessSaved: SkillState;
   readonly jobSaved: JobState | null;
   readonly jobsSaved: readonly JobState[];
   readonly careerSaved: Record<string, number>;
@@ -120,6 +125,8 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     inebriation: { ...game.inebriationSaved },
     society: game.societySaved,
     charisma: { ...game.charismaSaved },
+    brawler: { ...game.brawlerSaved },
+    toughness: { ...game.toughnessSaved },
     job: game.jobSaved ? { ...game.jobSaved } : null,
     jobs: game.jobsSaved.map((j) => ({ ...j })),
     career: { ...game.careerSaved },
@@ -184,6 +191,8 @@ export function readSave(raw: unknown): SaveData | null {
         }
       : null,
     charisma: isSkill(save.charisma) ? save.charisma : null,
+    brawler: isSkill(save.brawler) ? save.brawler : null,
+    toughness: isSkill(save.toughness) ? save.toughness : null,
     // And before there was work, the player had none.
     job: isJob(save.job) ? save.job : null,
     jobs: Array.isArray(save.jobs) ? save.jobs.filter(isJob).map(jobOf) : null,
@@ -221,13 +230,13 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, job, jobs, career, life, you, chrome, health, heat, lethal, coverage } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, toughness, job, jobs, career, life, you, chrome, health, heat, lethal, coverage } = save;
   const exists = (j: JobState) => world.buildings.some((b) => b.id === j.building);
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, toughness: toughness ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
 }
 
 function isCoverage(value: unknown): value is Coverage {

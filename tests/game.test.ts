@@ -2675,6 +2675,64 @@ describe('Game', () => {
         expect(hearty.game.fightView()?.you.hp).toBe(hearty.game.fightView()?.you.max);
       });
 
+      describe('bare-handed', () => {
+        /** Everyone fights with their fists, every blow lands, and a blow that lands knocks someone out cold. */
+        const knockouts = brutal(5, 0, { carry: { ...COMBAT.carry, chance: { gang: 0, guard: 0, corpo: 0, street: 0, elder: 0 } }, knockout: { ...COMBAT.knockout, kinds: { fists: 100, blunt: 100 }, least: 0, most: 1, minutes: [10, 10] } });
+
+        it('knocks someone out cold, and they lie where they fell, past talking to, till they come to', () => {
+          const { game, now, worker } = atTheBar({ items: [] }, knockouts);
+          expect(game.brawler()).toMatchObject({ level: 1, xp: 0 });
+          game.attack(worker.id, now);
+          const t = fightOut(game, now);
+          expect(game.fightView()?.over).toBe('out');
+          expect(game.fightView()?.result).toContain('out cold');
+          const told = COMBAT.lines.theyOut!.map((l) => new RegExp(`^${l.replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\{\w+\}/g, '.*')}$`, 'i'));
+          expect(game.fightView()?.log.some((line) => told.some((re) => re.test(line)))).toBe(true);
+          // Not hurt, not dead: out.
+          expect(worker.diedOn).toBeUndefined();
+          expect(worker.hurtUntil).toBeUndefined();
+          game.leaveFight();
+          expect(game.peopleHere(t).find((p) => p.person.id === worker.id)).toMatchObject({ doing: 'out cold', scene: null });
+          expect(game.outCold(worker.id, t)).toBe(true);
+          expect(game.talk(worker.id, t)).toBe(false);
+          expect(game.attack(worker.id, t)).toBe(false);
+          // Ten minutes on, they've come to.
+          const later = t + 11 * MINUTE;
+          expect(game.outCold(worker.id, later)).toBe(false);
+          expect(game.peopleHere(later).find((p) => p.person.id === worker.id)?.doing).not.toBe('out cold');
+          // The punches and the knockout trained Street Brawler.
+          expect(game.brawler().xp).toBeGreaterThanOrEqual(COMBAT.training.brawler.hit + COMBAT.training.brawler.knockout);
+        });
+
+        it('knocks the player out and goes through their pockets, but leaves their health; taking blows trains toughness', () => {
+          const { game, now, worker } = atTheBar({ items: [] }, knockouts);
+          const had = worker.eddies;
+          game.attack(worker.id, now);
+          const t = fightOut(game, now, 'cover');
+          expect(game.fightView()?.over).toBe('knocked');
+          expect(game.fightView()?.result).toContain('knocked you out cold');
+          expect(game.wallet.eddies).toBeLessThan(100);
+          expect(worker.eddies).toBe(had + (100 - game.wallet.eddies));
+          expect(game.health(t).current).toBeGreaterThan(1);
+          expect(game.toughness().xp).toBeGreaterThan(0);
+          // A gun's no knockout: nobody is ever out cold from one.
+          const shot = atTheBar({}, brutal(5, 0, { knockout: knockouts.knockout }));
+          shot.game.attack(shot.worker.id, shot.now);
+          shot.game.fightMove('attack', shot.now + 1000);
+          expect(shot.game.fightView()?.over).not.toBe('out');
+          expect(shot.game.brawler().xp).toBe(0);
+        });
+
+        it('makes a brawler hit harder and a tough player harder to put out, and keeps both through a save', () => {
+          const green = atTheBar({ items: [] });
+          const old = atTheBar({ items: [], brawler: { level: 6, xp: 0 }, toughness: { level: 6, xp: 0 } });
+          expect(old.game.brawler().bonus).toBeGreaterThan(green.game.brawler().bonus);
+          expect(old.game.toughness().bonus).toBeGreaterThan(green.game.toughness().bonus);
+          expect(old.game.brawlerSaved).toEqual({ level: 6, xp: 0 });
+          expect(old.game.toughnessSaved).toEqual({ level: 6, xp: 0 });
+        });
+      });
+
       it('gets away out the door on a run, and ends in words when it is talked down', () => {
         const run = atTheBar({}, { ...COMBAT, escape: { reach: 1, close: 1, far: 1 }, escapeAdvanced: 1 });
         run.game.attack(run.worker.id, run.now);

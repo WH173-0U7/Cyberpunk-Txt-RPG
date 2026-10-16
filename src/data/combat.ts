@@ -1,3 +1,4 @@
+import { BRAWLER, TOUGHNESS } from './skills';
 import type { CombatContent } from '../engine/combat';
 
 /**
@@ -152,6 +153,13 @@ export const COMBAT: CombatContent = {
   heat: { assault: 1, murder: 3, trauma: 2, coolPerHour: 0.5, max: 5 },
   tell: { base: 0.35, nature: 0.25, charisma: 0.03 },
   robbed: [0.3, 0.7],
+  // Fists and blunt weapons put people out cold (the wiki's blunt weapons are non-lethal): a punch
+  // that takes a sixth of someone's health is about a one-in-eight chance, more as they wear down.
+  knockout: { kinds: { fists: 0.7, blunt: 0.9 }, least: 0.06, most: 0.5, minutes: [10, 30] },
+  skills: { brawler: BRAWLER, toughness: TOUGHNESS },
+  training: { brawler: { hit: 2, blunt: 1, knockout: 6 }, toughness: { hit: 1, blow: 1, stood: 3 } },
+  // The brave and the gangers take a punch better than most.
+  steady: { base: 1.15, courage: 0.3, gang: 0.9 },
   lines: {
     start: [
       'You go for {who}. No more talking.',
@@ -575,10 +583,19 @@ export const COMBAT: CombatContent = {
     // How it ends.
     theyDown: [
       '{Who} goes down and stays down.',
-      '{Who} drops, out cold.',
+      '{Who} drops, curled up and done fighting.',
       "{Who} folds, and {he} do{es}n't get up.",
       "It's over: {who} is down, breathing, done.",
-      '{His} knees go. {He} {is} out before {he} land{s}.',
+      '{His} knees go, and {he} stay{s} on the floor, hurt.',
+    ],
+    // Knocked out cold: down a while, then up again with nothing worse than a headache.
+    theyOut: [
+      "{Who} drops like a cut wire and doesn't move. Out cold, still breathing.",
+      '{His} eyes roll back. {He} {is} out before {he} hit{s} the floor.',
+      'Lights out: {who} folds up and lies there, breathing slow.',
+      'The fight goes out of {him} all at once. {Who} is out cold on the floor.',
+      '{Who} sways, then drops in a heap, out for the count.',
+      "That one lands clean. {Who} is asleep before {he} know{s} it.",
     ],
     theyDie: [
       '{Who} goes down, and {he} {is} not getting up again.',
@@ -600,6 +617,14 @@ export const COMBAT: CombatContent = {
       'Your legs fold. The last thing you see is {who} standing over you.',
       'Sound goes first. Then everything else.',
       'You hit the ground, and the ground wins.',
+    ],
+    youOut: [
+      'Something cracks against your jaw, and the lights go out.',
+      "You don't see the last one coming. Black.",
+      'Your knees go soft, and the floor tilts up to meet you. Out.',
+      'A ringing in your ears, then nothing at all.',
+      '{Who} catches you clean. The world shuts off like a dead screen.',
+      "One blow too many. You're out before you land.",
     ],
     // Every one of these names the Second Heart (the game test looks for it).
     revive: [

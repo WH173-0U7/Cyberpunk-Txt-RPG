@@ -1,3 +1,4 @@
+import type { SkillRules } from './skills';
 import type { Quality } from './food';
 import type { Rng } from './rng';
 import type { WeaponClass, WeaponTech } from './weapons';
@@ -89,9 +90,13 @@ export interface Edge {
   evade: number;
   /** Multiplies what a gun, a blade, a wire or a launcher does: under 1 aiming to wound. */
   wound: number;
+  /** Multiplies the odds their blows (fists, a club, Gorilla Arms) knock someone out: a Street Brawler's. */
+  ko: number;
+  /** Multiplies the odds a blow knocks them out: under 1, harder to put down (Toughness). */
+  steady: number;
 }
 
-export const NO_EDGE: Edge = { aim: 1, melee: 1, guard: 1, smart: false, evade: 0, wound: 1 };
+export const NO_EDGE: Edge = { aim: 1, melee: 1, guard: 1, smart: false, evade: 0, wound: 1, ko: 1, steady: 1 };
 
 /** A quickhack in a fight: what it does (the numbers are `src/data/quickhacks.ts`'s). */
 export interface HackEffect {
@@ -126,6 +131,12 @@ export interface CombatRules {
   talk: { base: number; courage: number; temper: number; hurt: number; charisma: number; gun: number; perBeat: number };
   /** RAM back each beat. */
   ramPerBeat: number;
+  /**
+   * Knocked out cold, like the wiki's non-lethal blunt weapons: what a blow of each kind can do
+   * toward it (fists, a club; guns and blades none), the least share of someone's health a blow
+   * must take to count, the most its odds can be, and the minutes someone stays out.
+   */
+  knockout: { kinds: Partial<Record<ClassRules['kind'], number>>; least: number; most: number; minutes: [number, number] };
 }
 
 /** The fight as it stands between beats. */
@@ -148,7 +159,9 @@ export type BeatEvent =
   | { who: 'you' | 'them'; what: 'talk' | 'run'; ok: boolean }
   | { who: 'you'; what: 'hack'; hack: string; dmg: number }
   | { who: 'you'; what: 'heal' | 'regen'; dmg: number }
-  | { who: 'you' | 'them'; what: 'burn'; dmg: number };
+  | { who: 'you' | 'them'; what: 'burn'; dmg: number }
+  /** Knocked out cold by a blow: `who` is the one out. */
+  | { who: 'you' | 'them'; what: 'out' };
 
 /** Whether an attack with this arm can land at this range at all. */
 export function reaches(arm: Arm, range: Range, rules: CombatRules): boolean {
@@ -216,7 +229,7 @@ export function resolveBeat(
   yours: Move,
   theirs: Move,
   ctx: { you: Edge; them: Edge; hack?: { id: string; ram: number; effect: HackEffect }; med?: { heal: number; regen?: { perBeat: number; beats: number } }; indoors: boolean; talkOdds: number; rng: Rng; rules: CombatRules },
-): { state: FightState; events: BeatEvent[]; fled: 'you' | 'them' | null; talked: boolean } {
+): { state: FightState; events: BeatEvent[]; fled: 'you' | 'them' | null; talked: boolean; out: 'you' | 'them' | null } {
   const { rng, rules } = ctx;
   const s: FightState = { ...state, beat: state.beat + 1, you: { ...state.you }, them: { ...state.them } };
   const events: BeatEvent[] = [];
@@ -263,7 +276,7 @@ export function resolveBeat(
     }
   }
   // The attacks, both at once, at the range the moves left.
-  const hits: Array<{ target: Fighter; dmg: number }> = [];
+  const hits: Array<{ target: Fighter; dmg: number; kind?: ClassRules['kind']; edge?: Edge; targetEdge?: Edge }> = [];
   for (const [who, move, f, edge, target, targetEdge, targetMove] of [
     ['you', yours, state.you, ctx.you, s.them, ctx.them, theirs],
     ['them', theirs, state.them, ctx.them, s.you, ctx.you, yours],
@@ -290,7 +303,7 @@ export function resolveBeat(
     const odds = hitChance(f, edge, target, targetEdge, targetMove, s.range, s.beat, rules);
     if (rng.chance(odds)) {
       const dmg = damageOf(f, edge, target, targetEdge, rng, rules);
-      hits.push({ target, dmg });
+      hits.push({ target, dmg, kind: cls.kind, edge, targetEdge });
       events.push({ who, what: 'hit', dmg, kind: cls.kind });
     } else events.push({ who, what: 'miss', kind: cls.kind });
   }
@@ -326,6 +339,16 @@ export function resolveBeat(
     events.push({ who: 'you', what: 'heal', dmg: s.you.hp - before });
   }
   for (const { target, dmg } of hits) target.hp = Math.max(0, target.hp - dmg);
+  // A blow that lands hard enough can knock someone out cold, short of putting them down: the player's first, as it's told.
+  let out: 'you' | 'them' | null = null;
+  for (const { target, dmg, kind, edge, targetEdge } of hits) {
+    if (out || !kind || !edge || !targetEdge || target.hp <= 0) continue;
+    const odds = knockoutOdds(kind, dmg, target, edge, targetEdge, rules);
+    if (odds > 0 && rng.chance(odds)) {
+      out = target === s.them ? 'them' : 'you';
+      events.push({ who: out, what: 'out' });
+    }
+  }
   // Talking it down: it takes if they don't come at the player, or the odds hold even so.
   let talked = false;
   if (yours === 'talk') {
@@ -356,7 +379,20 @@ export function resolveBeat(
     for (const key of ['blind', 'jammed', 'crippled', 'chromeOff'] as const) if (f[key] > 0) f[key] -= 1;
   }
   s.ram = Math.min(s.ramMax, s.ram + rules.ramPerBeat);
-  return { state: s, events, fled, talked };
+  return { state: s, events, fled, talked, out };
+}
+
+/**
+ * The odds a blow knocks someone out cold: what its kind can do, by the share of their health
+ * it took and how much of it is gone already, by the attacker's knack for it and the target's
+ * toughness; nothing from a blow too light to count, and never past the most a blow can be.
+ */
+export function knockoutOdds(kind: ClassRules['kind'], dmg: number, target: Fighter, edge: Edge, targetEdge: Edge, rules: CombatRules): number {
+  const power = rules.knockout.kinds[kind] ?? 0;
+  const share = dmg / Math.max(1, target.max);
+  if (!power || share < rules.knockout.least) return 0;
+  const worn = 1 - target.hp / Math.max(1, target.max);
+  return Math.min(rules.knockout.most, power * share * (1 + worn) * edge.ko * targetEdge.steady);
 }
 
 /**
@@ -418,6 +454,12 @@ export interface CombatContent extends CombatRules {
   /** The share of the cash on the player someone takes off them when they go down. */
   robbed: [number, number];
   lines: Record<string, string[]>;
+  /** The skills a fight trains: Street Brawler (blows landed bare-handed, or with blunt chrome and clubs) and Toughness (blows taken). */
+  skills: { brawler: SkillRules; toughness: SkillRules };
+  /** Experience a fight gives: a Street Brawler's per blow landed (`hit` bare-handed or chrome, `blunt` a club) and per knockout; Toughness per blow taken, more for one that could knock the player out, and for a fight ended on their feet. */
+  training: { brawler: { hit: number; blunt: number; knockout: number }; toughness: { hit: number; blow: number; stood: number } };
+  /** How hard people are to knock out: a base, less for the brave, less again for a ganger. */
+  steady: { base: number; courage: number; gang: number };
 }
 
 /** Something that moves on the clock (health back, heat off): what it was, and when. */
@@ -441,7 +483,8 @@ export interface HeatStatus {
 }
 
 /** How a fight ended: the other down (alive, dead, or got out by Trauma Team), the player down, one of them gone, or talked out of it. */
-export type FightOutcome = 'won' | 'killed' | 'trauma' | 'lost' | 'fled' | 'escaped' | 'talked';
+/** How a fight ends: them down (`won`, laid up), dead, picked up by Trauma Team, or knocked out cold (`out`); the player down (`lost`) or knocked out (`knocked`); one of them gone; or talked out of it. */
+export type FightOutcome = 'won' | 'killed' | 'trauma' | 'out' | 'lost' | 'knocked' | 'fled' | 'escaped' | 'talked';
 
 /** A fight as the player sees it: both sides, the range, the clock, what's happened, and what they can do now. */
 export interface FightView {

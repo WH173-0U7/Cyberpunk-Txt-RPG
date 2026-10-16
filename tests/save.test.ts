@@ -304,6 +304,21 @@ describe('saving', () => {
     expect(readSave({ ...saved, charisma: { level: 0, xp: 1 } })?.charisma).toBeNull();
   });
 
+  it('carries the fighting skills, and an old save starts them at the first level', () => {
+    const { game, now } = played(1);
+    const saved = { ...saveOf(game, now), brawler: { level: 4, xp: 9 }, toughness: { level: 2, xp: 3 } };
+    const read = readSave(JSON.parse(JSON.stringify(saved)));
+    expect(read).toMatchObject({ brawler: { level: 4, xp: 9 }, toughness: { level: 2, xp: 3 } });
+    const again = new Game(world, rules, resume(world, read!)!);
+    expect(again.brawler()).toMatchObject({ level: 4, xp: 9 });
+    expect(again.toughness()).toMatchObject({ level: 2, xp: 3 });
+    const { brawler: _b, toughness: _t, ...old } = saveOf(game, now);
+    const oldRead = readSave(JSON.parse(JSON.stringify(old)));
+    expect(oldRead?.brawler).toBeNull();
+    expect(new Game(world, rules, resume(world, oldRead!)!).brawler()).toMatchObject({ level: 1, xp: 0 });
+    expect(readSave({ ...saved, toughness: { level: -1, xp: 0 } })?.toughness).toBeNull();
+  });
+
   it('carries what people remember of the player, and forgets what it cannot read', () => {
     const { game, now } = played(1);
     const someone = game.population.people[0];

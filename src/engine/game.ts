@@ -261,6 +261,11 @@ export class Game {
   readonly population: Population;
   private society: SocietyState;
   private charismaState: SkillState;
+  /** The fighting skills: Street Brawler (blows landed bare-handed) and Toughness (blows taken). */
+  private brawlerState: SkillState;
+  private toughnessState: SkillState;
+  /** Whoever's been knocked out cold, till when and where they lie (not saved: they come to). */
+  private readonly outColdState = new Map<string, { until: number; spot: Spot }>();
   /** The jobs the player holds: the main one, and maybe a side gig whose hours don't clash with it. */
   private jobs: JobState[];
   /** Shifts worked in each line of work (by the ladder's key), the experience a new job starts higher with. */
@@ -312,6 +317,8 @@ export class Game {
     applyLife(this.population, this.life);
     this.society = progress?.society ? { ...freshSociety(), ...copyOf(progress.society) } : freshSociety();
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
+    this.brawlerState = progress?.brawler ? { ...progress.brawler } : freshSkill();
+    this.toughnessState = progress?.toughness ? { ...progress.toughness } : freshSkill();
     // Saves from before the player said otherwise go by they.
     this.you = progress?.you ? { ...progress.you } : { pronouns: 'they' };
     // Implants the game no longer has are gone, and one fitted twice is fitted once.
@@ -1317,7 +1324,7 @@ export class Game {
     const armed = Boolean(drawWeapon(this.items, gear.arms)?.gun);
     const result = resolveBeat(state, move, theirs, {
       you: this.yourEdge(state.you),
-      them: { ...NO_EDGE, smart: state.them.arm.tech === 'Smart' },
+      them: { ...NO_EDGE, smart: state.them.arm.tech === 'Smart', steady: this.steadyOf(person) },
       ...(chosen ? { hack: { id: chosen.id, ram: chosen.ram, effect: gear.hacks.hacks[chosen.id]!.effect } } : {}),
       ...(dose ? { med: { heal: dose.med.heal, ...(dose.med.regen ? { regen: dose.med.regen } : {}) } } : {}),
       indoors: f.indoors,
@@ -1347,6 +1354,7 @@ export class Game {
       if (e.who === 'you' && (e.what === 'hit' || e.what === 'hack') && s.them.hp <= 0 && !finisher) finisher = e.what === 'hack' ? 'hack' : state.you.arm.cls;
     }
     if (s.them.hp <= 0 && !finisher) finisher = 'hack';
+    this.trainFrom(result.events, state.you.arm.cls);
     // How it stands: someone down, someone gone, or talked out of it.
     if (s.you.hp <= 0 && !f.revived && this.fitted.some((x) => combat.chrome[x.id]?.revive)) {
       f.revived = true;
@@ -1357,6 +1365,8 @@ export class Game {
     const lethal = !this.lethalOn ? 0 : finisher === 'hack' ? combat.hackLethal : (combat.classes[finisher ?? 'fists']?.lethal ?? 0);
     if (s.them.hp <= 0) this.endFight(person, lethal, rng, vars, now);
     else if (s.you.hp <= 0) this.endFight(person, 0, rng, vars, now, 'lost');
+    else if (result.out === 'them') this.endFight(person, 0, rng, vars, now, 'out');
+    else if (result.out === 'you') this.endFight(person, 0, rng, vars, now, 'knocked');
     else if (result.fled === 'you') this.endFight(person, 0, rng, vars, now, 'fled');
     else if (result.fled === 'them') this.endFight(person, 0, rng, vars, now, 'escaped');
     else if (result.talked) this.endFight(person, 0, rng, vars, now, 'talked');
@@ -1430,8 +1440,9 @@ export class Game {
     } else if (how === 'lost' && this.covered(now)) {
       this.fightLine('youDown', person, vars);
       result = this.pickedUp(this.covered(now)!, person, vars);
-    } else if (how === 'lost') {
-      this.fightLine('youDown', person, vars);
+    } else if (how === 'lost' || how === 'knocked') {
+      // Put down, or knocked out cold: either way they go through the player's pockets.
+      this.fightLine(how === 'knocked' ? 'youOut' : 'youDown', person, vars);
       const share = rng.range(combat.robbed[0], combat.robbed[1]);
       const { money, taken } = takeCash(this.money, Math.round(cash(this.money) * share));
       this.money = money;
@@ -1441,8 +1452,15 @@ export class Game {
         this.fightLine('robbed', person, { ...vars, took: String(taken) });
         this.events.emit('walletChanged', this.wallet);
       }
-      f.state.you.hp = 1;
-      result = `${capitalize(name)} put you down${taken ? `, and took ${taken} €$` : ''}.`;
+      if (how === 'lost') f.state.you.hp = 1;
+      result = how === 'knocked' ? `${capitalize(name)} knocked you out cold${taken ? `, and took ${taken} €$` : ''}. You come to on the floor.` : `${capitalize(name)} put you down${taken ? `, and took ${taken} €$` : ''}.`;
+    } else if (how === 'out') {
+      // Out cold, not hurt past a night's sleep: they lie where they fell for a while, then come to.
+      this.fightLine('theyOut', person, vars);
+      const minutes = rng.int(combat.knockout.minutes[0], combat.knockout.minutes[1]);
+      const spot = this.spot;
+      if (spot) this.outColdState.set(person.id, { until: now + (minutes * 60_000) / this.rules.timeScale, spot });
+      result = `${capitalize(name)} is out cold, and won't come to for a while.`;
     } else if (how === 'fled') {
       result = `You got away from ${name}.`;
     } else if (how === 'escaped') {
@@ -1452,6 +1470,8 @@ export class Game {
     }
     f.over = outcome;
     f.result = result;
+    // Walking away from it on their own feet toughens the player up.
+    if (outcome !== 'lost' && outcome !== 'knocked' && f.state.beat > 0) this.train('toughness', combat.training.toughness.stood);
     f.tell = null;
     this.healthState = { value: Math.max(1, f.state.you.hp), at: now };
     this.drainEnergy(Math.min(4, f.state.beat), now);
@@ -1544,6 +1564,8 @@ export class Game {
     if (e.what === 'outOfReach') return `${who}Reachless`;
     if (e.what === 'jammed') return e.who === 'them' ? 'theyJammed' : null;
     if (e.what === 'freeze') return e.who === 'you' ? 'youFreeze' : null;
+    // A knockout is told as the fight ends.
+    if (e.what === 'out') return null;
     return `${who}${e.what[0]!.toUpperCase()}${e.what.slice(1)}`;
   }
 
@@ -1638,7 +1660,11 @@ export class Game {
       if (sys?.guard && (system !== 'berserk' || close)) guard *= sys.guard;
     }
     aim *= 1 - 0.3 * this.inebriation(Date.now()).severity;
-    return { aim, melee, guard, smart, evade, wound: this.lethalOn ? 1 : combat.nonLethal };
+    // A Street Brawler's blows, bare-handed or with a club or Gorilla Arms: a little surer, harder, and likelier to put someone out.
+    const brawl = kind === 'fists' || kind === 'blunt' ? this.brawler().bonus : 1;
+    aim *= 1 + (brawl - 1) * 0.25;
+    melee *= brawl;
+    return { aim, melee, guard, smart, evade, wound: this.lethalOn ? 1 : combat.nonLethal, ko: brawl, steady: 1 / this.toughness().bonus };
   }
 
   /** The time the player has for a move: the base, and more with reflex chrome (some of it only when they're hurt). */
@@ -2618,13 +2644,25 @@ export class Game {
     const spot = this.spot;
     if (!spot) return [];
     const clock = this.clockAt(now);
-    const present = peopleAt(this.population, this.world, spot, clock, this.rules.food.dishes, this.rules.people.out);
-    const scenes = scenesAt(present.map((p) => p.person), this.population, spot, clock, this.world, this.rules.people.turf, (gang) => this.rules.people.gangs[gang]?.rivals ?? [], this.rules.life, this.world.seed);
+    // Whoever was knocked out lies where they fell till they come to, wherever their day would have them.
+    const cold: string[] = [];
+    const elsewhere = new Set<string>();
+    for (const [id, o] of this.outColdState) {
+      if (!this.outCold(id, now)) continue;
+      if (o.spot.kind === spot.kind && o.spot.id === spot.id) cold.push(id);
+      else elsewhere.add(id);
+    }
+    const present = peopleAt(this.population, this.world, spot, clock, this.rules.food.dishes, this.rules.people.out).filter((p) => !elsewhere.has(p.person.id));
+    for (const id of cold) {
+      const person = this.person(id);
+      if (person && person.diedOn === undefined && !present.some((p) => p.person.id === id)) present.push({ person, doing: 'out cold' });
+    }
+    const scenes = scenesAt(present.map((p) => p.person).filter((p) => !cold.includes(p.id)), this.population, spot, clock, this.world, this.rules.people.turf, (gang) => this.rules.people.gangs[gang]?.rivals ?? [], this.rules.life, this.world.seed);
     return present.map(({ person, doing }) => ({
       person,
-      doing,
+      doing: cold.includes(person.id) ? 'out cold' : doing,
       stance: this.stanceOf(person, now),
-      scene: scenes.get(person.id) ?? null,
+      scene: cold.includes(person.id) ? null : (scenes.get(person.id) ?? null),
     }));
   }
 
@@ -3308,6 +3346,62 @@ export class Game {
     return { ...this.charismaState };
   }
 
+  /** Street Brawler: how the player's bare hands (and clubs, and Gorilla Arms) do. */
+  brawler(): SkillStatus {
+    return skillStatus(this.brawlerState, this.rules.combat.skills.brawler);
+  }
+
+  /** Toughness: how much it takes to knock the player out. */
+  toughness(): SkillStatus {
+    return skillStatus(this.toughnessState, this.rules.combat.skills.toughness);
+  }
+
+  get brawlerSaved(): SkillState {
+    return { ...this.brawlerState };
+  }
+
+  get toughnessSaved(): SkillState {
+    return { ...this.toughnessState };
+  }
+
+  /** Experience for a fighting skill, and the line when it goes up a level. */
+  private train(skill: 'brawler' | 'toughness', amount: number): void {
+    if (amount <= 0) return;
+    const rules = this.rules.combat.skills[skill];
+    const { state, levels } = gainXp(skill === 'brawler' ? this.brawlerState : this.toughnessState, amount, rules);
+    if (skill === 'brawler') this.brawlerState = state;
+    else this.toughnessState = state;
+    if (levels) this.say(fill(rules.levelLine, { level: String(state.level) }), 'system');
+    this.events.emit('skillChanged', { skill, status: skill === 'brawler' ? this.brawler() : this.toughness() });
+  }
+
+  /** What a beat trains: every blow the player lands bare-handed or with Gorilla Arms (a club less), a knockout more; every blow they take, more for one that could have knocked them out. */
+  private trainFrom(events: BeatEvent[], cls: FightClass): void {
+    const { brawler, toughness } = this.rules.combat.training;
+    let brawl = 0;
+    let tough = 0;
+    for (const e of events) {
+      if (e.what === 'hit' && e.who === 'you') brawl += e.kind === 'fists' || cls === 'gorilla-arms' ? brawler.hit : e.kind === 'blunt' ? brawler.blunt : 0;
+      else if (e.what === 'hit' && e.who === 'them') tough += toughness.hit + (e.kind === 'fists' || e.kind === 'blunt' ? toughness.blow : 0);
+      else if (e.what === 'out' && e.who === 'them') brawl += brawler.knockout;
+    }
+    this.train('brawler', brawl);
+    this.train('toughness', tough);
+  }
+
+  /** How hard someone is to knock out: the brave less likely, a ganger less again. */
+  private steadyOf(person: Person): number {
+    const { steady } = this.rules.combat;
+    return (steady.base - person.traits.courage * steady.courage) * (person.gang ? steady.gang : 1);
+  }
+
+  /** Whether someone is lying out cold, knocked out, and not come to yet. */
+  outCold(id: string, now: number): boolean {
+    const out = this.outColdState.get(id);
+    if (out && out.until <= now) this.outColdState.delete(id);
+    return Boolean(out && out.until > now);
+  }
+
   private gainCharisma(amount: number): void {
     const { state, levels } = gainXp(this.charismaState, amount, this.rules.charisma);
     this.charismaState = state;
@@ -3362,6 +3456,7 @@ export class Game {
   }
 
   private isHere(id: string, now: number): Presence | undefined {
+    if (this.outCold(id, now)) return undefined;
     return this.peopleHere(now).find((p) => p.person.id === id);
   }
 

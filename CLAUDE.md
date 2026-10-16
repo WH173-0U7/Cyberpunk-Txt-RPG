@@ -320,8 +320,8 @@ it needs no generator bump. The pieces:
   to remember is another `MemoryKind` with its numbers and lines (the dialogue test pins
   every memory line, and every news line, to exactly one kind).
 - `src/engine/skills.ts` is a skill that grows with use (experience, levels, a bonus per
-  level); charisma is the one so far (`src/data/skills.ts`), applied in `Game.talk`,
-  `gift` and `ask`. A new skill is another `SkillRules` in `src/data/skills.ts`, a state on
+  level); charisma (`src/data/skills.ts`), applied in `Game.talk`, `gift` and `ask`, and
+  the two fighting skills, Street Brawler and Toughness (see Fighting). A new skill is another `SkillRules` in `src/data/skills.ts`, a state on
   `Game`, a save field and an event.
 - `src/engine/dialogue.ts` puts lines together from fragments in `src/data/dialogue.ts`
   (our own words; slang from the wiki's Streetslang page, by voice through the `lexicon`).
@@ -508,7 +508,7 @@ move at once and both land together, the player against the clock:
 
 - `src/engine/combat.ts` is the engine, pure: `resolveBeat(state, yours, theirs, ctx)` moves
   first (a step in or out, a run), then cover and reloads, then the attacks at the range left,
-  then the player's quickhack, then whatever burns; `theirMove` is what someone does (a blade
+  then the player's quickhack, then a knockout, then whatever burns; `theirMove` is what someone does (a blade
   closes in, a gun finds its range or ducks to reload, the scared run or back down when it
   turns on them), `talkOdds` the odds of talking them down, `hitChance`/`damageOf` the dice.
   The moves are `Move`: attack, advance (close in), back (off), cover, hack, heal (a med:
@@ -548,8 +548,27 @@ move at once and both land together, the player against the clock:
   corpo, whose Trauma Team gets them out alive, with heat; else `won`, laid up for
   `hurtDays` in `LifeState.hurt`, in the hospital nearest home, which the result names), the
   player down (`lost`: robbed of some cash, left at 1; on a Trauma Team plan, picked up
-  instead, see Medicine),
+  instead, see Medicine), someone knocked out cold (`out`, `knocked`; below),
   `fled` (out of the building), `escaped`, or `talked`. A Second Heart gets the player up once.
+- Knockouts: a blow from fists or anything blunt (`COMBAT.knockout.kinds`, the wiki's blunt
+  weapons being its non-lethal ones) that leaves someone standing can knock them out cold,
+  by `knockoutOdds`: its share of their health past `least`, more the more worn down they
+  are, times the attacker's `Edge.ko` and the target's `Edge.steady`, capped at `most`;
+  `resolveBeat` says who in `out` (the player's blow first). Them out (`out`): not hurt, not
+  dead, they lie where they fell for `knockout.minutes` (`Game`'s `outColdState`, not
+  saved), listed by `peopleHere` as "out cold" wherever their day would have them, past
+  talking to (`Game.outCold`; `isHere` refuses them, the card shows no commands). The player
+  out (`knocked`): robbed like `lost`, but their health is what it was, and no Trauma Team
+  comes for it. How steady someone is is `COMBAT.steady` (the brave and gangers steadier).
+- The fighting skills grow with use (`COMBAT.skills`, `SkillRules` in `src/data/skills.ts`;
+  the XP is `COMBAT.training`, trained by `Game`'s private `trainFrom` after every beat):
+  Street Brawler (the wiki's 2077 skill for fists and blunt weapons), for every blow the
+  player lands with fists or Gorilla Arms (a club less) and more for a knockout, adds its
+  bonus to their melee damage, a quarter of it to their aim, and all of it to `ko`;
+  Toughness (ours), for every blow taken (more for fists and clubs) and for every fight
+  walked away from, divides the player's `steady`. Both are `Game.brawler()`/`toughness()`,
+  saved as `brawler` and `toughness`, the `skillChanged` event, and rows in the status
+  drop-down.
   Every line is `COMBAT.lines`, by what happened, filled with `fightVars` (who, their
   pronouns and the verbs that go with them, the arms on both sides); a named subject takes
   the singular verb, so `{s}`/`{es}`/`{ies}`/`{is}`/`{has}` only follow `{he}`. A tell
@@ -730,7 +749,7 @@ building or at a place (the target view keeps its own, with the district, since 
 elsewhere). The energy bar has no words: one line under it (`src/ui/status.ts`, filled by
 `showStatus` in `main.ts` on every tick) says the figure, the level, when the next point
 comes, and anything the matter (drunk, masked, a shift on elsewhere and the walk there, else the job's rung); tapping it unfolds
-everything else about the player: experience, charisma, eddies and the bank, the pass, the
+everything else about the player: experience, charisma, the fighting skills, eddies and the bank, the pass, the
 job, the condition, the mask, every reputation, the map count, the weather, the date, and
 last the **Settings** link (the drop-down's `foot`, which `StatusPanel.render` keeps at the
 bottom). Anything new the player should know about themselves goes in there as a row, not
