@@ -339,6 +339,13 @@ it needs no generator bump. The pieces:
   `dream` topic and a `dream` fact), the `views` topic on the corps and the city, their age
   bracket, their home, their hangout, their boss and years at work, their district
   (`inWatson`…). Loosely-fitting lines can be `vague` (they give way to ones that say more).
+  Nobody says the same thing twice running: a `Speaker`'s `recent` (what they said to the
+  player lately, from the log, and what the player has said to anyone, `Game`'s
+  `saidLately`) steers `pickFragment` clear of a line said lately (`saidIn`, whole or inside
+  something longer) while anything else fits; narration (`Game`'s private `narration`, the
+  shift moments) and a fight's beats (`fightLine`, against the last few beats) do the same.
+  So a pool wants enough lines that the ones left still fit whoever's talking: three or more
+  for any speaker, more for what comes up every time (greetings, the player's questions).
   The first time they talk to the player, or answer something else first, they say who they
   are (`LINES.introduce`), which is how the player learns a name from them. An aside
   (`tails`) comes only at the end of all they say: a memory brought up and the reply to a

@@ -386,7 +386,7 @@ export const COMBAT: CombatContent = {
       'You thumb fresh rounds into the {arm}.',
       'Mag out, mag in. The {arm} is fed.',
       'You reload the {arm} by feel.',
-      'Behind cover, you feed the {arm}.',
+      'You feed the {arm} without looking.',
       'You slap a new magazine home. The {arm} is ready.',
     ],
     theyReload: [
