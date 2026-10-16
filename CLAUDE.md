@@ -605,11 +605,25 @@ move at once and both land together, the player against the clock:
   `resolveBeat` says who in `out` (the player's blow first). Them out (`out`): not hurt, not
   dead, they lie where they fell for `knockout.minutes` (`Game`'s `outColdState`, not
   saved), listed by `peopleHere` as "out cold" wherever their day would have them, past
-  talking to (`Game.outCold`; `isHere` refuses them, the card shows only `⋯` with Rob:
+  talking to (`Game.outCold`; `isHere` refuses them, the card shows only `⋯` with Rob and
+  the ways to kill them, below:
   `Game.rob` goes through their pockets, no fight, four fifths and more of what they carry,
   `LINES.you.robCold` and `LINES.rob.cold`/`coldNothing`, and once a week like any robbery). The player
   out (`knocked`): robbed like `lost`, but their health is what it was, and no Trauma Team
   comes for it. How steady someone is is `COMBAT.steady` (the brave and gangers steadier).
+- Killing someone out cold (`COMBAT.finish`, `FinishKind`): `Game.finishes(id, now)` is the
+  ways the player has, by what they carry and have fitted (`finishTools`): choke and stomp
+  with bare hands always, cut with a blade (Mantis Blades too), shoot with a loaded gun (a
+  round spent), beat with something blunt (Gorilla Arms too), garrote with a monowire; each
+  with its `label`, its `lines` (`{weapon}`, and `whoVars`), how `slow` it is and whether
+  it's `loud`. `Game.killCold(id, way, now)` does it: someone here may get there first
+  (`interveneOdds`: `intervene.base` times their nerve, more for the victim's family, friends
+  and gang and for a guard, times `slow`, less each in a crowd, never past `most`), and then it's an `assault`
+  and a fight with them (`openFight` with a `stopped` line: a fight they started, no incident
+  of the player's); an NCPD officer here always does, and draws on the player instead.
+  Done, the victim is dead as by a killing blow, a `murder` incident and crime, and a `loud`
+  way is heard through the building (`heardInBuilding`, calling at `heard` of the odds, never
+  naming the player). The card's `⋯` lists them after Rob (`data-kill`).
 - The fighting skills grow with use (`COMBAT.skills`, `SkillRules` in `src/data/skills.ts`;
   the XP is `COMBAT.training`, trained by `Game`'s private `trainFrom` after every beat):
   Street Brawler (the wiki's 2077 skill for fists and blunt weapons), for every blow the

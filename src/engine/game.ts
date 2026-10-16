@@ -3,7 +3,7 @@ import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergySt
 import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
-import { masteryEdge, NO_EDGE, perkFamily, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
+import { masteryEdge, NO_EDGE, perkFamily, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
 import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
@@ -1245,7 +1245,18 @@ export class Game {
     if (confront && !confront.officers.includes(id)) return false;
     const here = this.isHere(id, now);
     if (!here || here.person.diedOn !== undefined) return false;
+    this.openFight(here, now, null);
+    return true;
+  }
+
+  /**
+   * A fight with someone here: one the player starts (`lead` null: an assault, the way an
+   * incident goes, and whoever saw it may call it in), or one they do, told by `lead` (someone
+   * stepping in to stop the player: no incident of the player's, they started it).
+   */
+  private openFight(here: Presence, now: number, lead: string | null): void {
     const { person, stance, doing } = here;
+    const id = person.id;
     const { combat, society, timeScale } = this.rules;
     const indoors = Boolean(this.inside);
     const health = this.health(now);
@@ -1275,20 +1286,22 @@ export class Game {
     const speaker = this.speakerFor(person, stance, doing, now);
     // Who could name the player, before this makes them known to the victim.
     const knew = this.facesHere(now);
-    const fallout = this.incident('assault', person, 0, now);
+    const fallout = lead === null ? this.incident('assault', person, 0, now) : [id];
     learnOf(this.society, id, 'met');
     changeStanding(this.society, id, this.masked() ? {} : { met: true }, society, timeScale, now);
     this.fightState = { with: id, state, indoors, startedAt: now, deadline: now, next: 'attack', tell: null, log: [], beatLines: [], revived: false, over: null, result: '', launched: false, nerve: { courage: person.traits.courage, temper: person.traits.temper }, knew };
-    this.fightLine('start', person, { ...speaker.vars, ...this.fightVars(person, state.you, state.them) });
+    if (lead === null) this.fightLine('start', person, { ...speaker.vars, ...this.fightVars(person, state.you, state.them) });
+    else this.fightState.beatLines.push(lead);
     this.closeBeat();
     this.nextBeat(person, now);
-    // Whoever saw it go for a phone, or don't; the one it's done to, once it's over.
-    this.crime('assault', person, now, knew, 'witnesses');
-    this.noteFeedback(person, before, now, this.masked() ? this.rules.lines.notes.masked : '', speaker.vars);
-    this.checkFired(now);
+    if (lead === null) {
+      // Whoever saw it go for a phone, or don't; the one it's done to, once it's over.
+      this.crime('assault', person, now, knew, 'witnesses');
+      this.noteFeedback(person, before, now, this.masked() ? this.rules.lines.notes.masked : '', speaker.vars);
+      this.checkFired(now);
+    }
     this.events.emit('societyChanged', { people: fallout });
     this.events.emit('fightChanged', this.fightView());
-    return true;
   }
 
   /** What there is to do in the fight this beat, and what each would be done with. */
@@ -2693,6 +2706,122 @@ export class Game {
     return true;
   }
 
+  // ───────────── Finishing someone ─────────────
+
+  /** The ways the player could kill someone lying out cold here, by what they carry and have fitted: their hands always, and a blade, a loaded gun, something blunt or a monowire if they have one. */
+  finishes(id: string, now: number): Array<{ id: FinishKind; label: string; with: string }> {
+    if (this.fighting || this.detained(now) || !this.outCold(id, now) || !this.peopleHere(now).some((p) => p.person.id === id)) return [];
+    const tools = this.finishTools();
+    return (Object.entries(this.rules.combat.finish.ways) as Array<[FinishKind, FinishRules]>).flatMap(([way, r]) => {
+      const tool = r.needs === 'hands' ? { name: 'your hands' } : tools[r.needs];
+      return tool ? [{ id: way, label: r.label, with: tool.name }] : [];
+    });
+  }
+
+  /** What the player has to kill with, by what it takes: the first blade, loaded gun, blunt thing and wire they carry or have fitted. */
+  private finishTools(): Partial<Record<'blade' | 'gun' | 'blunt' | 'wire', { name: string; item?: Item }>> {
+    const { combat, gear } = this.rules;
+    const tools: Partial<Record<'blade' | 'gun' | 'blunt' | 'wire', { name: string; item?: Item }>> = {};
+    for (const item of this.items) {
+      const weapon = weaponOf(item, gear.arms);
+      const kind = weapon ? combat.classes[weapon.class]?.kind : undefined;
+      if (!weapon || !kind) continue;
+      if (kind === 'gun') {
+        if ((item.loaded ?? 0) > 0) tools.gun ??= { name: weapon.short, item };
+      } else if (kind === 'blade' || kind === 'blunt' || kind === 'wire') tools[kind] ??= { name: weapon.short };
+    }
+    for (const fit of this.fitted) {
+      const cls = combat.chrome[fit.id]?.arm;
+      const kind = cls ? combat.classes[cls]?.kind : undefined;
+      const implant = gear.chrome.implants[fit.id];
+      if (implant && (kind === 'blade' || kind === 'blunt' || kind === 'wire')) tools[kind] ??= { name: implant.short };
+    }
+    return tools;
+  }
+
+  /**
+   * Kills someone lying out cold, the way chosen (`finishes`). Someone here may get there first
+   * and stop it (by their nerve, what the victim is to them, a guard's job; slower ways give
+   * them longer): then it's an assault, and a fight with whoever stopped it; an NCPD officer
+   * draws on the player instead. Done, it's a murder: whoever's in the room saw it, and a
+   * gunshot the whole building heard.
+   */
+  killCold(id: string, way: FinishKind, now: number): boolean {
+    const chosen = this.finishes(id, now).find((f) => f.id === way);
+    const person = this.person(id);
+    if (!chosen || !person) return false;
+    const rules = this.rules.combat.finish;
+    const how = rules.ways[way];
+    const rng = createRng(`${this.world.seed}:finish:${id}:${now}`);
+    const knew = this.facesHere(now);
+    const here = this.peopleHere(now).filter((p) => p.person.id !== id && p.doing !== 'out cold');
+    const officer = this.rules.police ? here.find((p) => NCPD.test(p.person.job.role)) : undefined;
+    const crowd = Math.max(1, here.length) ** rules.intervene.crowd;
+    const stopper = officer ?? here.find((p) => rng.chance(Math.min(rules.intervene.most, (this.interveneOdds(p.person, person) * how.slow) / crowd)));
+    if (stopper) {
+      const text = finish(rng.pick(rules.stopped)!, this.whoVars(stopper.person));
+      // A try at it is an assault on them all the same.
+      const fallout = this.incident('assault', person, 0, now);
+      this.crime('assault', person, now, knew, 'witnesses');
+      if (officer) {
+        this.confront([officer.person.id], 'assault', 'scene', now, [text]);
+        this.events.emit('policeChanged', this.police(now));
+      } else this.openFight(stopper, now, text);
+      this.checkFired(now);
+      this.events.emit('societyChanged', { people: fallout });
+      return true;
+    }
+    const gun = how.needs === 'gun' ? this.finishTools().gun?.item : undefined;
+    if (gun) {
+      gun.loaded = Math.max(0, (gun.loaded ?? 1) - 1);
+      this.events.emit('inventoryChanged', this.inventory);
+    }
+    this.say(finish(rng.pick(how.lines)!, { ...this.whoVars(person), weapon: chosen.with }), 'error');
+    const day = this.clockAt(now).day;
+    this.life.dead[id] = day;
+    person.diedOn = day;
+    delete this.life.hurt[id];
+    delete person.hurtUntil;
+    this.outColdState.delete(id);
+    const fallout = this.incident('murder', person, 0, now);
+    if (this.society.romance?.with === id) this.society.romance = null;
+    this.say(`${capitalize(this.fightName(person, false))} is dead.`, 'system');
+    // Whoever's here saw it; a gunshot, the whole building heard.
+    this.crime('murder', person, now, knew, 'witnesses', undefined, how.loud ? { people: this.heardInBuilding(now), share: rules.heard } : undefined);
+    this.checkFired(now);
+    this.events.emit('societyChanged', { people: fallout });
+    return true;
+  }
+
+  /** The odds someone here would stop the player killing someone: their nerve, what the victim is to them, a guard's job. */
+  private interveneOdds(p: Person, victim: Person): number {
+    const r = this.rules.combat.finish.intervene;
+    let odds = r.base * p.traits.courage * 2;
+    const tie = tiesOf(this.population, p.id).find((t) => t.to === victim.id);
+    if (tie) odds *= FAMILY.includes(tie.kind) ? r.kin : r.friend;
+    if (p.gang && p.gang === victim.gang) odds *= r.gang;
+    if (GUARD.test(p.job.role)) odds *= r.guard;
+    return odds;
+  }
+
+  /** Everyone in the building the player is in but out of the room: who'd hear a gunshot. */
+  private heardInBuilding(now: number): Person[] {
+    const spot = this.spot;
+    if (!this.inside || !spot || !this.rules.rooms) return [];
+    const here = new Set(this.peopleHere(now).map((p) => p.person.id));
+    return peopleAt(this.population, this.world, spot, this.clockAt(now), this.rules.food.dishes, this.rules.people.out)
+      .map((p) => p.person)
+      .filter((p) => !here.has(p.id));
+  }
+
+  /** Someone, for a line about them: who (as the player knows them), their pronouns, and the verb endings after `{he}`. */
+  private whoVars(person: Person): Record<string, string> {
+    const p = pronounsOf(person);
+    const they = person.pronouns === 'they';
+    const who = this.fightName(person, false);
+    return { who, Who: capitalize(who), he: p.he, He: capitalize(p.he), him: p.him, his: p.his, His: capitalize(p.his), s: they ? '' : 's', es: they ? '' : 'es' };
+  }
+
   // ───────────── The NCPD ─────────────
 
   /**
@@ -2801,7 +2930,7 @@ export class Game {
    * cold, the victim may once they come to. Nobody calls, and there's nothing on record. A call
    * files a report, names the player if a caller could put a name to their face, and sends a unit.
    */
-  private crime(kind: Crime, victim: Person, now: number, knew: Set<string>, who: 'witnesses' | 'victim' | 'all', scene = { spot: this.spot, where: this.where }): void {
+  private crime(kind: Crime, victim: Person, now: number, knew: Set<string>, who: 'witnesses' | 'victim' | 'all', scene = { spot: this.spot, where: this.where }, heard?: { people: Person[]; share: number }): void {
     const police = this.rules.police;
     const { spot, where: at } = scene;
     if (!police) return;
@@ -2830,6 +2959,12 @@ export class Game {
     const crowd = Math.max(1, witnesses.length) ** police.caller.crowd;
     const alarm = police.crimes[kind].alarm;
     const called = callers.filter((c) => NCPD.test(c.job.role) || rng.chance(c.id === victim.id ? this.callOdds(c, victim, where.call, turf) : Math.min(1, (this.callOdds(c, victim, where.call, turf) * alarm) / crowd)));
+    // Whoever only heard it, through the walls, calls less, and can't say whose face it was.
+    const ears = heard ? heard.people.filter((c) => rng.chance(Math.min(1, (this.callOdds(c, victim, where.call, turf) * alarm * heard.share) / Math.max(1, heard.people.length) ** police.caller.crowd))) : [];
+    if (!called.length && ears.length) {
+      this.report(kind, ears[0]!, false, 'nothing', spot, at, where.district.id, where.minutes, now, rng, null);
+      return;
+    }
     if (!called.length) {
       if (!witnesses.length) return;
       const local = witnesses.find((c) => c.gang && turf.has(c.gang));
@@ -2860,8 +2995,7 @@ export class Game {
       d.told ||= told;
     } else p.dispatch = { report: id, crime: kind, spot, x: at.x, y: at.y, arriveAt, officers: this.unitFor(district, now, rng), told };
     if (pool) {
-      const vars = { who: this.describe(caller.id, now)?.name ?? 'someone', his: pronounsOf(caller).his };
-      this.say(`${this.policeLine(pool, `call:${id}`, vars)} ${this.policeLine(police.lines.dispatch, `unit:${id}`)}`, 'error');
+      this.say(`${this.policeLine(pool, `call:${id}`, this.whoVars(caller))} ${this.policeLine(police.lines.dispatch, `unit:${id}`)}`, 'error');
     }
     this.events.emit('policeChanged', this.police(now));
   }

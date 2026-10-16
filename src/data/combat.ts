@@ -207,6 +207,93 @@ export const COMBAT: CombatContent = {
     },
     standing: STANDING,
   },
+  // Killing someone who lies out cold, by what the player has to do it with: slow and quiet with
+  // the hands, quick with a blade, quick and loud with a gun. The slower, the likelier someone
+  // here gets there first; a gunshot carries through the walls.
+  finish: {
+    ways: {
+      choke: {
+        label: 'Choke',
+        needs: 'hands',
+        loud: false,
+        slow: 1.6,
+        lines: [
+          'You kneel on {who} and close your hands around {his} throat. It takes longer than anyone would think. Then it is done.',
+          'An arm under the jaw, the other locked behind {his} head, and you hold on. {He} never come{s} round.',
+          'You press both thumbs into {his} throat and look at the wall until {he} stop{s} breathing.',
+          'You squeeze the last of the air out of {who}. Nobody hurries you, and nobody has to.',
+        ],
+      },
+      stomp: {
+        label: 'Stomp',
+        needs: 'hands',
+        loud: false,
+        slow: 1.1,
+        lines: [
+          'You stand over {who} and bring your heel down, and again, until there is no point to a third.',
+          'You stamp down on {his} head. The sound it makes will stay with you.',
+          'Three stamps of your boot, and {who} is gone.',
+          'You put all your weight into one stamp to the throat. {He} twitch{es} once, and then {he} do{es}n\'t.',
+        ],
+      },
+      cut: {
+        label: 'Cut throat',
+        needs: 'blade',
+        loud: false,
+        slow: 0.6,
+        lines: [
+          'You draw the {weapon} across {his} throat. {He} never wake{s}.',
+          'One quick pull of the {weapon}, and a dark pool spreads out from under {who}.',
+          'You open {his} throat with the {weapon} and step back from the spreading red.',
+          'The {weapon} goes in under the ribs, once, twice. {He} let{s} out a breath, and that is all.',
+        ],
+      },
+      shoot: {
+        label: 'Shoot',
+        needs: 'gun',
+        loud: true,
+        slow: 0.3,
+        lines: [
+          'You put the {weapon} to {his} head and pull the trigger. The shot rings in your ears.',
+          'One round from the {weapon}, point-blank, loud enough to be heard through every wall.',
+          'The {weapon} kicks once in your hand, and {who} is past waking.',
+          'You fire the {weapon} into {who} from a step away. Somewhere close, somebody screams.',
+        ],
+      },
+      beat: {
+        label: 'Beat',
+        needs: 'blunt',
+        loud: false,
+        slow: 1,
+        lines: [
+          'You bring the {weapon} down on {his} head until {he} stop{s} moving.',
+          'Two swings of the {weapon}, and {who} won\'t be getting up.',
+          'The {weapon} comes down, and comes down again. Then it is quiet.',
+          'You beat {who} with the {weapon} until {he} stop{s} breathing.',
+        ],
+      },
+      garrote: {
+        label: 'Garrote',
+        needs: 'wire',
+        loud: false,
+        slow: 0.8,
+        lines: [
+          'The {weapon} loops once around {his} neck. You pull, and it does the rest.',
+          'You let the {weapon} uncoil around {his} throat and draw it tight. It is quick, and very clean.',
+          'A flick of the wrist, and the {weapon} is round {his} neck. {He} never wake{s}.',
+          'You thread the {weapon} under {his} chin and pull. It cuts like a thought.',
+        ],
+      },
+    },
+    intervene: { base: 0.14, kin: 3, friend: 2, gang: 2.5, guard: 2, crowd: 0.5, most: 0.85 },
+    heard: 0.5,
+    stopped: [
+      '{Who} gets to you first and drags you off before it is done.',
+      '{Who} shoves you off, hard: "What the hell are you doing?"',
+      'Before you can finish it, {who} is on you.',
+      '{Who} won\'t stand there and watch. {He} haul{s} you off and square{s} up.',
+    ],
+  },
   lines: {
     start: [
       'You go for {who}. No more talking.',

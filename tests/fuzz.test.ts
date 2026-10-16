@@ -249,7 +249,12 @@ describe('playing badly', () => {
           } else if (roll < 0.8 && people.length) {
             const who = rng.pick(people)!.person.id;
             const what = rng.next();
-            if (what < 0.22) game.talk(who, now);
+            // Someone lying out cold: gone through, or killed, any way the player has.
+            const ways = game.finishes(who, now);
+            if (ways.length && rng.chance(0.5)) {
+              game.killCold(who, rng.pick(ways)!.id, now);
+              playOut();
+            } else if (what < 0.22) game.talk(who, now);
             else if (what < 0.26) game.talk(who, now, 'flirt');
             else if (what < 0.3) {
               const moves = game.romanceWith(who, now);

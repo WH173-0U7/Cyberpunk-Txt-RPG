@@ -58,8 +58,10 @@ export interface PersonCardView {
   between: string[];
   /** Whether they're here to be dealt with. */
   here: boolean;
-  /** Here, but knocked out: nothing to do with them but rob them. */
+  /** Here, but knocked out: nothing to do with them but rob them, or kill them. */
   cold: boolean;
+  /** The ways to kill someone lying out cold, by what the player has to do it with. */
+  finishes: Array<{ id: string; label: string }>;
   /** Who the player knows them to be connected to: on the profile, under the rest. */
   web: WebNodeView[];
   webHint: string;
@@ -130,6 +132,8 @@ export interface PeopleHandlers {
   onGift(id: string, itemId: string): void;
   /** The player asked a person to chop a locked credchip. */
   onChop(id: string, chipId: string): void;
+  /** The player killed someone lying out cold, a way they have to do it. */
+  onKill(id: string, way: string): void;
   onQuestion(id: string, fact: string): void;
   /** The player made a move of the heart: asked them out, took them out, asked to make it official, ended it. */
   onHeart(id: string, move: HeartMove): void;
@@ -179,15 +183,16 @@ export class People {
     // Everything on the card goes through one listener: commands, the choices they unfold, names in the web.
     els.card.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
-      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-item], [data-chip], [data-action], [data-heart], [data-open], [data-day]');
+      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-item], [data-chip], [data-action], [data-kill], [data-heart], [data-open], [data-day]');
       if (!button) return;
-      const { cmd, approach, fact, item, chip, action, heart, open, id, day } = button.dataset;
+      const { cmd, approach, fact, item, chip, action, kill, heart, open, id, day } = button.dataset;
       if (cmd === 'talk' || cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'heart' || cmd === 'more') handlers.onPicker(cmd);
       else if (heart && id) handlers.onHeart(id, heart as HeartMove);
       else if (approach && id) handlers.onTalk(id, approach);
       else if (fact && id) handlers.onQuestion(id, fact);
       else if (item && id) handlers.onGift(id, item);
       else if (chip && id) handlers.onChop(id, chip);
+      else if (kill && id) handlers.onKill(id, kill);
       else if (day !== undefined && id) handlers.onRoster(id, Number(day));
       else if (action && id && !(button as HTMLButtonElement).disabled) handlers.onAction(action as PersonAction, id);
       else if (open) handlers.onSelect(open);
@@ -298,7 +303,7 @@ export class People {
     } else if (card.picker === 'heart' && card.heart.length) {
       picker.push(...card.heart.map((move) => chip(HEART_LABEL[move], { id: card.id, heart: move }, `person-chip${move === 'end' ? ' is-danger' : ' is-heart'}`)));
     } else if (card.cold && card.picker === 'more') {
-      picker.push(chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'));
+      picker.push(chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'), ...card.finishes.map((f) => chip(f.label, { id: card.id, kill: f.id }, 'person-chip is-danger')));
     } else if (card.here && card.picker === 'more') {
       picker.push(chip('Insult', { id: card.id, action: 'insult' }, 'person-chip is-danger'), chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'), chip('Attack', { id: card.id, action: 'attack' }, 'person-chip is-danger'));
     }
@@ -327,7 +332,7 @@ export class People {
         button.type = 'button';
         button.dataset.cmd = c.cmd;
         button.dataset.id = card.id;
-        if (c.cmd === 'more') button.setAttribute('aria-label', card.cold ? 'More: rob' : 'More: insult, rob, attack');
+        if (c.cmd === 'more') button.setAttribute('aria-label', card.cold ? `More: rob${card.finishes.map((f) => `, ${f.label.toLowerCase()}`).join('')}` : 'More: insult, rob, attack');
         if (c.cmd === 'heart') button.setAttribute('aria-label', `Heart: ${card.heart.map((m) => HEART_LABEL[m]).join(', ')}`);
         if (c.active !== undefined) button.setAttribute('aria-pressed', String(c.active));
         return button;
