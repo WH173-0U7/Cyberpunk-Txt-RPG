@@ -12,10 +12,44 @@ export interface BuildingStyle {
   floors: [number, number];
   /**
    * Name templates: `{area}` becomes a district neighborhood, `{corp}` a corporation,
-   * `{shop}` the storefront's business and `{n}` a number.
+   * `{shop}` the storefront's business and `{n}` a number. A chain's `{shop}` is its sign; an
+   * independent's is a name of its own (see `ShopNaming`), or with `{area}`, what it sells.
    */
   names: string[];
 }
+
+/** A flavor of storefront name: the words a neighborhood's own shops are named with. */
+export interface ShopFlavor {
+  /** Flavor words fit for any kind of shop ("Lucky Koi", "La Esquina", "Hotaru"). */
+  words: string[];
+  /** More words, only for one category of business (a cantina's "El Trago"). */
+  by?: Partial<Record<BuildingCategory, string[]>>;
+  /** Names in its own tongue by business id ("Izakaya {word}", "Farmacia {word}"), drawn over the plain ones more often than not. */
+  kinds?: Record<string, string[]>;
+  /** Its words are English, so they also take the names that start with "The ". */
+  english?: boolean;
+}
+
+/**
+ * How a storefront that isn't a chain is named: in a flavor of its neighborhood's, or by its
+ * neighborhood and what it sells. Drawn on each storefront's own stream, so a name never moves
+ * a building or changes what any of them sells.
+ */
+export interface ShopNaming {
+  /** By business id: names with `{word}` for a flavor word ("{word} Noodles", "The {word}"). */
+  kinds: Record<string, string[]>;
+  /** By business id: what follows the neighborhood in a name that goes by it ("Kabuki Noodles"). */
+  plain: Record<string, string[]>;
+  flavors: Record<string, ShopFlavor>;
+  /** The flavors a neighborhood (by name), else a district (by id), names its shops in, as weights. */
+  where: Record<string, Record<string, number>>;
+}
+
+/** The longest name a storefront makes up: the sign above it, on a phone. */
+export const SHOP_NAME = 22;
+
+/** How often a flavor with names in its own tongue for a kind of shop uses one. */
+const OWN_TONGUE = 0.6;
 
 /** A kind of business a storefront can run. */
 export interface Business {
@@ -67,6 +101,8 @@ export interface BuildingContent {
   corps: string[];
   businesses: Business[];
   landmarks?: BuildingLandmark[];
+  /** What independent storefronts are called. Without it, they go by their business's sign. */
+  shopNames?: ShopNaming;
 }
 
 /**
@@ -130,7 +166,8 @@ export function blockAt(layout: CityLayout, p: Point): BlockCell | null {
 
 /**
  * Fills every city block with buildings. Uses its own random stream, so adding buildings
- * never changes the rest of a seed's city.
+ * never changes the rest of a seed's city. A storefront never takes a name in `places` (the
+ * city's places, real and made up) or another storefront's, but a chain's.
  */
 export function generateBuildings(
   seed: string,
@@ -138,6 +175,7 @@ export function generateBuildings(
   districts: District[],
   plans: Record<string, ZoningPlan>,
   content: BuildingContent,
+  places: Iterable<string> = [],
 ): Building[] {
   const rng = createRng(`${seed}:buildings`);
   const inSea = seaTest(layout, seed);
@@ -153,6 +191,8 @@ export function generateBuildings(
   const ys = [0, ...layout.streets, WORLD];
   const buildings: Building[] = [];
   const reserved = new Set((content.landmarks ?? []).map((l) => l.name));
+  // Names a storefront of its own can't have: the landmarks', the places', and those already given.
+  const used = new Set([...reserved, ...places]);
 
   for (let i = 0; i < xs.length - 1; i++) {
     for (let j = 0; j < ys.length - 1; j++) {
@@ -180,9 +220,17 @@ export function generateBuildings(
         // Apartment blocks have shops at street level now and then.
         const kind: BuildingKind = blockKind === 'apartments' && rng.chance(0.2) ? 'shops' : blockKind;
         const style = content.styles[kind];
-        const { name, business } = makeName(rng, style, plan, area, content, reserved);
+        const id = `b-${address}-${k + 1}`;
+        const drawn = makeName(rng, style, plan, area, content, reserved);
+        const { business } = drawn;
+        // A shop of its own makes up its name on a stream of its own, after the draws above, so it never moves a building.
+        const naming = content.shopNames;
+        const name =
+          business && !business.chain && naming
+            ? ownName(createRng(`${seed}:shop:${id}`), naming, business, drawn, naming.where[area ?? ''] ?? naming.where[district.id], used)
+            : drawn.name;
         buildings.push({
-          id: `b-${address}-${k + 1}`,
+          id,
           block: address,
           district: district.id,
           kind,
@@ -317,7 +365,9 @@ function weightedPick(rng: Rng, weights: Partial<Record<BuildingKind, number>>):
  * storefront's `{shop}` also decides its business, leaning the way its district trades; a
  * chain's sign is its whole name, with the neighborhood when the template had one. `{area}`
  * is the block's own neighborhood (any of the district's, for a district without them).
- * Each part of a name takes one draw, so what a storefront sells never moves a building.
+ * Each part of a name takes one draw, so what a storefront sells never moves a building. The
+ * template and neighborhood drawn come back too, for an independent to make its own name from
+ * (`ownName`), which takes none of these draws.
  */
 function makeName(
   rng: Rng,
@@ -326,13 +376,15 @@ function makeName(
   hood: string | null,
   content: BuildingContent,
   reserved: Set<string>,
-): { name: string; business: Business | null } {
+): Drawn {
   let business: Business | null = null;
+  let template = '';
+  let area = '';
   const fill = () => {
-    let area = '';
+    area = '';
     let picked: Business | null = null;
-    const name = rng
-      .pick(style.names)
+    template = rng.pick(style.names);
+    const name = template
       .replace(/\{area\}/g, () => {
         const drawn = rng.pick(plan.areas);
         area = hood ?? drawn;
@@ -352,7 +404,80 @@ function makeName(
   // A chain outlet is meant to share its chain's name; anything else keeps off the landmarks' names.
   const clashes = () => reserved.has(name) && !(business as Business | null)?.chain;
   for (let attempt = 0; attempt < 8 && clashes(); attempt++) name = fill();
-  return { name: clashes() ? `${name} ${rng.int(2, 99)}` : name, business };
+  return { name: clashes() ? `${name} ${rng.int(2, 99)}` : name, business, template, area };
+}
+
+/** A name as `makeName` drew it: its template, and the neighborhood that went into it ('' for none). */
+interface Drawn {
+  name: string;
+  business: Business | null;
+  template: string;
+  area: string;
+}
+
+/**
+ * The name an independent storefront makes up for itself, never one in `used` (which it joins).
+ * A template with `{area}` goes by the neighborhood and what it sells ("Kabuki Noodles", "Glen
+ * Diner") when that fits the sign and is free; anything else is a name of its own in one of
+ * `flavors` (by weight; every flavor without any), keeping what the template had round its
+ * `{shop}` ("24/7 Hoshi Konbini"). All drawn on `rng`, the shop's own stream.
+ */
+function ownName(rng: Rng, naming: ShopNaming, business: Business, drawn: Drawn, flavors: Record<string, number> | undefined, used: Set<string>): string {
+  const claim = (name: string) => {
+    used.add(name);
+    return name;
+  };
+  const free = (name: string) => name.length <= SHOP_NAME && !used.has(name);
+  const kinds = naming.kinds[business.id] ?? [];
+  if (drawn.template.includes('{area}') && drawn.area) {
+    const hood = drawn.area.replace(/^The /, '');
+    for (const noun of rng.shuffle(naming.plain[business.id] ?? [])) {
+      const name = drawn.template.replace(/\{area\}/g, hood).replace(/\{shop\}/g, noun);
+      if (free(name)) return claim(name);
+    }
+  }
+  // A business with no names to make up keeps the one it drew.
+  if (!kinds.length) return drawn.name;
+  const frame = drawn.template.replace(/\{area\}\s*/g, '');
+  const build = (pattern: string, word: string) => frame.replace(/\{shop\}/g, pattern.replace(/\{word\}/g, word));
+  // What's left of the sign for the word, once the frame and the pattern round it are on.
+  const room = (pattern: string) => SHOP_NAME - (frame.length - '{shop}'.length) - (pattern.length - '{word}'.length);
+  // "The …" takes an English word, and nothing in front of it ("24/7 The …" reads wrong).
+  const takes = (flavor: ShopFlavor, pattern: string) => !pattern.startsWith('The ') || (flavor.english === true && frame.startsWith('{shop}'));
+  const wordsOf = (flavor: ShopFlavor) => [...flavor.words, ...(flavor.by?.[business.category] ?? [])];
+  const weights = flavors ?? Object.fromEntries(Object.keys(naming.flavors).map((id) => [id, 1]));
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const flavor = naming.flavors[weightedId(rng, weights)];
+    if (!flavor) continue;
+    const own = flavor.kinds?.[business.id];
+    const pattern = rng.pick(own && rng.chance(OWN_TONGUE) ? own : kinds);
+    if (!takes(flavor, pattern)) continue;
+    const fitting = wordsOf(flavor).filter((w) => w.length <= room(pattern));
+    if (!fitting.length) continue;
+    const name = build(pattern, rng.pick(fitting));
+    if (!used.has(name)) return claim(name);
+  }
+  // A crowded city: the first free name there is, flavor by flavor.
+  for (const id of Object.keys(weights)) {
+    const flavor = naming.flavors[id];
+    if (!flavor) continue;
+    for (const pattern of [...(flavor.kinds?.[business.id] ?? []), ...kinds]) {
+      if (!takes(flavor, pattern)) continue;
+      for (const word of wordsOf(flavor)) if (free(build(pattern, word))) return claim(build(pattern, word));
+    }
+  }
+  return drawn.name;
+}
+
+/** One of the ids, by weight. One draw. */
+function weightedId(rng: Rng, weights: Record<string, number>): string {
+  const entries = Object.entries(weights).filter(([, w]) => w > 0);
+  let roll = rng.next() * entries.reduce((sum, [, w]) => sum + w, 0);
+  for (const [id, weight] of entries) {
+    roll -= weight;
+    if (roll < 0) return id;
+  }
+  return entries.at(-1)?.[0] ?? '';
 }
 
 /**

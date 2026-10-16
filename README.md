@@ -617,8 +617,11 @@ Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
   gives every kind of building its label, height range and name templates (which can also use
   `{corp}` and `{shop}`). A storefront's business comes from `businesses`, weighted by the
   district's `trade`; a `chain` business is named after its sign, and `where` keeps it to some
-  districts. Real eateries are `landmarks` with a `business` (and the neighborhood they're in,
-  where the wiki says).
+  districts. Every other storefront makes up a name of its own in its neighborhood's flavor
+  ("Menya Hotaru" in Japantown, "Cantina La Esquina" in the Glen, "Bon Bagay Bar" in
+  Pacifica) or goes by its neighborhood ("Kabuki Noodles"), from the words in
+  [`src/data/storefronts.ts`](src/data/storefronts.ts). Real eateries are `landmarks` with a
+  `business` (and the neighborhood they're in, where the wiki says).
 - **People** are in [`src/data/people.ts`](src/data/people.ts): name pools by community and
   which communities each district draws from, the gangs (their members' look, roles and
   rivals) and each district's turf, job roles by business, category and building kind,

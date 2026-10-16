@@ -56,6 +56,23 @@ them, about where they are on the real map, with different places, streets and w
   its kind nearest the middle of its `area` when it has one, else of its district; one with
   `categories` takes only a storefront of the first of them the district has, and none is
   built without one. A new real place goes in with the `area` the wiki gives it.
+- A storefront's name: a chain's outlet goes by its sign (and its neighborhood when the
+  template has `{area}`), a real one by its landmark, and every other one makes its own up
+  (`ownName` in `src/engine/buildings.ts`, from `STOREFRONT_NAMES` in `src/data/storefronts.ts`,
+  `BuildingContent.shopNames`): a word of a flavor its neighborhood names shops in (`where`,
+  by neighborhood, else district: Japanese in Japantown, Cantonese in Little China, Kabuki's
+  own East Asian and street mix, Spanish in Heywood and most of Santo Domingo, Kreyòl and
+  French in Pacifica, the docks' and the plants' in Northside and the Arasaka Waterfront,
+  glass and money downtown and up the hills), with a noun for what it sells (`kinds`, or the
+  flavor's own tongue: "Izakaya Hotaru", "Farmacia La Paloma"), or, where the template has
+  `{area}`, its neighborhood and a plain noun ("Kabuki Noodles", "Glen Diner"). Never longer
+  than `SHOP_NAME`, a landmark's or a place's name, or another storefront's. The template,
+  the neighborhood and the business are still drawn on the buildings' stream in the same
+  draws as ever; the made-up part is drawn after them on the shop's own (`seed:shop:<id>`), so
+  a name never moves a building or changes what it sells, and `24/7 ` stays on the names that
+  had it (`allHours`). Every word is checked against the wiki like any name, and the lists it
+  was checked against are in `tests/fixtures/canon-places.txt`; a new word goes through the
+  same check.
 - Hospitals are building landmarks of the `hospital` business (never drawn at random:
   `where: []`), one a district but the Badlands, in a clinic, a pharmacy, a laundromat or a
   bodega (`HOSPITAL_GROUND`: never a storefront anyone hangs out at, and with the same number
@@ -798,7 +815,9 @@ npm run build
   `tests/save.test.ts`. The fingerprint test fails as a reminder.
 - Saves also point at buildings, so `tests/save.test.ts` pins every building's id, kind,
   footprint and height. A building's name, category and business can change freely (each
-  part of a name takes one random draw); moving or resizing buildings needs the same bump.
+  part of a name takes one random draw, and the words of a storefront's own name are drawn
+  on its own stream, so `src/data/storefronts.ts` can grow as it likes; a style's templates
+  keep their number and placeholders); moving or resizing buildings needs the same bump.
 - `TRAVEL.timeScale` in `src/data/travel.ts` is 60 while testing; 1 is real time.
 - Two builds live on GitHub Pages: the stable release at the root
   (https://wh173-0u7.github.io/Cyberpunk-Txt-RPG/, from `main`) and the beta under `/beta/`
