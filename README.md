@@ -454,7 +454,13 @@ own.
   their throat with a blade, shoot them, beat them with something blunt, garrote them with a
   monowire. The slower it is, the likelier someone here steps in and stops you (and then
   it's a fight with them); an officer here always does. A gunshot is heard through every
-  wall. It works on you too: knocked out, you're robbed, but come to with the health
+  wall.
+- **Fights of more than two**: go for someone and their people may throw in: family, friends,
+  their gang, the place's bouncer, any officer in the room; a stranger hardly ever. A friend
+  of yours, or the one you're seeing, may throw in on your side. You fight one of them at a
+  time (tap another under their name to go for them instead) while the rest take free swings
+  at you; your allies take one each. Put one down and the next is up, until there's nobody
+  left of theirs, or you're down, out or gone. It works on you too: knocked out, you're robbed, but come to with the health
   you had. Two skills grow as you fight: **Street Brawler** (the 2077 skill for fists and
   blunt weapons) with every blow you land bare-handed or with Gorilla Arms, and more for a
   knockout, makes your fists land surer and harder and anything blunt put people out more

@@ -1,5 +1,5 @@
 import { BRAWLER, STANDING, TOUGHNESS, WEAPON_MODEL, WEAPON_TYPE } from './skills';
-import type { CombatContent } from '../engine/combat';
+import type { CombatContent, JoinRules } from '../engine/combat';
 
 /**
  * Fighting's numbers, all ours: how each way of fighting does at each range, how long the
@@ -293,6 +293,25 @@ export const COMBAT: CombatContent = {
       'Before you can finish it, {who} is on you.',
       '{Who} won\'t stand there and watch. {He} haul{s} you off and square{s} up.',
     ],
+  },
+  group: {
+    joinThem: [
+      '{Who} wades in to help {target}.',
+      '{Who} comes at you from the side.',
+      "{Who} isn't going to stand and watch: {he} join{s} in.",
+      'Now {who} is in it too.',
+    ],
+    joinYou: ['{Who} steps up beside you.', '{Who} has your back, and wade{s} in.', "You're not alone: {who} is in it with you.", '{Who} throws in with you.'],
+    nextUp: ['That leaves {who}.', 'Now it is you and {who}.', '{Who} is next.', 'You turn to {who}.'],
+    allyHit: ['{Ally} lands one on {foe}: {dmg}.', '{Ally} catches {foe} hard: {dmg}.', '{Ally} gets one in on {foe}: {dmg}.', '{Ally} hits {foe}: {dmg}.'],
+    allyMiss: ['{Ally} swings at {foe} and misses.', '{Ally} goes for {foe} and finds air.', '{Foe} gets clear of {ally}.', '{Ally} and {foe} circle each other.'],
+    allyHurt: ['{Foe} catches {ally}: {dmg}.', '{Foe} hits {ally} hard: {dmg}.', '{Ally} takes one from {foe}: {dmg}.', '{Foe} gets through to {ally}: {dmg}.'],
+    allyDown: ['{Ally} goes down and stays down.', '{Foe} puts {ally} on the floor.', '{Ally} drops.'],
+    allyOut: ['{Foe} knocks {ally} out cold.', '{Ally} is out cold.', '{Ally} goes down and stays there, out.'],
+    foeDown: ['{Ally} puts {foe} down.', '{Foe} goes down under {ally}.', '{Foe} is down, and {ally} stands over {foe}.'],
+    foeOut: ['{Ally} knocks {foe} out cold.', '{Foe} is out cold.', '{Ally} puts {foe} to sleep.'],
+    fled: ['{Who} breaks off and runs.', '{Who} has had enough and gets out.', '{Who} is gone.'],
+    backDown: ['{Who} backs off, hands up: out of it.', '{Who} wants no more of it.', '{Who} steps back out of it.'],
   },
   lines: {
     start: [
@@ -839,3 +858,10 @@ export const COMBAT: CombatContent = {
     ],
   },
 };
+
+/**
+ * Who throws in on a fight: the other side's people and the place's guards against the player,
+ * a friend or the one they're seeing for them, by nerve; a stranger hardly ever, and less in a
+ * crowd; an officer always, against the player.
+ */
+export const JOIN: JoinRules = { kin: 0.5, friend: 0.3, gang: 0.6, guard: 0.6, stranger: 0.02, crowd: 0.5, friendly: 40, ally: 0.3, partner: 0.6, perBeat: 0.3, foes: 3, allies: 2 };
