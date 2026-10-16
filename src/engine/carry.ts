@@ -1,5 +1,6 @@
 import { implantGrams, implantOf, type ChromeContent } from './cyberware';
 import type { HackContent } from './combat';
+import type { DrugKind } from './dealing';
 import type { MedicalContent } from './medical';
 import type { Dish, Quality } from './food';
 import type { Money } from './money';
@@ -78,6 +79,8 @@ export interface GearContent {
   hacks: HackContent;
   /** Meds, the counters that sell them or patch the player up, and Trauma Team's plans (src/data/medical.ts). */
   medical: MedicalContent;
+  /** Street drugs, by item id: what a dose weighs (src/data/drugs.ts). */
+  drugs: Record<string, DrugKind>;
   /** Grams by kind of dish, unless the dish says its own. */
   dish: Record<Dish['kind'], number>;
   kinds: Record<string, PocketKind>;
@@ -134,6 +137,8 @@ export function itemGrams(item: Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | '
     if (dish) return dish.grams ?? gear.dish[dish.kind];
     const med = gear.medical.meds[item.id];
     if (med) return med.grams;
+    const drug = gear.drugs[item.id];
+    if (drug) return drug.grams;
   }
   if (item.kind === 'clothing') {
     const kind = gear.kinds[item.gear ?? item.id];
@@ -171,7 +176,8 @@ export function outfit(pockets: PocketState[], gear: GearContent): { worn: Parti
 /** How many slots a stack of `count` of something takes: so many rounds of ammo to a slot by their kind, anything else by its kind. */
 export function stackSlots(item: Pick<Item, 'id' | 'kind'>, count: number, gear: GearContent): number {
   const ammo = item.kind === 'ammo' ? gear.arms.ammo[item.id] : undefined;
-  const perSlot = Math.max(1, ammo?.perSlot ?? gear.items[item.kind]?.perSlot ?? 1);
+  const drug = item.kind === 'consumable' ? gear.drugs[item.id] : undefined;
+  const perSlot = Math.max(1, ammo?.perSlot ?? drug?.perSlot ?? gear.items[item.kind]?.perSlot ?? 1);
   return Math.ceil(Math.max(0, count) / perSlot);
 }
 

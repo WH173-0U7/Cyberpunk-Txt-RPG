@@ -458,6 +458,22 @@ own.
 - **Trading**: what you pay at a counter is your Trading against the seller's, so you start
   out paying over the odds and a sharp shopkeeper takes more off you. Every purchase is
   practice. Chains, hospitals and Trauma Team have their prices and stick to them.
+- **Dealing for a gang**: the gangs that deal push their own canon product: the Tyger Claws
+  Glitter, Maelstrom Black Lace, the Animals their Juice, the Scavengers Deep Dive and Phant,
+  the Valentinos SynthCoke and 'Dorph. Ask any of them about it (**Deal** on their card) and
+  they'll point you to their connect, and put in a word if they like you. The connect takes
+  you on only once they know you well enough, then fronts you a package to sell at a corner
+  on their turf (marked on the map), owed back by a day. At the corner, **Deal** brings the
+  next buyer: someone from round there with a habit, who comes by more after dark, and may
+  be a regular, or short of the price. Sell at what your Trading gets you, push for more
+  (they may walk), or pass. You can pitch anyone you meet too, from their card: a user
+  buys if they trust you, anyone else may take it badly. Pay your connect before the day is
+  out and they trust you more, the more so for paying early; climb the rungs (runner, then
+  their word for a dealer, a supplier, a lieutenant) for bigger packages, a better cut and
+  longer to pay. Miss the day and what's left is a debt that grows a tenth a day, and a
+  collector comes for it wherever you are: pay what you have, plead for time (your way with
+  words against theirs), or fight, which costs you their trust. Lose it all and they cut
+  you off, and come for the money anyway.
 - **Everyone is good at something**: people have their own levels in what you do. A ganger
   fights hard and talks badly, a guard is handy with their gun, a corpo or an old lady is no
   fighter but has a way with words that makes them hard to talk down. Their card says how

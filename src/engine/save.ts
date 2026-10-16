@@ -1,6 +1,7 @@
 import { CELLS } from './game';
 import type { PocketState } from './carry';
 import type { Fitted } from './cyberware';
+import type { DealingState, DealState, Front } from './dealing';
 import type { Arms, Meter } from './combat';
 import type { Lodging } from './rooms';
 import type { Confrontation, Crime, Dispatch, PendingCall, PoliceState, Report, Warrant } from './police';
@@ -75,6 +76,8 @@ export interface Progress {
   lethal?: boolean | null;
   /** The Trauma Team plan the player signed up for (missing or null: a save from before, or none). */
   coverage?: Coverage | null;
+  /** The player's dealing for a gang (missing or null: a save from before; none). */
+  dealing?: DealingState | null;
 }
 
 /** What a save takes from a game in progress (a `Game` has all of it). */
@@ -106,6 +109,7 @@ export interface SaveSource {
   readonly policeSaved: PoliceState;
   readonly lethal: boolean;
   readonly coverageSaved: Coverage | null;
+  readonly dealingSaved: DealingState;
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -156,6 +160,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     police: game.policeSaved,
     lethal: game.lethal,
     coverage: game.coverageSaved ? { ...game.coverageSaved } : null,
+    dealing: game.dealingSaved,
     savedAt: now,
   };
 }
@@ -232,6 +237,8 @@ export function readSave(raw: unknown): SaveData | null {
     lethal: typeof save.lethal === 'boolean' ? save.lethal : null,
     // And before Trauma Team, nobody was signed up.
     coverage: isCoverage(save.coverage) ? save.coverage : null,
+    // And before dealing, the player dealt for nobody.
+    dealing: dealingOf(save.dealing),
     savedAt: save.savedAt,
   };
 }
@@ -253,13 +260,13 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, trading, toughness, arms, room, lodging, job, jobs, career, life, you, chrome, health, police, lethal, coverage } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, trading, toughness, arms, room, lodging, job, jobs, career, life, you, chrome, health, police, lethal, coverage, dealing } = save;
   const exists = (j: JobState) => world.buildings.some((b) => b.id === j.building);
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, trading: trading ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, police: police ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, trading: trading ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, police: police ?? null, lethal: lethal ?? null, coverage: coverage ?? null, dealing: dealing ?? null };
 }
 
 const CRIMES: ReadonlySet<string> = new Set<Crime>(['assault', 'robbery', 'murder']);
@@ -289,6 +296,24 @@ function policeOf(value: unknown): PoliceState | null {
     lastStop: isNumber(value.lastStop) ? value.lastStop : 0,
     nextId: isNumber(value.nextId) ? value.nextId : 1,
   };
+}
+
+/** The player's dealing, as far as a save's record of it is one: a deal that isn't one is dropped. */
+function dealingOf(value: unknown): DealingState | null {
+  if (!isObject(value)) return null;
+  const deal = (v: unknown): DealState | null => {
+    if (!isObject(v) || typeof v.gang !== 'string' || typeof v.connect !== 'string' || !isNumber(v.rung) || !isNumber(v.trust)) return null;
+    const f = v.front;
+    const front = isObject(f) && typeof f.drug === 'string' && isNumber(f.doses) && isNumber(f.owed) && isNumber(f.paid) && isNumber(f.at) && isNumber(f.due) ? (f as unknown as Front) : null;
+    const block = isObject(v.block) && isNumber(v.block.key) && isNumber(v.block.served) ? { key: v.block.key, served: v.block.served } : { key: -1, served: 0 };
+    const customers = isObject(v.customers) ? Object.fromEntries(Object.entries(v.customers).filter(([, c]) => isObject(c) && isNumber(c.bought) && isNumber(c.last))) as DealState['customers'] : {};
+    const n = (x: unknown) => (isNumber(x) ? x : 0);
+    return { gang: v.gang, connect: v.connect, rung: v.rung, trust: v.trust, corner: typeof v.corner === 'string' ? v.corner : null, front, debt: n(v.debt), debtAt: n(v.debtAt), collectAt: isNumber(v.collectAt) ? v.collectAt : null, collections: n(v.collections), fronts: n(v.fronts), sold: n(v.sold), take: n(v.take), customers, block };
+  };
+  const strings = (v: unknown) => (isObject(v) ? Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'string')) as Record<string, string> : {});
+  const numbers = (v: unknown) => (isObject(v) ? Object.fromEntries(Object.entries(v).filter(([, x]) => isNumber(x))) as Record<string, number> : {});
+  const past = isObject(value.past) ? Object.fromEntries(Object.entries(value.past).flatMap(([k, v]) => { const d = deal(v); return d ? [[k, d]] : []; })) : {};
+  return { current: deal(value.current), vouched: strings(value.vouched), past, burned: numbers(value.burned) };
 }
 
 function isCoverage(value: unknown): value is Coverage {

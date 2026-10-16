@@ -23,6 +23,7 @@ import { createSave, readSave, resume, type Progress } from '../src/engine/save'
 import type { Building } from '../src/engine/types';
 import { ROOMS } from '../src/data/rooms';
 import { POLICE } from '../src/data/police';
+import { DEALING } from '../src/data/dealing';
 
 /**
  * Plays badly on purpose: a few hundred random steps in real cities, buying, wearing, dropping,
@@ -48,6 +49,7 @@ const RULES: GameRules = {
   rooms: ROOMS,
   police: POLICE,
   join: JOIN,
+  dealing: DEALING,
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
 };
 
@@ -127,6 +129,7 @@ function check(game: Game, about: string): void {
   expect(again.healthSaved, `${about}: health after a save`).toEqual(game.healthSaved);
   expect(again.policeSaved, `${about}: the NCPD after a save`).toEqual(game.policeSaved);
   expect(again.tradingSaved, `${about}: Trading after a save`).toEqual(game.tradingSaved);
+  expect(again.dealingSaved, `${about}: dealing after a save`).toEqual(game.dealingSaved);
   expect(again.roomSaved, `${about}: the room after a save`).toEqual(game.roomSaved);
   expect(again.lodgingSaved, `${about}: the rented room after a save`).toEqual(game.lodgingSaved);
   const health = game.health(Date.now());
@@ -181,7 +184,8 @@ describe('playing badly', () => {
         passUntil: 0,
         trip: null,
         inside: null,
-        items: [],
+        // Something to sell, to pitch whoever's about.
+        items: [{ id: 'glitter', kind: 'consumable', name: 'Glitter', count: 6, in: 'jacket' }],
         gear: null,
         money: { bills: 900, coins: 0, account: 1500 },
         energy: null,
@@ -224,6 +228,19 @@ describe('playing badly', () => {
             expect(cops.text, `${about}: the NCPD`).not.toMatch(/[{}]|undefined|NaN/);
             expect(game.leave(), `${about}: walking off from the NCPD`).toBe(false);
             game.answerPolice(rng.pick(cops.choices)!.id, now);
+            playOut();
+            game.tick(now + act * 60_000);
+            check(game, `${about}, act ${act}`);
+            steps++;
+            continue;
+          }
+          // A collector on the player for a debt: paid, pleaded with or fought, and nothing else till then.
+          const collector = game.collector(now);
+          if (collector) {
+            expect(collector.text, `${about}: a collector`).not.toMatch(/[{}]|undefined|NaN/);
+            expect(game.leave(), `${about}: walking off from a collector`).toBe(false);
+            const choice = rng.pick(collector.choices.filter((c) => !c.disabled));
+            if (choice) game.answerCollector(choice.id, now);
             playOut();
             game.tick(now + act * 60_000);
             check(game, `${about}, act ${act}`);
@@ -279,6 +296,11 @@ describe('playing badly', () => {
             else if (what < 0.75 && (game.workWith(who) === 'hire' || game.workWith(who) === 'switch')) game.askForWork(who, now);
             else if (what < 0.78 && game.workWith(who) === 'quit') game.setRoster(who, [rng.int(0, 6), rng.int(0, 6)], now);
             else if (what < 0.8 && game.workWith(who) === 'quit') game.quit(now, who);
+            else if (what < 0.9 && game.dealWith(who, now).some((o) => !o.disabled)) {
+              // Asked to deal, fronted, paid, walked away from, pitched.
+              const option = rng.pick(game.dealWith(who, now).filter((o) => !o.disabled))!;
+              game.deal(who, option.id, now);
+            }
             else if (game.canChop(who)) {
               const hot = game.inventory.find((i) => i.kind === 'credchip' && i.locked);
               if (hot) game.chop(who, hot.id, now);

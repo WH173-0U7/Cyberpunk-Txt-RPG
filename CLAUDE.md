@@ -866,6 +866,72 @@ that don't clash, and climbs a ladder of rungs at each:
   elsewhere. People's troubles to help with are not here yet: when they are, they hang off
   the same card, behind a command.
 
+## Dealing
+
+The player can deal for a gang: an illegal job, after its own rules rather than Work's
+(`rules.dealing`, `DEALING` in `src/data/dealing.ts`; the tests' `RULES` leave it out, so
+nobody there has a habit or deals):
+
+- `src/engine/dealing.ts` is the engine, pure: the shapes (`DrugKind`, `Habit`, `DealRung`,
+  `DealGang`, `Front`, `DealState`, `DealingState`, the views) and the arithmetic (`habitOf`,
+  `dealRungOf`, `canMoveUp`, `streetPrice`, `owedFor`, `askOf`, `pushOdds`, `buyersIn`,
+  `blockOf`, `withInterest`). The drugs are `DRUGS` in `src/data/drugs.ts` (on `GEAR.drugs`
+  too, for their weight and how many share a slot): the wiki's 2077 drugs a gang makes or
+  moves (Glitter, Black Lace, Juice, Deep Dive, Phant) and two older street drugs (2020, RED:
+  SynthCoke, 'Dorph) for the Valentinos, whom the wiki has trafficking drugs with none of
+  their own; each its canon type and whether carrying it at all is illegal (the wiki's
+  combat-rated drugs, Glitter, the Animals' "illegal supplement"), with our price, weight and
+  `hook`. A dose is an `Item` of kind `consumable` named by the drug's id.
+- Who deals what is canon (`DEALING.gangs`: the Tyger Claws, Maelstrom, the Animals, the
+  Scavengers, the Valentinos; nobody else fronts anything), with the roles that front
+  (`connects`) and collect (`collectors`) from the gang's own, a title a rung in its words,
+  and the canon places it works first (`spots`, checked to be on its turf).
+- A habit is `habitOf` (on its own stream, `seed:habit:<id>`: never moves anything else): a
+  share of each walk of life, adults only, the drug weighed by who takes it and whether a
+  gang deals it where they live. `Game`'s private `habitFor` keeps it, `usersOf` finds the
+  users of a drug in a district (indexed once a city: nobody's habit changes).
+- Getting in (`Game.dealWith(id)` is what a card's **Deal** command offers, `Game.deal(id,
+  option)` does it): any member of a dealing gang but a connect points the player to one
+  (`LINES.deal.refer`, teaching their name and job) and vouches for them if they like them
+  (`DealingState.vouched`); a connect says yes as an ask like any other (`openness` with the
+  `deal` cost, pressing, the mask's refusal) once they're warm or better (`join.stances`; a
+  vouched-for player, neutral will do) and the gang's rep isn't under `join.rep`. A yes is
+  the first package, and the gang's corner (`cornerFor`: a spot, else a place of a
+  `corner.kinds` nearest the connect's home), put on the map (`CityMap.setCorner`).
+- A front is `rung.front` doses, owed back `owedFor` (a share of their street value, `cut`)
+  by `rung.days`; it goes into pockets with room only if it all fits (`stowDoses`). Paying
+  (`payUp`, at the connect: the debt first, then the front; cash to the gang's treasury) off
+  before the day is `trust.paid` (and `early` before half its time), a front paid, and a
+  rung up when `canMoveUp`. The next package is on offer only with nothing owed; walking
+  away (nothing owed) keeps where the player stood in `past`.
+- The corner (`Game.cornerAction`, the panel's **Deal**, `walkUp`): a buyer a point of
+  energy, `buyersIn` a three-hour block by the hour and the kind of place, someone who lives
+  in the corner's district with a habit for what the player carries, out and about or here,
+  with at least `short.least` of the price on them, a regular (`corner.regularAt` buys)
+  likelier. `dealMoment` is the panel while they wait: sell at `askOf` (the street price
+  where the player is, by their Trading against the buyer's, to `MONEY.haggle`'s power), or
+  take what a short buyer has; push for `push.more` (`pushOdds`: Trading and the buyer's
+  need), which may lose them; or pass. A sale (`sale`) is a dose out, the cash in (refused
+  without room for it), the buyer's eddies down, a customer, rapport, Trading XP. Pitching
+  (`sell:<drug>` on any card but the connect's or an officer's): a user of it buys if
+  they'd trust the player (`openness` with `pitch`, plus their need; a regular always), a
+  user of something else passes, anyone else is put out, the straight-laced most.
+- The clock (`dealTick`, from `start` and `tick`): a front past its day is a debt (less
+  `trust.short`), growing `debt.interest` a day; collectors come `graceHours` after and
+  every `againHours` while it's owed (not on a train; a walk stops): `collectorComes` picks
+  one of the gang's collectors, and `Game.collector(now)` is the panel (pay what's on the
+  player, plead with their charisma against the collector's, or fight: an assault, less
+  `trust.fought`), answered by `answerCollector`; a failed plea is a beating (health, energy,
+  the cash taken anyway). While a collector waits, `detained` refuses moving and counters,
+  and `attack` takes only them. Trust down to `trust.cutOff` and the gang cuts the player
+  off (`burned`): no more product, and what's owed is a gang `Threat` of `debt.threat` times
+  it. Saved as `dealing` (`dealingOf` reads it); a buyer's moment and a collector aren't.
+- The lines: the narration is `DEALING.lines`; what people say is `LINES.deal` and
+  `LINES.you.deal`/`pitch`/`payUp`/`walkAway`. The status drop-down has a Dealing row, and the
+  line under the energy bar says a debt. The risks (the NCPD and possession, rival turf, bad
+  customers, a habit of the player's own) and a crew of the player's own are still to come:
+  they hang off the same pieces.
+
 ## Inebriation
 
 Drinking alcohol makes the player drunk; nothing else happens yet:
