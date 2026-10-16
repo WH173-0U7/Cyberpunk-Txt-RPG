@@ -338,10 +338,17 @@ it needs no generator bump. The pieces:
   mind turns the player away (`LINES.work.rehire`), a gift had before is `again`. A new thing
   to remember is another `MemoryKind` with its numbers and lines (the dialogue test pins
   every memory line, and every news line, to exactly one kind).
-- `src/engine/skills.ts` is a skill that grows with use (experience, levels, a bonus per
-  level); charisma (`src/data/skills.ts`), applied in `Game.talk`, `gift` and `askFact`, and
-  the two fighting skills, Street Brawler and Toughness (see Fighting). A new skill is another `SkillRules` in `src/data/skills.ts`, a state on
-  `Game`, a save field and an event.
+- `src/engine/skills.ts` is a skill that grows with use (experience, levels, a bonus by
+  level): charisma (`src/data/skills.ts`), applied in `Game.talk`, `gift` and `askFact`, the
+  two fighting skills, Street Brawler and Toughness, and the weapon levels (see Fighting).
+  Every skill starts the player off worse than anyone, pathetic to professional: below its
+  `average` (4, where an ordinary person stands) its bonus is a penalty, from its `floor` at
+  level 1 evenly up to 1, and only past it does each level add `perLevel`. Anything that
+  multiplies takes `skillBonus`; anything that adds a little a level takes `skillEdge` (levels
+  past an ordinary person's, below nothing short of it: charisma in `openness`, `talkOdds`,
+  the tell and the shift moments). A level-up says where it leaves the player (`STANDING`,
+  `{standing}` in its `levelLine`). A new skill is another `SkillRules` in `src/data/skills.ts`
+  with its own `average` and `floor`, a state on `Game`, a save field and an event.
 - `src/engine/dialogue.ts` puts lines together from fragments in `src/data/dialogue.ts`
   (our own words; slang from the wiki's Streetslang page, by voice through the `lexicon`).
   A `Speaker` is everything a line is picked and filled by (voice, mood, stance, history,
@@ -373,7 +380,8 @@ it needs no generator bump. The pieces:
   the reply (no brush-off after it). Someone who shares the speaker's given name is named in
   full in their news.
 - Whether someone answers is `openness` (engine) with the numbers in `SOCIETY.openness`:
-  stance, charisma level and traits against the cost of what's asked (`Asked`: a fact, a
+  stance, charisma (its `skillEdge`, so a player short of an ordinary way with words gets
+  less than anyone) and traits against the cost of what's asked (`Asked`: a fact, a
   topic, or `chop`, a favor), less `openness.mask` while the player is masked, and moved by
   the `Moment` (`momentOf`: a drink in hand, a shift on, questions piling up past
   `grill.free` within `grill.minutes`, the gang they hate in the room, grief, the small
@@ -574,18 +582,36 @@ move at once and both land together, the player against the clock:
   `resolveBeat` says who in `out` (the player's blow first). Them out (`out`): not hurt, not
   dead, they lie where they fell for `knockout.minutes` (`Game`'s `outColdState`, not
   saved), listed by `peopleHere` as "out cold" wherever their day would have them, past
-  talking to (`Game.outCold`; `isHere` refuses them, the card shows no commands). The player
+  talking to (`Game.outCold`; `isHere` refuses them, the card shows only `⋯` with Rob:
+  `Game.rob` goes through their pockets, no fight, four fifths and more of what they carry,
+  `LINES.you.robCold` and `LINES.rob.cold`/`coldNothing`, and once a week like any robbery). The player
   out (`knocked`): robbed like `lost`, but their health is what it was, and no Trauma Team
   comes for it. How steady someone is is `COMBAT.steady` (the brave and gangers steadier).
 - The fighting skills grow with use (`COMBAT.skills`, `SkillRules` in `src/data/skills.ts`;
   the XP is `COMBAT.training`, trained by `Game`'s private `trainFrom` after every beat):
   Street Brawler (the wiki's 2077 skill for fists and blunt weapons), for every blow the
-  player lands with fists or Gorilla Arms (a club less) and more for a knockout, adds its
-  bonus to their melee damage, a quarter of it to their aim, and all of it to `ko`;
-  Toughness (ours), for every blow taken (more for fists and clubs) and for every fight
-  walked away from, divides the player's `steady`. Both are `Game.brawler()`/`toughness()`,
-  saved as `brawler` and `toughness`, the `skillChanged` event, and rows in the status
-  drop-down.
+  player lands with fists or Gorilla Arms (a club less) and more for a knockout, multiplies
+  their fists' damage by its bonus and their aim by a quarter of it, and the `ko` of fists and
+  anything blunt by all of it (a club's own levels do the rest); Toughness (ours), for every
+  blow taken (more for fists and clubs) and for every fight walked away from, divides the
+  player's `steady`. Both are `Game.brawler()`/`toughness()`, saved as `brawler` and
+  `toughness`, the `skillChanged` event, and rows in the status drop-down.
+- Weapon levels (`COMBAT.mastery`, `MasteryRules`; the `SkillRules` are `WEAPON_TYPE` and
+  `WEAPON_MODEL` in `src/data/skills.ts`): one for each kind of weapon (a `FightClass`:
+  pistols, katanas, Mantis Blades…; fists are Street Brawler's) and one for each weapon
+  itself, the model (a weapon's or an implant's id), saved as `arms` (`Arms`) and both trained
+  by `trainFrom` (`mastery.training`: every go, a hit more, the blow that ends it most). In a
+  fight `yourEdge` runs `masteryEdge`: the two bonuses multiply into `Edge.power` (all
+  damage) and `mastery.aim` of it into the aim, so a weapon the player has never used hits
+  about two thirds as hard as anyone's. A model brings perks at its levels (`mastery.perks`, by
+  `perkFamily`: a gun's technology, Power, Tech or Smart, after what the wiki says each does,
+  else its hits, blade, blunt, wire or launcher; each a `Perk` of `aim`, `power`, `guard`,
+  `ko`, `crit` (`COMBAT.crit` of the damage, said with `youCrit`), `pierce` (armor) or
+  `flank` (cover)), told when one comes. `Game.weaponType(cls)`, `weaponModel(id)`,
+  `masteryOf(id)` (a `WeaponMastery`: both levels, the perks, the next) and `mastery()` are
+  what the UI reads: the status drop-down's Weapons row, a weapon's row in the inventory
+  ("Lv 3 · Ricochet at 5"). A new perk is another `Perk` in a family; a new family, another
+  `PerkFamily` with its perks.
   Every line is `COMBAT.lines`, by what happened, filled with `fightVars` (who, their
   pronouns and the verbs that go with them, the arms on both sides); a named subject takes
   the singular verb, so `{s}`/`{es}`/`{ies}`/`{is}`/`{has}` only follow `{he}`. A tell
@@ -766,7 +792,7 @@ building or at a place (the target view keeps its own, with the district, since 
 elsewhere). The energy bar has no words: one line under it (`src/ui/status.ts`, filled by
 `showStatus` in `main.ts` on every tick) says the figure, the level, when the next point
 comes, and anything the matter (drunk, masked, a shift on elsewhere and the walk there, else the job's rung); tapping it unfolds
-everything else about the player: experience, charisma, the fighting skills, eddies and the bank, the pass, the
+everything else about the player: experience, charisma, the fighting skills and the weapon levels, eddies and the bank, the pass, the
 job, the condition, the mask, every reputation, the map count, the weather, the date, and
 last the **Settings** link (the drop-down's `foot`, which `StatusPanel.render` keeps at the
 bottom). Anything new the player should know about themselves goes in there as a row, not

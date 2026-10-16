@@ -58,6 +58,8 @@ export interface PersonCardView {
   between: string[];
   /** Whether they're here to be dealt with. */
   here: boolean;
+  /** Here, but knocked out: nothing to do with them but rob them. */
+  cold: boolean;
   /** Who the player knows them to be connected to: on the profile, under the rest. */
   web: WebNodeView[];
   webHint: string;
@@ -295,6 +297,8 @@ export class People {
       }
     } else if (card.picker === 'heart' && card.heart.length) {
       picker.push(...card.heart.map((move) => chip(HEART_LABEL[move], { id: card.id, heart: move }, `person-chip${move === 'end' ? ' is-danger' : ' is-heart'}`)));
+    } else if (card.cold && card.picker === 'more') {
+      picker.push(chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'));
     } else if (card.here && card.picker === 'more') {
       picker.push(chip('Insult', { id: card.id, action: 'insult' }, 'person-chip is-danger'), chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'), chip('Attack', { id: card.id, action: 'attack' }, 'person-chip is-danger'));
     }
@@ -313,7 +317,9 @@ export class People {
           ...heart,
           { cmd: 'more', label: '⋯', active: card.picker === 'more', quiet: true },
         ]
-      : heart;
+      : card.cold
+        ? [...heart, { cmd: 'more', label: '⋯', active: card.picker === 'more', quiet: true }]
+        : heart;
     els.cardCommands.hidden = commands.length === 0;
     els.cardCommands.replaceChildren(
       ...commands.map((c) => {
@@ -321,7 +327,7 @@ export class People {
         button.type = 'button';
         button.dataset.cmd = c.cmd;
         button.dataset.id = card.id;
-        if (c.cmd === 'more') button.setAttribute('aria-label', 'More: insult, rob');
+        if (c.cmd === 'more') button.setAttribute('aria-label', card.cold ? 'More: rob' : 'More: insult, rob, attack');
         if (c.cmd === 'heart') button.setAttribute('aria-label', `Heart: ${card.heart.map((m) => HEART_LABEL[m]).join(', ')}`);
         if (c.active !== undefined) button.setAttribute('aria-pressed', String(c.active));
         return button;

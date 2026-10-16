@@ -1,4 +1,4 @@
-import type { SkillRules } from './skills';
+import type { SkillRules, SkillState, SkillStatus } from './skills';
 import type { Quality } from './food';
 import type { Rng } from './rng';
 import type { WeaponClass, WeaponTech } from './weapons';
@@ -94,9 +94,17 @@ export interface Edge {
   ko: number;
   /** Multiplies the odds a blow knocks them out: under 1, harder to put down (Toughness). */
   steady: number;
+  /** Multiplies everything their attacks do: how well they know the weapon (its kind's level and its own). */
+  power: number;
+  /** The odds a hit lands just right, for `CombatRules.crit` of the damage (a perk). */
+  crit: number;
+  /** The share of the target's armor their attacks go through (a perk). */
+  pierce: number;
+  /** The share of the target's cover their attacks get round (a perk). */
+  flank: number;
 }
 
-export const NO_EDGE: Edge = { aim: 1, melee: 1, guard: 1, smart: false, evade: 0, wound: 1, ko: 1, steady: 1 };
+export const NO_EDGE: Edge = { aim: 1, melee: 1, guard: 1, smart: false, evade: 0, wound: 1, ko: 1, steady: 1, power: 1, crit: 0, pierce: 0, flank: 0 };
 
 /** A quickhack in a fight: what it does (the numbers are `src/data/quickhacks.ts`'s). */
 export interface HackEffect {
@@ -123,6 +131,8 @@ export interface CombatRules {
   odds: { cover: number; coverMelee: number; moving: number; running: number; blind: number; smartLink: number; smartless: number; hurt: number };
   /** Damage over armor: what's left is damage × soak / (soak + armor). */
   soak: number;
+  /** What a hit that lands just right does, times the rest. */
+  crit: number;
   /** Odds of getting away, by range; less if the other closes in, more if they don't come at you. */
   escape: Record<Range, number>;
   escapeAdvanced: number;
@@ -153,7 +163,7 @@ export interface FightState {
 
 /** What happened in a beat, for `Game` to tell and act on. */
 export type BeatEvent =
-  | { who: 'you' | 'them'; what: 'hit'; dmg: number; kind: ClassRules['kind'] }
+  | { who: 'you' | 'them'; what: 'hit'; dmg: number; kind: ClassRules['kind']; crit?: true }
   | { who: 'you' | 'them'; what: 'miss'; kind: ClassRules['kind'] }
   | { who: 'you' | 'them'; what: 'advance' | 'back' | 'cover' | 'reload' | 'freeze' | 'empty' | 'jammed' | 'stuck' | 'outOfReach' }
   | { who: 'you' | 'them'; what: 'talk' | 'run'; ok: boolean }
@@ -196,7 +206,8 @@ export function hitChance(attacker: Fighter, edge: Edge, target: Fighter, target
   const cls = rules.classes[attacker.arm.cls];
   if (!cls) return 0;
   let odds = cls.hit[range] * edge.aim;
-  if (target.covered || targetMove === 'cover') odds *= cls.kind === 'gun' || cls.kind === 'launcher' ? rules.odds.cover : rules.odds.coverMelee;
+  // Cover, less the share of it the attacker gets round.
+  if (target.covered || targetMove === 'cover') odds *= 1 - (1 - (cls.kind === 'gun' || cls.kind === 'launcher' ? rules.odds.cover : rules.odds.coverMelee)) * (1 - edge.flank);
   if (targetMove === 'advance' || targetMove === 'back') odds *= rules.odds.moving;
   if (targetMove === 'run') odds *= rules.odds.running;
   if (attacker.blind > 0) odds *= rules.odds.blind;
@@ -213,7 +224,8 @@ export function damageOf(attacker: Fighter, edge: Edge, target: Fighter, targetE
   let dmg = rng.range(cls.damage[0], cls.damage[1]);
   if (cls.kind === 'blade' || cls.kind === 'blunt' || cls.kind === 'fists' || cls.kind === 'wire') dmg *= edge.melee;
   if (cls.kind === 'gun' || cls.kind === 'blade' || cls.kind === 'wire' || cls.kind === 'launcher') dmg *= edge.wound;
-  dmg *= rules.soak / (rules.soak + Math.max(0, target.armor));
+  dmg *= edge.power;
+  dmg *= rules.soak / (rules.soak + Math.max(0, target.armor) * (1 - edge.pierce));
   dmg *= targetEdge.guard;
   return Math.max(1, Math.round(dmg));
 }
@@ -302,9 +314,11 @@ export function resolveBeat(
     if (cls.charges) attacker.charges -= 1;
     const odds = hitChance(f, edge, target, targetEdge, targetMove, s.range, s.beat, rules);
     if (rng.chance(odds)) {
-      const dmg = damageOf(f, edge, target, targetEdge, rng, rules);
+      // A hit that lands just right (a perk's odds; nobody else draws for it).
+      const crit = edge.crit > 0 && rng.chance(edge.crit);
+      const dmg = Math.round(damageOf(f, edge, target, targetEdge, rng, rules) * (crit ? rules.crit : 1));
       hits.push({ target, dmg, kind: cls.kind, edge, targetEdge });
-      events.push({ who, what: 'hit', dmg, kind: cls.kind });
+      events.push({ who, what: 'hit', dmg, kind: cls.kind, ...(crit ? { crit: true as const } : {}) });
     } else events.push({ who, what: 'miss', kind: cls.kind });
   }
   // The player's quickhack: it lands whatever the range.
@@ -422,7 +436,7 @@ export function theirMove(state: FightState, nerve: { courage: number; temper: n
   return rng.chance(0.08 * (1 - nerve.temper)) ? 'cover' : 'attack';
 }
 
-/** The odds of talking someone down this beat. */
+/** The odds of talking someone down this beat. `charisma` is in levels past an ordinary person's (`skillEdge`). */
 export function talkOdds(state: FightState, nerve: { courage: number; temper: number }, charisma: number, armed: boolean, rules: CombatRules): number {
   const t = rules.talk;
   const hurt = 1 - state.them.hp / Math.max(1, state.them.max);
@@ -460,6 +474,85 @@ export interface CombatContent extends CombatRules {
   training: { brawler: { hit: number; blunt: number; knockout: number }; toughness: { hit: number; blow: number; stood: number } };
   /** How hard people are to knock out: a base, less for the brave, less again for a ganger. */
   steady: { base: number; courage: number; gang: number };
+  /** How well the player knows each kind of weapon and each weapon (fists are Street Brawler's). */
+  mastery: MasteryRules;
+}
+
+/** Which perks a weapon brings at its levels: a gun's by its technology, anything else's by what its hits are. */
+export type PerkFamily = WeaponTech | 'blade' | 'blunt' | 'wire' | 'launcher';
+
+/** Something a weapon known well does better, from its level up: what multiplies (`aim`, `power`, `guard`, `ko`) and what adds (`crit`, and the most of `pierce` and `flank`). */
+export interface Perk {
+  at: number;
+  name: string;
+  /** What it does, for the player, in a few words. */
+  note: string;
+  aim?: number;
+  power?: number;
+  guard?: number;
+  ko?: number;
+  crit?: number;
+  pierce?: number;
+  flank?: number;
+}
+
+/**
+ * Weapon levels: one for each kind of weapon (`types`, by `FightClass`), and one for each
+ * weapon itself (`models`, by weapon or implant id), each starting the player off worse than
+ * anyone. Their bonuses multiply what the weapon does, and `aim` of the same to its odds of
+ * landing; a model's perks come at its levels.
+ */
+export interface MasteryRules {
+  types: SkillRules;
+  models: SkillRules;
+  aim: number;
+  /** Experience each, for every go with it (`swing`), every hit (`hit`), and the blow that ends a fight (`down`). */
+  training: { swing: number; hit: number; down: number };
+  perks: Record<PerkFamily, Perk[]>;
+  /** Where a level leaves the player, by how far past an ordinary person's it is (`STANDING`). */
+  standing: Array<{ from: number; line: string }>;
+}
+
+/** How well the player knows each kind of weapon (by `FightClass`) and each weapon (by its id), as saved. */
+export interface Arms {
+  types: Partial<Record<string, SkillState>>;
+  models: Partial<Record<string, SkillState>>;
+}
+
+/** A weapon as the player knows it, for the UI: its kind's level and its own, its perks so far and the next. */
+export interface WeaponMastery {
+  id: string;
+  name: string;
+  cls: FightClass;
+  /** Its kind, as it's called ("Pistol", "Mantis Blades"). */
+  type: string;
+  typeStatus: SkillStatus;
+  status: SkillStatus;
+  perks: Perk[];
+  next: Perk | null;
+}
+
+/** The perks a weapon brings, or none (fists). */
+export function perkFamily(arm: Arm, rules: CombatRules): PerkFamily | null {
+  const kind = rules.classes[arm.cls]?.kind;
+  if (!kind || kind === 'fists') return null;
+  return kind === 'gun' ? (arm.tech ?? 'Power') : kind;
+}
+
+/** What a weapon known this well brings: the bonuses of its kind's level and its own, and its perks so far. */
+export function masteryEdge(edge: Edge, typeBonus: number, modelBonus: number, perks: readonly Perk[], rules: MasteryRules): Edge {
+  const bonus = typeBonus * modelBonus;
+  const out: Edge = { ...edge, aim: edge.aim * (1 + (bonus - 1) * rules.aim), power: edge.power * bonus };
+  for (const p of perks) {
+    out.aim *= p.aim ?? 1;
+    out.power *= p.power ?? 1;
+    out.guard *= p.guard ?? 1;
+    out.ko *= p.ko ?? 1;
+    out.crit += p.crit ?? 0;
+    out.pierce = Math.max(out.pierce, p.pierce ?? 0);
+    out.flank = Math.max(out.flank, p.flank ?? 0);
+  }
+  return out;
 }
 
 /** Something that moves on the clock (health back, heat off): what it was, and when. */

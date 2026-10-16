@@ -1,4 +1,4 @@
-import { BRAWLER, TOUGHNESS } from './skills';
+import { BRAWLER, STANDING, TOUGHNESS, WEAPON_MODEL, WEAPON_TYPE } from './skills';
 import type { CombatContent } from '../engine/combat';
 
 /**
@@ -48,6 +48,7 @@ export const COMBAT: CombatContent = {
   window: 7000,
   odds: { cover: 0.45, coverMelee: 0.8, moving: 1.1, running: 0.8, blind: 0.5, smartLink: 1.15, smartless: 0.85, hurt: 0.9 },
   soak: 150,
+  crit: 1.5,
   escape: RANGE(0.3, 0.55, 0.8),
   escapeAdvanced: 0.6,
   escapeIdle: 1.2,
@@ -160,6 +161,53 @@ export const COMBAT: CombatContent = {
   training: { brawler: { hit: 2, blunt: 1, knockout: 6 }, toughness: { hit: 1, blow: 1, stood: 3 } },
   // The brave and the gangers take a punch better than most.
   steady: { base: 1.15, courage: 0.3, gang: 0.9 },
+  // Weapon levels: a kind's and a weapon's own, half their bonus to the aim; perks at a weapon's
+  // levels 5, 7 and 10, in the spirit of what the wiki says each kind does (Power rounds
+  // ricochet, Tech rounds charge through cover and armor, Smart rounds track), our names and numbers.
+  mastery: {
+    types: WEAPON_TYPE,
+    models: WEAPON_MODEL,
+    aim: 0.5,
+    training: { swing: 1, hit: 2, down: 5 },
+    perks: {
+      Power: [
+        { at: 5, name: 'Ricochet', note: 'rounds off the walls: cover does them less good', flank: 0.4 },
+        { at: 7, name: 'Steady hand', note: 'it sits still in your hand: surer shots', aim: 1.1 },
+        { at: 10, name: 'Stopping power', note: 'now and then a round lands just right', crit: 0.15 },
+      ],
+      Tech: [
+        { at: 5, name: 'Penetrator', note: 'charged rounds go through armor', pierce: 0.4 },
+        { at: 7, name: 'Through the wall', note: 'and through cover', flank: 0.5 },
+        { at: 10, name: 'Full charge', note: 'now and then a round lands just right', crit: 0.15 },
+      ],
+      Smart: [
+        { at: 5, name: 'Lock-on', note: 'rounds curve round cover to find them', flank: 0.4 },
+        { at: 7, name: 'Tracking', note: 'it finds its mark more often', aim: 1.1 },
+        { at: 10, name: 'Swarm', note: 'now and then every round lands at once', crit: 0.15 },
+      ],
+      blade: [
+        { at: 5, name: 'Clean edge', note: 'now and then a cut lands just right', crit: 0.1 },
+        { at: 7, name: 'Footwork', note: 'you take less of what comes back', guard: 0.9 },
+        { at: 10, name: 'Killing stroke', note: 'every cut goes deeper', power: 1.15 },
+      ],
+      blunt: [
+        { at: 5, name: 'Heavy hand', note: 'it puts people out sooner', ko: 1.25 },
+        { at: 7, name: 'Footwork', note: 'you take less of what comes back', guard: 0.9 },
+        { at: 10, name: 'Bone-breaker', note: 'now and then a blow lands just right', crit: 0.15 },
+      ],
+      wire: [
+        { at: 5, name: 'Long lash', note: 'it finds its mark more often', aim: 1.1 },
+        { at: 7, name: 'Clean edge', note: 'now and then a lash lands just right', crit: 0.1 },
+        { at: 10, name: 'Cuts deep', note: 'it goes through armor', pierce: 0.5 },
+      ],
+      launcher: [
+        { at: 5, name: 'Steady aim', note: 'it finds its mark more often', aim: 1.1 },
+        { at: 7, name: 'Shaped charge', note: 'it goes through armor', pierce: 0.5 },
+        { at: 10, name: 'Direct hit', note: 'now and then it lands just right', crit: 0.2 },
+      ],
+    },
+    standing: STANDING,
+  },
   lines: {
     start: [
       'You go for {who}. No more talking.',
@@ -587,6 +635,14 @@ export const COMBAT: CombatContent = {
       "{Who} folds, and {he} do{es}n't get up.",
       "It's over: {who} is down, breathing, done.",
       '{His} knees go, and {he} stay{s} on the floor, hurt.',
+    ],
+    // A hit that lands just right (a perk), after the hit's own line.
+    youCrit: [
+      'That one landed just right.',
+      'Right where it hurts.',
+      'A perfect one.',
+      'You feel that one land.',
+      "{He} won't forget that one.",
     ],
     // Knocked out cold: down a while, then up again with nothing worse than a headache.
     theyOut: [

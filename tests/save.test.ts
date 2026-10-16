@@ -304,6 +304,19 @@ describe('saving', () => {
     expect(readSave({ ...saved, charisma: { level: 0, xp: 1 } })?.charisma).toBeNull();
   });
 
+  it('carries the weapon levels, forgetting any that do not read', () => {
+    const { game, now } = played(1);
+    const arms = { types: { pistol: { level: 3, xp: 4 }, katana: { level: 0, xp: 1 } }, models: { lexington: { level: 5, xp: 2 }, junk: 'x' } };
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), arms })));
+    expect(read?.arms).toEqual({ types: { pistol: { level: 3, xp: 4 } }, models: { lexington: { level: 5, xp: 2 } } });
+    const again = new Game(world, rules, resume(world, read!)!);
+    expect(again.weaponType('pistol')).toMatchObject({ level: 3, xp: 4 });
+    expect(again.weaponModel('lexington')).toMatchObject({ level: 5, xp: 2 });
+    expect(again.weaponType('katana')).toMatchObject({ level: 1, xp: 0 });
+    const { arms: _a, ...old } = saveOf(game, now);
+    expect(readSave(JSON.parse(JSON.stringify(old)))?.arms).toBeNull();
+  });
+
   it('carries the fighting skills, and an old save starts them at the first level', () => {
     const { game, now } = played(1);
     const saved = { ...saveOf(game, now), brawler: { level: 4, xp: 9 }, toughness: { level: 2, xp: 3 } };

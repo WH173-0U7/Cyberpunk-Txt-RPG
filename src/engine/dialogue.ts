@@ -97,7 +97,8 @@ export interface DialogueLines {
   /** Asked whether they know someone: they do (`{other}`, `{word}`), they don't, or they've said already; they did, and `{other}` is dead (`{otherAgo}`); they did, and they're done with them (an ex, a friend fallen out with). */
   gift: { thanks: Line[]; favorite: Line[]; refuse: Line[] };
   insult: { reply: Line[]; shove: Line[] };
-  rob: { done: Line[]; nothing: Line[]; fought: Line[] };
+  /** Robbing someone: what comes of it, and (`cold`, `coldNothing`) of going through the pockets of someone out cold. */
+  rob: { done: Line[]; nothing: Line[]; fought: Line[]; cold: Line[]; coldNothing: Line[] };
   /** A netrunner asked to chop a stolen credchip (`{balance}` on it, `{cut}` theirs, `{left}` after): they do, or they won't. */
   chop: { done: Line[]; refuse: Line[] };
   /** A boss asked for work (`{title}` the bottom rung, `{work}` the place, `{pay}` a shift): taken on, turned down, or not in a mask; a word after a shift; moved up (`{title}` the new rung); told the player quits. */
@@ -139,7 +140,7 @@ export interface DialogueLines {
     notLooking: string;
   };
   /** The player's own lines, for the record, by eloquence. */
-  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[] };
+  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; robCold: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[] };
 }
 
 /** Everything a line can be picked and filled by; `vars.mask` is the word for the mask the player has on, or nothing. */
@@ -279,10 +280,11 @@ export function compose(pool: Line[], speaker: Speaker, lines: DialogueLines, rn
  * about them, the player's charisma, how talkative and warm they are, less what the thing
  * asks of them (their name is nothing; where they sleep is a lot; their people, the more
  * loyal they are; who they hate, the less nerve they have; a hot chip, the less greedy), and
- * less again for a mask on the player: nobody opens up to a face they can't see.
+ * less again for a mask on the player: nobody opens up to a face they can't see. `charisma`
+ * is the player's in levels past an ordinary person's (`skillEdge`): below one, it's against them.
  */
-export function openness(asked: Asked, stance: Stance, level: number, traits: Traits, rules: OpennessRules, masked = false, moment: Moment = {}): number {
-  let score = rules.stance[stance] + (level - 1) * rules.perLevel - rules.cost[asked];
+export function openness(asked: Asked, stance: Stance, charisma: number, traits: Traits, rules: OpennessRules, masked = false, moment: Moment = {}): number {
+  let score = rules.stance[stance] + charisma * rules.perLevel - rules.cost[asked];
   if (masked) score -= rules.mask;
   score += (traits.chatty - 0.5) * rules.traits.chatty + (traits.warmth - 0.5) * rules.traits.warmth;
   if (asked === 'kin') score -= (traits.loyalty - 0.5) * rules.traits.loyalty;
@@ -337,7 +339,7 @@ export function replyTo(score: number, rules: OpennessRules, rng: Rng): Reply {
 const TOPICS: Topic[] = ['district', 'life', 'here', 'job', 'likes', 'hates', 'kin', 'rumor', 'news', 'dream', 'views'];
 
 /** What someone will bring up on their own: the topics they're open about, as of this chat. */
-export function openTopics(speaker: Speaker, level: number, rules: OpennessRules, rng: Rng, reveal: boolean): Topic[] {
+export function openTopics(speaker: Speaker, charisma: number, rules: OpennessRules, rng: Rng, reveal: boolean): Topic[] {
   const { vars, person } = speaker;
   const open: Topic[] = [];
   for (const topic of TOPICS) {
@@ -347,7 +349,7 @@ export function openTopics(speaker: Speaker, level: number, rules: OpennessRules
     if (topic === 'rumor' && !['gangGood', 'gangBad', 'districtGood', 'districtBad'].some((key) => vars[key])) continue;
     if (topic === 'news' && !vars.news) continue;
     if (topic === 'dream' && !vars.dream) continue;
-    if (replyTo(openness(topic, speaker.stance, level, person.traits, rules, Boolean(vars.mask), momentOf(speaker)), rules, rng) === 'answer') open.push(topic);
+    if (replyTo(openness(topic, speaker.stance, charisma, person.traits, rules, Boolean(vars.mask), momentOf(speaker)), rules, rng) === 'answer') open.push(topic);
   }
   return open;
 }

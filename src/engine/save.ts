@@ -1,7 +1,7 @@
 import { CELLS } from './game';
 import type { PocketState } from './carry';
 import type { Fitted } from './cyberware';
-import type { Meter } from './combat';
+import type { Arms, Meter } from './combat';
 import type { Coverage } from './medical';
 import type { Money } from './money';
 import type { EnergyState } from './energy';
@@ -45,6 +45,8 @@ export interface Progress {
   /** The fighting skills (null or missing: an older save, level 1). */
   brawler?: SkillState | null;
   toughness?: SkillState | null;
+  /** How well the player knows each kind of weapon and each weapon. */
+  arms?: Arms | null;
   /** The player's main job (null: none); every job they hold is `jobs`. */
   job: JobState | null;
   /** Every job the player holds, the main one first (missing or null: a save from before side gigs; just `job`). */
@@ -81,6 +83,7 @@ export interface SaveSource {
   readonly charismaSaved: SkillState;
   readonly brawlerSaved: SkillState;
   readonly toughnessSaved: SkillState;
+  readonly armsSaved: Arms;
   readonly jobSaved: JobState | null;
   readonly jobsSaved: readonly JobState[];
   readonly careerSaved: Record<string, number>;
@@ -127,6 +130,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     charisma: { ...game.charismaSaved },
     brawler: { ...game.brawlerSaved },
     toughness: { ...game.toughnessSaved },
+    arms: game.armsSaved,
     job: game.jobSaved ? { ...game.jobSaved } : null,
     jobs: game.jobsSaved.map((j) => ({ ...j })),
     career: { ...game.careerSaved },
@@ -193,6 +197,7 @@ export function readSave(raw: unknown): SaveData | null {
     charisma: isSkill(save.charisma) ? save.charisma : null,
     brawler: isSkill(save.brawler) ? save.brawler : null,
     toughness: isSkill(save.toughness) ? save.toughness : null,
+    arms: armsOf(save.arms),
     // And before there was work, the player had none.
     job: isJob(save.job) ? save.job : null,
     jobs: Array.isArray(save.jobs) ? save.jobs.filter(isJob).map(jobOf) : null,
@@ -230,13 +235,13 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, toughness, job, jobs, career, life, you, chrome, health, heat, lethal, coverage } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, toughness, arms, job, jobs, career, life, you, chrome, health, heat, lethal, coverage } = save;
   const exists = (j: JobState) => world.buildings.some((b) => b.id === j.building);
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, toughness: toughness ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, toughness: toughness ?? null, arms: arms ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
 }
 
 function isCoverage(value: unknown): value is Coverage {
@@ -330,6 +335,13 @@ function isObject(value: unknown): value is Record<string, unknown> & object {
 /** The entries of a record that are records themselves. */
 function objectsIn<T>(record: Record<string, T>): Record<string, T> {
   return Object.fromEntries(Object.entries(record).filter(([, v]) => isObject(v)));
+}
+
+/** The weapon levels, as far as they read: a kind or a weapon whose level doesn't is forgotten (starting again from the first). */
+function armsOf(value: unknown): Arms | null {
+  if (!isObject(value)) return null;
+  const levels = (record: unknown): Record<string, SkillState> => (isObject(record) ? Object.fromEntries(Object.entries(record).filter((e): e is [string, SkillState] => isSkill(e[1]))) : {});
+  return { types: levels(value.types), models: levels(value.models) };
 }
 
 /** What people remember of the player, as far as it reads: older saves have none, and anything unreadable is forgotten. */

@@ -992,6 +992,14 @@ function chromePage(): ChromePageView {
   };
 }
 
+/** How well the player knows a weapon, for its row: its level, and its latest perk or the next one ("Lv 3 · Ricochet at 5"). */
+function masteryText(id: string): string {
+  const m = game.masteryOf(id);
+  if (!m) return '';
+  const perk = m.perks.at(-1);
+  return [`Lv ${m.status.level}`, perk ? perk.name : m.next ? `${m.next.name} at ${m.next.at}` : ''].filter(Boolean).join(' · ');
+}
+
 /** "250 g", "1.3 kg"; `kilos` always in kilos, for the limits. */
 function formatGrams(grams: number, kilos = false): string {
   return grams >= 1000 || kilos ? `${(grams / 1000).toFixed(1)} kg` : `${Math.round(grams)} g`;
@@ -1003,9 +1011,9 @@ function itemDetail(item: Item, tier: (p: { brand?: string; style?: PocketLoad['
   if (item.kind === 'credchip') return `€$ ${item.balance ?? 0}${item.locked ? ' · locked' : ''}`;
   if (item.kind === 'clothing' && item.gear) return [tier(GEAR.kinds[item.gear]), GEAR.kinds[item.gear]?.mask ? 'Hides your face' : ''].filter(Boolean).join(' · ') || undefined;
   const weapon = weaponOf(item, ARMS);
-  // A gun by its class and what's in it (the maker is on the rack); a blade by its class and maker.
-  if (weapon && isGun(weapon, ARMS)) return [ARMS.classes[weapon.class]?.label, `${item.loaded ?? 0}/${weapon.magazine ?? 0}`, weapon.disposable ? 'sealed' : ''].filter(Boolean).join(' · ');
-  if (weapon) return weaponDetail(weapon, ARMS);
+  // A gun by its class and what's in it (the maker is on the rack); a blade by its class and maker; either with how well the player knows it.
+  if (weapon && isGun(weapon, ARMS)) return [ARMS.classes[weapon.class]?.label, `${item.loaded ?? 0}/${weapon.magazine ?? 0}`, weapon.disposable ? 'sealed' : '', masteryText(item.weapon ?? '')].filter(Boolean).join(' · ');
+  if (weapon) return [weaponDetail(weapon, ARMS), masteryText(item.weapon ?? '')].filter(Boolean).join(' · ');
   if (item.kind === 'ammo') return ARMS.ammo[item.id]?.for;
   const implant = implantOf(item, CHROME);
   if (implant) return implantDetail(implant, CHROME);
@@ -1109,6 +1117,8 @@ function showStatus(now: number): void {
     { label: 'Charisma', value: `Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP` },
     { label: 'Street Brawler', value: `Lv ${brawler.level} · ${brawler.xp}/${brawler.xpToNext} XP` },
     { label: 'Toughness', value: `Lv ${toughness.level} · ${toughness.xp}/${toughness.xpToNext} XP` },
+    // Every kind of weapon the player has fought with, best known first.
+    { label: 'Weapons', value: game.mastery().types.map((t) => `${t.label} Lv ${t.status.level}`).join(' · ') || 'None used yet' },
     { label: 'Eddies', value: `€$ ${wallet.eddies} on you${wallet.account ? ` · €$ ${wallet.account} banked` : ''}${wallet.chips ? ` · €$ ${wallet.chips} on chips` : ''}` },
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
@@ -1225,8 +1235,9 @@ function showPeople(): void {
             // What's still to find out: the questions not yet answered.
             unknown: (Object.entries(LINES.questions) as Array<[Question, { label: string }]>).filter(([fact]) => !standing.knowledge.facts.includes(fact)).map(([, q]) => q.label),
             between: game.between(shown.id, now),
-            // Out cold, they're here but past talking to.
+            // Out cold, they're here but past talking to: all that's left is going through their pockets.
             here: Boolean(present) && !game.outCold(shown.id, now),
+            cold: Boolean(present) && game.outCold(shown.id, now),
             web: standing.web.map((link) => ({ id: link.person.id, name: nameOf(link.person.id, link.person.name), label: link.kind ? kinWord(shown, link.kind, link.person) : '?', how: how[link.how] })),
             webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Watch who they keep company with, or get them talking.`,
             picker,

@@ -1302,6 +1302,20 @@ export const LINES: DialogueLines = {
       only('The {weapon} does the talking. {haul}.', bladeDrawn),
       only('One look at the {weapon} and {given} digs deep. {haul}.', bluntDrawn),
     ],
+    // Out cold: nobody to argue, nobody to see your face but whoever's watching.
+    cold: [
+      '{haul}, and {given} none the wiser.',
+      'You come away with {haul}. {given} sleeps through it.',
+      "{haul}. {given} doesn't stir.",
+      '{given} breathes slow while you take {haul}.',
+      'Easy pickings: {haul}, off someone who can\'t stop you.',
+    ],
+    coldNothing: [
+      'Nothing on {given} worth taking.',
+      "{given}'s pockets are empty.",
+      'Empty pockets. Someone got to {given} first, or there was never anything.',
+      'You turn out {his} pockets: lint, and nothing else.',
+    ],
     nothing: [
       '{given} turns out empty pockets. "Already been done this week."',
       'Nothing on {given} worth taking. {He} laugh{s}, which is worse.',
@@ -2117,6 +2131,12 @@ export const LINES: DialogueLines = {
       only('You get in close, fists ready. "Pockets. Slowly."', unarmed),
       only('"Hand it over. All of it." You crowd {him} so there\'s nowhere to go.', unarmed),
       only('You grab {his} collar. "Eddies. Now."', unarmed),
+    ],
+    robCold: [
+      'You crouch and go through {his} pockets.',
+      'You roll {him} over and check {his} pockets.',
+      'You kneel and pat {him} down.',
+      'You go through {his} pockets, quick, one eye on the door.',
     ],
     work: [
       only('"You hiring?"', blunt),

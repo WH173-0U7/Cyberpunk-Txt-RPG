@@ -430,12 +430,27 @@ own.
 - **Knockouts and fighting skills**: a hard punch or a club can knock someone out cold
   before they're beaten, likelier the more worn down they are. They lie where they fell for
   a few minutes, hurt no worse than a headache, and nobody can talk to them till they come
-  to. It works on you too: knocked out, you're robbed, but come to with the health you had.
-  Two skills grow as you fight: **Street Brawler** (the 2077 skill for fists and blunt
-  weapons) with every blow you land bare-handed or with Gorilla Arms, and more for a
-  knockout, makes those blows land surer and harder and put people out more often;
-  **Toughness** with every blow you take and every fight you walk away from, makes you
+  to, but you can go through their pockets (**Rob** under **⋯** on their card), with nobody
+  to stop you. It works on you too: knocked out, you're robbed, but come to with the health
+  you had. Two skills grow as you fight: **Street Brawler** (the 2077 skill for fists and
+  blunt weapons) with every blow you land bare-handed or with Gorilla Arms, and more for a
+  knockout, makes your fists land surer and harder and anything blunt put people out more
+  often; **Toughness** with every blow you take and every fight you walk away from, makes you
   harder to knock out. Both are in the status drop-down.
+- **Weapon levels**: every kind of weapon (pistols, shotguns, katanas, Mantis Blades…) has a
+  level of its own, and so does every weapon (your Lexington, your Gorilla Arms), each
+  growing with every shot or swing, more with a hit and most with the blow that ends it. A
+  weapon you've never used hits about two thirds as hard as anyone's and lands less; known well,
+  it hits harder and surer, and brings perks at its levels 5, 7 and 10 by what it is: a Power
+  gun's rounds ricochet round cover, a Tech gun's go through armor and cover, a Smart gun's
+  track, a blade cuts clean, a club puts people out. The status drop-down lists your weapon
+  levels; a weapon's row in the inventory says its level and its next perk.
+- **Pathetic to professional**: every skill starts you off worse than anyone. Charisma,
+  Street Brawler, Toughness and every weapon level are a penalty until level 4, where an
+  ordinary person stands (at level 1 strangers tell you next to nothing, your fists hit six
+  tenths as hard, you go out cold easier, a gun you've never used hits two thirds as hard), and only past
+  it do they carry you. Each level-up says where it leaves you, from "still worse at it than
+  most people" to "a professional".
 - **Hospitals and meds**: every district has a hospital (Watson's Kabuki Community Hospital,
   and the Night City Medical Center when the city has it; Dogtown's Haven Clinic; one in
   Westbrook, Heywood, and most cities' downtown and Santo Domingo), in a storefront of its
@@ -527,7 +542,7 @@ own.
 - **Status**: the sign says where you are, the address above it the district, and the clock
   the time of day; under the energy bar one line says your energy, its level, when the next
   point comes, and anything the matter (drunk, masked, on a shift somewhere). Tap it and a
-  drop-down unfolds the rest: energy, charisma and fighting experience, your cash, the bank and your
+  drop-down unfolds the rest: energy, charisma and fighting experience, your weapon levels, your cash, the bank and your
   chips, the NCART pass, your job, your condition, your mask, every reputation that stands at
   anything, how much of the city you've mapped, the weather, the date, and the way into the
   settings. Nothing else repeats it.
