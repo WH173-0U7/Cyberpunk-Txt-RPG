@@ -1,4 +1,4 @@
-import type { SkillRules, SkillState, SkillStatus } from './skills';
+import { skillBonus, type SkillRules, type SkillState, type SkillStatus } from './skills';
 import type { Quality } from './food';
 import type { Rng } from './rng';
 import type { WeaponClass, WeaponTech } from './weapons';
@@ -139,7 +139,8 @@ export interface CombatRules {
   escapeAdvanced: number;
   escapeIdle: number;
   /** Talking someone down: a base, and what moves it (their courage and temper, how hurt they are, the player's charisma, a gun on the player, the beats gone by). */
-  talk: { base: number; courage: number; temper: number; hurt: number; charisma: number; gun: number; perBeat: number };
+  /** Talking someone down: a base, more the more timid and the more hurt they are, less the hotter-headed, more for the player's way with words and a gun in hand, less for theirs (`resist`, a level past ordinary), and more every beat it goes on. */
+  talk: { base: number; courage: number; temper: number; hurt: number; charisma: number; resist: number; gun: number; perBeat: number };
   /** RAM back each beat. */
   ramPerBeat: number;
   /**
@@ -438,10 +439,11 @@ export function theirMove(state: FightState, nerve: { courage: number; temper: n
 }
 
 /** The odds of talking someone down this beat. `charisma` is in levels past an ordinary person's (`skillEdge`). */
-export function talkOdds(state: FightState, nerve: { courage: number; temper: number }, charisma: number, armed: boolean, rules: CombatRules): number {
+export function talkOdds(state: FightState, nerve: { courage: number; temper: number }, charisma: number, armed: boolean, rules: CombatRules, theirs = 0): number {
   const t = rules.talk;
   const hurt = 1 - state.them.hp / Math.max(1, state.them.max);
-  const odds = t.base + (1 - nerve.courage) * t.courage - nerve.temper * t.temper + hurt * t.hurt + charisma * t.charisma + (armed ? t.gun : 0) + state.beat * t.perBeat;
+  // Words against words: the player's way with them, less the other's (both in levels past an ordinary person's).
+  const odds = t.base + (1 - nerve.courage) * t.courage - nerve.temper * t.temper + hurt * t.hurt + charisma * t.charisma - theirs * t.resist + (armed ? t.gun : 0) + state.beat * t.perBeat;
   return Math.max(0.02, Math.min(0.9, odds));
 }
 
@@ -601,6 +603,29 @@ export function perkFamily(arm: Arm, rules: CombatRules): PerkFamily | null {
 }
 
 /** What a weapon known this well brings: the bonuses of its kind's level and its own, and its perks so far. */
+/**
+ * What someone's levels make of their edge with what they hold, the same for the player and
+ * for anyone: Street Brawler on fists (surer and harder) and on anything blunt (knockouts),
+ * Toughness on how hard they are to put out, and the weapon's kind and the weapon itself on its
+ * damage and aim, with the perks it's brought.
+ */
+export function trainedEdge(edge: Edge, arm: Arm, levels: { brawler: number; toughness: number; type: number; model: number }, perks: readonly Perk[], rules: CombatContent): Edge {
+  const kind = rules.classes[arm.cls]?.kind;
+  const brawl = kind === 'fists' || kind === 'blunt' ? skillBonus(rules.skills.brawler, levels.brawler) : 1;
+  const out: Edge = { ...edge, ko: edge.ko * brawl, steady: edge.steady / skillBonus(rules.skills.toughness, levels.toughness) };
+  if (kind === 'fists') {
+    out.aim *= 1 + (brawl - 1) * 0.25;
+    out.melee *= brawl;
+  }
+  return perkFamily(arm, rules) ? masteryEdge(out, skillBonus(rules.mastery.types, levels.type), skillBonus(rules.mastery.models, levels.model), perks, rules.mastery) : out;
+}
+
+/** The perks a weapon has brought by a level with it. */
+export function perksAt(arm: Arm, level: number, rules: CombatContent): Perk[] {
+  const family = perkFamily(arm, rules);
+  return family ? rules.mastery.perks[family].filter((p) => p.at <= level) : [];
+}
+
 export function masteryEdge(edge: Edge, typeBonus: number, modelBonus: number, perks: readonly Perk[], rules: MasteryRules): Edge {
   const bonus = typeBonus * modelBonus;
   const out: Edge = { ...edge, aim: edge.aim * (1 + (bonus - 1) * rules.aim), power: edge.power * bonus };

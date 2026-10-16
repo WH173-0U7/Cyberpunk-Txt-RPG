@@ -259,6 +259,25 @@ export const PEOPLE: PeopleContent = {
     perDistrict: { city_center: 16, westbrook: 12, heywood: 10, watson: 8, santo_domingo: 6 },
     roles: ['NCPD officer', 'NCPD officer', 'NCPD officer', 'NCPD sergeant', 'NCPD detective'],
   },
+  // Everyone's own levels, in the player's (an ordinary person is 4): gangers and guards handy and
+  // hard to talk round, corpos smooth and soft, the old slow but with a way with words; anyone
+  // else anywhere. Nerve and temper make a fighter, warmth and chattiness a talker.
+  skills: {
+    walks: {
+      gang: { brawler: [4, 7], toughness: [4, 7], arms: [4, 7], charisma: [1, 4] },
+      guard: { brawler: [4, 6], toughness: [4, 7], arms: [5, 7], charisma: [2, 5] },
+      corpo: { brawler: [1, 3], toughness: [1, 3], arms: [2, 4], charisma: [5, 8] },
+      elder: { brawler: [1, 3], toughness: [1, 2], arms: [1, 3], charisma: [4, 8] },
+      street: { brawler: [2, 5], toughness: [2, 5], arms: [2, 5], charisma: [2, 6] },
+    },
+    traits: 1.5,
+    most: 10,
+    reads: {
+      fight: [[2, 'Harmless'], [3, 'No fighter'], [4, 'Ordinary'], [6, 'Can handle themselves'], [10, 'Dangerous']],
+      talk: [[2, 'Tongue-tied'], [4, 'Plain-spoken'], [6, 'Smooth'], [10, 'Silver-tongued']],
+      talks: 2,
+    },
+  },
   // Credchips (the wiki's 2020 chips of eurodollars): corpos nearly always carry one with real money on it; the street often, with less; gangers deal in cash.
   chips: { corpo: { chance: 0.8, range: [80, 500] }, gang: { chance: 0.2, range: [20, 120] }, street: { chance: 0.45, range: [15, 150] } },
   // Street names: made up, checked against the wiki so none is a canon character's (and none a canon weapon or perk). Most gangers go by one, some on the street, corpos never.

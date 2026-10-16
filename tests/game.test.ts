@@ -2620,7 +2620,8 @@ describe('Game', () => {
         expect(game.health(t).current).toBe(1);
         const hearty = atTheBar({ items: [], chrome: [{ id: 'second-heart', since: 1 }], health: { value: 5, at: Date.UTC(2077, 9, 12, 11, 0) } }, brutal(10, 0));
         hearty.game.attack(hearty.worker.id, hearty.now);
-        hearty.game.fightMove('cover', hearty.now + 1000);
+        // Their blows land as often as they're any good with their fists: a few beats, and one does.
+        for (let n = 1; n <= 8 && !hearty.game.fightView()?.log.join(' ').includes('Second Heart'); n++) hearty.game.fightMove('cover', hearty.now + n * 1000);
         expect(hearty.game.fightView()?.log.join(' ')).toContain('Second Heart');
         expect(hearty.game.fightView()?.you.hp).toBe(hearty.game.fightView()?.you.max);
       });

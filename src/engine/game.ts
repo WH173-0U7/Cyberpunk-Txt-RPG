@@ -3,7 +3,7 @@ import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergySt
 import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
-import { masteryEdge, NO_EDGE, perkFamily, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
+import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
 import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
@@ -15,7 +15,7 @@ import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, typ
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
 import { chargesFor, freshPolice, issueWarrant, policing, warrantsAt, worstCrime, type Confrontation, type Crime, type Dispatch, type PoliceChoice, type PoliceContent, type PoliceState, type PoliceView } from './police';
 import { mainRoom, roomById, roomOf, roomsOn, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
-import { allHours, buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { allHours, buildingById, GUARD_ROLE, readOf, skillsOf, walkOf, type PersonSkills, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
@@ -187,6 +187,9 @@ export interface Description {
   lines: string[];
   /** Their sex, plain to see ("Female", "Male · goes by they"). */
   sex: string;
+  /** How they strike the player as a fighter, plain to see ("Harmless", "Dangerous"); as a talker once they've talked a few times, else null. */
+  fight: string;
+  talk: string | null;
 }
 
 const HOUR = 3_600_000;
@@ -240,7 +243,7 @@ interface Combatant {
 /** Bare hands. */
 const FISTS: Arm = { id: 'fists', name: 'Fists', short: 'fists', cls: 'fists', magazine: 0 };
 /** The jobs that come armed and armored. */
-const GUARD = /guard|bouncer|security|trooper|patrol|sergeant|ncpd/i;
+const GUARD = GUARD_ROLE;
 /** The NCPD's own. */
 const NCPD = /^NCPD /;
 /** What an attack is called, by what it's made with. */
@@ -322,6 +325,8 @@ export class Game {
   private policeState: PoliceState;
   /** The NCPD's officers, found once a city. */
   private officerList: Person[] | null = null;
+  /** Everyone's own levels, worked out as they're needed. */
+  private readonly skillCache = new Map<string, PersonSkills>();
   /** The fight the player is in, or has just finished. */
   private fightState: Fight | null = null;
   /** Whether the player fights to kill; they don't unless they say so. */
@@ -1317,9 +1322,22 @@ export class Game {
     return { hp, max: hp, arm, loaded: arm.magazine, spare: arm.magazine * combat.spareMags, armor: this.armorOf(person), covered: false, blind: 0, jammed: 0, crippled: 0, chromeOff: 0, burn: 0, burning: 0, regen: 0, regening: 0, charges: combat.classes[arm.cls]?.charges ?? 0 };
   }
 
-  /** What someone other than the player brings to a fight: a smart gun's tracking, how hard they are to knock out. */
+  /**
+   * What someone other than the player brings to a fight: a smart gun's tracking, how hard
+   * they are to knock out by nature, and their own levels, counted the way the player's are
+   * (Street Brawler, Toughness, and the kind of weapon in hand, its perks with it).
+   */
   private edgeOf(person: Person, fighter: Fighter): Edge {
-    return { ...NO_EDGE, smart: fighter.arm.tech === 'Smart', steady: this.steadyOf(person) };
+    const skills = this.skillsFor(person);
+    const base = { ...NO_EDGE, smart: fighter.arm.tech === 'Smart', steady: this.steadyOf(person) };
+    return trainedEdge(base, fighter.arm, { brawler: skills.brawler, toughness: skills.toughness, type: skills.arms, model: skills.arms }, perksAt(fighter.arm, skills.arms, this.rules.combat), this.rules.combat);
+  }
+
+  /** Someone's own levels: Street Brawler, Toughness, the kind of weapon they carry, Charisma. */
+  private skillsFor(person: Person): PersonSkills {
+    let skills = this.skillCache.get(person.id);
+    if (!skills) this.skillCache.set(person.id, (skills = skillsOf(person, this.world, this.rules.people)));
+    return skills;
   }
 
   /** What there is to do in the fight this beat, and what each would be done with. */
@@ -1413,7 +1431,8 @@ export class Game {
       ...(chosen ? { hack: { id: chosen.id, ram: chosen.ram, effect: gear.hacks.hacks[chosen.id]!.effect } } : {}),
       ...(dose ? { med: { heal: dose.med.heal, ...(dose.med.regen ? { regen: dose.med.regen } : {}) } } : {}),
       indoors: f.indoors,
-      talkOdds: talkOdds(state, f.nerve, this.charismaEdge, armed, combat),
+      // Talking them down is the player's way with words against theirs.
+      talkOdds: talkOdds(state, f.nerve, this.charismaEdge, armed, combat, skillEdge(this.rules.charisma, this.skillsFor(person).charisma)),
       rng,
       rules: combat,
     });
@@ -2059,15 +2078,9 @@ export class Game {
       if (sys?.guard && (system !== 'berserk' || close)) guard *= sys.guard;
     }
     aim *= 1 - 0.3 * this.inebriation(Date.now()).severity;
-    // A Street Brawler's fists: surer and harder (weaker than anyone's at first); with a club or Gorilla Arms, only likelier to put someone out.
-    const brawl = kind === 'fists' || kind === 'blunt' ? this.brawler().bonus : 1;
-    if (kind === 'fists') {
-      aim *= 1 + (brawl - 1) * 0.25;
-      melee *= brawl;
-    }
-    const edge: Edge = { ...NO_EDGE, aim, melee, guard, smart, evade, wound: this.lethalOn ? 1 : combat.nonLethal, ko: brawl, steady: 1 / this.toughness().bonus };
-    // Any weapon: how well the player knows its kind and it, and the perks it's brought.
-    return perkFamily(you.arm, combat) ? masteryEdge(edge, this.weaponType(you.arm.cls).bonus, this.weaponModel(you.arm.id).bonus, this.weaponPerks(you.arm), combat.mastery) : edge;
+    const edge: Edge = { ...NO_EDGE, aim, melee, guard, smart, evade, wound: this.lethalOn ? 1 : combat.nonLethal };
+    // The player's levels, the way anyone's count: Street Brawler, Toughness, the weapon's kind and the weapon, and its perks.
+    return trainedEdge(edge, you.arm, { brawler: this.brawler().level, toughness: this.toughness().level, type: this.weaponType(you.arm.cls).level, model: this.weaponModel(you.arm.id).level }, this.weaponPerks(you.arm), combat);
   }
 
   /** The time the player has for a move: the base, and more with reflex chrome (some of it only when they're hurt). */
@@ -2116,11 +2129,9 @@ export class Game {
   armOf(person: Person): Arm {
     const { combat } = this.rules;
     const rng = createRng(`${person.id}:arms`);
-    const guard = GUARD.test(person.job.role);
-    const corpo = isCorpo(person, this.world);
-    const walk = person.gang ? 'gang' : guard ? 'guard' : corpo ? 'corpo' : person.age >= 56 ? 'elder' : 'street';
+    const walk = walkOf(person, this.world);
     if (!rng.chance(combat.carry.chance[walk])) return FISTS;
-    const pool = person.gang ? (combat.carry.gangs[person.gang] ?? combat.carry.street) : guard ? combat.carry.guard : corpo ? combat.carry.corpo : combat.carry.street;
+    const pool = person.gang ? (combat.carry.gangs[person.gang] ?? combat.carry.street) : walk === 'guard' ? combat.carry.guard : walk === 'corpo' ? combat.carry.corpo : combat.carry.street;
     const total = pool.reduce((n, [, w]) => n + w, 0);
     let roll = rng.next() * total;
     let id = pool[0]?.[0] ?? 'fists';
@@ -4133,7 +4144,13 @@ export class Game {
     const romance = this.society.romance?.with === id ? this.society.romance : null;
     const heart = romance ? `${romance.stage === 'together' ? 'Together with you' : 'Seeing you'} · ${romance.dates} ${romance.dates === 1 ? 'date' : 'dates'}` : '';
     const sex = `${capitalize(sexOf(person))}${person.pronouns === 'they' ? ' · goes by they' : ''}`;
-    return { name: named ? name : describeStranger(person, people), named, facts, lines: [heart, ...order.map((f) => facts[f])].filter((line): line is string => Boolean(line)), sex };
+    // How they strike the player: as a fighter, plain to see (their bearing, their colors); as a talker, once they've talked a few times.
+    const skills = this.skillsFor(person);
+    const reads = people.skills?.reads;
+    const fight = reads ? readOf(Math.round((skills.brawler + skills.toughness + skills.arms) / 3), reads.fight) : '';
+    const talks = standingOf(this.society, id, this.rules.society, this.rules.timeScale, now).talks;
+    const talk = reads && talks >= reads.talks ? readOf(skills.charisma, reads.talk) : null;
+    return { name: named ? name : describeStranger(person, people), named, facts, lines: [heart, ...order.map((f) => facts[f])].filter((line): line is string => Boolean(line)), sex, fight, talk };
   }
 
   /** Someone's type, as the card says it: whom they're drawn to, what wins them over, the look they like. */

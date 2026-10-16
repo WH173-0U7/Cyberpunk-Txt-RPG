@@ -181,3 +181,16 @@ describe('the lines of a fight of more than two', () => {
     }
   });
 });
+
+describe('sizing someone up', () => {
+  it('shows how they would be in a fight at a look, and how they talk once they have talked a while', () => {
+    const { game, victim } = play(undefined);
+    const look = game.describe(victim.id, NOON)!;
+    expect(PEOPLE.skills!.reads.fight.map(([, word]) => word)).toContain(look.fight);
+    expect(look.talk).toBeNull();
+    let t = NOON;
+    for (let n = 0; n < 6 && game.describe(victim.id, t)!.talk === null; n++) game.talk(victim.id, (t += 20 * 60_000));
+    expect(PEOPLE.skills!.reads.talk.map(([, word]) => word)).toContain(game.describe(victim.id, t)!.talk);
+  });
+});
+
