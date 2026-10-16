@@ -411,7 +411,7 @@ describe('the lines of dealing', () => {
     const g = game(blank({}));
     const rng = createRng('lines');
     const speakerOf = (person: Person): Speaker => (g as unknown as { speakerFor(p: Person, s: string, d: string, n: number): Speaker }).speakerFor(person, 'neutral', '', NOON);
-    const deal = { drug: 'Glitter', doses: '8', owed: '79', when: 'Fri 18:00', corner: 'Jig-Jig Street', title: 'pusher', connect: 'Kenji', left: '40', pay: '20', price: '18', mask: '', ours: 'Maelstrom' };
+    const deal = { drug: 'Glitter', doses: '8', owed: '79', when: 'Fri 18:00', corner: 'Jig-Jig Street', title: 'pusher', connect: 'Kenji', left: '40', pay: '20', price: '18', mask: '', ours: 'Maelstrom', handed: '60', kept: '25' };
     for (const person of [connect, ...population.people.slice(0, 40)]) {
       for (const stance of ['neutral', 'warm', 'cold', 'friend', 'wary'] as const) {
         const speaker = { ...speakerOf(person), stance, vars: { ...speakerOf(person).vars, ...deal } };
@@ -423,7 +423,7 @@ describe('the lines of dealing', () => {
             expect(text, `${key} ${stance}`).not.toMatch(/[{}]/);
           }
         }
-        for (const pool of [LINES.you.deal, LINES.you.pitch, LINES.you.payUp, LINES.you.walkAway]) expect(line(pool, speaker, rng)).not.toMatch(/[{}]|^$/);
+        for (const pool of [LINES.you.deal, LINES.you.pitch, LINES.you.payUp, LINES.you.walkAway, LINES.you.recruit, LINES.you.frontRunner, LINES.you.collect, LINES.you.lean, LINES.you.slide, LINES.you.letGo]) expect(line(pool, speaker, rng)).not.toMatch(/[{}]|^$/);
       }
       expect(line(LINES.deal.masked, { ...speakerOf(person), vars: { ...speakerOf(person).vars, mask: 'balaclava' } }, rng)).not.toMatch(/[{}]|^$/);
     }

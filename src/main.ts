@@ -42,6 +42,7 @@ import { ROOMS } from './data/rooms';
 import { POLICE } from './data/police';
 import { DEALING } from './data/dealing';
 import type { PoliceView } from './engine/police';
+import type { RunnerView } from './engine/crew';
 import type { DealView } from './engine/dealing';
 import type { HabitView } from './engine/habit';
 import type { FinishKind } from './engine/combat';
@@ -730,6 +731,17 @@ function dealLine(deal: DealView, now: number): string {
   return [`${deal.title} for the ${deal.gangName}`, deal.carried ? `${deal.carried} on you` : '', owing, deal.corner ? `corner: ${deal.corner.name}` : '', `${deal.sold} sold`, next].filter(Boolean).join(' · ');
 }
 
+/** The player's runners, as the status says them: what each has out and owes, and anyone held, short, gone or run off. */
+function crewLine(crew: RunnerView[], most: number): string {
+  const day = (ms: number) => `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(ms).getDay()]} ${formatClock(ms)}`;
+  const one = (r: RunnerView) => {
+    if (r.ran) return `${r.name} ran off owing ${r.left} €$`;
+    const state = r.quit ? 'walked' : r.held ? 'held by the NCPD' : r.short ? `short ${r.left} €$` : r.left ? `owes ${r.left} €$${r.due ? ` by ${day(r.due)}` : ''}` : r.drug ? `${r.drug} out` : 'on nothing';
+    return `${r.name}: ${state}`;
+  };
+  return [`${crew.length} of ${most}`, ...crew.map(one)].join(' · ');
+}
+
 /** A collector on the player for a debt, and the three things to do about it; null when there's none. */
 function collectorView(now: number): PanelView | null {
   const c = game.collector(now);
@@ -1327,6 +1339,7 @@ function showStatus(now: number): void {
   const ncpd = police.held ? `Held · ${formatCountdown(police.held - now)}` : police.dispatch ? `NCPD · ${formatCountdown(police.dispatch.arriveAt - now)}` : police.warrants.length ? 'Wanted' : '';
   const heart = game.romance(now);
   const deal = game.dealing(now);
+  const crew = game.crew(now);
   const habit = game.habit(now);
   // What's working, else the worst of a craving or withdrawal, on the line.
   const high = habit?.active[0] ? `On ${habit.active[0].name}` : habit?.stage ? (habit.stage.stage === 'craving' ? `Craving ${habit.stage.name}` : 'Withdrawal') : '';
@@ -1361,6 +1374,7 @@ function showStatus(now: number): void {
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
     ...(jobs.length ? jobs.map((j) => ({ label: j.side ? 'Side gig' : 'Work', value: `${j.rung.title} at ${j.building.name} · ${formatDays(j.days)} ${j.hours[0]}–${j.hours[1]}h${j.owed ? ` · ${j.owed} €$ owed` : ''} · ${j.shifts} ${j.shifts === 1 ? 'shift' : 'shifts'}${j.next ? ` · trust ${j.trust}, ${j.next.title.toLowerCase()} at ${j.next.at}` : ' · top of the ladder'} · trade ${game.trade(j.building).health} · ${j.perks.join(', ')}` })) : [{ label: 'Work', value: 'No job' }]),
     ...(deal ? [{ label: 'Dealing', value: dealLine(deal, now), ...(deal.debt ? { tone: 'bad' as const } : {}) }] : []),
+    ...(crew.length || deal?.crewMost ? [{ label: 'Crew', value: crewLine(crew, deal?.crewMost ?? crew.length), ...(crew.some((r) => r.short || r.ran) ? { tone: 'warn' as const } : {}) }] : []),
     ...(habit && (habit.drugs.length || habit.active.length || habit.edge || habit.nerve) ? [{ label: 'Habit', value: habitLine(habit, now), ...(habit.stage || habit.numb ? { tone: 'bad' as const } : {}) }] : []),
     ...(condition ? [{ label: 'Condition', value: condition, tone: 'warn' as const }] : []),
     ...(mask ? [{ label: 'Mask', value: `${mask.name} · nobody knows your face`, tone: 'warn' as const }] : []),

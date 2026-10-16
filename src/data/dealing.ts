@@ -146,6 +146,60 @@ export const DEALING: DealingRules = {
     heat: { decay: 0.5 },
     threat: { chance: 0.35, amount: [40, 120], hours: [2, 8] },
   },
+  crew: {
+    from: 2,
+    most: [2, 4],
+    stances: ['warm', 'friend'],
+    keen: { gang: 0.6, user: 0.5, straight: -0.8 },
+    sizes: [5, 10, 20],
+    owe: 0.65,
+    days: 5,
+    sell: { base: 1, perUsers: 12, perLevel: 0.12, most: 8 },
+    practice: 6,
+    bust: { base: 0.06, name: 0.45, loyal: 0.6, hold: [1, 3] },
+    robbed: { base: 0.035, share: [0.3, 0.8], hurt: 0.4, hurtDays: [1, 4] },
+    skim: { greed: 0.62, share: [0.05, 0.2] },
+    use: { doses: [0, 2] },
+    mood: { start: 55, sold: 2, busted: 25, robbed: 15, leaned: 20, slide: 10, settled: 6, quit: 20, walk: 0.35, runOff: 0.5 },
+    lean: { base: 0.45, perLevel: 0.08, most: 0.9, rapport: 6, grudge: 15, slide: 5 },
+    lines: {
+      busted: [
+        'Word reaches you: the NCPD picked up {who} with {doses} doses of {drug}. All of it is gone.',
+        'Bad news on the street: {who} got stopped and searched. {doses} doses of {drug}, seized.',
+        '{Who} is in a cell tonight, and your {drug} is in an evidence locker.',
+      ],
+      named: [
+        'And {who} gave them your name.',
+        'Word is {who} talked. The NCPD has your name now.',
+        '{Who} did not keep quiet: your name is on a warrant.',
+      ],
+      robbed: [
+        'Word reaches you: {who} got jumped, and lost {doses} doses and {cash} €$ of what {he} held.',
+        'Somebody robbed {who}: {doses} doses of your {drug} gone, and {cash} €$ with them.',
+        '{Who} got rolled on the street. {doses} doses and {cash} €$ off {him}.',
+      ],
+      quit: [
+        'Word reaches you that {who} wants out. {He} still has what {he} was holding for you.',
+        '{Who} is done running for you, word is. Go get what {he} holds.',
+        'You hear {who} has had enough of the life. What {he} owes you is still out there.',
+      ],
+      walked: [
+        'Word reaches you: {who} is done running for you.',
+        '{Who} has had enough of the life, word is. {He} is off your crew.',
+        'You hear {who} wants nothing more to do with it. One runner fewer.',
+      ],
+      ran: [
+        '{Who} is gone, and your {drug} and your money with {him}.',
+        'Word reaches you: {who} skipped out with everything {he} was holding for you.',
+        '{Who} took the package and ran. {He} is somewhere in the city with your money.',
+      ],
+      dead: [
+        'Word reaches you: {who} is dead. Whatever {he} held for you is gone.',
+        '{Who} will not be running for you again. {He} is dead, and the product with {him}.',
+        'Your runner {who} is dead. The street keeps what {he} had on {him}.',
+      ],
+    },
+  },
   lines: {
     walkUp: [
       '{Who} drifts over, eyes on everything but you, and asks if you are holding {drug}.',

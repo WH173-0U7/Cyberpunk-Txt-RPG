@@ -1,5 +1,6 @@
 import { createRng } from './rng';
 import type { Quality } from './food';
+import type { CrewRules, Runner } from './crew';
 import type { HabitRules as YourHabitRules } from './habit';
 import type { Person, SkillWalk, Traits } from './people';
 import type { Stance } from './society';
@@ -186,6 +187,8 @@ export interface DealingRules {
   war: WarRules;
   /** The player's own habit, if they use what they sell (habit.ts). */
   habit: YourHabitRules;
+  /** The player's own runners, from a high enough rung (crew.ts). */
+  crew: CrewRules;
   lines: DealLines;
 }
 
@@ -239,10 +242,13 @@ export interface DealingState {
   burned: Record<string, number>;
   /** Who holds a corner (a place's id) that's changed hands, or been claimed for the player; a gang's own canon spots are its own otherwise, and anywhere else nobody's. */
   corners: Record<string, string>;
+  /** The player's runners, by person id, and every dose anyone has sold for the player (their practice at it). */
+  crew: Record<string, Runner>;
+  dealt: Record<string, number>;
 }
 
 export function freshDealing(): DealingState {
-  return { current: null, vouched: {}, past: {}, burned: {}, corners: {} };
+  return { current: null, vouched: {}, past: {}, burned: {}, corners: {}, crew: {}, dealt: {} };
 }
 
 /** The player's heat at `now`: what it was, halved for every day since. */
@@ -349,6 +355,8 @@ export interface DealView {
   fronts: number;
   sold: number;
   take: number;
+  /** How many runners the player could have at their rung. */
+  crewMost: number;
 }
 
 /** Something to do about dealing with a person, as their card offers it: `ask`, `front`, `pay`, `walk`, or `sell:<drug>`. */

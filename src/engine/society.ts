@@ -47,7 +47,7 @@ export const STANCE_LABEL: Record<Stance, string> = {
 };
 
 /** Something the player can want from someone: a fact about them, a topic, their people, (`chop`) their hands on a stolen credchip, or (`hire`) a job at the place they run. */
-export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'type' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views' | 'chop' | 'hire' | 'deal' | 'pitch';
+export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'type' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views' | 'chop' | 'hire' | 'deal' | 'pitch' | 'recruit';
 
 /**
  * How ready people are to tell the player things: a base by how they feel, a step per level
