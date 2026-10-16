@@ -15,4 +15,7 @@ export const MONEY: MoneyRules = {
   withdrawals: [20, 50, 100, 200],
   transfers: { chain: true, luxury: true, gear: true, ncart: true },
   chopCut: 0.25,
+  // A shopkeeper twice as sharp as the player gets about two fifths more off them, and the other way round.
+  haggle: 0.5,
+  tradeXp: 2,
 };

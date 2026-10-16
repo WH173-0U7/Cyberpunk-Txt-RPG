@@ -125,6 +125,10 @@ export interface LifeState {
   dead: Record<string, number>;
   /** The day each couple got together, by both ids (`a|b`). */
   since: Record<string, number>;
+  /** The first day the city lived (missing in a save from before: the next one it lives). */
+  start?: number;
+  /** How many fights each person has been in: what their fighting has learned from. */
+  fights?: Record<string, number>;
 }
 
 export function freshLife(): LifeState {
@@ -132,6 +136,12 @@ export function freshLife(): LifeState {
 }
 
 const FAMILY: TieKind[] = ['spouse', 'partner', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew', 'kin'];
+
+/** Someone has been in one more fight. */
+export function learned(state: LifeState, id: string): void {
+  state.fights ??= {};
+  state.fights[id] = (state.fights[id] ?? 0) + 1;
+}
 
 export function tieKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
@@ -195,6 +205,8 @@ export function applyLife(population: Population, state: LifeState): void {
 export function liveUntil(world: World, population: Population, state: LifeState, rules: LifeRules, base: ReadonlyMap<string, number>, today: number, seed: string, tier: (spot: Spot) => Quality, turf: (district: string) => Array<[string, number]>, content: PeopleContent, spokenFor: ReadonlySet<string> = new Set()): LifeEvent[] {
   if (state.day >= today) return [];
   const from = state.day < 0 ? today - 1 : Math.max(state.day + 1, today - rules.catchUpDays + 1);
+  // Everyone's practice counts from the first day the city lived.
+  state.start ??= from;
   const happened: LifeEvent[] = [];
   const kept = keptFor(population, state);
   // A heart stays worked out while what it's drawn from stays the same: their spouse, their gang, their work and role, their grudge.
@@ -366,6 +378,9 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
   const tiesFrom = (id: string) => book.web.get(id) ?? [];
   const tieBetween = (a: string, b: string) => tiesFrom(a).find((t) => t.to === b)?.kind ?? null;
   const write = (kind: LifeKind, who: [Person, Person], gang: string | null, took: number, where: Spot | null): void => {
+    // A fight is practice for both in it; a shakedown or a robbery for whoever did it.
+    if (kind === 'fight' || (kind === 'death' && who[0] !== who[1])) for (const p of who) learned(state, p.id);
+    else if (kind === 'shakedown' || kind === 'robbery') learned(state, who[0].id);
     const event: LifeEvent = { id: state.nextId++, day, kind, who: [who[0].id, who[1].id], gang, district, took, where };
     state.events.push(event);
     events.push(event);

@@ -455,11 +455,16 @@ own.
   monowire. The slower it is, the likelier someone here steps in and stops you (and then
   it's a fight with them); an officer here always does. A gunshot is heard through every
   wall.
+- **Trading**: what you pay at a counter is your Trading against the seller's, so you start
+  out paying over the odds and a sharp shopkeeper takes more off you. Every purchase is
+  practice. Chains, hospitals and Trauma Team have their prices and stick to them.
 - **Everyone is good at something**: people have their own levels in what you do. A ganger
   fights hard and talks badly, a guard is handy with their gun, a corpo or an old lady is no
   fighter but has a way with words that makes them hard to talk down. Their card says how
   they'd be in a fight at a look, and how they talk once you've talked a while. Who you take
-  on, and whether you fight or talk, decides how it goes.
+  on, and whether you fight or talk, decides how it goes. They get better with practice, as
+  you do: a counter hand at trading and talking every day they work it, a ganger at fighting
+  every day on the streets and every fight, and every level slower to come than the last.
 - **Fights of more than two**: go for someone and their people may throw in: family, friends,
   their gang, the place's bouncer, any officer in the room; a stranger hardly ever. A friend
   of yours, or the one you're seeing, may throw in on your side. You fight one of them at a

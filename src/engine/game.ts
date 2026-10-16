@@ -11,7 +11,7 @@ import { medDetail, medTotal, TREATMENT, type Coverage, type CoverageStatus, typ
 import { answer, compose, deflect, describeStranger, drawnWord, eloquenceOf, FAMILY, fill, finish, historyOf, saidIn, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
 import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobRules, type JobState, type JobStatus, type Ladder, type Rung, type ShiftChoice, type ShiftEventKind } from './jobs';
-import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
+import { applyLife, freshLife, learned, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
 import { chargesFor, freshPolice, issueWarrant, policing, warrantsAt, worstCrime, type Confrontation, type Crime, type Dispatch, type PoliceChoice, type PoliceContent, type PoliceState, type PoliceView } from './police';
 import { mainRoom, roomById, roomOf, roomsOn, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
@@ -19,7 +19,7 @@ import { allHours, buildingById, GUARD_ROLE, readOf, skillsOf, walkOf, type Pers
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
-import { freshSkill, gainXp, skillEdge, skillStatus, type SkillRules, type SkillState, type SkillStatus } from './skills';
+import { freshSkill, gainXp, skillBonus, skillEdge, skillStatus, xpToNext, type SkillRules, type SkillState, type SkillStatus } from './skills';
 import {
   applyIncident,
   attitude,
@@ -117,6 +117,8 @@ export interface GameRules extends TravelRules {
   society: SocietyRules;
   lines: DialogueLines;
   charisma: SkillRules;
+  /** Trading: what the player pays and gets, against the seller's own. Without it (the tests' rules leave it out), prices are as they're set and nobody learns to trade. */
+  trading?: SkillRules;
   /** What things weigh and what they're carried in. */
   gear: GearContent;
   /** How eddies change hands: cash, change, transfers, the bank's cut. */
@@ -298,6 +300,8 @@ export class Game {
   private charismaState: SkillState;
   /** The fighting skills: Street Brawler (blows landed bare-handed) and Toughness (blows taken). */
   private brawlerState: SkillState;
+  /** Trading: buying and selling. */
+  private tradingState: SkillState;
   private toughnessState: SkillState;
   /** How well the player knows each kind of weapon, and each weapon. */
   private armsState: Arms;
@@ -325,8 +329,8 @@ export class Game {
   private policeState: PoliceState;
   /** The NCPD's officers, found once a city. */
   private officerList: Person[] | null = null;
-  /** Everyone's own levels, worked out as they're needed. */
-  private readonly skillCache = new Map<string, PersonSkills>();
+  /** Everyone's own levels, worked out as they're needed: again on a new day, or after a fight. */
+  private readonly skillCache = new Map<string, { day: number; fights: number; skills: PersonSkills }>();
   /** The fight the player is in, or has just finished. */
   private fightState: Fight | null = null;
   /** Whether the player fights to kill; they don't unless they say so. */
@@ -366,6 +370,7 @@ export class Game {
     this.society = progress?.society ? { ...freshSociety(), ...copyOf(progress.society) } : freshSociety();
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
     this.brawlerState = progress?.brawler ? { ...progress.brawler } : freshSkill();
+    this.tradingState = progress?.trading ? { ...progress.trading } : freshSkill();
     this.toughnessState = progress?.toughness ? { ...progress.toughness } : freshSkill();
     this.armsState = { types: { ...progress?.arms?.types }, models: { ...progress?.arms?.models } };
     // Saves from before the player said otherwise go by they.
@@ -625,13 +630,33 @@ export class Game {
     const at = this.inside ?? this.location;
     if (!at || !this.atCounter() || !this.counterOpen(at, now) || this.detained(now)) return null;
     const menu = this.counterMenu(at, now);
-    return menu && this.jobs.some((j) => j.building === at.id) ? this.staffPriced(menu) : menu;
+    if (!menu) return null;
+    // At work, the staff price; anywhere else, what the player's Trading gets them against the seller's.
+    return this.jobs.some((j) => j.building === at.id) ? this.staffPriced(menu) : this.haggled(menu, at, now);
   }
 
   /** A menu at the staff price: the player's own workplace takes a share off everything but Trauma Team's plans. */
   private staffPriced(menu: Menu): Menu {
     const off = this.rules.jobs.perks.discount;
     return { ...menu, staff: off, items: menu.items.map((i) => (i.kind === 'plan' ? i : { ...i, price: Math.max(1, Math.round(i.price * (1 - off))) })) };
+  }
+
+  /**
+   * A counter's prices as the player's Trading gets them, against the seller's (the sharpest of
+   * the hands there; a stall's vendor, ordinary): over or under, to `MONEY.haggle`'s power. A
+   * chain's prices are set, and so are a hospital's, Trauma Team's and a room for the night.
+   */
+  private haggled(menu: Menu, at: Building | Location, now: number): Menu {
+    const rules = this.rules.trading;
+    const power = this.rules.money.haggle ?? 0;
+    const building = 'block' in at ? at : null;
+    if (!rules || !power || (building?.business && this.rules.food.fixed[building.business]) || building?.business === 'hospital') return menu;
+    const staff = building ? this.staffOf(building) : [];
+    const seller = staff.reduce((best, p) => Math.max(best, this.skillsFor(p, now).trading), staff.length ? 1 : rules.average);
+    const factor = Math.pow(skillBonus(rules, seller) / skillBonus(rules, this.tradingState.level), power);
+    if (Math.abs(factor - 1) < 0.005) return menu;
+    const fixed = new Set(['plan', 'treatment', 'room']);
+    return { ...menu, haggle: factor - 1, items: menu.items.map((i) => (fixed.has(i.kind) ? i : { ...i, price: Math.max(1, Math.round(i.price * factor)) })) };
   }
 
   /** What a counter sells, open or not. */
@@ -910,6 +935,8 @@ export class Game {
       this.lodgingState = { building: this.inside.id, room: renting.id, until: Math.max(from, now + hours * HOUR) };
     }
     this.say(bought, 'system');
+    // Every purchase is a little Trading experience, where there's a price to talk.
+    if (!['plan', 'treatment'].includes(item.kind)) this.trainTrading(this.rules.money.tradeXp ?? 0);
     this.events.emit('walletChanged', this.wallet);
     this.events.emit('inventoryChanged', this.inventory);
     if (chromed) this.events.emit('chromeChanged', this.chrome());
@@ -1333,11 +1360,53 @@ export class Game {
     return trainedEdge(base, fighter.arm, { brawler: skills.brawler, toughness: skills.toughness, type: skills.arms, model: skills.arms }, perksAt(fighter.arm, skills.arms, this.rules.combat), this.rules.combat);
   }
 
-  /** Someone's own levels: Street Brawler, Toughness, the kind of weapon they carry, Charisma. */
-  private skillsFor(person: Person): PersonSkills {
-    let skills = this.skillCache.get(person.id);
-    if (!skills) this.skillCache.set(person.id, (skills = skillsOf(person, this.world, this.rules.people)));
+  /** Someone's own levels now, by id (what the reads on their card come from); null for nobody. */
+  levelsOf(id: string, now = Date.now()): PersonSkills | null {
+    const person = this.person(id);
+    return person ? { ...this.skillsFor(person, now) } : null;
+  }
+
+  /** Someone's own levels now: Street Brawler, Toughness, the kind of weapon they carry, Charisma, Trading; what they were born to, and what practice has made of it. */
+  private skillsFor(person: Person, now = Date.now()): PersonSkills {
+    const day = this.clockAt(now).day;
+    const fights = this.life.fights?.[person.id] ?? 0;
+    const kept = this.skillCache.get(person.id);
+    if (kept && kept.day === day && kept.fights === fights) return kept.skills;
+    const skills = this.practiced(person, skillsOf(person, this.world, this.rules.people), day, fights);
+    this.skillCache.set(person.id, { day, fights, skills });
     return skills;
+  }
+
+  /**
+   * What practice has made of someone's levels: every day since the city started (or since
+   * they took on what they do now) at what they do (`practice.walks`, and `staff` for working
+   * a storefront's counter), and every fight they've been in, as experience on the player's
+   * own curves, so each level takes longer than the last.
+   */
+  private practiced(person: Person, base: PersonSkills, day: number, fights: number): PersonSkills {
+    const profile = this.rules.people.skills;
+    if (!profile) return base;
+    const { practice, most } = profile;
+    const start = this.life.start ?? day;
+    const days = Math.max(0, day - Math.max(start, this.life.jobs[person.id]?.day ?? start));
+    const walk = walkOf(person, this.world);
+    const work = person.job.building ? buildingById(this.world, person.job.building) : undefined;
+    const staff = Boolean(work?.business) && !person.gang;
+    const { combat } = this.rules;
+    const curves: Record<keyof PersonSkills, SkillRules | undefined> = { brawler: combat.skills.brawler, toughness: combat.skills.toughness, arms: combat.mastery.types, charisma: this.rules.charisma, trading: this.rules.trading };
+    const out = { ...base };
+    for (const skill of Object.keys(curves) as Array<keyof PersonSkills>) {
+      const curve = curves[skill];
+      if (!curve) continue;
+      let xp = days * ((practice.walks[walk][skill] ?? 0) + (staff ? (practice.staff[skill] ?? 0) : 0)) + fights * (practice.fight[skill] ?? 0);
+      let level = base[skill];
+      while (level < most && xp >= xpToNext(curve, level)) {
+        xp -= xpToNext(curve, level);
+        level++;
+      }
+      out[skill] = level;
+    }
+    return out;
   }
 
   /** What there is to do in the fight this beat, and what each would be done with. */
@@ -1816,6 +1885,8 @@ export class Game {
     }
     f.over = outcome;
     f.result = [...f.notes, result].join(' ');
+    // Everyone who was in it has learned from it.
+    for (const id of new Set([f.started, f.with, ...f.others.map((c) => c.id), ...f.settled])) learned(this.life, id);
     // Walking away from it on their own feet toughens the player up.
     if (outcome !== 'lost' && outcome !== 'knocked' && f.state.beat > 0) this.train('toughness', combat.training.toughness.stood);
     f.tell = null;
@@ -4267,6 +4338,25 @@ export class Game {
   /** Toughness: how much it takes to knock the player out. */
   toughness(): SkillStatus {
     return skillStatus(this.toughnessState, this.rules.combat.skills.toughness);
+  }
+
+  /** Trading: how good a price the player gets. Level 1 without the rules for it. */
+  trading(): SkillStatus {
+    return skillStatus(this.tradingState, this.rules.trading ?? this.rules.charisma);
+  }
+
+  get tradingSaved(): SkillState {
+    return { ...this.tradingState };
+  }
+
+  /** Trading experience: every purchase, every sale. */
+  private trainTrading(amount: number): void {
+    const rules = this.rules.trading;
+    if (!rules || amount <= 0) return;
+    const { state, levels } = gainXp(this.tradingState, amount, rules);
+    this.tradingState = state;
+    if (levels) this.say(fill(rules.levelLine, { level: String(state.level), standing: this.standingLine(rules, state.level) }), 'system');
+    this.events.emit('skillChanged', { skill: 'trading', status: this.trading() });
   }
 
   get brawlerSaved(): SkillState {

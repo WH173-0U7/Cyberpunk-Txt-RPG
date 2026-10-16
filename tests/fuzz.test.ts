@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHARISMA } from '../src/data/skills';
+import { CHARISMA, TRADING } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
 import { LIFE } from '../src/data/life';
 import { COMBAT, JOIN } from '../src/data/combat';
@@ -38,6 +38,7 @@ const RULES: GameRules = {
   society: SOCIETY,
   lines: LINES,
   charisma: CHARISMA,
+  trading: TRADING,
   jobs: JOBS,
   life: LIFE,
   combat: COMBAT,
@@ -125,6 +126,7 @@ function check(game: Game, about: string): void {
   expect(again.chromeSaved, `${about}: chrome after a save`).toEqual(game.chromeSaved);
   expect(again.healthSaved, `${about}: health after a save`).toEqual(game.healthSaved);
   expect(again.policeSaved, `${about}: the NCPD after a save`).toEqual(game.policeSaved);
+  expect(again.tradingSaved, `${about}: Trading after a save`).toEqual(game.tradingSaved);
   expect(again.roomSaved, `${about}: the room after a save`).toEqual(game.roomSaved);
   expect(again.lodgingSaved, `${about}: the rented room after a save`).toEqual(game.lodgingSaved);
   const health = game.health(Date.now());

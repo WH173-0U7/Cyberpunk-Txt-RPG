@@ -370,16 +370,30 @@ it needs no generator bump. The pieces:
   multiplies takes `skillBonus`; anything that adds a little a level takes `skillEdge` (levels
   past an ordinary person's, below nothing short of it: charisma in `openness`, `talkOdds`,
   the tell and the shift moments). A level-up says where it leaves the player (`STANDING`,
-  `{standing}` in its `levelLine`). A new skill is another `SkillRules` in `src/data/skills.ts`
+  `{standing}` in its `levelLine`). Trading (`TRADING`, `rules.trading`; the tests' `RULES`
+  leave it out, so their prices are as set) is the player's buying and selling: a counter's
+  prices are their Trading against the seller's (`Game`'s private `haggled`: the sharpest of
+  its staff, to `MONEY.haggle`'s power; a chain's, a hospital's, Trauma Team's and a room's
+  prices are set; the shop's strip says "prices +8%"), every purchase `MONEY.tradeXp` of it,
+  saved as `trading`, a Trading row in the status drop-down. A new skill is another `SkillRules` in `src/data/skills.ts`
   with its own `average` and `floor`, a state on `Game`, a save field and an event.
 - Everyone has their own levels in what the player has levels in (`skillsOf` in people.ts,
   `PersonSkills`: Street Brawler, Toughness, `arms` for the kind of weapon they carry, and
   Charisma), on their own stream from `PEOPLE.skills`: a range for each by walk of life
   (`walkOf`: a ganger, a guard or an officer, a corpo, someone old, anyone else), moved up to
   `traits` levels by their nature (nerve and temper for their fists, warmth and chattiness for
-  words). So a ganger fights well and talks badly, an old lady the other way round, and the
-  fight is decided by who the player takes on and how. Without `PEOPLE.skills`, everyone is
-  ordinary (4). `Game` keeps them in `skillCache`; they never change. How someone strikes the
+  words; greed and chattiness for Trading). So a ganger fights well and talks badly, an old
+  lady the other way round, and the fight is decided by who the player takes on and how.
+  Without `PEOPLE.skills`, everyone is ordinary (4). They grow with practice (`Game`'s private
+  `practiced`, on the player's own curves, so each level takes longer than the last): a day's
+  experience by walk of life (`practice.walks`: a ganger's rackets, a guard's watch, a corpo's
+  meetings) and for working a storefront's counter (`practice.staff`: trading and charisma),
+  counted from the day the city started living (`LifeState.start`) or the day they took on
+  what they do now (`LifeState.jobs`), and experience for every fight they've been in
+  (`LifeState.fights`, counted by `learned`: a fight in their own days, a shakedown or a
+  robbery they did, and every fight with the player). Worked out on demand, never a day at a
+  time over everyone: `skillsFor` keeps them in `skillCache` until the day or the fights
+  change; `levelsOf(id)` reads them. How someone strikes the
   player is on their card (`Description.fight`, plain to see, and `talk`, once they've talked
   `reads.talks` times; the Profile's Fighting and Talking rows, by `readOf` and `reads`).
 - `src/engine/dialogue.ts` puts lines together from fragments in `src/data/dialogue.ts`

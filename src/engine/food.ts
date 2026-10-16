@@ -100,6 +100,8 @@ export interface Menu {
   kind: 'food' | 'gear';
   /** The share off at the staff price, where the player works. */
   staff?: number;
+  /** What haggling has done to the prices, as a share over (or, under 0, under) what they'd be. */
+  haggle?: number;
 }
 
 /** A dish that doesn't say turns up everywhere. */
