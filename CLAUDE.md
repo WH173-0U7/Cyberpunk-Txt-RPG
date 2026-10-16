@@ -743,7 +743,17 @@ Pacifica (a combat zone) and the Badlands, hardly in Watson's Northside, thin in
   arriving (the player still at the spot is a `Confrontation`, `why: 'scene'`; gone, a
   `missed` line if they knew), and a patrol stopping a wanted, unmasked player out on the
   streets (`stop`, every `minutes`, by the district's odds and the crime's rank; never inside
-  or on a train). The officers on the player are in `peopleHere` wherever they are.
+  or on a train), or anyone carrying a drug, mask or not (`search.stop`, more with a dealer's
+  weight on them and on their corner: `why: 'search'`, the `frisk` lines). The officers on the
+  player are in `peopleHere` wherever they are.
+- Drugs (see Dealing): whenever officers have the player and take them in (`arrest`), they
+  search them (`searchFinds`): every illegal dose is `possession`, a dealer's weight of any
+  drug (`search.weight` doses) is `dealing`, each charged by the dose too (`chargesFor`'s
+  `doses`, the crimes' `perDose`), and whatever's charged is taken (`seized`; the gang still
+  wants paying). A search that finds nothing chargeable, with nothing on file, lets them go
+  (`clean`). Running from a search, or fighting it, writes no warrant. A sale someone sees is
+  `dealing` too: only `bad.seen` of whoever's there notice it, and nothing's said when nobody
+  calls (`crime`'s `quiet` and `only`).
 - `Game.police(now)` is what the UI shows; `answerPolice(choice, now)` is `comply` (the fine
   for everything they have, `chargesFor`, and the hold for it; short of the fine, held
   `shortHold` longer instead; every warrant settled), `run` (the `run` odds; away, a warrant
@@ -926,11 +936,22 @@ nobody there has a habit or deals):
   and `attack` takes only them. Trust down to `trust.cutOff` and the gang cuts the player
   off (`burned`): no more product, and what's owed is a gang `Threat` of `debt.threat` times
   it. Saved as `dealing` (`dealingOf` reads it); a buyer's moment and a collector aren't.
+- Bad customers (`DEALING.bad`): at the corner, now and then the one who comes up is an NCPD
+  officer undercover (`undercover`, times the district's call; `undercoverFor`), read for one
+  by the player's Trading or charisma (`read`, a `tell` line in the moment's text): sold to,
+  they bust the player there and then (`busted`, a `dealing` confrontation at the scene). Or
+  a robber (`robber`, times `rough` by district: one of the users round there, armed and
+  hard): the moment is Hand it over (`robbedOf`: a share of the gang's doses and the cash,
+  `bad.rob`), Talk (charisma against theirs, `bad.talk`; no good, they take it anyway, with a
+  blow) or Fight (a fight they started). Any buyer may call it in after (`snitch`: unseen,
+  more if pushed or turned away, a regular less, a ganger never; a named report, so a
+  warrant). A regular short of the price can have the rest on tab (`customers[id].tab`),
+  which `settleTab` collects with a little over (`bad.tab`, by their loyalty) the next time
+  they come by, or doesn't, and writes off in `tab.days`.
 - The lines: the narration is `DEALING.lines`; what people say is `LINES.deal` and
   `LINES.you.deal`/`pitch`/`payUp`/`walkAway`. The status drop-down has a Dealing row, and the
-  line under the energy bar says a debt. The risks (the NCPD and possession, rival turf, bad
-  customers, a habit of the player's own) and a crew of the player's own are still to come:
-  they hang off the same pieces.
+  line under the energy bar says a debt. Still to come, hanging off the same pieces: turf
+  wars over corners, a habit of the player's own, and a crew of the player's own.
 
 ## Inebriation
 

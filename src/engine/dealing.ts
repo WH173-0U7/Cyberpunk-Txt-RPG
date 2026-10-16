@@ -97,6 +97,39 @@ export interface DealLines {
   beaten: string[];
   /** The gang has had enough: no more product, and the debt is a score to settle. */
   cutOff: string[];
+  /** Bad customers: a robber pulling a weapon (`{weapon}`), handed it (`{took}`), talked down, not; a tell that a buyer is NCPD; the bust; a regular wanting it on tab (`{owed}` the tab), put on it, paying it back (`{pay}`), dodging it. */
+  robber: string[];
+  handOver: string[];
+  talkedDown: string[];
+  talkFailed: string[];
+  tell: string[];
+  busted: string[];
+  tabAsk: string[];
+  tabTaken: string[];
+  tabPaid: string[];
+  tabDodged: string[];
+}
+
+/**
+ * The corner's bad customers. A robber posing as a buyer (`robber`, times `rough` by
+ * district); an undercover officer (`undercover`, times how readily the district calls the
+ * NCPD), read for one by the player's Trading or charisma (`read`); a buyer who calls it in
+ * after (`snitch`: more pushed or turned away, a regular less, a ganger never), and witnesses
+ * to a sale, of whom only `seen` notice it; a regular short of the price who wants it on tab
+ * (`tab`: paid back with `extra` by the odds and their loyalty, written off after `days`).
+ * Handing over to a robber loses a share of the doses and the cash (`rob`); talking them
+ * down is the player's charisma against theirs (`talk`).
+ */
+export interface BadRules {
+  robber: number;
+  rough: Record<string, number>;
+  undercover: number;
+  read: { base: number; perLevel: number; most: number };
+  snitch: { base: number; pushed: number; turned: number; regular: number };
+  seen: number;
+  tab: { payBack: number; loyalty: number; extra: number; days: number };
+  rob: { doses: [number, number]; cash: [number, number] };
+  talk: { base: number; perLevel: number; most: number };
 }
 
 export interface DealingRules {
@@ -120,6 +153,7 @@ export interface DealingRules {
   pitch: { rapport: number };
   /** What a dose fetches on richer and poorer streets. */
   tiers: Record<Quality, number>;
+  bad: BadRules;
   lines: DealLines;
 }
 
@@ -153,8 +187,8 @@ export interface DealState {
   fronts: number;
   sold: number;
   take: number;
-  /** Who's bought off the player: how many times, and when last. */
-  customers: Record<string, { bought: number; last: number }>;
+  /** Who's bought off the player: how many times, when last, and what they owe on tab since when. */
+  customers: Record<string, { bought: number; last: number; tab?: number; tabAt?: number }>;
   /** The corner's three-hour block, and how many buyers have come by in it. */
   block: { key: number; served: number };
 }

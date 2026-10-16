@@ -337,7 +337,7 @@ export class Game {
   /** The player's dealing for a gang: the one they deal for now, any they walked away from or were cut off by. */
   private dealState: DealingState;
   /** A buyer at the player's corner, waiting on an answer (not saved: they don't wait). */
-  private dealMomentState: { person: string; drug: string; ask: number; pay: number; short: boolean; at: number; text: string } | null = null;
+  private dealMomentState: { kind: 'buy' | 'robber'; person: string; drug: string; ask: number; pay: number; short: boolean; regular: boolean; tab?: boolean; undercover?: boolean; at: number; text: string } | null = null;
   /** A collector on the player, waiting on an answer (not saved: they come back for it). */
   private collectState: { by: string; gang: string; at: number } | null = null;
   /** The drugs dealt in each district, everyone's habit, and who has one by district and drug: worked out once a city. */
@@ -3611,10 +3611,20 @@ export class Game {
     learnOf(this.society, buyer.id, 'met');
     changeStanding(this.society, buyer.id, { met: true, rapport: dealing.corner.rapport }, this.rules.society, this.rules.timeScale, now);
     this.trainTrading(this.rules.money.tradeXp ?? 0);
+    this.dealingSeen(buyer, now);
     this.events.emit('walletChanged', this.wallet);
     this.events.emit('inventoryChanged', this.inventory);
     this.events.emit('dealChanged', this.dealing(now));
     return true;
+  }
+
+  /** Whoever here saw a sale may call it in as dealing: only some of them notice a hand-off, and nothing's said when nobody calls. */
+  private dealingSeen(buyer: Person, now: number): void {
+    const dealing = this.rules.dealing!;
+    if (!this.rules.police) return;
+    const rng = createRng(`${this.world.seed}:seen:${buyer.id}:${now}`);
+    const noticed = new Set(this.peopleHere(now).filter((p) => p.person.id !== buyer.id && p.doing !== 'out cold' && rng.chance(dealing.bad.seen)).map((p) => p.person.id));
+    if (noticed.size) this.crime('dealing', buyer, now, this.facesHere(now), 'witnesses', undefined, undefined, { quiet: true, only: noticed });
   }
 
   /**
@@ -3704,7 +3714,9 @@ export class Game {
    * Works the corner: the next buyer comes by and waits on the player (`dealMoment`), if anyone's
    * buying this block: someone who lives round here with a habit for what the player has, who
    * isn't at home or work (or is here already) and has the money for at least part of it; a
-   * regular likelier. A buyer is a point of energy.
+   * regular likelier, settling any tab first (or not). Now and then it's no buyer at all: an
+   * NCPD officer undercover (where the NCPD goes, read for one by the player's eye), or someone
+   * with a weapon and nothing to lose. A buyer is a point of energy.
    */
   walkUp(now: number): boolean {
     const dealing = this.rules.dealing;
@@ -3743,31 +3755,121 @@ export class Game {
     }
     if (!this.spendEnergy(dealing.corner.energy, now)) return false;
     d.block.served += 1;
+    const { bad } = dealing;
+    const policed = this.policingAt(corner);
+    const drugName = (id: string) => dealing.drugs[id]?.name ?? id;
+    // An NCPD officer posing as a buyer, where the NCPD goes.
+    const officer = policed && rng.chance(Math.min(1, bad.undercover * policed.call)) ? this.undercoverFor(corner.district, now, rng) : undefined;
+    if (officer) {
+      const drug = rng.pick(drugs) as string;
+      const ask = this.askFor(officer, drug, now);
+      const vars = this.dealVars(officer, now, { drug: drugName(drug), price: String(ask) });
+      // An eye for a deal or a face may catch what's wrong with this one.
+      const eye = Math.max(this.tradingState.level, this.charismaState.level);
+      const spotted = rng.chance(Math.max(0, Math.min(bad.read.most, bad.read.base + bad.read.perLevel * (eye - 4))));
+      const text = [this.narration(dealing.lines.walkUp, vars, rng), spotted ? this.narration(dealing.lines.tell, vars, rng) : ''].filter(Boolean).join(' ');
+      this.dealMomentState = { kind: 'buy', person: officer.id, drug, ask, pay: ask, short: false, regular: false, undercover: true, at: now, text };
+      this.events.emit('dealChanged', this.dealing(now));
+      return true;
+    }
+    // Someone with a weapon and nothing to lose, who comes up like a buyer: one of the users round here, armed and hard.
+    let robber: Person | undefined;
+    if (rng.chance(Math.min(1, bad.robber * (bad.rough[corner.district] ?? 1)))) {
+      for (let tries = 0; tries < 40 && !robber && pool.length; tries++) {
+        const p = rng.pick(pool).person;
+        if (p.diedOn === undefined && p.id !== d.connect && !(p.hurtUntil !== undefined && clock.day <= p.hurtUntil) && !this.outCold(p.id, now) && this.armOf(p).id !== 'fists' && (p.traits.temper > 0.55 || p.traits.greed > 0.6 || p.traits.warmth < 0.4)) robber = p;
+      }
+    }
+    if (robber) {
+      const drug = drugs[0] as string;
+      const vars = this.dealVars(robber, now, { drug: drugName(drug), weapon: this.armOf(robber).short });
+      this.dealMomentState = { kind: 'robber', person: robber.id, drug, ask: 0, pay: 0, short: false, regular: false, at: now, text: this.narration(dealing.lines.robber, vars, rng) };
+      this.events.emit('fx', { effect: 'shake' });
+      this.events.emit('dealChanged', this.dealing(now));
+      return true;
+    }
     let roll = rng.next() * found.reduce((n, f) => n + f.weight, 0);
     const buyer = found.find((f) => (roll -= f.weight) < 0) ?? (found[found.length - 1] as (typeof found)[number]);
-    const short = buyer.person.eddies < buyer.ask;
     const regular = buyer.weight > 1;
     learnOf(this.society, buyer.person.id, 'seen');
-    const vars = this.dealVars(buyer.person, now, { drug: dealing.drugs[buyer.drug]?.name ?? buyer.drug, pay: String(buyer.person.eddies), price: String(buyer.ask) });
-    const text = this.narration(regular ? dealing.lines.regular : short ? dealing.lines.short : dealing.lines.walkUp, vars, rng);
-    this.dealMomentState = { person: buyer.person.id, drug: buyer.drug, ask: buyer.ask, pay: short ? buyer.person.eddies : buyer.ask, short, at: now, text };
+    // A tab to settle first: paid with a little over, or not, and written off in time.
+    const settled = this.settleTab(d, buyer.person, now, rng);
+    const short = buyer.person.eddies < buyer.ask;
+    const tab = short && regular && !d.customers[buyer.person.id]?.tab;
+    const vars = this.dealVars(buyer.person, now, { drug: drugName(buyer.drug), pay: String(buyer.person.eddies), price: String(buyer.ask) });
+    const text = [settled, this.narration(tab ? dealing.lines.tabAsk : regular ? dealing.lines.regular : short ? dealing.lines.short : dealing.lines.walkUp, vars, rng)].filter(Boolean).join(' ');
+    this.dealMomentState = { kind: 'buy', person: buyer.person.id, drug: buyer.drug, ask: buyer.ask, pay: short ? buyer.person.eddies : buyer.ask, short, regular, tab, at: now, text };
     this.events.emit('dealChanged', this.dealing(now));
     return true;
   }
 
-  /** The buyer waiting on the player at their corner, and the choices: sell at the price (or take what they have), push for more, or turn them away. */
+  /** A tab a buyer runs with the player: paid off, with a little over, by the odds and their loyalty; else dodged, and written off once it's old. The line that says so, or nothing. */
+  private settleTab(d: DealState, buyer: Person, now: number, rng: Rng): string {
+    const dealing = this.rules.dealing!;
+    const customer = d.customers[buyer.id];
+    if (!customer?.tab) return '';
+    const { tab } = dealing.bad;
+    const owed = customer.tab;
+    const old = customer.tabAt !== undefined && now - customer.tabAt > (tab.days * DAY) / this.rules.timeScale;
+    const pay = Math.min(buyer.eddies, Math.round(owed * (1 + tab.extra)));
+    if (pay >= owed && this.cashRoom(pay) >= pay && rng.chance(Math.max(0, Math.min(1, tab.payBack + tab.loyalty * (buyer.traits.loyalty - 0.5) * 2)))) {
+      const got = this.pocketCash(pay);
+      buyer.eddies = Math.max(0, buyer.eddies - got);
+      this.life.eddies[buyer.id] = buyer.eddies;
+      delete customer.tab;
+      delete customer.tabAt;
+      d.take += got;
+      this.events.emit('walletChanged', this.wallet);
+      return this.narration(dealing.lines.tabPaid, this.dealVars(buyer, now, { pay: String(got) }), rng);
+    }
+    if (old) {
+      delete customer.tab;
+      delete customer.tabAt;
+    }
+    return this.narration(dealing.lines.tabDodged, this.dealVars(buyer, now), rng);
+  }
+
+  /** An NCPD officer of the district to pose as a buyer: alive, on their feet, out and about. */
+  private undercoverFor(district: string, now: number, rng: Rng): Person | undefined {
+    const clock = this.clockAt(now);
+    const fit = this.officers.filter((p) => p.district === district && p.diedOn === undefined && !(p.hurtUntil !== undefined && clock.day <= p.hurtUntil) && !this.outCold(p.id, now) && !this.policeState.confront?.officers.includes(p.id));
+    return fit.length ? rng.pick(fit) : undefined;
+  }
+
+  /** The buyer (or not) waiting on the player at their corner, and the choices: sell, take what a short one has, put a regular on tab, push for more, pass; with a robber, hand it over, talk, or fight. */
   dealMoment(now: number): DealMomentView | null {
     const m = this.dealMomentState;
     const dealing = this.rules.dealing;
     if (!m || !dealing || !this.atCorner() || this.detained(now) || this.fighting) return null;
+    if (m.kind === 'robber') {
+      const by = this.person(m.person);
+      const arm = by ? this.armOf(by) : null;
+      return {
+        text: m.text,
+        person: m.person,
+        choices: [
+          { id: 'hand', label: 'Hand it over', sub: 'Product, cash' },
+          { id: 'talk', label: 'Talk', sub: 'Talk them down' },
+          { id: 'fight', label: 'Fight', sub: arm && arm.id !== 'fists' ? arm.short : 'Bare hands' },
+        ],
+      };
+    }
     const more = Math.round(m.ask * dealing.push.more);
-    const choices: DealChoice[] = m.short
-      ? [{ id: 'sell', label: 'Take it', sub: `${m.pay} €$` }, { id: 'turn', label: 'Pass' }]
-      : [{ id: 'sell', label: 'Sell', sub: `${m.ask} €$` }, { id: 'push', label: 'Push', sub: `${more} €$?` }, { id: 'turn', label: 'Pass' }];
+    const choices: DealChoice[] = m.tab
+      ? [{ id: 'sell', label: 'Take it', sub: `${m.pay} €$` }, { id: 'tab', label: 'Tab', sub: `${m.ask - m.pay} €$ on it` }, { id: 'turn', label: 'Pass' }]
+      : m.short
+        ? [{ id: 'sell', label: 'Take it', sub: `${m.pay} €$` }, { id: 'turn', label: 'Pass' }]
+        : [{ id: 'sell', label: 'Sell', sub: `${m.ask} €$` }, { id: 'push', label: 'Push', sub: `${more} €$?` }, { id: 'turn', label: 'Pass' }];
     return { text: m.text, person: m.person, choices };
   }
 
-  /** Answers the buyer at the corner: a sale at the price, a push that comes off or loses them, or no sale. */
+  /**
+   * Answers whoever's at the corner. A buyer: a sale at the price (or what they have, or on
+   * tab), a push that comes off or loses them, or no sale; any of them may call it in after,
+   * and an undercover officer sold to busts the player there and then. A robber: hand it over
+   * (a share of the doses and the cash), talk them down (charisma against theirs; no good and
+   * they take it anyway, with a blow), or fight them.
+   */
   answerDeal(choice: string, now: number): boolean {
     const m = this.dealMomentState;
     const dealing = this.rules.dealing;
@@ -3777,26 +3879,121 @@ export class Game {
     this.dealMomentState = null;
     const rng = createRng(`${this.world.seed}:deal-answer:${m.person}:${m.at}:${choice}`);
     const name = dealing.drugs[m.drug]?.name ?? m.drug;
-    const tell = (pool: string[], more: Record<string, string> = {}) => this.say(this.narration(pool, this.dealVars(buyer, now, { drug: name, ...more }), rng), 'system');
+    const tell = (pool: string[], more: Record<string, string> = {}, tone: Tone = 'system') => this.say(this.narration(pool, this.dealVars(buyer, now, { drug: name, ...more }), rng), tone);
     const before = this.snapshot(buyer, now);
+    if (m.kind === 'robber') {
+      const weapon = this.armOf(buyer).short;
+      if (choice === 'fight') {
+        this.openFight({ person: buyer, doing: 'holding you up', stance: this.stanceOf(buyer, now), scene: null }, now, this.narration(dealing.lines.robber, this.dealVars(buyer, now, { drug: name, weapon }), rng));
+        return true;
+      }
+      const talked = choice === 'talk' && rng.chance(Math.max(0.05, Math.min(dealing.bad.talk.most, dealing.bad.talk.base + dealing.bad.talk.perLevel * (this.charismaState.level - this.skillsFor(buyer, now).charisma))));
+      if (talked) tell(dealing.lines.talkedDown, { weapon });
+      else {
+        const took = this.robbedOf(buyer, rng);
+        if (choice === 'talk') {
+          const health = this.health(now);
+          this.healthState = { value: Math.max(1, Math.round(health.current - health.max * 0.1)), at: now };
+          this.events.emit('healthChanged', this.health(now));
+          tell(dealing.lines.talkFailed, { weapon, took }, 'error');
+        } else tell(dealing.lines.handOver, { weapon, took }, 'error');
+      }
+      this.events.emit('dealChanged', this.dealing(now));
+      return true;
+    }
+    // An undercover officer sold to: the badge comes out.
+    const bust = () => {
+      const item = this.items.find((i) => i.kind === 'consumable' && i.id === m.drug);
+      if (item) this.takeOne(item);
+      const district = this.districtOf(this.where)?.id ?? '';
+      const partner = this.unitFor(district, now, rng).filter((id) => id !== buyer.id);
+      const text = this.narration(dealing.lines.busted, this.dealVars(buyer, now, { drug: name }), rng);
+      learnOf(this.society, buyer.id, 'met');
+      this.confront([buyer.id, ...partner].slice(0, 2), 'dealing', 'scene', now, [text]);
+      this.events.emit('inventoryChanged', this.inventory);
+      this.events.emit('policeChanged', this.police(now));
+    };
+    let how: 'sold' | 'pushed' | 'walked' | 'turned' = 'turned';
     if (choice === 'turn') tell(dealing.lines.turned);
-    else if (choice === 'push') {
+    else if (m.undercover && (choice === 'sell' || choice === 'push')) {
+      bust();
+      return true;
+    } else if (choice === 'push') {
       const habit = this.habitFor(buyer);
       const odds = pushOdds(this.tradingState.level, this.skillsFor(buyer, now).trading, habit?.need ?? 0, dealing);
       const price = Math.min(buyer.eddies, Math.round(m.ask * dealing.push.more));
       if (rng.chance(odds) && price > m.ask && this.sale(buyer, m.drug, price, now)) {
+        how = 'pushed';
         tell(dealing.lines.pushed, { price: String(price) });
         this.trainTrading(this.rules.money.tradeXp ?? 0);
       } else {
+        how = 'walked';
         changeStanding(this.society, buyer.id, { rapport: -dealing.push.rapport }, this.rules.society, this.rules.timeScale, now);
         tell(dealing.lines.walked);
       }
-    } else if (this.sale(buyer, m.drug, m.pay, now)) tell(dealing.lines.sold, { price: String(m.pay) });
-    else this.dealMomentState = m;
+    } else if (this.sale(buyer, m.drug, m.pay, now)) {
+      how = 'sold';
+      if (choice === 'tab') {
+        const d = this.dealState.current;
+        const customer = d?.customers[buyer.id];
+        if (customer) {
+          customer.tab = m.ask - m.pay;
+          customer.tabAt = now;
+        }
+        tell(dealing.lines.tabTaken, { owed: String(m.ask - m.pay) });
+      } else tell(dealing.lines.sold, { price: String(m.pay) });
+    } else this.dealMomentState = m;
+    if (!this.dealMomentState && !m.undercover) this.snitch(buyer, how, m.regular, now, rng);
     this.noteFeedback(buyer, before, now);
     this.events.emit('societyChanged', { people: [buyer.id] });
     this.events.emit('dealChanged', this.dealing(now));
     return true;
+  }
+
+  /** What a robber at the corner takes: a share of the gang's product on the player and of their cash; said as a line has it. */
+  private robbedOf(robber: Person, rng: Rng): string {
+    const dealing = this.rules.dealing!;
+    const d = this.dealState.current;
+    const { rob } = dealing.bad;
+    const took: string[] = [];
+    for (const drug of d ? (dealing.gangs[d.gang]?.drugs ?? []) : []) {
+      const carried = this.carrying(drug);
+      const n = Math.min(carried, Math.max(1, Math.round(carried * rng.range(rob.doses[0], rob.doses[1]))));
+      if (!carried || !n) continue;
+      for (let left = n; left > 0; ) {
+        const item = this.items.find((i) => i.kind === 'consumable' && i.id === drug)!;
+        const take = Math.min(left, item.count);
+        item.count -= take;
+        left -= take;
+        if (item.count <= 0) this.items.splice(this.items.indexOf(item), 1);
+      }
+      took.push(`${n} ${n === 1 ? 'dose' : 'doses'} of ${dealing.drugs[drug]?.name ?? drug}`);
+    }
+    const cash = this.money.bills + this.money.coins;
+    const grab = takeCash(this.money, Math.round(cash * rng.range(rob.cash[0], rob.cash[1])));
+    this.money = grab.money;
+    robber.eddies += grab.taken;
+    this.life.eddies[robber.id] = robber.eddies;
+    if (grab.taken) took.push(`${grab.taken} €$`);
+    this.events.emit('inventoryChanged', this.inventory);
+    this.events.emit('walletChanged', this.wallet);
+    return took.length ? took.join(' and ') : 'nothing much';
+  }
+
+  /**
+   * A buyer calling it in after, unseen: the more so pushed or turned away, less a regular,
+   * never a ganger; with the player's face, a named report (and so a warrant). Only where the
+   * NCPD goes.
+   */
+  private snitch(buyer: Person, how: 'sold' | 'pushed' | 'walked' | 'turned', regular: boolean, now: number, rng: Rng): void {
+    const police = this.rules.police;
+    const { snitch } = this.rules.dealing!.bad;
+    const where = this.policingAt(this.where);
+    if (!police || !where || buyer.gang) return;
+    const odds = (snitch.base + (how === 'pushed' || how === 'walked' ? snitch.pushed : 0) + (how === 'turned' ? snitch.turned : 0)) * (regular ? snitch.regular : 1) * (1 + (buyer.traits.courage - 0.5));
+    if (!rng.chance(odds)) return;
+    const mask = this.masked();
+    this.report('dealing', buyer, !mask, mask ? `a ${mask.word}` : 'your face', this.spot, this.where, where.district.id, where.minutes, now, rng, null);
   }
 
   /**
@@ -4217,7 +4414,7 @@ export class Game {
    * cold, the victim may once they come to. Nobody calls, and there's nothing on record. A call
    * files a report, names the player if a caller could put a name to their face, and sends a unit.
    */
-  private crime(kind: Crime, victim: Person, now: number, knew: Set<string>, who: 'witnesses' | 'victim' | 'all', scene = { spot: this.spot, where: this.where }, heard?: { people: Person[]; share: number }): void {
+  private crime(kind: Crime, victim: Person, now: number, knew: Set<string>, who: 'witnesses' | 'victim' | 'all', scene = { spot: this.spot, where: this.where }, heard?: { people: Person[]; share: number }, opts: { quiet?: boolean; only?: Set<string> } = {}): void {
     const police = this.rules.police;
     const { spot, where: at } = scene;
     if (!police) return;
@@ -4228,13 +4425,13 @@ export class Game {
     const mask = this.masked();
     const seen = mask ? `a ${mask.word}` : 'your face';
     const named = (id: string) => !mask && knew.has(id);
-    const witnesses = who === 'victim' ? [] : this.peopleHere(now).filter((x) => x.person.id !== victim.id && x.doing !== 'out cold').map((x) => x.person);
+    const witnesses = who === 'victim' ? [] : this.peopleHere(now).filter((x) => x.person.id !== victim.id && x.doing !== 'out cold' && (!opts.only || opts.only.has(x.person.id))).map((x) => x.person);
     const alive = victim.diedOn === undefined;
     const cold = alive && this.outCold(victim.id, now);
     const callers = who !== 'witnesses' && alive && !cold ? [victim, ...witnesses] : witnesses;
     const district = this.districtOf(at);
     if (!where) {
-      if (witnesses.length || callers.length) this.say(this.policeLine(lines.zone, `zone:${spot?.id ?? 'street'}`, { district: district?.name ?? 'here' }), 'system');
+      if (!opts.quiet && (witnesses.length || callers.length)) this.say(this.policeLine(lines.zone, `zone:${spot?.id ?? 'street'}`, { district: district?.name ?? 'here' }), 'system');
       return;
     }
     const turf = new Set((this.rules.people.turf[where.district.id] ?? []).map(([g]) => g));
@@ -4253,7 +4450,7 @@ export class Game {
       return;
     }
     if (!called.length) {
-      if (!witnesses.length) return;
+      if (!witnesses.length || opts.quiet) return;
       const local = witnesses.find((c) => c.gang && turf.has(c.gang));
       const gang = local?.gang ? this.rules.people.gangs[local.gang]?.name : undefined;
       this.say(gang ? this.policeLine(lines.turf, `turf:${spot?.id ?? 'street'}`, { gang }) : this.policeLine(lines.noCall, `quiet:${spot?.id ?? 'street'}`), 'system');
@@ -4343,14 +4540,23 @@ export class Game {
     } else if (!d || now < d.arriveAt) {
       // A patrol: out on the streets where the NCPD goes, wanted, and a face to know. A train goes by too fast; indoors is out of sight.
       const wanted = worstCrime(p.warrants.map((w) => w.crime), police);
+      // Or anyone carrying, now and then, the more so with a dealer's weight on them or on the corner they deal from; a mask is no help there.
+      const carried = this.searchFinds();
+      const carrying = this.drugsCarried().length > 0;
       const every = (police.stop.minutes * 60_000) / this.rules.timeScale;
-      if (wanted && !this.detained(now) && !this.fighting && !this.inside && this.trip?.mode !== 'ncart' && !this.masked() && now - p.lastStop >= every) {
+      if ((wanted || carrying) && !this.detained(now) && !this.fighting && !this.inside && this.trip?.mode !== 'ncart' && now - p.lastStop >= every) {
         p.lastStop = now;
         const where = this.policingAt(this.trip ? this.positionAt(now) : this.where);
         const rng = createRng(`${this.world.seed}:stop:${now}`);
-        if (where && rng.chance(police.stop.chance * where.call * (1 + police.stop.rank * (crimes[wanted].rank - 1)))) {
+        const search = police.search;
+        const frisk = carrying ? search.stop * (carried.doses.dealing ? search.weighed : 1) * (this.atCorner() ? search.corner : 1) : 0;
+        if (where && wanted && !this.masked() && rng.chance(police.stop.chance * where.call * (1 + police.stop.rank * (crimes[wanted].rank - 1)))) {
           if (this.trip) this.stop(now);
           this.confront(this.unitFor(where.district.id, now, rng), wanted, 'warrant', now, lines.stop);
+          changed = true;
+        } else if (where && carrying && rng.chance(Math.min(1, frisk * where.call))) {
+          if (this.trip) this.stop(now);
+          this.confront(this.unitFor(where.district.id, now, rng), 'possession', 'search', now, lines.frisk);
           changed = true;
         }
       }
@@ -4370,7 +4576,7 @@ export class Game {
   /** What the officers who have the player want, as the panel says it, and what it'd cost to go quietly. */
   private facing(c: Confrontation, now: number): NonNullable<PoliceView['confront']> {
     const police = this.rules.police!;
-    const charges = chargesFor([c.crime, ...warrantsAt(this.policeState, now).map((w) => w.crime)], police);
+    const charges = chargesFor([...(c.why === 'search' ? [] : [c.crime]), ...warrantsAt(this.policeState, now).map((w) => w.crime)], police, this.searchFinds().doses);
     const short = !this.canPay(charges.fine, true);
     const hold = charges.hold + (short ? police.shortHold : 0);
     const cops = this.copsHere(now).map((x) => x.person);
@@ -4384,7 +4590,7 @@ export class Game {
       // At the scene, it's what happened here; on a warrant, everything they have the player for.
       text: finish(police.lines.facing[c.why], { officers, crime: c.why === 'scene' ? police.crimes[c.crime].label : crime }),
       choices: [
-        { id: 'comply', label: 'Comply', sub: short ? `Short · ${hold} min held` : hold ? `${charges.fine} €$ · ${hold} min` : `${charges.fine} €$ fine` },
+        { id: 'comply', label: 'Comply', sub: !charges.crimes.length ? 'Pockets out' : short ? `Short · ${hold} min held` : hold ? `${charges.fine} €$ · ${hold} min` : `${charges.fine} €$ fine` },
         { id: 'run', label: 'Run', sub: this.masked() ? 'Masked' : 'Face seen' },
         ...(theirs ? [{ id: 'fight' as const, label: 'Fight', sub: theirs.id === 'fists' ? 'Bare hands' : theirs.short }] : []),
       ],
@@ -4411,8 +4617,8 @@ export class Game {
       // The other one sees it, and calls it in: that's the backup.
       if (!this.attack(officer.id, now)) return false;
       p.confront = null;
-      // What they came for is on a warrant now, if they saw the face.
-      if (!this.masked()) issueWarrant(p, c.crime, this.districtOf(this.where)?.id ?? '', now, police, this.rules.timeScale);
+      // What they came for is on a warrant now, if they saw the face (a stop and search came for nothing in particular).
+      if (!this.masked() && c.why !== 'search') issueWarrant(p, c.crime, this.districtOf(this.where)?.id ?? '', now, police, this.rules.timeScale);
       this.events.emit('policeChanged', this.police(now));
       return true;
     }
@@ -4431,7 +4637,7 @@ export class Game {
       this.say(this.policeLine(lines.ran, `ran:${c.at}`), 'system');
       // They saw the face: it's on a warrant now, if it wasn't.
       const district = this.districtOf(this.where)?.id ?? '';
-      if (!mask) issueWarrant(p, c.crime, district, now, police, this.rules.timeScale);
+      if (!mask && c.why !== 'search') issueWarrant(p, c.crime, district, now, police, this.rules.timeScale);
       this.leave();
       this.events.emit('policeChanged', this.police(now));
       return true;
@@ -4440,12 +4646,50 @@ export class Game {
     return true;
   }
 
+  /**
+   * What a search of the player's pockets turns up: the illegal drugs are possession, a dose at
+   * a time, and a dealer's weight of any is dealing; what's charged is taken (a little of a
+   * legal one is the player's own business).
+   */
+  private searchFinds(): { found: Item[]; doses: Partial<Record<Crime, number>>; text: string } {
+    const police = this.rules.police;
+    const drugs = this.rules.gear.drugs;
+    const carried = this.items.filter((i) => i.kind === 'consumable' && drugs[i.id]);
+    const count = (items: Item[]) => items.reduce((n, i) => n + i.count, 0);
+    const total = count(carried);
+    const weight = Boolean(police && total >= police.search.weight);
+    const found = weight ? carried : carried.filter((i) => drugs[i.id]?.illegal);
+    const byDrug = new Map<string, number>();
+    for (const item of found) byDrug.set(item.id, (byDrug.get(item.id) ?? 0) + item.count);
+    const text = [...byDrug].map(([id, n]) => `${n} ${n === 1 ? 'dose' : 'doses'} of ${drugs[id]?.name ?? id}`).join(' and ');
+    return { found, doses: { possession: count(carried.filter((i) => drugs[i.id]?.illegal)), dealing: weight ? total : 0 }, text };
+  }
+
   /** Taken in: the fine for everything on the player, paid if it can be; held for the worst of it (and `extra`, for running), or instead of a fine they can't pay. */
   private arrest(c: Confrontation, now: number, extra: number): void {
     const police = this.rules.police!;
     const p = this.policeState;
     const { lines } = police;
-    const charges = chargesFor([c.crime, ...warrantsAt(p, now).map((w) => w.crime)], police);
+    // Pockets out: whatever drugs they find, they keep, and charge.
+    const search = this.searchFinds();
+    if (search.found.length) {
+      for (const item of search.found) this.items.splice(this.items.indexOf(item), 1);
+      const d = this.dealState.current;
+      const owed = d ? (d.front ? d.front.owed - d.front.paid : 0) + d.debt : 0;
+      const gang = d ? (this.rules.people.gangs[d.gang]?.name ?? d.gang) : '';
+      this.say(this.policeLine(lines.seized, `seized:${c.at}`, { found: search.text }) + (owed > 0 ? ` The ${gang} will still want their ${owed} €$.` : ''), 'error');
+      this.events.emit('inventoryChanged', this.inventory);
+      if (d) this.events.emit('dealChanged', this.dealing(now));
+    }
+    const charges = chargesFor([...(c.why === 'search' ? [] : [c.crime]), ...warrantsAt(p, now).map((w) => w.crime)], police, search.doses);
+    // Stopped and searched with nothing on them, and nothing on file: they're let go.
+    if (!charges.crimes.length) {
+      p.confront = null;
+      p.lastStop = now;
+      this.say(this.policeLine(lines.clean, `clean:${c.at}`), 'system');
+      this.events.emit('policeChanged', this.police(now));
+      return;
+    }
     const short = !this.canPay(charges.fine, true);
     const minutes = charges.hold + extra + (short ? police.shortHold : 0);
     if (!short) this.pay(charges.fine, true);

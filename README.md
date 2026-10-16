@@ -474,6 +474,15 @@ own.
   collector comes for it wherever you are: pay what you have, plead for time (your way with
   words against theirs), or fight, which costs you their trust. Lose it all and they cut
   you off, and come for the money anyway.
+- **The risks of dealing**: officers who have you search you. An illegal drug (Glitter,
+  Black Lace, Juice) is possession, a dealer's weight of anything is dealing, both charged by
+  the dose with long holds, and they take it (you still owe the gang for it). A patrol may
+  stop you just for carrying, likelier on your corner, mask or no mask. Someone who sees a
+  sale may call it in, and a buyer may call it in afterwards, pushed or turned away the more
+  so. At the corner the one coming up may be an undercover officer (an eye for a deal or a
+  face may spot them; sell to them and you're busted) or a robber with a weapon (hand it
+  over, talk them down, or fight). A regular short of the price may want the rest on tab, and
+  may pay you back with a little over, or never.
 - **Everyone is good at something**: people have their own levels in what you do. A ganger
   fights hard and talks badly, a guard is handy with their gun, a corpo or an old lady is no
   fighter but has a way with words that makes them hard to talk down. Their card says how

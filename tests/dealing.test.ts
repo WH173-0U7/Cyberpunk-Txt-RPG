@@ -401,7 +401,7 @@ describe('dealing through a save', () => {
 
 describe('the lines of dealing', () => {
   it('fill for anyone, and there are enough of them', () => {
-    const vars: Record<string, string> = { who: 'a woman in Tyger Claws colors', Who: 'A woman in Tyger Claws colors', he: 'she', his: 'her', him: 'her', drug: 'Glitter', price: '18', pay: '12', gang: 'Tyger Claws', owed: '120', left: '40', when: 'Fri 18:00' };
+    const vars: Record<string, string> = { who: 'a woman in Tyger Claws colors', Who: 'A woman in Tyger Claws colors', he: 'she', his: 'her', him: 'her', drug: 'Glitter', price: '18', pay: '12', gang: 'Tyger Claws', owed: '120', left: '40', when: 'Fri 18:00', weapon: 'knife', took: '3 doses of Glitter and 20 €$' };
     for (const [key, pool] of Object.entries(DEALING.lines)) {
       expect(pool.length, key).toBeGreaterThanOrEqual(3);
       for (const text of pool) expect(text.replace(/\{(\w+)\}/g, (_: string, k: string) => vars[k] ?? `{${k}}`), `${key}: ${text}`).not.toMatch(/[{}]/);

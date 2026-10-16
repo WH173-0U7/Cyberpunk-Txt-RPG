@@ -269,7 +269,7 @@ export function resume(world: World, save: SaveData): Progress | null {
   return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, trading: trading ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, police: police ?? null, lethal: lethal ?? null, coverage: coverage ?? null, dealing: dealing ?? null };
 }
 
-const CRIMES: ReadonlySet<string> = new Set<Crime>(['assault', 'robbery', 'murder']);
+const CRIMES: ReadonlySet<string> = new Set<Crime>(['assault', 'robbery', 'murder', 'possession', 'dealing']);
 
 function isSpot(value: unknown): boolean {
   return isObject(value) && (value.kind === 'building' || value.kind === 'location') && typeof value.id === 'string';
@@ -291,7 +291,7 @@ function policeOf(value: unknown): PoliceState | null {
     dispatch: isObject(d) && isNumber(d.report) && crime(d.crime) && (d.spot === null || isSpot(d.spot)) && isNumber(d.x) && isNumber(d.y) && isNumber(d.arriveAt) && isStrings(d.officers) ? { ...(d as unknown as Dispatch), told: d.told === true } : null,
     warrants: list<Warrant>(value.warrants, (w) => crime(w.crime) && typeof w.district === 'string' && isNumber(w.since) && (w.until === null || isNumber(w.until))),
     held: isNumber(value.held) ? value.held : null,
-    confront: isObject(c) && isStrings(c.officers) && crime(c.crime) && (c.why === 'scene' || c.why === 'warrant') && isNumber(c.at) ? (c as unknown as Confrontation) : null,
+    confront: isObject(c) && isStrings(c.officers) && crime(c.crime) && (c.why === 'scene' || c.why === 'warrant' || c.why === 'search') && isNumber(c.at) ? (c as unknown as Confrontation) : null,
     pending: list<PendingCall>(value.pending, (q) => typeof q.person === 'string' && crime(q.crime) && isNumber(q.at) && typeof q.named === 'boolean' && typeof q.seen === 'string' && isNumber(q.odds) && typeof q.district === 'string' && isRange(q.minutes) && isSpot(q.spot) && isNumber(q.x) && isNumber(q.y)),
     lastStop: isNumber(value.lastStop) ? value.lastStop : 0,
     nextId: isNumber(value.nextId) ? value.nextId : 1,
