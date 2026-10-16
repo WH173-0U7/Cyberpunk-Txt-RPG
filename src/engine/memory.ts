@@ -28,6 +28,8 @@ export type MemoryKind =
   | 'hired'
   | 'promoted'
   | 'quit'
+  /** Was given notice: the player left for other work (`what` the rung). */
+  | 'notice'
   | 'fired'
   /** Chopped a hot chip for the player: `amount` was on it. */
   | 'chopped'

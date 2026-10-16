@@ -1074,10 +1074,13 @@ export const LINES: DialogueLines = {
 
   work: {
     hire: [
-      "Fine. You start at the bottom: {title}. {pay} {eddies} a shift, and don't be late.",
+      only("Fine. You start at the bottom: {title}. {pay} {eddies} a shift, and don't be late.", { lacks: ['experienced'] }),
       "You want to work? {title}. It's {pay} {eddies} a shift and nobody says thank you.",
       only("Alright. {title}, on trial. Mess up and you're out.", hard),
-      only("We could use a hand. {title} to start; show me you can hold a mop and we'll talk.", kind),
+      only("We could use a hand. {title} to start; show me you can hold a mop and we'll talk.", both(kind, { lacks: ['experienced'] })),
+      loud("You've done this before. I can tell. Start as {title}: {pay} {eddies} a shift.", { needs: ['experienced'], lacks: ['referee'] }, 3),
+      loud('{referee} says you show up. That counts for something round here. {title}, {pay} {eddies} a shift.', { needs: ['referee'] }, 4),
+      loud("Word from {referee} is you're alright. Don't make a liar out of {referee}. {title} it is.", { needs: ['referee'] }, 4),
       only("I'll put you on {title}. Don't make me regret it.", quiet),
       only('Standard onboarding: {title}, {pay} {eddies} per shift, probationary. Welcome aboard.', corpo),
       only('At your age I started on {title} too. Go on, then.', elder),
@@ -1139,6 +1142,28 @@ export const LINES: DialogueLines = {
       only('Noted. Your access is revoked at end of day.', corpo),
       only('Everybody leaves. Go on.', elder),
     ],
+    // Told the player is leaving for other work: notice, not walking out.
+    notice: [
+      'Shame. You were alright.',
+      'Fair enough. Somewhere better, I hope.',
+      'Notice, huh? More than most give me.',
+      only('Fine. Go.', hot),
+      only("Good luck out there. Door's open if it goes bad.", kind),
+      only('Noted. HR will process your separation.', corpo),
+      only("Can't blame you. Pay here's a joke.", { needs: ['slow'] }),
+    ],
+    // Heard the player has a side gig ({gig}), and minds.
+    moonlight: [
+      "Heard you're working at {gig} now. Don't make me share you.",
+      '{gig}? On top of this? Show up here like it matters.',
+      only("Loyalty's worth something, {choom}. Remember that when {gig} calls.", loyal),
+    ],
+    // Heard of it, and doesn't mind.
+    sideGig: [
+      'Heard you picked up shifts at {gig}. Your business. Just show up here.',
+      '{gig} too, huh? Hustle. I respect it.',
+      only("Two jobs? You'll sleep when you're dead, {choom}.", young),
+    ],
   },
 
   revenge: {
@@ -1191,6 +1216,9 @@ export const LINES: DialogueLines = {
     only('You walked out on me {memAgo}. Just so you know, I noticed.', { needs: ['memQuit'] }),
     loud('Still not over you walking out. Just so you know.', { needs: ['memQuit', 'memAgain'] }, 3),
     only('Look who it is. The one who quit.', { needs: ['memQuit'] }),
+    only('You gave me notice, at least. Most just stop showing up.', { needs: ['memNotice'] }),
+    only("How's the new place treating you?", { needs: ['memNotice'] }),
+    only('Still miss having you on shift.', both(warm, { needs: ['memNotice'] })),
     only('I had to let you go. You know why.', { needs: ['memFired'] }),
     // A chip chopped.
     only('{memTook} on that chip I cleaned for you. Hope it was worth what it cost someone.', { needs: ['memChopped', 'memTook'] }),
@@ -1526,6 +1554,7 @@ export const LINES: DialogueLines = {
     masked: "Nobody knows it's you behind the {mask}",
     hired: 'Took you on',
     quit: 'You walked out',
+    notice: 'You handed in notice',
     chopped: 'Business done together',
     date: 'A night out together',
     official: "It's official",
@@ -1573,6 +1602,7 @@ export const LINES: DialogueLines = {
       only('"Put me to work. I\'ll earn my keep before you notice I\'m here."', smooth),
     ],
     quit: ['"I\'m done here."', '"Find someone else. I quit."', only('"It\'s been real. I\'m moving on."', smooth)],
+    notice: ['"I\'m handing in my notice. Got another job."', '"I\'ve found other work. This is me giving notice."', only('"Something else came up. Consider this my notice, and thanks."', smooth)],
     askOut: [
       only('"Go out with me."', blunt),
       only('"Dinner. You and me. Say yes."', blunt),

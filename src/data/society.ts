@@ -93,9 +93,9 @@ export const SOCIETY: SocietyRules = {
   },
   memory: {
     cap: 12,
-    days: { wronged: 30, heard: 14, saw: 10, settled: 21, gift: 7, goodWord: 10, hired: 7, promoted: 7, quit: 21, fired: 30, chopped: 10, asked: 5, date: 14, dumped: 45, cheated: 30 },
-    weight: { wronged: 10, heard: 6, saw: 5, settled: 7, gift: 3, goodWord: 4, hired: 3, promoted: 4, quit: 6, fired: 6, chopped: 2, asked: 2, date: 3, dumped: 8, cheated: 7 },
-    repeat: { wronged: 3, heard: 2, saw: 1, settled: 1, gift: 1, goodWord: 1, hired: 1, promoted: 1, quit: 2, fired: 2, chopped: 1, asked: 1, date: 1, dumped: 2, cheated: 2 },
+    days: { wronged: 30, heard: 14, saw: 10, settled: 21, gift: 7, goodWord: 10, hired: 7, promoted: 7, quit: 21, notice: 14, fired: 30, chopped: 10, asked: 5, date: 14, dumped: 45, cheated: 30 },
+    weight: { wronged: 10, heard: 6, saw: 5, settled: 7, gift: 3, goodWord: 4, hired: 3, promoted: 4, quit: 6, notice: 3, fired: 6, chopped: 2, asked: 2, date: 3, dumped: 8, cheated: 7 },
+    repeat: { wronged: 3, heard: 2, saw: 1, settled: 1, gift: 1, goodWord: 1, hired: 1, promoted: 1, quit: 2, notice: 1, fired: 2, chopped: 1, asked: 1, date: 1, dumped: 2, cheated: 2 },
     recall: 0.75,
     heardAt: 5,
     goodWord: 0.4,

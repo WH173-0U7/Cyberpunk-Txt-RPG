@@ -4,43 +4,75 @@ import { FOOD } from '../src/data/food';
 import { JOBS } from '../src/data/jobs';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
-import { bossAt, bossOf, canPromote, ladderFor, nextRung, rungOf, shiftOpen, shiftPay, type JobState } from '../src/engine/jobs';
+import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobState } from '../src/engine/jobs';
 import { generatePeople } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 
 const seeds = Array.from({ length: 12 }, (_, i) => createRng(`jobs-${i}`).next().toString(16).slice(2, 10));
 
 describe('work', () => {
-  it('climbs a ladder at every kind of place that hires, from a cheap bottom rung up', () => {
-    expect(Object.keys(JOBS.ladders).sort()).toEqual(['clothing', 'food']);
-    for (const [category, ladder] of Object.entries(JOBS.ladders)) {
-      expect(ladder.length, category).toBeGreaterThanOrEqual(3);
-      expect(ladder[0]?.at, category).toBe(0);
-      for (let i = 1; i < ladder.length; i++) {
-        expect(ladder[i]!.at, `${category} ${i}`).toBeGreaterThan(ladder[i - 1]!.at);
-        expect(ladder[i]!.pay, `${category} ${i}`).toBeGreaterThan(ladder[i - 1]!.pay);
+  it('climbs a ladder at every kind of storefront, from a cheap bottom rung up, in the ladder\'s own hours', () => {
+    const categories = Object.entries(CITY.buildings.categories).filter(([, c]) => c.business).map(([id]) => id);
+    // Every kind of storefront hires; a business's own ladder is over its category's.
+    for (const category of categories) expect(JOBS.ladders[category], category).toBeDefined();
+    for (const id of Object.keys(JOBS.ladders)) expect(categories.includes(id) || CITY.buildings.businesses.some((b) => b.id === id), id).toBe(true);
+    for (const [line, { hours, rungs }] of Object.entries(JOBS.ladders)) {
+      expect(rungs.length, line).toBeGreaterThanOrEqual(3);
+      expect(rungs[0]?.at, line).toBe(0);
+      for (let i = 1; i < rungs.length; i++) {
+        expect(rungs[i]!.at, `${line} ${i}`).toBeGreaterThan(rungs[i - 1]!.at);
+        expect(rungs[i]!.pay, `${line} ${i}`).toBeGreaterThan(rungs[i - 1]!.pay);
       }
-      for (const rung of ladder) {
+      for (const rung of rungs) {
         expect(rung.energy).toBeGreaterThan(0);
         expect(rung.title.trim()).toBe(rung.title);
         expect(rung.doing).toMatch(/\S/);
       }
-      expect(new Set(ladder.map((r) => r.id)).size).toBe(ladder.length);
+      expect(new Set(rungs.map((r) => r.id)).size).toBe(rungs.length);
+      // A shift of hours that fit a day: a day job's, or a night's past midnight.
+      const length = overnight(hours) ? 24 - hours[0] + hours[1] : hours[1] - hours[0];
+      expect(length, line).toBeGreaterThanOrEqual(6);
+      expect(length, line).toBeLessThanOrEqual(10);
     }
-    const [from, to] = JOBS.hours;
-    // From the opening hour up to the closing one, not into it: nine to five means nothing starts at 5:59.
-    expect(shiftOpen(from, JOBS)).toBe(true);
-    expect(shiftOpen(to - 1, JOBS)).toBe(true);
-    expect(shiftOpen(from - 1, JOBS)).toBe(false);
-    expect(shiftOpen(to, JOBS)).toBe(false);
+    // A bar works nights, and a night job sits beside a day job without a clash; two day jobs clash.
+    expect(overnight(JOBS.ladders.nightlife!.hours)).toBe(true);
+    expect(overlaps(JOBS.ladders.food!.hours, JOBS.ladders.nightlife!.hours)).toBe(false);
+    expect(overlaps(JOBS.ladders.food!.hours, JOBS.ladders.clothing!.hours)).toBe(true);
     // A luxury place pays more than a secondhand one for the same rung.
-    const dishes = JOBS.ladders.food![0]!;
+    const dishes = JOBS.ladders.food!.rungs[0]!;
     expect(shiftPay(dishes, 'luxury', JOBS)).toBeGreaterThan(shiftPay(dishes, 'everyday', JOBS));
     expect(shiftPay(dishes, 'everyday', JOBS)).toBeGreaterThan(shiftPay(dishes, 'poverty', JOBS));
   });
 
+  it('opens a shift from the first hour up to the last, past midnight for a night, and counts the small hours as the night before', () => {
+    // Nine to five: nothing starts at five.
+    expect(shiftOpen(9, [9, 17])).toBe(true);
+    expect(shiftOpen(16, [9, 17])).toBe(true);
+    expect(shiftOpen(8, [9, 17])).toBe(false);
+    expect(shiftOpen(17, [9, 17])).toBe(false);
+    // Six till two.
+    for (const hour of [18, 23, 0, 1]) expect(shiftOpen(hour, [18, 2]), String(hour)).toBe(true);
+    for (const hour of [2, 9, 17]) expect(shiftOpen(hour, [18, 2]), String(hour)).toBe(false);
+    expect(shiftDay({ hour: 1, weekday: 6, day: 100 }, [18, 2])).toEqual({ day: 99, weekday: 5 });
+    expect(shiftDay({ hour: 1, weekday: 0, day: 100 }, [18, 2])).toEqual({ day: 99, weekday: 6 });
+    expect(shiftDay({ hour: 22, weekday: 5, day: 100 }, [18, 2])).toEqual({ day: 100, weekday: 5 });
+    expect(shiftDay({ hour: 1, weekday: 2, day: 100 }, [9, 17])).toEqual({ day: 100, weekday: 2 });
+  });
+
+  it('starts someone with experience in the line, or a good word from their last boss, a rung or two up', () => {
+    const food = JOBS.ladders.food!;
+    expect(startOf(food, 0, false, JOBS)).toEqual({ rung: 0, trust: 0 });
+    // A good word alone: trust, not yet a rung.
+    expect(startOf(food, 0, true, JOBS)).toEqual({ rung: 0, trust: JOBS.reference.trust });
+    // A dozen shifts in the line: half of them count, and that's prep.
+    expect(startOf(food, 12, false, JOBS)).toEqual({ rung: 1, trust: 6 });
+    // Most of a month of it and a reference: further up; never the top, which is earned at the place.
+    expect(startOf(food, 30, true, JOBS)).toEqual({ rung: 2, trust: 19 });
+    expect(startOf(food, 400, true, JOBS).rung).toBe(food.rungs.length - 2);
+  });
+
   it('moves up on trust, and only once the boss has warmed to the player', () => {
-    const ladder = JOBS.ladders.food!;
+    const ladder = JOBS.ladders.food!.rungs;
     const job: JobState = { building: 'b', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 };
     expect(rungOf(job, ladder)).toBe(ladder[0]);
     expect(nextRung(job, ladder)).toBe(ladder[1]);
@@ -56,7 +88,7 @@ describe('work', () => {
     expect(rungOf({ ...job, rung: 99 }, ladder)).toBe(ladder[ladder.length - 1]);
   });
 
-  it('gives every eatery and clothing store one boss who works there, and nobody else a ladder, city by city', () => {
+  it('gives every storefront one boss who works there, and nothing else a ladder, city by city', () => {
     for (const seed of seeds) {
       const world = generateWorld(seed, CITY);
       const population = generatePeople(world, PEOPLE, FOOD.dishes);
@@ -71,7 +103,7 @@ describe('work', () => {
         expect(boss?.job.building, `${seed} ${building.name} has a boss`).toBe(building.id);
         if (ladder) {
           hiring++;
-          expect(['food', 'clothing'], `${seed} ${building.name}`).toContain(building.category);
+          expect(lineOf(building, JOBS), `${seed} ${building.name}`).toBeTruthy();
           // The boss is the one who runs it, as far as the roles say; and knows it.
           expect(bossAt(boss!, world, population, JOBS)?.id, `${seed} ${building.name}`).toBe(building.id);
           for (const other of population.people.filter((p) => p.job.building === building.id && p.id !== boss!.id)) {

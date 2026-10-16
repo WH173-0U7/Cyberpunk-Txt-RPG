@@ -29,6 +29,15 @@ export function formatClock(ms: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+/** Weekdays (0 Sunday – 6 Saturday) as a roster says them: "Mon–Fri", "Thu, Fri, Sat", "Sat, Sun". */
+export function formatDays(days: readonly number[]): string {
+  const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // The week from Monday, so a weekend reads Sat, Sun.
+  const order = [...days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+  const run = order.length > 3 && order.every((d, i) => i === 0 || d === ((order[i - 1] as number) + 1) % 7);
+  return run ? `${names[order[0] as number]}–${names[order[order.length - 1] as number]}` : order.map((d) => names[d]).join(', ');
+}
+
 /** A short date in the game's calendar style: "Nov 11". */
 export function formatDay(ms: number): string {
   return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });

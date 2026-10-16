@@ -293,23 +293,36 @@ own.
   wonders why, and whoever came to collect tells you you're square. Each memory fades on its
   own clock (a gift in a week, a robbery in a month), and when someone talks to you they bring
   up whatever's most on their mind, three times in four, each thing only so often.
-- **Work**: every eatery and clothing store has a boss, the one who runs it (the cook at a
-  one-cook noodle bar, whoever runs the counter or the shop otherwise). Find them and their
+- **Work**: every storefront has a boss, the one who runs it (the cook at a one-cook noodle
+  bar, whoever runs the counter or the shop otherwise), and every kind of storefront hires,
+  each on a ladder of its own: the dish pit, prep, the counter and the line at an eatery;
+  the stockroom up to fitting at a clothing store; barback up to floor manager at a bar or a
+  club; parts runner, courier, mechanic at a garage; orderly up to charge medtech at a
+  clinic; cash runner up to branch manager at a bank, and so on. Find the boss and their
   card gets a **Work** command: **Ask for work**, and whether they take you on is their
   openness to it, like any ask (how they feel about you, your charisma; never with a mask
-  on, never while you've a job elsewhere, and a boss you've crossed says no). Taken on, you
-  start at the bottom of that kind of place's ladder: the dish pit at an eatery, the
-  stockroom at a store. Inside your workplace between nine and five by the clock the panel
-  has **Work**: one shift a day, for the rung's energy, paid into your account (a luxury
-  place pays more, a secondhand one less). Every shift is a point of trust and a little
-  rapport with the boss; once the trust is there for the next rung and the boss has warmed to
-  you, they move you up on the spot, with better pay: prep, then the counter, then the line
-  at an eatery; the shop floor, the register, then fitting at a store. **Quit** is on the
-  boss's card. A place that won't serve you (you robbed or insulted its people) won't keep
-  you either. The line under the energy bar names your rung, and the status drop-down says
-  where you work, how many shifts you've put in and what the next rung takes. (People's own
-  troubles, and helping with them, come later, once there's combat and
-  more to do with a person.)
+  on, and a boss you've crossed says no). Each ladder keeps its own hours: shops and
+  eateries by day (nine to five, ten to six, a clinic eight to four), Monday to Friday; bars,
+  clubs and arcades six till two, Thursday to Saturday. **Two jobs at once**, a day job and a
+  side gig on hours that don't clash; asking anywhere else means handing one in (the card
+  says "Means notice at…"), which costs less with that boss than walking out, and a boss
+  who liked you puts in a word. Half the shifts you've worked in a line of work count as
+  trust at the next place in it, so experience and a good word start you a rung or two up
+  (never the top: that's earned in-house). Inside your workplace, on a day you're on and in
+  its hours, the panel has **Work**: one shift a day, for the rung's energy. The pay is owed
+  and comes **Friday morning**, out of the place's till, to your account (a luxury place
+  pays more, a secondhand one less, a struggling one a quarter less, a thriving one a
+  quarter more, and a week worked at a thriving place is a raise, up to a quarter on top).
+  Every shift is a point of trust and a little rapport with the boss; once the trust is
+  there for the next rung and the boss has warmed to you, they move you up on the spot. The
+  boss's card has your **days** (tap one on or off) and **Quit**, which pays out what's owed.
+  A rostered day you don't show costs trust and rapport; four in a row and you're let go. A
+  loyal boss at the day job minds hearing about your side gig. A place that won't serve you
+  (you robbed or insulted its people) won't keep you either. Your workplaces carry a yellow
+  briefcase on the map, glowing while a shift there is on; tap it to plan the walk. The line
+  under the energy bar says "Shift on · 7 min" when one's open somewhere else, else your
+  rung, and the status drop-down has a row for each job: days, hours, what's owed, shifts and
+  what the next rung takes. (People's own troubles, and helping with them, come later.)
 - **Masks**: a gas mask, a ballistic mask, a balaclava or a menpō (all real 2077 pieces, on
   the thrift rack, at Saeko's and in the clothing stores) hides your face, and anything you
   do to someone from behind it is nobody's doing: no grudge, no word around the district, no

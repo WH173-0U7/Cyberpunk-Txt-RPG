@@ -15,6 +15,7 @@ import { PEOPLE } from '../src/data/people';
 import { SOCIETY } from '../src/data/society';
 import { TRAVEL } from '../src/data/travel';
 import { outfit } from '../src/engine/carry';
+import { ladderFor, overlaps } from '../src/engine/jobs';
 import { GENERATOR_VERSION, generateWorld } from '../src/engine/generate';
 import { Game, streetSpot, type GameRules } from '../src/engine/game';
 import { createRng, hashSeed } from '../src/engine/rng';
@@ -134,13 +135,18 @@ function check(game: Game, about: string): void {
   const tiesOf = (ties: Array<{ from: string; to: string; kind: string }>) => ties.map((t) => `${t.from}|${t.to}|${t.kind}`);
   if (!same(again.population.people, game.population.people)) expect(again.population.people, `${about}: the people after a save`).toEqual(game.population.people);
   if (digest(again.population.ties) !== digest(game.population.ties)) expect(tiesOf(again.population.ties).sort(), `${about}: the ties after a save`).toEqual(tiesOf(game.population.ties).sort());
-  // A job is always at a storefront that hires, on a rung of its ladder.
-  const job = game.jobSaved;
-  if (job) {
+  // Every job is at a storefront that hires, on a rung of its ladder; at most two, never two whose hours clash.
+  const jobs = game.jobsSaved;
+  expect(jobs.length, `${about}: jobs`).toBeLessThanOrEqual(JOBS.most);
+  const hours = jobs.map((job) => {
     const at = game.world.buildings.find((b) => b.id === job.building);
-    expect(at && JOBS.ladders[at.category]?.[job.rung], `${about}: job at ${job.building} rung ${job.rung}`).toBeTruthy();
-    expect(job.trust, `${about}: trust`).toBeGreaterThanOrEqual(job.shifts * 0);
-  }
+    const ladder = at ? ladderFor(at, JOBS) : null;
+    expect(ladder?.rungs[job.rung], `${about}: job at ${job.building} rung ${job.rung}`).toBeTruthy();
+    expect(job.trust, `${about}: trust`).toBeGreaterThanOrEqual(0);
+    expect(job.owed ?? 0, `${about}: owed`).toBeGreaterThanOrEqual(0);
+    return ladder?.hours ?? ([0, 0] as [number, number]);
+  });
+  if (hours.length === 2) expect(overlaps(hours[0]!, hours[1]!), `${about}: two jobs at once`).toBe(false);
 }
 
 describe('playing badly', () => {
@@ -232,8 +238,9 @@ describe('playing badly', () => {
               expect(game.fighting, `${about}: a fight that never ends`).toBe(false);
               game.leaveFight();
             }
-            else if (what < 0.75 && game.workWith(who) === 'hire') game.askForWork(who, now);
-            else if (what < 0.8 && game.workWith(who) === 'quit') game.quit(now);
+            else if (what < 0.75 && (game.workWith(who) === 'hire' || game.workWith(who) === 'switch')) game.askForWork(who, now);
+            else if (what < 0.78 && game.workWith(who) === 'quit') game.setRoster(who, [rng.int(0, 6), rng.int(0, 6)], now);
+            else if (what < 0.8 && game.workWith(who) === 'quit') game.quit(now, who);
             else if (game.canChop(who)) {
               const hot = game.inventory.find((i) => i.kind === 'credchip' && i.locked);
               if (hot) game.chop(who, hot.id, now);

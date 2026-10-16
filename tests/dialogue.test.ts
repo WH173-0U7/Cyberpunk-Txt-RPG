@@ -307,7 +307,7 @@ describe('dialogue', () => {
       expect(needs(l).filter((n) => kinds.some((k) => n === `news${k}`)), text(l)).toHaveLength(1);
       expect(needs(l).filter((n) => roles.some((r) => n === `news${r}`)), text(l)).toHaveLength(1);
     }
-    const memories = ['Wronged', 'Heard', 'Saw', 'Settled', 'Gift', 'GoodWord', 'Hired', 'Promoted', 'Quit', 'Fired', 'Chopped', 'Asked', 'Date', 'Dumped', 'Cheated'];
+    const memories = ['Wronged', 'Heard', 'Saw', 'Settled', 'Gift', 'GoodWord', 'Hired', 'Promoted', 'Quit', 'Notice', 'Fired', 'Chopped', 'Asked', 'Date', 'Dumped', 'Cheated'];
     for (const l of LINES.memory) expect(needs(l).filter((n) => memories.some((k) => n === `mem${k}`)), text(l)).toHaveLength(1);
   });
 

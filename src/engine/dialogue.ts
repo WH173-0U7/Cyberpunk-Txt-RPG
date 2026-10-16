@@ -103,7 +103,8 @@ export interface DialogueLines {
   chop: { done: Line[]; refuse: Line[] };
   /** A boss asked for work (`{title}` the bottom rung, `{work}` the place, `{pay}` a shift): taken on, turned down, or not in a mask; a word after a shift; moved up (`{title}` the new rung); told the player quits. */
   /** `broke`: a boss whose place is struggling, turning the player away; `rehire`: a boss the player walked out on (`memQuit`) or who let them go (`memFired`), still remembering it. */
-  work: { hire: Line[]; refuse: Line[]; masked: Line[]; shift: Line[]; promote: Line[]; quit: Line[]; broke: Line[]; rehire: Line[] };
+  /** `notice`: told the player is leaving for other work; `moonlight`/`sideGig`: hearing of a side gig (`{gig}`), minding it or not. `hire` has `experienced` when the player starts above the bottom, `referee` the old boss who put in a word. */
+  work: { hire: Line[]; refuse: Line[]; masked: Line[]; shift: Line[]; promote: Line[]; quit: Line[]; notice: Line[]; moonlight: Line[]; sideGig: Line[]; broke: Line[]; rehire: Line[] };
   revenge: { person: Line[]; gang: Line[] };
   /** What someone brings up of what the player did, as they remember it (memory.ts): `mem` and `mem<Kind>` say which, with `{memWho}`, `{memWord}`, `{memAgo}`, `{memItem}`, `{memTook}`, `{memTitle}` and `memTwice`, `memAgain` (brought up before), `memRobbery`, `memInsult`, `memFavorite`. */
   memory: Line[];
@@ -118,7 +119,7 @@ export interface DialogueLines {
   /** What someone wants out of life, as the card says it once the player knows ("Wants out of Night City"). */
   dreams: Record<Dream, string>;
   /** Why an exchange went the way it did, on the note after it (`{given}`, `{his}`, `{item}`…): pushed after a no, one question too many, a favorite, a second gift in a day, a mask, a job, walking out, a chop. */
-  notes: { pressed: string; grilled: string; favorite: string; twice: string; masked: string; hired: string; quit: string; chopped: string; date: string; official: string; dumped: string; ended: string; jealous: string };
+  notes: { pressed: string; grilled: string; favorite: string; twice: string; masked: string; hired: string; quit: string; notice: string; chopped: string; date: string; official: string; dumped: string; ended: string; jealous: string };
   /**
    * Romance with the player (romance.ts): asked out (yes; not drawn to the player; spoken for,
    * `{taken}` their `{takenWord}`; not yet; not in a mask); a date (`{item}` ordered for two,
@@ -138,7 +139,7 @@ export interface DialogueLines {
     notLooking: string;
   };
   /** The player's own lines, for the record, by eloquence. */
-  you: { talk: Line[]; askAbout: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[]; work: Line[]; quit: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[] };
+  you: { talk: Line[]; askAbout: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[] };
 }
 
 /** Everything a line can be picked and filled by; `vars.mask` is the word for the mask the player has on, or nothing. */

@@ -65,8 +65,12 @@ export interface PersonCardView {
   gifts: Array<{ id: string; name: string; count: number }>;
   /** Locked credchips this person could chop, with what's on each and their cut; empty unless they're a netrunner the player can tell. */
   chops: Array<{ id: string; label: string }>;
-  /** What there is to do about work with them: ask them for a job (they run a place that hires), quit the one they gave the player, or nothing. */
-  work: 'hire' | 'quit' | null;
+  /** What there is to do about work with them: ask them for a job (they run a place that hires; `switch`, one that means handing in notice elsewhere), quit the one they gave the player, or nothing. */
+  work: 'hire' | 'switch' | 'quit' | null;
+  /** For a switch, the job the player would hand in notice at. */
+  leaving?: string;
+  /** With the player's own boss, the week's days and whether the player is on each (tapping one puts them on or takes them off). */
+  roster: Array<{ day: number; label: string; on: boolean }>;
   /** What there is to do about the heart with them: ask them out, or, with the one the player is seeing, a date, making it official, ending it (that one even when they're not here). */
   heart: HeartMove[];
   /** What has passed between them, oldest first. */
@@ -115,6 +119,8 @@ export interface PeopleHandlers {
   onHeart(id: string, move: HeartMove): void;
   /** The facts line was tapped: what's known of them and their web unfold, or fold away. */
   onToggleFacts(): void;
+  /** A day on the roster was tapped, with the player's boss: on it, or off it. */
+  onRoster(id: string, day: number): void;
   onPicker(picker: Picker): void;
 }
 
@@ -145,9 +151,9 @@ export class People {
     // Everything on the card goes through one listener: commands, the choices they unfold, names in the web.
     els.card.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
-      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-about], [data-item], [data-chip], [data-action], [data-heart], [data-open]');
+      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-about], [data-item], [data-chip], [data-action], [data-heart], [data-open], [data-day]');
       if (!button) return;
-      const { cmd, approach, fact, about, item, chip, action, heart, open, id } = button.dataset;
+      const { cmd, approach, fact, about, item, chip, action, heart, open, id, day } = button.dataset;
       if (cmd === 'talk' || cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'heart' || cmd === 'more') handlers.onPicker(cmd);
       else if (heart && id) handlers.onHeart(id, heart as HeartMove);
       else if (approach && id) handlers.onTalk(id, approach);
@@ -155,6 +161,7 @@ export class People {
       else if (about && id) handlers.onAsk(id, about);
       else if (item && id) handlers.onGift(id, item);
       else if (chip && id) handlers.onChop(id, chip);
+      else if (day !== undefined && id) handlers.onRoster(id, Number(day));
       else if (action && id && !(button as HTMLButtonElement).disabled) handlers.onAction(action as PersonAction, id);
       else if (open) handlers.onSelect(open);
     });
@@ -231,7 +238,19 @@ export class People {
     } else if (card.here && card.picker === 'chop') {
       picker.push(...card.chops.map((c) => chip(c.label, { id: card.id, chip: c.id }, 'person-chip')));
     } else if (card.here && card.picker === 'work' && card.work) {
-      picker.push(card.work === 'hire' ? chip('Ask for work', { id: card.id, action: 'hire' }, 'person-chip') : chip('Quit', { id: card.id, action: 'quit' }, 'person-chip is-danger'));
+      if (card.work === 'quit') {
+        // Your days here, each a toggle, then walking out.
+        picker.push(el('span', 'person-gifts-label', 'Days'));
+        for (const d of card.roster) {
+          const day = chip(d.label, { id: card.id, day: String(d.day) }, `person-chip person-day${d.on ? ' is-on' : ''}`);
+          day.setAttribute('aria-pressed', String(d.on));
+          picker.push(day);
+        }
+        picker.push(chip('Quit', { id: card.id, action: 'quit' }, 'person-chip is-danger'));
+      } else {
+        if (card.work === 'switch' && card.leaving) picker.push(el('span', 'person-gifts-label', `Means notice at ${card.leaving}`));
+        picker.push(chip('Ask for work', { id: card.id, action: 'hire' }, 'person-chip'));
+      }
     } else if (card.picker === 'heart' && card.heart.length) {
       picker.push(...card.heart.map((move) => chip(HEART_LABEL[move], { id: card.id, heart: move }, `person-chip${move === 'end' ? ' is-danger' : ' is-heart'}`)));
     } else if (card.here && card.picker === 'more') {

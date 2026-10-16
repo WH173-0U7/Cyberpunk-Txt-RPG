@@ -41,7 +41,7 @@ import { medDetail } from './engine/medical';
 import { FightPanel } from './ui/fight';
 import { fitCheck, implantDetail, implantOf } from './engine/cyberware';
 import { isGun, weaponDetail, weaponOf } from './engine/weapons';
-import { formatClock, formatCountdown, formatDay, formatDuration, formatMinutes } from './ui/format';
+import { formatClock, formatCountdown, formatDay, formatDays, formatDuration, formatMinutes } from './ui/format';
 import { Hud, WEATHER_LABEL } from './ui/hud';
 import { EnergyMeter } from './ui/energy';
 import { StatusPanel, type StatusRow } from './ui/status';
@@ -345,6 +345,14 @@ const people = new People(
       factsOpen = false;
       game.askFact(id, fact as Question, Date.now());
     },
+    onRoster: (id, day) => {
+      // On that day or off it; a job keeps at least one.
+      lastActivity = performance.now();
+      const now = Date.now();
+      const days = rosterOf(id, now).filter((d) => d.on).map((d) => d.day);
+      game.setRoster(id, days.includes(day) ? days.filter((d) => d !== day) : [...days, day], now);
+      showPeople();
+    },
     onToggleFacts: () => {
       // Unfolding what's known folds any command's choices away, so the web has the card to itself.
       factsOpen = !factsOpen;
@@ -426,6 +434,18 @@ function buildingOf(id: string): Building | undefined {
 }
 
 /** The spot a pick means going to. Buildings and bits of street are reached from the nearest street. */
+/** The walk to a building, planned once for each spot the player is near (the planner walks the streets): for the shift on the status line. */
+let walkCache: { key: string; minutes: number } | null = null;
+function walkTo(building: string, now: number): number {
+  const at = game.positionAt(now);
+  const key = `${building}|${Math.round(at.x)},${Math.round(at.y)}`;
+  if (walkCache?.key !== key) {
+    const to = destinationOf({ kind: 'building', id: building });
+    walkCache = { key, minutes: (to && game.plan(to, 'foot', now)?.minutes) || 0 };
+  }
+  return walkCache.minutes;
+}
+
 function destinationOf(t: Target): Whereabouts | null {
   const { world } = game;
   switch (t.kind) {
@@ -500,7 +520,7 @@ function actOn(action: PersonAction, id: string): void {
   else if (action === 'rob') game.rob(id, now);
   else if (action === 'attack') game.attack(id, now);
   else if (action === 'hire') game.askForWork(id, now);
-  else if (action === 'quit') game.quit(now);
+  else if (action === 'quit') game.quit(now, id);
 }
 
 // ───────────── The panel ─────────────
@@ -668,7 +688,7 @@ function hereView(now: number): PanelView {
 function workAction(shift: JobStatus, now: number): PanelAction {
   const masked = Boolean(game.masked());
   const tired = game.energy(now).current < shift.rung.energy;
-  const why = shift.blocked === 'done' ? 'Done today' : shift.blocked === 'closed' ? `${JOBS.hours[0]}–${JOBS.hours[1]}h` : masked ? 'Not in a mask' : tired ? 'Too tired' : '';
+  const why = shift.blocked === 'done' ? 'Done today' : shift.blocked === 'off' ? 'Not your day' : shift.blocked === 'closed' ? `${shift.hours[0]}–${shift.hours[1]}h` : masked ? 'Not in a mask' : tired ? 'Too tired' : '';
   return { id: 'work', label: 'Work', sub: why || `${shift.pay} €$, ${shift.rung.energy} energy`, disabled: Boolean(why) };
 }
 
@@ -1042,10 +1062,16 @@ function showStatus(now: number): void {
   const stars = heat.stars ? '★'.repeat(heat.stars) : '';
   const heart = game.romance(now);
   const job = game.jobStatus(now);
+  const jobs = game.jobsStatus(now);
+  // Where the player works, on the map; lit while a shift there is on.
+  map.setWork(jobs.map((j) => ({ id: j.building.id, name: j.building.name, open: j.open })));
+  // A shift open somewhere else: how far, on foot.
+  const due = jobs.find((j) => j.open && !j.here);
+  const away = due ? walkTo(due.building.id, now) : 0;
   const pass = wallet.passUntil > now;
   const refill = energy.nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(energy.nextPointAt - now)}`;
   const condition = drunk.stage ? `${drunk.stage.label} · sober in ${formatCountdown((drunk.soberAt ?? now) - now)}` : '';
-  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', stars, drunk.stage?.label, mask ? 'Masked' : '', job ? job.rung.title : ''].filter(Boolean).join(' · ');
+  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', stars, drunk.stage?.label, mask ? 'Masked' : '', due ? `Shift on · ${formatMinutes(away)}` : job ? job.rung.title : ''].filter(Boolean).join(' · ');
   const today = new Date(now);
   const pad = (n: number) => String(n).padStart(2, '0');
   const rows: StatusRow[] = [
@@ -1057,7 +1083,7 @@ function showStatus(now: number): void {
     { label: 'Eddies', value: `€$ ${wallet.eddies} on you${wallet.account ? ` · €$ ${wallet.account} banked` : ''}${wallet.chips ? ` · €$ ${wallet.chips} on chips` : ''}` },
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
-    { label: 'Work', value: job ? `${job.rung.title} at ${job.building.name} · ${job.shifts} ${job.shifts === 1 ? 'shift' : 'shifts'}${job.next ? ` · trust ${job.trust}, ${job.next.title.toLowerCase()} at ${job.next.at}` : ' · top of the ladder'} · trade ${game.trade(job.building).health}` : 'No job' },
+    ...(jobs.length ? jobs.map((j) => ({ label: j.side ? 'Side gig' : 'Work', value: `${j.rung.title} at ${j.building.name} · ${formatDays(j.days)} ${j.hours[0]}–${j.hours[1]}h${j.owed ? ` · ${j.owed} €$ owed` : ''} · ${j.shifts} ${j.shifts === 1 ? 'shift' : 'shifts'}${j.next ? ` · trust ${j.trust}, ${j.next.title.toLowerCase()} at ${j.next.at}` : ' · top of the ladder'} · trade ${game.trade(j.building).health}` })) : [{ label: 'Work', value: 'No job' }]),
     ...(condition ? [{ label: 'Condition', value: condition, tone: 'warn' as const }] : []),
     ...(mask ? [{ label: 'Mask', value: `${mask.name} · nobody knows your face`, tone: 'warn' as const }] : []),
     { label: 'Armed', value: armed ? `${armed.name}${armed.gun ? ` · ${armed.loaded}/${armed.magazine}` : ''}` : 'Nothing but your hands' },
@@ -1163,6 +1189,8 @@ function showPeople(): void {
             // A hot chip can be put to a netrunner the player can tell is one; the label says what it holds and what they'd keep.
             chops: present && game.canChop(shown.id) ? hot.map((c) => ({ id: c.id, label: `€$ ${c.balance ?? 0} chip · cut ${chipCut(c.balance ?? 0, MONEY)}` })) : [],
             work: present ? game.workWith(shown.id) : null,
+            ...(present && game.workWith(shown.id) === 'switch' ? { leaving: game.switchingFrom(shown.id) ?? undefined } : {}),
+            roster: present && game.workWith(shown.id) === 'quit' ? rosterOf(shown.id, now) : [],
             heart: game.romanceWith(shown.id, now),
             // Chat first, a flirt last.
             approaches: [{ id: 'chat', label: 'Chat' }, ...Object.entries(LINES.approaches).sort(([a], [b]) => Number(a === 'flirt') - Number(b === 'flirt')).map(([id, a]) => ({ id, label: a.label }))],
@@ -1170,6 +1198,14 @@ function showPeople(): void {
           }
         : null,
   });
+}
+
+/** The week at the job someone gives the player, a chip a day: whether the player is on it. */
+function rosterOf(bossId: string, now: number): Array<{ day: number; label: string; on: boolean }> {
+  const job = game.jobsStatus(now).find((j) => j.boss?.id === bossId);
+  const labels = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  // The week from Monday.
+  return job ? [1, 2, 3, 4, 5, 6, 0].map((day) => ({ day, label: labels[day] as string, on: job.days.includes(day) })) : [];
 }
 
 /** What someone is doing, and with whom, as the player can tell them: "eating Wontons · arguing with a woman in Mox colors". */
