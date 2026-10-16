@@ -10,6 +10,7 @@ import type { CoverageStatus } from './medical';
 import type { Room } from './rooms';
 import type { PoliceView } from './police';
 import type { DealView } from './dealing';
+import type { HabitView } from './habit';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -329,5 +330,9 @@ export type GameEvents = {
   policeChanged: PoliceView;
   /** The player's dealing for a gang changed: a front, a sale, a debt, a rung; null when they're out. */
   dealChanged: DealView | null;
+  /** The player's habit changed: a dose taken or worn off, a craving, withdrawal. */
+  habitChanged: HabitView | null;
+  /** The player is dead (an overdose with nobody to help): the city goes on without them. */
+  flatlined: { text: string };
   fx: { effect: FxName };
 };

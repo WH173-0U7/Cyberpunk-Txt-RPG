@@ -130,6 +130,7 @@ function check(game: Game, about: string): void {
   expect(again.policeSaved, `${about}: the NCPD after a save`).toEqual(game.policeSaved);
   expect(again.tradingSaved, `${about}: Trading after a save`).toEqual(game.tradingSaved);
   expect(again.dealingSaved, `${about}: dealing after a save`).toEqual(game.dealingSaved);
+  expect(again.habitSaved, `${about}: the habit after a save`).toEqual(game.habitSaved);
   expect(again.roomSaved, `${about}: the room after a save`).toEqual(game.roomSaved);
   expect(again.lodgingSaved, `${about}: the rented room after a save`).toEqual(game.lodgingSaved);
   const health = game.health(Date.now());

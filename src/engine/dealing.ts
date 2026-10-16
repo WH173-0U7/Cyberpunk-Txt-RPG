@@ -1,5 +1,6 @@
 import { createRng } from './rng';
 import type { Quality } from './food';
+import type { HabitRules as YourHabitRules } from './habit';
 import type { Person, SkillWalk, Traits } from './people';
 import type { Stance } from './society';
 
@@ -183,6 +184,8 @@ export interface DealingRules {
   tiers: Record<Quality, number>;
   bad: BadRules;
   war: WarRules;
+  /** The player's own habit, if they use what they sell (habit.ts). */
+  habit: YourHabitRules;
   lines: DealLines;
 }
 

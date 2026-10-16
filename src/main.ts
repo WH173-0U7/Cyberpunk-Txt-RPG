@@ -43,6 +43,7 @@ import { POLICE } from './data/police';
 import { DEALING } from './data/dealing';
 import type { PoliceView } from './engine/police';
 import type { DealView } from './engine/dealing';
+import type { HabitView } from './engine/habit';
 import type { FinishKind } from './engine/combat';
 import { medDetail } from './engine/medical';
 import { FightPanel } from './ui/fight';
@@ -710,6 +711,17 @@ function policeView(now: number): PanelView | null {
   return null;
 }
 
+/** The player's habit, as the status says it: what's working and for how long, how hooked on each, the edge, the nerves. */
+function habitLine(habit: HabitView, now: number): string {
+  return [
+    ...habit.active.map((a) => `${a.name} for ${formatMinutes(Math.max(0, a.until - now) / 60_000)}`),
+    habit.stage ? (habit.stage.stage === 'craving' ? `craving ${habit.stage.name}` : `${habit.stage.name} withdrawal`) : '',
+    ...habit.drugs.map((d) => `${d.name} ${d.dependence}% hooked`),
+    habit.edge ? `edge ${habit.edge}${habit.numb ? ', numb' : ''}` : '',
+    habit.nerve ? `nerve damage ×${habit.nerve}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
 /** Where the player stands with the gang they deal for, as the status says it. */
 function dealLine(deal: DealView, now: number): string {
   const day = (ms: number) => `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(ms).getDay()]} ${formatClock(ms)}`;
@@ -1243,7 +1255,7 @@ function itemDetail(item: Item, tier: (p: { brand?: string; style?: PocketLoad['
 /** What can be done with something from the inventory: eat a dish, drink a drink, take a med, load a gun or unload it, have a ripperdoc fit an implant. */
 function useLabel(item: Item): string | undefined {
   if (item.kind === 'cyberware') return game.clinic() ? 'Fit' : undefined;
-  if (item.kind === 'consumable' && MEDICAL.meds[item.id]) return 'Use';
+  if (item.kind === 'consumable' && (MEDICAL.meds[item.id] || GEAR.drugs[item.id])) return 'Use';
   if (item.kind === 'weapon') {
     const can = game.canLoad(item.id);
     return can.load ? 'Load' : can.unload ? 'Unload' : undefined;
@@ -1315,6 +1327,9 @@ function showStatus(now: number): void {
   const ncpd = police.held ? `Held · ${formatCountdown(police.held - now)}` : police.dispatch ? `NCPD · ${formatCountdown(police.dispatch.arriveAt - now)}` : police.warrants.length ? 'Wanted' : '';
   const heart = game.romance(now);
   const deal = game.dealing(now);
+  const habit = game.habit(now);
+  // What's working, else the worst of a craving or withdrawal, on the line.
+  const high = habit?.active[0] ? `On ${habit.active[0].name}` : habit?.stage ? (habit.stage.stage === 'craving' ? `Craving ${habit.stage.name}` : 'Withdrawal') : '';
   // The corner the player deals from, on the map.
   map.setCorner(deal?.corner?.id ?? null);
   const job = game.jobStatus(now);
@@ -1327,7 +1342,7 @@ function showStatus(now: number): void {
   const pass = wallet.passUntil > now;
   const refill = energy.nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(energy.nextPointAt - now)}`;
   const condition = drunk.stage ? `${drunk.stage.label} · sober in ${formatCountdown((drunk.soberAt ?? now) - now)}` : '';
-  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', ncpd, deal?.debt ? `Debt ${deal.debt} €$` : '', drunk.stage?.label, mask ? 'Masked' : '', due ? `Shift on · ${formatMinutes(away)}` : job ? job.rung.title : ''].filter(Boolean).join(' · ');
+  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', ncpd, deal?.debt ? `Debt ${deal.debt} €$` : '', high, drunk.stage?.label, mask ? 'Masked' : '', due ? `Shift on · ${formatMinutes(away)}` : job ? job.rung.title : ''].filter(Boolean).join(' · ');
   const today = new Date(now);
   const pad = (n: number) => String(n).padStart(2, '0');
   const rows: StatusRow[] = [
@@ -1346,6 +1361,7 @@ function showStatus(now: number): void {
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
     ...(jobs.length ? jobs.map((j) => ({ label: j.side ? 'Side gig' : 'Work', value: `${j.rung.title} at ${j.building.name} · ${formatDays(j.days)} ${j.hours[0]}–${j.hours[1]}h${j.owed ? ` · ${j.owed} €$ owed` : ''} · ${j.shifts} ${j.shifts === 1 ? 'shift' : 'shifts'}${j.next ? ` · trust ${j.trust}, ${j.next.title.toLowerCase()} at ${j.next.at}` : ' · top of the ladder'} · trade ${game.trade(j.building).health} · ${j.perks.join(', ')}` })) : [{ label: 'Work', value: 'No job' }]),
     ...(deal ? [{ label: 'Dealing', value: dealLine(deal, now), ...(deal.debt ? { tone: 'bad' as const } : {}) }] : []),
+    ...(habit && (habit.drugs.length || habit.active.length || habit.edge || habit.nerve) ? [{ label: 'Habit', value: habitLine(habit, now), ...(habit.stage || habit.numb ? { tone: 'bad' as const } : {}) }] : []),
     ...(condition ? [{ label: 'Condition', value: condition, tone: 'warn' as const }] : []),
     ...(mask ? [{ label: 'Mask', value: `${mask.name} · nobody knows your face`, tone: 'warn' as const }] : []),
     { label: 'Armed', value: armed ? `${armed.name}${armed.gun ? ` · ${armed.loaded}/${armed.magazine}` : ''}` : 'Nothing but your hands' },
@@ -1757,6 +1773,20 @@ function wire(g: Game): void {
     if (!target && !g.currentTrip) refresh();
     showStatus(now);
     queueSave();
+  });
+
+  // A dose, a craving, withdrawal: the line and the drop-down say so.
+  g.events.on('habitChanged', () => {
+    if (inventory.overlay.isOpen) showInventory();
+    if (!target && !g.currentTrip) refresh();
+    showStatus(Date.now());
+    queueSave();
+  });
+
+  // An overdose with nobody to help: the end, and the city starts over without the player.
+  g.events.on('flatlined', ({ text }) => {
+    if (g !== game) return;
+    setTimeout(() => startOver(g.world.seed, `${text} Night City starts over.`), 0);
   });
 
   g.events.on('chromeChanged', () => {
