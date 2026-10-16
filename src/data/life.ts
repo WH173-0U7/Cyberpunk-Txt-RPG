@@ -51,11 +51,11 @@ export const LIFE: LifeRules = {
     couple: ['sharing a table with', 'arguing with', 'leaning on', 'splitting a plate with', 'not speaking to'],
     family: ['sitting with', 'arguing with', 'catching up with', 'being lectured by', 'splitting the bill with'],
     friends: ['drinking with', 'laughing with', 'talking shop with', 'swapping stories with', 'losing a bet to'],
-    crew: ['holding court with', 'running numbers with', 'watching the door with', 'muttering with'],
-    coworkers: ['complaining about the boss with', 'on a break with', 'splitting a smoke with'],
-    shakedown: ['leaning on', 'collecting from', 'having a quiet word with'],
+    crew: ['holding court with', 'running numbers with', 'watching the door with', 'muttering with', 'sharing a smoke with'],
+    coworkers: ['complaining about the boss with', 'on a break with', 'splitting a smoke with', 'covering a shift for', 'trading gossip with', 'counting the till with'],
+    shakedown: ['leaning on', 'collecting from', 'having a quiet word with', 'taking an envelope from', 'reminding', 'looming over'],
     // The help's side of each of those, in the same order.
-    leanedOn: ['being leaned on by', 'paying off', 'getting a quiet word from'],
-    rivals: ['staring down', 'squaring up to', 'keeping an eye on'],
+    leanedOn: ['being leaned on by', 'paying off', 'getting a quiet word from', 'handing an envelope to', 'being reminded by', 'trying not to look at'],
+    rivals: ['staring down', 'squaring up to', 'keeping an eye on', 'trading looks with', 'sizing up', 'muttering about'],
   },
 };

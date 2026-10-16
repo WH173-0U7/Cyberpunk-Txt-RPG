@@ -153,6 +153,8 @@ export interface Speaker {
   /** The player's, which the player's own lines follow. */
   eloquence: Eloquence;
   vars: Record<string, string>;
+  /** What was said lately (by them to the player, and by the player anywhere): a line steers clear of it while there's anything else to say. */
+  recent?: string[];
 }
 
 const DAY = 86_400_000;
@@ -222,8 +224,12 @@ export function textOf(line: Line): string {
 
 /** One of the fragments that fit, by weight; null when none do. */
 export function pickFragment(pool: Line[], speaker: Speaker, rng: Rng): Fragment | null {
-  const fitting = pool.map(fragmentOf).filter((f) => fits(f.when, speaker));
-  if (!fitting.length) return null;
+  const all = pool.map(fragmentOf).filter((f) => fits(f.when, speaker));
+  if (!all.length) return null;
+  // Never the same thing twice running: what was just said gives way while anything else fits.
+  const recent = speaker.recent;
+  const fresh = recent?.length ? all.filter((f) => !saidIn(recent, finish(f.text, speaker.vars))) : all;
+  const fitting = fresh.length ? fresh : all;
   const total = fitting.reduce((sum, f) => sum + (f.weight ?? 1), 0);
   let roll = rng.next() * total;
   for (const f of fitting) {
@@ -231,6 +237,13 @@ export function pickFragment(pool: Line[], speaker: Speaker, rng: Rng): Fragment
     if (roll < 0) return f;
   }
   return fitting[fitting.length - 1] ?? null;
+}
+
+/** Whether a line, filled in, is in what was said lately (whole, or as part of something longer), whatever numbers are in it: the same blow for 12 or for 18 is the same line. */
+export function saidIn(recent: readonly string[], text: string): boolean {
+  const bare = (t: string) => t.replace(/\d+/g, '#');
+  const line = bare(text);
+  return line.length > 0 && recent.some((said) => bare(said).includes(line));
 }
 
 /** One line from a pool, filled in; empty when nothing fits. */

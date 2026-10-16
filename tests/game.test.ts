@@ -868,7 +868,7 @@ describe('Game', () => {
       expect(game.standingWith(worker.id, now)?.stance).toBe('hostile');
       // The noodle bar's people saw it; the counter is closed to the player.
       expect(game.reputation(now).find((r) => r.key === 'business:b-noodle')?.value).toBeLessThanOrEqual(SOCIETY.rep.banAt);
-      expect(game.barred(now)).toMatch(/won't serve|closes/);
+      expect(LINES.barred.map((l) => (typeof l === 'string' ? l : l.text).replace('{work}', 'Test Noodles'))).toContain(game.barred(now));
       expect(game.buy(game.menu()?.items[0]?.id ?? '', now)).toBe(false);
       for (const other of here.filter((p) => p.person.id !== worker.id)) {
         expect(game.standingWith(other.person.id, now)?.standing.grudge, other.person.name).toBeGreaterThan(0);
@@ -985,7 +985,9 @@ describe('Game', () => {
       smooth.start(now);
       expect(smooth.askFact(worker.id, 'home', now)).toBe(true);
       expect(smooth.describe(worker.id)?.facts.home).toBeDefined();
-      expect(spoken(smooth, worker.id).at(-2)?.text).toBe('"Whereabouts do you lay your head? Just so I know where to send the good word."');
+      // The smooth way of asking it, whichever of them.
+      const smoothly = LINES.questions.home.lines.filter((l) => typeof l !== 'string' && l.when?.eloquence?.includes('smooth')).map((l) => `"${typeof l === 'string' ? l : l.text}"`);
+      expect(smoothly).toContain(spoken(smooth, worker.id).at(-2)?.text);
       const xp = smooth.charisma().xp;
       expect(smooth.askFact(worker.id, 'home', now + MINUTE)).toBe(true);
       expect(smooth.charisma().xp).toBe(xp);
@@ -1404,7 +1406,7 @@ describe('Game', () => {
       expect(elsewhere.withdraw(10)).toBe(false);
       const barred = new Game(world, RULES, { ...progressInside('b-bank', 44, 20), society: { ...freshSociety(), rep: { 'business:b-bank': { value: SOCIETY.rep.banAt, at: T0 } } } });
       barred.start(T0);
-      expect(barred.barred(T0)).toMatch(/won't serve|closes/);
+      expect(barred.barred(T0)).toMatch(/won't serve|closes|look at you|Never you/);
       expect(barred.bank(T0)).toBeNull();
       expect(barred.deposit()).toBe(false);
     });

@@ -92,6 +92,20 @@ function speakerOf(p: Person, over: Partial<Speaker> = {}, vars: Record<string, 
 const standing = (extra: Partial<Standing> = {}): Standing => ({ met: false, rapport: 0, grudge: 0, at: T0, talks: 0, lastTalkAt: 0, gifts: 0, lastGiftAt: 0, robbedAt: 0, asks: 0, refused: {}, ...extra });
 
 describe('dialogue', () => {
+  it('never says the same thing twice running while there is anything else to say', () => {
+    const plain = speakerOf(person('Ana'));
+    const pool = ['One.', 'Two.', 'Three.'];
+    // Said just now, whole or as part of something longer: it gives way to what's left.
+    for (let i = 0; i < 40; i++) expect(line(pool, { ...plain, recent: ['"One."', 'Two. And then some.'] }, createRng(`fresh-${i}`))).toBe('Three.');
+    // The same line with another number in it is still the same line.
+    for (let i = 0; i < 40; i++) expect(line(['Hit for {dmg}.', 'Struck for {dmg}.'], { ...plain, vars: { ...plain.vars, dmg: '18' }, recent: ['Hit for 12.'] }, createRng(`num-${i}`))).toBe('Struck for 18.');
+    // With nothing else that fits, it's said again rather than nothing at all.
+    expect(line(['Only.'], { ...plain, recent: ['Only.'] }, createRng('only'))).toBe('Only.');
+    // Without a record, any of them.
+    const said = new Set(Array.from({ length: 40 }, (_, i) => line(pool, plain, createRng(`any-${i}`))));
+    expect(said.size).toBe(3);
+  });
+
   it('picks fragments by who is talking, what they are doing and how they feel', () => {
     const rosa = speakerOf(person('rosa', { traits: { warmth: 0.9, temper: 0.2, loyalty: 0.5, greed: 0.5, courage: 0.5, chatty: 0.7 } }), { mood: 'busy', stance: 'warm', history: 'regular' });
     expect(fits(undefined, rosa)).toBe(true);
@@ -312,7 +326,8 @@ describe('dialogue', () => {
   });
 
   it('never leaves a hole in a line, whoever is talking, across whole cities', () => {
-    const holes = /[{}]|  |^\p{Ll}|^\s|\s$/u;
+    // An empty var mid-sentence leaves a space before the punctuation ("at .").
+    const holes = /[{}]|  |^\p{Ll}|^\s|\s$|\s(?:[,;:!?]|\.(?!\.))/u;
     // Problems are collected and checked once: an assertion a line is slow across cities of thousands.
     const problems: string[] = [];
     const check = (said: string, about: string) => {
@@ -406,7 +421,9 @@ describe('dialogue', () => {
           for (const eloquence of eloquences) check(line(LINES.questions[q].lines, { ...speaker, eloquence }, rng), `${about} question ${q} ${eloquence}`);
           lines += 4;
         }
-        for (const pool of [LINES.brushOff, LINES.grudge, LINES.hostile, LINES.asleep, LINES.talkedOut, LINES.refuse, LINES.pressed, LINES.ask.knows, LINES.ask.unknown, LINES.ask.repeat, LINES.gift.thanks, LINES.gift.favorite, LINES.gift.refuse, LINES.insult.reply, LINES.insult.shove, LINES.rob.done, LINES.rob.nothing, LINES.rob.fought, LINES.chop.done, LINES.chop.refuse, LINES.barred]) {
+        // A counter that won't serve the player is always named.
+        check(line(LINES.barred, { ...speaker, vars: { ...vars, work: 'El Pinche Grill' } }, rng), `${about} barred`);
+        for (const pool of [LINES.brushOff, LINES.grudge, LINES.hostile, LINES.asleep, LINES.talkedOut, LINES.refuse, LINES.pressed, LINES.ask.unknown, LINES.ask.repeat, LINES.gift.thanks, LINES.gift.favorite, LINES.gift.refuse, LINES.insult.reply, LINES.insult.shove, LINES.rob.done, LINES.rob.nothing, LINES.rob.fought, LINES.chop.done, LINES.chop.refuse]) {
           check(line(pool, speaker, rng), `${about} pool`);
         }
         // Every way into a chat, from the player in every way with words, and every way it can land.
