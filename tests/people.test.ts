@@ -4,7 +4,7 @@ import { CITY } from '../src/data/city';
 import { FOOD } from '../src/data/food';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
-import { allHours, dreamOf, drawnTo, generatePeople, handleOf, hauntOf, heartOf, INVERSE, isCorpo, isNetrunner, peopleAt, tiesOf, whereIs, worksNights, type Population, type TieKind } from '../src/engine/people';
+import { allHours, dreamOf, drawnTo, generatePeople, handleOf, hauntOf, heartOf, INVERSE, isCorpo, isNetrunner, peopleAt, readOf, skillsOf, tiesOf, walkOf, whereIs, worksNights, type PersonSkills, type Population, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 import { moodOf } from '../src/engine/dialogue';
 import type { World } from '../src/engine/types';
@@ -359,3 +359,36 @@ describe('the people', () => {
     expect(new Set(all.map(({ p, world }) => dreamOf(p, world, PEOPLE))).size).toBe(Object.keys(PEOPLE.dreams).length);
   });
 });
+
+describe("people's own levels", () => {
+  it('come from who they are: gangers and guards fight, corpos and the old talk, and nobody past the most', () => {
+    const { world, population } = cities[0]!;
+    const by: Record<string, PersonSkills[]> = {};
+    for (const p of population.people) (by[walkOf(p, world)] ??= []).push(skillsOf(p, world, PEOPLE));
+    const mean = (walk: string, skill: keyof PersonSkills) => by[walk]!.reduce((n, s) => n + s[skill], 0) / by[walk]!.length;
+    const fighting = (walk: string) => mean(walk, 'brawler') + mean(walk, 'toughness') + mean(walk, 'arms');
+    expect(fighting('gang')).toBeGreaterThan(fighting('street'));
+    expect(fighting('guard')).toBeGreaterThan(fighting('street'));
+    expect(fighting('street')).toBeGreaterThan(fighting('elder'));
+    expect(fighting('street')).toBeGreaterThan(fighting('corpo'));
+    expect(mean('elder', 'charisma')).toBeGreaterThan(mean('gang', 'charisma') + 2);
+    expect(mean('corpo', 'charisma')).toBeGreaterThan(mean('gang', 'charisma') + 2);
+    for (const list of Object.values(by)) for (const s of list) for (const v of Object.values(s)) expect(v >= 1 && v <= PEOPLE.skills!.most).toBe(true);
+  });
+
+  it('are the same every time, and everyone ordinary without the profiles', () => {
+    const { world, population } = cities[1]!;
+    const person = population.people[7]!;
+    expect(skillsOf(person, world, PEOPLE)).toEqual(skillsOf(person, world, PEOPLE));
+    expect(skillsOf(person, world, { ...PEOPLE, skills: undefined })).toEqual({ brawler: 4, toughness: 4, arms: 4, charisma: 4 });
+  });
+
+  it('read as a word, the first step whose top they are under', () => {
+    const steps = PEOPLE.skills!.reads.fight;
+    expect(readOf(1, steps)).toBe('Harmless');
+    expect(readOf(4, steps)).toBe('Ordinary');
+    expect(readOf(9, steps)).toBe('Dangerous');
+    expect(readOf(99, steps)).toBe('Dangerous');
+  });
+});
+

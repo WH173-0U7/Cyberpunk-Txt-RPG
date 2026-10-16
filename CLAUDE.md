@@ -372,6 +372,16 @@ it needs no generator bump. The pieces:
   the tell and the shift moments). A level-up says where it leaves the player (`STANDING`,
   `{standing}` in its `levelLine`). A new skill is another `SkillRules` in `src/data/skills.ts`
   with its own `average` and `floor`, a state on `Game`, a save field and an event.
+- Everyone has their own levels in what the player has levels in (`skillsOf` in people.ts,
+  `PersonSkills`: Street Brawler, Toughness, `arms` for the kind of weapon they carry, and
+  Charisma), on their own stream from `PEOPLE.skills`: a range for each by walk of life
+  (`walkOf`: a ganger, a guard or an officer, a corpo, someone old, anyone else), moved up to
+  `traits` levels by their nature (nerve and temper for their fists, warmth and chattiness for
+  words). So a ganger fights well and talks badly, an old lady the other way round, and the
+  fight is decided by who the player takes on and how. Without `PEOPLE.skills`, everyone is
+  ordinary (4). `Game` keeps them in `skillCache`; they never change. How someone strikes the
+  player is on their card (`Description.fight`, plain to see, and `talk`, once they've talked
+  `reads.talks` times; the Profile's Fighting and Talking rows, by `readOf` and `reads`).
 - `src/engine/dialogue.ts` puts lines together from fragments in `src/data/dialogue.ts`
   (our own words; slang from the wiki's Streetslang page, by voice through the `lexicon`).
   A `Speaker` is everything a line is picked and filled by (voice, mood, stance, history,
@@ -581,9 +591,15 @@ move at once and both land together, the player against the clock:
 - What each side fights with: the player, whatever's best for the range of what they carry
   and have fitted (`yourFighter`: a loaded gun, chrome in the arms, a blade, then fists, which
   lose a tie), its rounds in the gun item and reloads out of their pockets; the other side,
-  `Game.armOf(person)`, drawn on their own stream by gang, a guard's job, a corpo's, or the
-  street (`COMBAT.carry`: weapon ids, arm implants, or `fists`; most people carry nothing),
-  with `spareMags`, their health from `COMBAT.people` and armor from `COMBAT.armor`.
+  `Game.armOf(person)`, drawn on their own stream by their walk of life (`walkOf`: gang, a
+  guard's job, a corpo's, or the street; `COMBAT.carry`: weapon ids, arm implants, or `fists`;
+  most people carry nothing), with `spareMags`, their health from `COMBAT.people` and armor
+  from `COMBAT.armor`. Both sides' levels count the same way (`trainedEdge` in combat.ts:
+  Street Brawler on fists and anything blunt, Toughness on `steady`, the weapon's kind and
+  model on its damage and aim, `perksAt` its level): the player's from their skills
+  (`yourEdge`), anyone else's from their own (`edgeOf`, their `arms` level for both the kind
+  and the model). Talking someone down is the player's charisma against theirs (`talkOdds`'
+  `theirs`, weighed by `talk.resist`).
 - Chrome in a fight is `COMBAT.chrome` by implant id: armor (the wiki's number at its first
   tier), health, `window` (a Kerenzikov; a Sandevistan by how much its page says it slows the
   world; `below` for only when hurt), aim, melee, guard, evade on the first beat (optical

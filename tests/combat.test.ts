@@ -4,7 +4,7 @@ import { CHROME } from '../src/data/cyberware';
 import { HACKS } from '../src/data/quickhacks';
 import { ARMS } from '../src/data/weapons';
 import { createRng } from '../src/engine/rng';
-import { damageOf, hitChance, knockoutOdds, masteryEdge, NO_EDGE, perkFamily, resolveBeat, stepRange, talkOdds, theirMove, type Arm, type Fighter, type FightState, type Move } from '../src/engine/combat';
+import { damageOf, hitChance, knockoutOdds, masteryEdge, NO_EDGE, perkFamily, perksAt, resolveBeat, stepRange, talkOdds, theirMove, trainedEdge, type Arm, type Fighter, type FightState, type Move } from '../src/engine/combat';
 
 /**
  * Each quickhack as its page on the Cyberpunk Wiki has it (checked 2026-10-15, through the
@@ -284,3 +284,34 @@ describe('weapon levels', () => {
     expect(COMBAT.lines.youCrit?.length).toBeGreaterThan(2);
   });
 });
+
+describe('levels in a fight, the same for anyone', () => {
+  const ordinary = { brawler: 4, toughness: 4, type: 4, model: 4 };
+  it('leave an ordinary fighter as anyone is, and make a better one hit harder and go down harder', () => {
+    expect(trainedEdge(NO_EDGE, FISTS_ARM, ordinary, [], COMBAT)).toEqual(NO_EDGE);
+    expect(trainedEdge(NO_EDGE, lexington, ordinary, [], COMBAT)).toEqual(NO_EDGE);
+    const brawler = trainedEdge(NO_EDGE, FISTS_ARM, { ...ordinary, brawler: 8 }, [], COMBAT);
+    const feeble = trainedEdge(NO_EDGE, FISTS_ARM, { ...ordinary, brawler: 1 }, [], COMBAT);
+    expect(brawler.melee).toBeGreaterThan(1);
+    expect(brawler.ko).toBeGreaterThan(1);
+    expect(feeble.melee).toBeLessThan(1);
+    expect(trainedEdge(NO_EDGE, FISTS_ARM, { ...ordinary, toughness: 8 }, [], COMBAT).steady).toBeLessThan(1);
+    expect(trainedEdge(NO_EDGE, FISTS_ARM, { ...ordinary, toughness: 1 }, [], COMBAT).steady).toBeGreaterThan(1);
+    const shooter = trainedEdge(NO_EDGE, lexington, { ...ordinary, type: 8, model: 8 }, perksAt(lexington, 8, COMBAT), COMBAT);
+    expect(shooter.power).toBeGreaterThan(1);
+    expect(shooter.aim).toBeGreaterThan(1);
+    // A pistol's level does nothing for the fists, and a brawler's nothing for the pistol.
+    expect(trainedEdge(NO_EDGE, FISTS_ARM, { ...ordinary, type: 8, model: 8 }, [], COMBAT)).toEqual(NO_EDGE);
+    expect(trainedEdge(NO_EDGE, lexington, { ...ordinary, brawler: 8 }, [], COMBAT)).toEqual(NO_EDGE);
+    expect(perksAt(lexington, 4, COMBAT)).toEqual([]);
+    expect(perksAt(lexington, 7, COMBAT).length).toBe(2);
+  });
+
+  it('make talking someone down the player\'s way with words against theirs', () => {
+    const state = fight(FISTS_ARM, FISTS_ARM);
+    const nerve = { courage: 0.5, temper: 0.5 };
+    expect(talkOdds(state, nerve, 0, false, COMBAT, 2)).toBeLessThan(talkOdds(state, nerve, 0, false, COMBAT, 0));
+    expect(talkOdds(state, nerve, 0, false, COMBAT, -1)).toBeGreaterThan(talkOdds(state, nerve, 0, false, COMBAT, 0));
+  });
+});
+

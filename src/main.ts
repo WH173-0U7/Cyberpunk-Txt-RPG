@@ -1454,8 +1454,12 @@ function profileOf(standing: PersonStanding, described: Description): Array<{ la
     ['nature', 'Nature'],
   ];
   for (const [fact, label, prefix] of facts) {
-    // Plain to see, from the first look.
-    if (fact === 'age') rows.push({ label: 'Sex', value: described.sex });
+    // Plain to see, from the first look: their sex, and how they'd be in a fight; how they talk once they have.
+    if (fact === 'age') {
+      rows.push({ label: 'Sex', value: described.sex });
+      if (described.fight) rows.push({ label: 'Fighting', value: described.fight });
+      if (described.talk) rows.push({ label: 'Talking', value: described.talk });
+    }
     const value = f[fact];
     if (value) rows.push({ label, value: prefix ? value.replace(prefix, '') : value });
   }

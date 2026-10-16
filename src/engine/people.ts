@@ -75,6 +75,8 @@ export interface PeopleContent {
    * NCPD doesn't go), living in its homes, with their ranks. Beat cops go in pairs.
    */
   ncpd?: { perDistrict: Record<string, number>; roles: string[] };
+  /** Everyone's own levels in what the player has levels in, by walk of life and nature (missing: everyone ordinary). */
+  skills?: SkillProfiles;
   /** Who carries a credchip, and with how much on it: the odds and the range, for corpos, gangers and the street. */
   chips: Record<'corpo' | 'gang' | 'street', { chance: number; range: [number, number] }>;
   /** Kinds of place people go to in the evening. */
@@ -630,6 +632,65 @@ export function hospitalOf(person: Person, world: World): Spot | null {
   const ward = nearestHospital(world, from)?.spot ?? null;
   known.set(person.id, ward);
   return ward;
+}
+
+/** The jobs that come armed and armored: guards, bouncers, security, troopers, patrols, the NCPD. */
+export const GUARD_ROLE = /guard|bouncer|security|trooper|patrol|sergeant|ncpd/i;
+
+/** Someone's walk of life, as a fight and their levels see it: a ganger, a guard (or an officer), a corpo, someone old, anyone else. */
+export type SkillWalk = 'gang' | 'guard' | 'corpo' | 'elder' | 'street';
+
+export function walkOf(person: Person, world: World): SkillWalk {
+  if (person.gang) return 'gang';
+  if (GUARD_ROLE.test(person.job.role)) return 'guard';
+  if (isCorpo(person, world)) return 'corpo';
+  return person.age >= 56 ? 'elder' : 'street';
+}
+
+/** How good someone is, in the player's own levels (an ordinary person is 4): with fists and anything blunt (Street Brawler), at taking a hit (Toughness), with the kind of weapon they carry, and with words (Charisma). */
+export interface PersonSkills {
+  brawler: number;
+  toughness: number;
+  arms: number;
+  charisma: number;
+}
+
+/**
+ * Where people's levels come from: a range for each by walk of life, drawn between, then moved
+ * up to `traits` levels either way by their nature (nerve and temper for their fists, nerve for
+ * taking a hit and for a weapon, warmth and chattiness for words), never past `most`. `reads`
+ * is how they strike the player, by the level (the first whose top it's under): as a fighter,
+ * plain to see; as a talker, once they've talked `talks` times.
+ */
+export interface SkillProfiles {
+  walks: Record<SkillWalk, Record<keyof PersonSkills, [number, number]>>;
+  traits: number;
+  most: number;
+  reads: { fight: Array<[number, string]>; talk: Array<[number, string]>; talks: number };
+}
+
+/** Someone's own levels, drawn on their own stream, so they're the same every time; everyone ordinary without the profiles. */
+export function skillsOf(person: Person, world: World, content: PeopleContent): PersonSkills {
+  const profile = content.skills;
+  if (!profile) return { brawler: 4, toughness: 4, arms: 4, charisma: 4 };
+  const ranges = profile.walks[walkOf(person, world)];
+  const rng = createRng(`${person.id}:skills`);
+  const t = person.traits;
+  const draw = (skill: keyof PersonSkills, nature: number) => {
+    const [low, high] = ranges[skill];
+    return Math.max(1, Math.min(profile.most, Math.round(rng.range(low, high) + nature * profile.traits)));
+  };
+  return {
+    brawler: draw('brawler', t.courage + t.temper - 1),
+    toughness: draw('toughness', (t.courage - 0.5) * 2),
+    arms: draw('arms', t.courage - 0.5),
+    charisma: draw('charisma', t.warmth + t.chatty - 1),
+  };
+}
+
+/** The word for a level, by a read's steps (the first whose top it's under or at, else the last). */
+export function readOf(level: number, steps: Array<[number, string]>): string {
+  return (steps.find(([top]) => level <= top) ?? steps[steps.length - 1])?.[1] ?? '';
 }
 
 /** Whether someone works for a corporation: in a tower, or with a corporate title. */

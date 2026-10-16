@@ -52,7 +52,7 @@ export const COMBAT: CombatContent = {
   escape: RANGE(0.3, 0.55, 0.8),
   escapeAdvanced: 0.6,
   escapeIdle: 1.2,
-  talk: { base: 0.1, courage: 0.35, temper: 0.25, hurt: 0.3, charisma: 0.04, gun: 0.1, perBeat: 0.03 },
+  talk: { base: 0.1, courage: 0.35, temper: 0.25, hurt: 0.3, charisma: 0.04, resist: 0.07, gun: 0.1, perBeat: 0.03 },
   ramPerBeat: 1,
 
   health: { base: 100, regenPerHour: 25 },
