@@ -3,6 +3,7 @@ import type { PocketState } from './carry';
 import type { Fitted } from './cyberware';
 import type { Arms, Meter } from './combat';
 import type { Lodging } from './rooms';
+import type { Confrontation, Crime, Dispatch, PendingCall, PoliceState, Report, Warrant } from './police';
 import type { Coverage } from './medical';
 import type { Money } from './money';
 import type { EnergyState } from './energy';
@@ -64,9 +65,10 @@ export interface Progress {
   you?: You | null;
   /** The chrome a ripperdoc has fitted into the player (missing or null: a save from before; none). */
   chrome?: Fitted[] | null;
-  /** The player's health and NCPD heat, as last written down (missing or null: a save from before fighting; well, and nobody looking). */
+  /** The player's health, as last written down (missing or null: a save from before fighting; well). */
   health?: Meter | null;
-  heat?: Meter | null;
+  /** What the NCPD has on the player (missing or null: a save from before; nothing). */
+  police?: PoliceState | null;
   /** Whether the player fights to kill (missing or null: a save from before; they don't). */
   lethal?: boolean | null;
   /** The Trauma Team plan the player signed up for (missing or null: a save from before, or none). */
@@ -98,7 +100,7 @@ export interface SaveSource {
   readonly youSaved: You;
   readonly chromeSaved: readonly Fitted[];
   readonly healthSaved: Meter;
-  readonly heatSaved: Meter;
+  readonly policeSaved: PoliceState;
   readonly lethal: boolean;
   readonly coverageSaved: Coverage | null;
 }
@@ -147,7 +149,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     you: { ...game.youSaved },
     chrome: game.chromeSaved.map((f) => ({ ...f })),
     health: { ...game.healthSaved },
-    heat: { ...game.heatSaved },
+    police: game.policeSaved,
     lethal: game.lethal,
     coverage: game.coverageSaved ? { ...game.coverageSaved } : null,
     savedAt: now,
@@ -219,9 +221,9 @@ export function readSave(raw: unknown): SaveData | null {
     you: isYou(save.you) ? save.you : null,
     // And before there was chrome, the player had none; an implant that isn't one is dropped.
     chrome: Array.isArray(save.chrome) ? save.chrome.filter(isFitted) : null,
-    // And before there was fighting, the player was well and nobody was looking for them.
+    // And before there was fighting, the player was well; before the NCPD, nobody was looking for them.
     health: isMeter(save.health) ? save.health : null,
-    heat: isMeter(save.heat) ? save.heat : null,
+    police: policeOf(save.police),
     lethal: typeof save.lethal === 'boolean' ? save.lethal : null,
     // And before Trauma Team, nobody was signed up.
     coverage: isCoverage(save.coverage) ? save.coverage : null,
@@ -246,13 +248,42 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, toughness, arms, room, lodging, job, jobs, career, life, you, chrome, health, heat, lethal, coverage } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, toughness, arms, room, lodging, job, jobs, career, life, you, chrome, health, police, lethal, coverage } = save;
   const exists = (j: JobState) => world.buildings.some((b) => b.id === j.building);
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, heat: heat ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, police: police ?? null, lethal: lethal ?? null, coverage: coverage ?? null };
+}
+
+const CRIMES: ReadonlySet<string> = new Set<Crime>(['assault', 'robbery', 'murder']);
+
+function isSpot(value: unknown): boolean {
+  return isObject(value) && (value.kind === 'building' || value.kind === 'location') && typeof value.id === 'string';
+}
+
+function isRange(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 && value.every(isNumber);
+}
+
+/** What the NCPD has on the player, as saved: anything in it that isn't a record of something is dropped. */
+function policeOf(value: unknown): PoliceState | null {
+  if (!isObject(value)) return null;
+  const crime = (v: unknown) => typeof v === 'string' && CRIMES.has(v);
+  const list = <T>(v: unknown, ok: (x: Record<string, unknown>) => boolean) => (Array.isArray(v) ? v.filter((x): x is T => isObject(x) && ok(x)) : []);
+  const d = value.dispatch;
+  const c = value.confront;
+  return {
+    reports: list<Report>(value.reports, (r) => isNumber(r.id) && crime(r.crime) && isNumber(r.at) && typeof r.district === 'string' && typeof r.place === 'string' && typeof r.named === 'boolean' && typeof r.seen === 'string'),
+    dispatch: isObject(d) && isNumber(d.report) && crime(d.crime) && (d.spot === null || isSpot(d.spot)) && isNumber(d.x) && isNumber(d.y) && isNumber(d.arriveAt) && isStrings(d.officers) ? { ...(d as unknown as Dispatch), told: d.told === true } : null,
+    warrants: list<Warrant>(value.warrants, (w) => crime(w.crime) && typeof w.district === 'string' && isNumber(w.since) && (w.until === null || isNumber(w.until))),
+    held: isNumber(value.held) ? value.held : null,
+    confront: isObject(c) && isStrings(c.officers) && crime(c.crime) && (c.why === 'scene' || c.why === 'warrant') && isNumber(c.at) ? (c as unknown as Confrontation) : null,
+    pending: list<PendingCall>(value.pending, (q) => typeof q.person === 'string' && crime(q.crime) && isNumber(q.at) && typeof q.named === 'boolean' && typeof q.seen === 'string' && isNumber(q.odds) && typeof q.district === 'string' && isRange(q.minutes) && isSpot(q.spot) && isNumber(q.x) && isNumber(q.y)),
+    lastStop: isNumber(value.lastStop) ? value.lastStop : 0,
+    nextId: isNumber(value.nextId) ? value.nextId : 1,
+  };
 }
 
 function isCoverage(value: unknown): value is Coverage {

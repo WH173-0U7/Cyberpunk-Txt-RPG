@@ -2572,7 +2572,7 @@ describe('Game', () => {
         return t;
       };
 
-      it('is an assault the moment it starts, and a killing writes the dead down for good, with the heat', () => {
+      it('is an assault the moment it starts, and a killing writes the dead down for good', () => {
         const { game, now, worker } = atTheBar({ lethal: true }, brutal(500, 1));
         expect(game.attack(worker.id, now)).toBe(true);
         expect(game.fighting).toBe(true);
@@ -2587,17 +2587,16 @@ describe('Game', () => {
         expect(worker.diedOn).toBe(Math.floor(now / 86_400_000));
         expect(game.lifeSaved.dead[worker.id]).toBe(worker.diedOn);
         expect(game.societySaved.incidents.map((i) => i.kind)).toEqual(['assault', 'murder']);
-        expect(game.heat(t).stars).toBeGreaterThanOrEqual(COMBAT.heat.murder);
-        expect(game.heat(t + 30 * 24 * HOUR).stars).toBe(0);
+        // With no NCPD in the rules, nobody calls it in.
+        expect(game.police(t)).toMatchObject({ reports: 0, warrants: [], dispatch: null });
         // Two rounds a shot from the Lexington.
         expect(game.inventory.find((i) => i.id === 'lexington-1')?.loaded).toBe(18);
         game.leaveFight();
         expect(game.fightView()).toBeNull();
         expect(game.leave()).toBe(true);
         // A save brings the dead back dead.
-        const again = new Game(world, { ...RULES, combat: brutal(500, 1) }, { ...progressInside('b-noodle', 38, 20), life: game.lifeSaved, heat: game.heatSaved, health: game.healthSaved });
+        const again = new Game(world, { ...RULES, combat: brutal(500, 1) }, { ...progressInside('b-noodle', 38, 20), life: game.lifeSaved, health: game.healthSaved });
         expect(again.population.people.find((p) => p.id === worker.id)?.diedOn).toBe(worker.diedOn);
-        expect(again.heat(t).stars).toBe(game.heat(t).stars);
       });
 
       it('lays someone up instead when the blow is not a killing one, and they are gone from here', () => {
@@ -2801,7 +2800,7 @@ describe('Game', () => {
         expect(game.canBuy('short-circuit', T0)).toContain('already');
       });
 
-      it('heals on the clock, and carries health and heat through a save', () => {
+      it('heals on the clock, and carries health through a save', () => {
         const { game, now, worker } = atTheBar({}, brutal(30, 0));
         game.attack(worker.id, now);
         const t = fightOut(game, now, 'cover');

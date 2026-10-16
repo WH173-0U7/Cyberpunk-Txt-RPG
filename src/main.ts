@@ -39,6 +39,8 @@ import { HACKS } from './data/quickhacks';
 import { MEDICAL } from './data/medical';
 import { HOURS } from './data/hours';
 import { ROOMS } from './data/rooms';
+import { POLICE } from './data/police';
+import type { PoliceView } from './engine/police';
 import { medDetail } from './engine/medical';
 import { FightPanel } from './ui/fight';
 import { fitCheck, implantDetail, implantOf } from './engine/cyberware';
@@ -104,6 +106,7 @@ const place = new PlacePanel(
       enter: $<HTMLButtonElement>('#act-enter'),
       'pick-1': $<HTMLButtonElement>('#act-pick-1'),
       'pick-2': $<HTMLButtonElement>('#act-pick-2'),
+      'pick-3': $<HTMLButtonElement>('#act-pick-3'),
       leave: $<HTMLButtonElement>('#act-leave'),
       menu: $<HTMLButtonElement>('#act-menu'),
       people: $<HTMLButtonElement>('#act-people'),
@@ -588,8 +591,16 @@ function act(id: ActionId): void {
     withdrawOpen = false;
     bank.overlay.show($('#act-bank'));
   } else if (id === 'work') game.work(now);
-  else if (id === 'pick-1' || id === 'pick-2') {
-    const choice = game.shiftEvent(now)?.choices[id === 'pick-1' ? 0 : 1];
+  else if (id === 'pick-1' || id === 'pick-2' || id === 'pick-3') {
+    const at = Number(id.slice(-1)) - 1;
+    // Officers on the player come before anything on a shift.
+    const cops = game.police(now).confront;
+    if (cops) {
+      const choice = cops.choices[at];
+      if (choice) game.answerPolice(choice.id, now);
+      return;
+    }
+    const choice = game.shiftEvent(now)?.choices[at];
     if (choice) game.answerShift(choice.id, now);
   }
 }
@@ -615,7 +626,15 @@ function refresh(): void {
   // The menu, the counter and the people are for where the player is; they go when they leave.
   if (shop.overlay.isOpen && !game.menu()) shop.overlay.close();
   if (bank.overlay.isOpen && !game.bank()) bank.overlay.close();
-  if (people.overlay.isOpen && !game.interior && !game.location) people.overlay.close();
+  if (people.overlay.isOpen && !game.interior && !game.location && !game.police(now).confront) people.overlay.close();
+  // The NCPD has the player: nothing else on the panel till that's settled.
+  const ncpd = policeView(now);
+  if (ncpd) {
+    target = null;
+    map.select(null);
+    place.show(ncpd);
+    return;
+  }
   if (target) {
     const to = destinationOf(target);
     const plans = to ? { foot: game.plan(to, 'foot', now), ncart: game.plan(to, 'ncart', now) } : null;
@@ -632,6 +651,28 @@ function refresh(): void {
   map.select(null);
   const inside = game.interior;
   place.show(trip ? tripView(trip, now) : inside ? insideView(inside) : hereView(now));
+}
+
+/** Officers on the player (their three choices), or a holding cell (nothing to do but wait); null when the NCPD has nothing to do with them. */
+function policeView(now: number): PanelView | null {
+  const police = game.police(now);
+  const cops = police.confront;
+  if (cops) {
+    return {
+      mode: game.interior ? 'inside' : 'here',
+      kicker: cops.why === 'scene' ? 'NCPD · On the scene' : 'NCPD · Warrant',
+      description: cops.text,
+      actions: cops.choices.slice(0, 3).map((c, i) => ({ id: `pick-${i + 1}` as 'pick-1' | 'pick-2' | 'pick-3', label: c.label, ...(c.sub ? { sub: c.sub } : {}) })),
+      closable: false,
+      announce: `${cops.text} ${cops.choices.map((c) => c.label).join(', ')}?`,
+    };
+  }
+  if (police.held) {
+    const out = formatClock(police.held);
+    const description = `A holding cell at the precinct: a bench bolted to the wall, a drain in the floor, a camera in the corner. They let you out at ${out}.`;
+    return { mode: 'here', kicker: 'NCPD · Holding cell', description, actions: [], closable: false, announce: description };
+  }
+  return null;
 }
 
 function lineNames(stationId: string): string {
@@ -1192,10 +1233,11 @@ function showStatus(now: number): void {
   const armed = game.armed();
   const chrome = game.chrome();
   const health = game.health(now);
-  const heat = game.heat(now);
+  const police = game.police(now);
   const cover = game.covered(now);
   const hurt = health.current < health.max;
-  const stars = heat.stars ? '★'.repeat(heat.stars) : '';
+  // A hold, a unit the player knows is coming, a warrant: the worst of it, on the line.
+  const ncpd = police.held ? `Held · ${formatCountdown(police.held - now)}` : police.dispatch ? `NCPD · ${formatCountdown(police.dispatch.arriveAt - now)}` : police.warrants.length ? 'Wanted' : '';
   const heart = game.romance(now);
   const job = game.jobStatus(now);
   const jobs = game.jobsStatus(now);
@@ -1207,14 +1249,14 @@ function showStatus(now: number): void {
   const pass = wallet.passUntil > now;
   const refill = energy.nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(energy.nextPointAt - now)}`;
   const condition = drunk.stage ? `${drunk.stage.label} · sober in ${formatCountdown((drunk.soberAt ?? now) - now)}` : '';
-  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', stars, drunk.stage?.label, mask ? 'Masked' : '', due ? `Shift on · ${formatMinutes(away)}` : job ? job.rung.title : ''].filter(Boolean).join(' · ');
+  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', ncpd, drunk.stage?.label, mask ? 'Masked' : '', due ? `Shift on · ${formatMinutes(away)}` : job ? job.rung.title : ''].filter(Boolean).join(' · ');
   const today = new Date(now);
   const pad = (n: number) => String(n).padStart(2, '0');
   const rows: StatusRow[] = [
     { label: 'Energy', value: `Lv ${energy.level} · ${energy.xp}/${energy.xpToNext} XP · ${refill}` },
     { label: 'Health', value: `${health.current}/${health.max}${health.fullAt ? ` · full in ${formatCountdown(health.fullAt - now)}` : ''}`, ...(health.current < health.max / 2 ? { tone: 'warn' as const } : {}) },
     { label: 'Trauma Team', value: cover ? `${cover.plan.name} · until ${formatDay(cover.until)}` : 'Not covered' },
-    ...(stars ? [{ label: 'NCPD', value: `${stars} · cools in ${formatCountdown((heat.coolAt ?? now) - now)}`, tone: 'bad' as const }] : []),
+    { label: 'NCPD', value: ncpdLine(police, now), ...(police.held || police.dispatch || police.warrants.length ? { tone: 'bad' as const } : {}) },
     { label: 'Charisma', value: `Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP` },
     { label: 'Street Brawler', value: `Lv ${brawler.level} · ${brawler.xp}/${brawler.xpToNext} XP` },
     { label: 'Toughness', value: `Lv ${toughness.level} · ${toughness.xp}/${toughness.xpToNext} XP` },
@@ -1234,6 +1276,17 @@ function showStatus(now: number): void {
     { label: 'Date', value: `2077.${pad(today.getMonth() + 1)}.${pad(today.getDate())}` },
   ];
   statusPanel.render(summary, rows);
+}
+
+/** What the NCPD has on the player, for the status drop-down: a hold, a unit coming, the warrants, what's on record. */
+function ncpdLine(police: PoliceView, now: number): string {
+  const parts = [
+    police.held ? `Held · out in ${formatCountdown(police.held - now)}` : '',
+    police.dispatch ? `A unit on its way · ${formatCountdown(police.dispatch.arriveAt - now)}` : '',
+    ...police.warrants.map((w) => `Wanted for ${w.crime}${w.until === null ? '' : ` · lapses ${formatDay(w.until)}`}`),
+    police.reports ? `${police.reports} ${police.reports === 1 ? 'report' : 'reports'} on record` : '',
+  ].filter(Boolean);
+  return parts.join(' · ') || 'Nothing on you';
 }
 
 /** Fills the menu with what's for sale where the player is, and whether they can afford it. */
@@ -1591,6 +1644,21 @@ function wire(g: Game): void {
 
   g.events.on('coverageChanged', () => queueSave());
 
+  // A call, a unit, officers on the player, a hold: the panel is theirs till it's settled.
+  g.events.on('policeChanged', () => {
+    // In a cell, the sign says so; out of it, where they are again.
+    const where = g.whereabouts;
+    const district = g.districtOf(where);
+    const held = g.police(Date.now()).held;
+    hud.setLocation(held ? 'Holding cell' : (g.interior?.name ?? g.nameOf(where)), district?.name ?? 'Night City', g.neighborhoodOf(where));
+    if (people.overlay.isOpen) showPeople();
+    if (rooms.overlay.isOpen) rooms.overlay.close();
+    if (shop.overlay.isOpen && !g.menu()) shop.overlay.close();
+    refresh();
+    showStatus(Date.now());
+    queueSave();
+  });
+
   g.events.on('chromeChanged', () => {
     if (inventory.overlay.isOpen) showInventory();
     if (shop.overlay.isOpen) showShop();
@@ -1635,7 +1703,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, police: POLICE }, progress);
   wire(game);
   map.setWorld(world);
   try {

@@ -273,16 +273,19 @@ Every city has a population, made up for its seed in `Game`'s constructor (`gene
 in `src/engine/people.ts`, from `src/data/people.ts`): it never touches the city itself, so
 it needs no generator bump. The pieces:
 
-- The people come in three draws, each on its own RNG stream, so the first (`seed:people`: the
+- The people come in four draws, each on its own RNG stream, so the first (`seed:people`: the
   staff by `rolesFor`, `residents` per home, the gangs by their district weights) never
   changes and every save keeps the people it knows; the second (`seed:people:more`) fills
   the city out by `PEOPLE.more` (the chance of one more pair of hands per storefront, with a
   role from `roles.extra` by the building's category; residents `perHome`, more in a `tall`
   block and a `megabuilding`; the gangs again, by `gangs`); the third (`seed:people:crowd`,
   `PEOPLE.crowd`, the same shape) is the crowd that fills the homes, most of a city now
-  (about four thousand people in all, from three and a half to five thousand). Make a city bigger or smaller with the last draw's numbers, or a fourth draw on a new
-  stream, never by changing an earlier one (`tests/people.test.ts` checks the first two come
-  out the same with the crowd as without it). Families, ties and hangouts are made within a
+  (about four thousand people in all, from three and a half to five thousand); the fourth
+  (`seed:people:ncpd`, `PEOPLE.ncpd`) is the NCPD's officers, `perDistrict` in the districts
+  it still polices, living there with no workplace (off duty, they keep a resident's day).
+  Make a city bigger or smaller with the crowd's numbers, or another draw on a new stream,
+  never by changing an earlier one (`tests/people.test.ts` checks the first two come out the
+  same with the crowd as without it, and the first three with the officers as without them). Families, ties and hangouts are made within a
   draw; coworkers, crews and bios over everyone at the end, except that the crowd knows only
   `crowdKnows` of the people they work with (on a stream of its own), not a whole tower.
 - A city that size has to stay quick on a phone, about four times slower than a desktop.
@@ -568,7 +571,7 @@ move at once and both land together, the player against the clock:
   blades and wire hit for `nonLethal` of what they would (`Edge.wound`); fighting to kill, a
   downing blow kills by its class's `lethal`, a quickhack's by `hackLethal`.
 - `Game.attack(id, now)` goes for someone here (from the `⋯` on their card): it's an `assault`
-  incident at once (the cascade, the mask, witnesses add heat), and a fight in
+  incident at once (the cascade, the mask, and whoever saw it may call the NCPD), and a fight in
   `Game`'s `fightState` until it's over. `Game.fightMove(move, now, hack?)` is a beat, their
   move drawn when it began; `Game.tick` freezes the player past the `deadline`. While it's on,
   `go`, `enter` and `leave` refuse, and the UI lets nothing else be done. `Game.fightView()`
@@ -589,8 +592,8 @@ move at once and both land together, the player against the clock:
   `COMBAT.systems` is what a whole kind of operating system does (a Sandevistan's aim, a
   Berserk's guard in a melee). Drink takes the aim off.
 - How it ends (`FightOutcome`): them down (`killed` by the odds of what dropped them,
-  written to `LifeState.dead` and `diedOn` with a `murder` incident and heat; `trauma` for a
-  corpo, whose Trauma Team gets them out alive, with heat; else `won`, laid up for
+  written to `LifeState.dead` and `diedOn` with a `murder` incident and crime; `trauma` for a
+  corpo, whose Trauma Team gets them out alive; else `won`, laid up for
   `hurtDays` in `LifeState.hurt`, in the hospital nearest home, which the result names), the
   player down (`lost`: robbed of some cash, left at 1; on a Trauma Team plan, picked up
   instead, see Medicine), someone knocked out cold (`out`, `knocked`; below),
@@ -638,14 +641,59 @@ move at once and both land together, the player against the clock:
   (`tell<Move>`) shows their next move by the odds in `COMBAT.tell`, better knowing their
   nature. A new move, outcome or effect is another pool of lines, which the combat test
   checks for.
-- The player's health (`Game.health(now)`, back on the clock by `COMBAT.health`) and NCPD
-  heat (`Game.heat(now)`, stars, cooling by `COMBAT.heat`) are saved as `health` and `heat`
-  (`Meter`); they show in the status drop-down (and HP and stars on its line when there's
-  any). Heat does nothing yet: when the NCPD comes looking, it's read from there.
+- The player's health (`Game.health(now)`, back on the clock by `COMBAT.health`) is saved as
+  `health` (`Meter`); it shows in the status drop-down (and HP on its line when hurt). Who
+  comes looking afterwards is the NCPD's business (below).
 - `src/ui/fight.ts` is the overlay: both health bars, the range and beat on the strip, the
   log, the tell, the clock, the moves (Hack opens the quickhacks) and the kill-or-wound
   button. It can't be closed while the fight is on, and the header's buttons and the keys
   rest.
+
+## The NCPD
+
+There are no stars: nothing is on record unless someone calls it in, and the NCPD comes when
+it comes. It's the wiki's 2077 force, privatized and cut to half its officers: gone from
+Pacifica (a combat zone) and the Badlands, hardly in Watson's Northside, thin in the suburbs.
+
+- `src/engine/police.ts` is the engine's shapes (`Report`, `Dispatch`, `Warrant`,
+  `Confrontation`, `PendingCall`, `PoliceState`, `PoliceView`), `policing` (a district's
+  odds, over by a neighborhood's in `areas`), `chargesFor`, `issueWarrant`; the numbers and
+  the lines are `POLICE` in `src/data/police.ts`, on `GameRules.police` (the tests' `RULES`
+  leave it out, so nobody ever calls there).
+- A crime is `Game`'s private `crime(kind, victim, now, knew, who)`: an `assault` when a
+  fight starts (the witnesses) and ends (the victim), a `robbery` (both), a `murder` (the
+  witnesses still there). Each witness in the room and the victim, if they can, roll
+  `callOdds`: the district's odds for an ordinary witness alone, times `caller`'s for the
+  victim, their people, a guard, a corpo, nerve either way; a ganger hardly ever and never on
+  their gang's own turf; an officer always. Witnesses leave it to each other (`crowd`) and
+  are likelier to call a murder in (`alarm`). Nobody calls: nothing on record, and a line
+  says so (`noCall`, `turf`, `zone`). Someone out cold is a `PendingCall`, rolled when they
+  come to.
+- A call is a `Report` (up to `keep`) and a `Dispatch` to where it happened (a building, a
+  place, or that corner of the street, `dispatchedTo`): two officers of the district (the
+  NCPD people, `unitFor`) on the district's minutes times `urgency`. It's `told` when the
+  player saw it made: only then does the status line count it down ("NCPD · 4:12"). A report
+  names the player only when a caller could put a name to their face (`facesHere`: had met
+  them before, or an officer, who has it on file; nobody in a mask), and a named report is a
+  `Warrant` (`lapseDays`, never for murder).
+- `policeTick` (from `tick`): a hold served, warrants lapsing, pending calls, the unit
+  arriving (the player still at the spot is a `Confrontation`, `why: 'scene'`; gone, a
+  `missed` line if they knew), and a patrol stopping a wanted, unmasked player out on the
+  streets (`stop`, every `minutes`, by the district's odds and the crime's rank; never inside
+  or on a train). The officers on the player are in `peopleHere` wherever they are.
+- `Game.police(now)` is what the UI shows; `answerPolice(choice, now)` is `comply` (the fine
+  for everything they have, `chargesFor`, and the hold for it; short of the fine, held
+  `shortHold` longer instead; every warrant settled), `run` (the `run` odds; away, a warrant
+  if they saw the face; caught, held `resisting` longer) or `fight` (the first officer, while
+  the other's call is backup, and what they came for goes on a warrant if they saw the face;
+  put down by an officer, the player comes to in cuffs, not robbed, and is taken in, held
+  `resisting` longer). Officers on them or held, `detained` refuses going anywhere,
+  rooms, counters, work and robbing; held, nobody's here. Saved as `police`, read by
+  `policeOf`. The event is `policeChanged`.
+- The UI: `policeView` in `main.ts` puts the panel over everything (the officers' text and
+  `pick-1`/`2`/`3`, or the holding cell with the time they let the player out), the sign
+  says Holding cell, the status line has the worst of it (Held, NCPD and the count, Wanted)
+  and the drop-down an NCPD row.
 
 ## Medicine
 

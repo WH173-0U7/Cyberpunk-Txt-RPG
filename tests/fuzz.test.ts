@@ -22,6 +22,7 @@ import { createRng, hashSeed } from '../src/engine/rng';
 import { createSave, readSave, resume, type Progress } from '../src/engine/save';
 import type { Building } from '../src/engine/types';
 import { ROOMS } from '../src/data/rooms';
+import { POLICE } from '../src/data/police';
 
 /**
  * Plays badly on purpose: a few hundred random steps in real cities, buying, wearing, dropping,
@@ -44,6 +45,7 @@ const RULES: GameRules = {
   money: MONEY,
   hours: HOURS,
   rooms: ROOMS,
+  police: POLICE,
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
 };
 
@@ -71,6 +73,12 @@ function digest(ties: Array<{ from: string; to: string; kind: string }>): string
 }
 
 function check(game: Game, about: string): void {
+  // The NCPD: held is never inside anywhere, a unit is two officers at most, one warrant a crime.
+  const ncpd = game.policeSaved;
+  if (ncpd.held !== null) expect(game.interior, `${about}: inside while held`).toBeNull();
+  expect(ncpd.dispatch?.officers.length ?? 0, `${about}: a unit`).toBeLessThanOrEqual(2);
+  expect(new Set(ncpd.warrants.map((w) => w.crime)).size, `${about}: warrants`).toBe(ncpd.warrants.length);
+  expect(ncpd.reports.length, `${about}: reports kept`).toBeLessThanOrEqual(POLICE.keep);
   const pockets = game.gearSaved;
   const items = game.inventory;
   const ids = new Set(pockets.map((p) => p.id));
@@ -115,7 +123,7 @@ function check(game: Game, about: string): void {
   expect(again.youSaved, `${about}: who the player is after a save`).toEqual(game.youSaved);
   expect(again.chromeSaved, `${about}: chrome after a save`).toEqual(game.chromeSaved);
   expect(again.healthSaved, `${about}: health after a save`).toEqual(game.healthSaved);
-  expect(again.heatSaved, `${about}: heat after a save`).toEqual(game.heatSaved);
+  expect(again.policeSaved, `${about}: the NCPD after a save`).toEqual(game.policeSaved);
   expect(again.roomSaved, `${about}: the room after a save`).toEqual(game.roomSaved);
   expect(again.lodgingSaved, `${about}: the rented room after a save`).toEqual(game.lodgingSaved);
   const health = game.health(Date.now());
@@ -189,7 +197,33 @@ describe('playing badly', () => {
         const game = new Game(world, RULES, { ...progress, where: { ...streetSpot({ x: at.x + at.w / 2, y: at.y - 0.5 }), building: at.id }, inside: at.id, trip: null });
         game.start(now);
         const about = `${seed} step ${step} at ${at.name} (${at.business})`;
+        /** A fight, played badly to the end: any move there is, or none in time. */
+        const playOut = () => {
+          for (let beat = 0; beat < 40 && game.fighting; beat++) {
+            const view = game.fightView()!;
+            const moves = view.moves.filter((m) => m.enabled);
+            const move = rng.chance(0.1) || !moves.length ? null : rng.pick(moves)!;
+            if (!move) game.tick(view.deadline + 1);
+            else if (move.id === 'hack') game.fightMove('hack', now, rng.pick(view.hacks.filter((h) => h.enabled))?.id);
+            else game.fightMove(move.id, now);
+            for (const line of game.fightView()?.log ?? []) expect(line, `${about}: a fight's line`).not.toMatch(/[{}]|undefined|NaN/);
+          }
+          expect(game.fighting, `${about}: a fight that never ends`).toBe(false);
+          game.leaveFight();
+        };
         for (let act = 0; act < 4; act++) {
+          // Officers on the player: they go quietly, run or fight, and nothing else till it's settled.
+          const cops = game.police(now).confront;
+          if (cops) {
+            expect(cops.text, `${about}: the NCPD`).not.toMatch(/[{}]|undefined|NaN/);
+            expect(game.leave(), `${about}: walking off from the NCPD`).toBe(false);
+            game.answerPolice(rng.pick(cops.choices)!.id, now);
+            playOut();
+            game.tick(now + act * 60_000);
+            check(game, `${about}, act ${act}`);
+            steps++;
+            continue;
+          }
           const menu = game.menu(now);
           const people = game.peopleHere(now);
           const roll = rng.next();
@@ -229,18 +263,7 @@ describe('playing badly', () => {
             else if (what < 0.55 && game.attack(who, now)) {
               // To kill, now and then; to wound, mostly.
               game.setLethal(rng.chance(0.3));
-              // A fight, played badly to the end: any move there is, or none in time.
-              for (let beat = 0; beat < 40 && game.fighting; beat++) {
-                const view = game.fightView()!;
-                const moves = view.moves.filter((m) => m.enabled);
-                const move = rng.chance(0.1) || !moves.length ? null : rng.pick(moves)!;
-                if (!move) game.tick(view.deadline + 1);
-                else if (move.id === 'hack') game.fightMove('hack', now, rng.pick(view.hacks.filter((h) => h.enabled))?.id);
-                else game.fightMove(move.id, now);
-                for (const line of game.fightView()?.log ?? []) expect(line, `${about}: a fight's line`).not.toMatch(/[{}]|undefined|NaN/);
-              }
-              expect(game.fighting, `${about}: a fight that never ends`).toBe(false);
-              game.leaveFight();
+              playOut();
             }
             else if (what < 0.75 && (game.workWith(who) === 'hire' || game.workWith(who) === 'switch')) game.askForWork(who, now);
             else if (what < 0.78 && game.workWith(who) === 'quit') game.setRoster(who, [rng.int(0, 6), rng.int(0, 6)], now);

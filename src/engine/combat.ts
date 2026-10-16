@@ -9,7 +9,7 @@ import type { WeaponClass, WeaponTech } from './weapons';
  * Kerenzikov or a Sandevistan fitted), and both moves land together. How far apart they are
  * matters: a blade wants arm's reach, a shotgun a room, a rifle the street. The engine here
  * is pure (a beat from two moves and a roll of the dice); who fights with what, what they'd
- * do, and what comes of it (the hurt, the dead, the incident, the heat) are `Game`'s. The
+ * do, and what comes of it (the hurt, the dead, the incident, the NCPD) are `Game`'s. The
  * numbers are in `src/data/combat.ts`; the quickhacks in `src/data/quickhacks.ts`.
  */
 
@@ -461,8 +461,6 @@ export interface CombatContent extends CombatRules {
   systems: Partial<Record<'sandevistan' | 'berserk' | 'cyberdeck', { aim?: number; guard?: number }>>;
   /** Days laid up after losing a fight to the player. */
   hurtDays: [number, number];
-  /** NCPD heat: what each thing adds, how fast it cools, the most there is. */
-  heat: { assault: number; murder: number; trauma: number; coolPerHour: number; max: number };
   /** A tell: the odds of reading someone's next move, more if their nature is known, more with charisma. */
   tell: { base: number; nature: number; charisma: number };
   /** The share of the cash on the player someone takes off them when they go down. */
@@ -555,7 +553,7 @@ export function masteryEdge(edge: Edge, typeBonus: number, modelBonus: number, p
   return out;
 }
 
-/** Something that moves on the clock (health back, heat off): what it was, and when. */
+/** Something that moves on the clock (health coming back): what it was, and when. */
 export interface Meter {
   value: number;
   at: number;
@@ -566,13 +564,6 @@ export interface HealthStatus {
   current: number;
   max: number;
   fullAt: number | null;
-}
-
-/** NCPD heat: how much, in stars, and when it's cooled off. */
-export interface HeatStatus {
-  level: number;
-  stars: number;
-  coolAt: number | null;
 }
 
 /** How a fight ended: the other down (alive, dead, or got out by Trauma Team), the player down, one of them gone, or talked out of it. */

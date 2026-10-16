@@ -151,7 +151,6 @@ export const COMBAT: CombatContent = {
   // A Sandevistan sharpens the aim; a Berserk takes the edge off what lands (its page's damage reduction).
   systems: { sandevistan: { aim: 1.15 }, berserk: { guard: 0.7 } },
   hurtDays: [2, 6],
-  heat: { assault: 1, murder: 3, trauma: 2, coolPerHour: 0.5, max: 5 },
   tell: { base: 0.35, nature: 0.25, charisma: 0.03 },
   robbed: [0.3, 0.7],
   // Fists and blunt weapons put people out cold (the wiki's blunt weapons are non-lethal): a punch

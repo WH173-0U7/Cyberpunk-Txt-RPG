@@ -434,7 +434,18 @@ own.
   they're laid up in the hospital nearest home for days, or dead (a murder, the whole
   district hears); a corpo's Trauma Team gets them out alive. Go down yourself and they go
   through your pockets, unless you're on a Trauma Team plan. Your health comes back on the
-  clock; NCPD heat (stars in the status drop-down) cools off.
+  clock.
+- **The NCPD**: there are no wanted stars. Nothing goes on record unless someone calls it
+  in: whoever saw it, or the one it was done to, by where it happened and who they are.
+  Downtown and in Westbrook most do; in Watson few; on a gang's own turf no ganger ever does;
+  in Pacifica and the Badlands nobody does, because the NCPD doesn't come. See it called in
+  and a unit is on its way, counting down on the status line. Still there when two officers
+  arrive, and you **Comply** (a fine, and a holding cell for a robbery or a killing, real
+  minutes on the clock), **Run** for it, or **Fight** (and if they put you down, you wake
+  up in cuffs). A report names you only if somebody
+  who saw your face already knew you (or an officer did), and a named report is a warrant:
+  a patrol may stop you on the street while it lasts. A mask keeps your face out of all of
+  it.
 - **Knockouts and fighting skills**: a hard punch or a club can knock someone out cold
   before they're beaten, likelier the more worn down they are. They lie where they fell for
   a few minutes, hurt no worse than a headache, and nobody can talk to them till they come

@@ -70,6 +70,11 @@ export interface PeopleContent {
   /** The third draw, on a stream of its own, so the first two stay as every save knows them: the crowd, the same way; and how many of the people they work with each of them knows. */
   crowd: Crowd;
   crowdKnows: number;
+  /**
+   * The fourth draw, on a stream of its own: the NCPD's officers, by district (none where the
+   * NCPD doesn't go), living in its homes, with their ranks. Beat cops go in pairs.
+   */
+  ncpd?: { perDistrict: Record<string, number>; roles: string[] };
   /** Who carries a credchip, and with how much on it: the odds and the range, for corpos, gangers and the street. */
   chips: Record<'corpo' | 'gang' | 'street', { chance: number; range: [number, number] }>;
   /** Kinds of place people go to in the evening. */
@@ -274,8 +279,12 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
         for (let i = 0; i < count; i++) make({ role: how.role(rng, b, i), building: b.id }, null);
       }
       // The neighborhood: people with other jobs, or none to speak of.
-      const residents = how.residents(rng, homes);
+      const residents = how.residents(rng, homes, district.id);
       for (let i = 0; i < residents; i++) {
+        if (how.work) {
+          make({ role: how.work(rng), building: null }, null);
+          continue;
+        }
         const place = workplaces.length && rng.chance(0.55) ? rng.pick(workplaces) : null;
         const role = place ? rng.pick(content.roles.kind[place.kind] ?? content.roles.freelance) : rng.pick(content.roles.freelance);
         make({ role, building: place?.id ?? null }, null);
@@ -378,6 +387,17 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
   const known = people.length;
   draw(createRng(`${world.seed}:people:crowd`), filling(content.crowd));
   const crowd = new Set(people.slice(known));
+  // The fourth is the NCPD: officers living in the districts it still polices.
+  const ncpd = content.ncpd;
+  if (ncpd) {
+    draw(createRng(`${world.seed}:people:ncpd`), {
+      staff: () => 0,
+      role: () => '',
+      residents: (_rng, homes, district) => (homes.length ? (ncpd.perDistrict[district] ?? 0) : 0),
+      gang: () => 0,
+      work: (rng) => rng.pick(ncpd.roles),
+    });
+  }
 
   // Coworkers and crews know each other (gangers hold no storefront job, so nobody is both).
   const byWork = new Map<string, Person[]>();
@@ -421,8 +441,10 @@ export interface Crowd {
 interface Draw {
   staff: (rng: Rng, building: Building) => number;
   role: (rng: Rng, building: Building, index: number) => string;
-  residents: (rng: Rng, homes: Building[]) => number;
+  residents: (rng: Rng, homes: Building[], district: string) => number;
   gang: (rng: Rng, weight: number) => number;
+  /** For a draw of people in one line of work (the NCPD): what each resident's job is, with no workplace. */
+  work?: (rng: Rng) => string;
 }
 
 /**

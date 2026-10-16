@@ -253,6 +253,12 @@ export const PEOPLE: PeopleContent = {
   // The third draw: the homes as full as Night City's are, a megabuilding most of all, a few more hands behind the counters, and the gangs a little deeper.
   crowd: { staff: 0.3, perHome: [2, 6], tall: 8, megabuilding: 20, gangs: 0.5 },
   crowdKnows: 3,
+  // The NCPD, after the wiki's 2077: privatized and cut to half its officers, gone from Pacifica, rarely seen
+  // in the Badlands, thickest downtown. Officers in pairs, a sergeant over them, the odd detective.
+  ncpd: {
+    perDistrict: { city_center: 16, westbrook: 12, heywood: 10, watson: 8, santo_domingo: 6 },
+    roles: ['NCPD officer', 'NCPD officer', 'NCPD officer', 'NCPD sergeant', 'NCPD detective'],
+  },
   // Credchips (the wiki's 2020 chips of eurodollars): corpos nearly always carry one with real money on it; the street often, with less; gangers deal in cash.
   chips: { corpo: { chance: 0.8, range: [80, 500] }, gang: { chance: 0.2, range: [20, 120] }, street: { chance: 0.45, range: [15, 150] } },
   // Street names: made up, checked against the wiki so none is a canon character's (and none a canon weapon or perk). Most gangers go by one, some on the street, corpos never.
