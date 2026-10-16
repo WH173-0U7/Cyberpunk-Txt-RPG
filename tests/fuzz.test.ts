@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CHARISMA } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
 import { LIFE } from '../src/data/life';
-import { COMBAT } from '../src/data/combat';
+import { COMBAT, JOIN } from '../src/data/combat';
 import { CITY } from '../src/data/city';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
@@ -46,6 +46,7 @@ const RULES: GameRules = {
   hours: HOURS,
   rooms: ROOMS,
   police: POLICE,
+  join: JOIN,
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
 };
 
@@ -201,6 +202,9 @@ describe('playing badly', () => {
         const playOut = () => {
           for (let beat = 0; beat < 40 && game.fighting; beat++) {
             const view = game.fightView()!;
+            // Now and then, someone else of theirs.
+            const rest = view.foes.filter((x) => !x.target);
+            if (rest.length && rng.chance(0.2)) game.fightTarget(rng.pick(rest)!.id, now);
             const moves = view.moves.filter((m) => m.enabled);
             const move = rng.chance(0.1) || !moves.length ? null : rng.pick(moves)!;
             if (!move) game.tick(view.deadline + 1);

@@ -20,6 +20,9 @@ export interface FightElements extends OverlayElements {
   result: HTMLElement;
   done: HTMLButtonElement;
   lethal: HTMLButtonElement;
+  /** The rest of their side, to go for instead; and whoever's on the player's. */
+  foes: HTMLElement;
+  allies: HTMLElement;
 }
 
 export interface FightHandlers {
@@ -27,6 +30,8 @@ export interface FightHandlers {
   onMove(move: Move, hack?: string): void;
   /** The player chose to fight to kill, or to wound. */
   onLethal(on: boolean): void;
+  /** The player went for someone else of theirs. */
+  onTarget(id: string): void;
 }
 
 /**
@@ -65,6 +70,10 @@ export class FightPanel {
       }
       this.handlers.onMove(move);
     });
+    els.foes.addEventListener('click', (e) => {
+      const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('[data-target]') : null;
+      if (button?.dataset.target && !button.disabled) this.handlers.onTarget(button.dataset.target);
+    });
     els.hacks.addEventListener('click', (e) => {
       const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('[data-hack]') : null;
       if (button?.dataset.hack && !button.disabled) this.handlers.onMove('hack', button.dataset.hack);
@@ -82,6 +91,30 @@ export class FightPanel {
     els.themArm.textContent = view.them.arm;
     els.themHp.textContent = view.them.hp > 0 ? `${view.them.hp}/${view.them.max}` : 'Down';
     els.themFill.style.width = `${Math.round((view.them.hp / Math.max(1, view.them.max)) * 100)}%`;
+    // In a fight of more than two: the rest of theirs (tap one to go for them), and anyone on the player's side.
+    const rest = view.foes.filter((f) => !f.target);
+    els.foes.hidden = rest.length === 0;
+    els.foes.replaceChildren(
+      ...rest.map((f) => {
+        const li = el('li', 'fight-mate');
+        const button = el('button', 'fight-mate-go');
+        button.type = 'button';
+        button.dataset.target = f.id;
+        button.disabled = Boolean(view.over);
+        button.setAttribute('aria-label', `Go for ${f.name}: ${f.hp} of ${f.max}, ${f.arm}`);
+        button.append(...crewRow(f.name, f.arm, f.hp, f.max));
+        li.append(button);
+        return li;
+      }),
+    );
+    els.allies.hidden = view.allies.length === 0;
+    els.allies.replaceChildren(
+      ...view.allies.map((a) => {
+        const li = el('li', 'fight-mate is-ally');
+        li.append(...crewRow(a.name, a.arm, a.hp, a.max));
+        return li;
+      }),
+    );
     els.tell.hidden = !view.tell;
     els.tell.textContent = view.tell ?? '';
     els.log.replaceChildren(...view.log.map((text, i) => el('li', `fight-beat${i === view.log.length - 1 ? ' is-last' : ''}`, text)));
@@ -154,6 +187,16 @@ export class FightPanel {
     this.beat = -1;
     this.hacksOpen = false;
   }
+}
+
+/** A small row for someone else in the fight: name, what they hold, their health. */
+function crewRow(name: string, arm: string, hp: number, max: number): HTMLElement[] {
+  const bar = el('span', 'fight-bar');
+  bar.setAttribute('aria-hidden', 'true');
+  const fill = el('span', 'fight-fill');
+  fill.style.width = `${Math.round((hp / Math.max(1, max)) * 100)}%`;
+  bar.append(fill);
+  return [el('span', 'fight-mate-who', name), el('span', 'fight-mate-hp', hp > 0 ? `${hp}/${max}` : 'Down'), el('span', 'fight-mate-arm', arm), bar];
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {

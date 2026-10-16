@@ -34,7 +34,7 @@ import { WeatherFx } from './fx/weather';
 import { ITEM_KINDS } from './data/items';
 import { ARMS, ARMS_BLURBS } from './data/weapons';
 import { CHROME, CHROME_BLURBS } from './data/cyberware';
-import { COMBAT } from './data/combat';
+import { COMBAT, JOIN } from './data/combat';
 import { HACKS } from './data/quickhacks';
 import { MEDICAL } from './data/medical';
 import { HOURS } from './data/hours';
@@ -244,6 +244,8 @@ const fight = new FightPanel(
     result: $('#fight-result'),
     done: $<HTMLButtonElement>('#fight-done'),
     lethal: $<HTMLButtonElement>('#fight-lethal'),
+    foes: $('#fight-foes'),
+    allies: $('#fight-allies'),
   },
   () => {
     const view = game.fightView();
@@ -263,6 +265,10 @@ const fight = new FightPanel(
     onLethal: (on) => {
       lastActivity = performance.now();
       game.setLethal(on);
+    },
+    onTarget: (id) => {
+      lastActivity = performance.now();
+      game.fightTarget(id, Date.now());
     },
   },
   reducedMotion,
@@ -1712,7 +1718,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, police: POLICE }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, police: POLICE, join: JOIN }, progress);
   wire(game);
   map.setWorld(world);
   try {

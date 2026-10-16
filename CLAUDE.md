@@ -611,6 +611,25 @@ move at once and both land together, the player against the clock:
   `LINES.you.robCold` and `LINES.rob.cold`/`coldNothing`, and once a week like any robbery). The player
   out (`knocked`): robbed like `lost`, but their health is what it was, and no Trauma Team
   comes for it. How steady someone is is `COMBAT.steady` (the brave and gangers steadier).
+- Fights of more than two (`GameRules.join`, `JOIN` in `src/data/combat.ts`; the tests' `RULES`
+  leave it out, so their fights stay the player and one other): when a fight starts, and a
+  `perBeat` share of it every beat after, whoever's here may throw in (`joinFight`): against
+  the player, by what they are to anyone on the other side (family, friends and crew, their
+  gang), the place's own guard, an NCPD officer always, a stranger hardly ever and less in a
+  crowd; for the player, a friend (`friendly` rapport) or the one they're seeing; all by nerve,
+  never more than `foes` with the one gone for, or `allies`. Everyone else is a `Combatant`
+  (`Fight.others`: their `Fighter`, the `range` to whoever they're fighting, their `mark`, their
+  next move). The player and the one they're going for (`Fight.with`, `Fight.state`) fight as
+  ever; then `otherBeats`: the rest of theirs on the player each get a free go (the player's
+  move there is `busy`, but for cover, which covers them from everyone), and each ally has it
+  out with one of theirs; a fighter's own exchange moves them and wears off what's on them,
+  anywhere else only what lands counts. `fightTarget(id)` goes for another of theirs; when the
+  one gone for is dealt with and more are left, `nextFoe` settles them (`settleFoe`, as the end
+  of a fight would) and the next is up; anyone else out of it is `dropOut` (an ally may die of
+  what dropped them; anyone downed by an ally lives). The fight is over when the player is
+  down, out or away, or nobody of theirs is left; downed by an officer, cuffed. The lines are
+  `COMBAT.group`; `FightView.foes` and `allies` are the rows under each side in the overlay
+  (theirs tap to go for them).
 - Killing someone out cold (`COMBAT.finish`, `FinishKind`): `Game.finishes(id, now)` is the
   ways the player has, by what they carry and have fitted (`finishTools`): choke and stomp
   with bare hands always, cut with a blade (Mantis Blades too), shoot with a loaded gun (a

@@ -18,7 +18,8 @@ export type Range = 'reach' | 'close' | 'far';
 export const RANGES: readonly Range[] = ['reach', 'close', 'far'];
 
 /** What a fighter can do in a beat: attack with what they've got, close in, back off, take cover (and reload), quickhack, talk it down, run; freezing is what happens when the clock runs out. */
-export type Move = 'attack' | 'advance' | 'back' | 'cover' | 'hack' | 'heal' | 'talk' | 'run' | 'freeze';
+/** `busy`: taken up with someone else this beat (in a fight of more than two): nothing done to this one, nothing told. */
+export type Move = 'attack' | 'advance' | 'back' | 'cover' | 'hack' | 'heal' | 'talk' | 'run' | 'freeze' | 'busy';
 
 /** The ways of fighting: every class of weapon, bare fists, and the chrome in an arm. */
 export type FightClass = WeaponClass | 'fists' | 'mantis-blades' | 'gorilla-arms' | 'monowire' | 'launcher';
@@ -476,6 +477,36 @@ export interface CombatContent extends CombatRules {
   mastery: MasteryRules;
   /** Killing someone who lies out cold: the ways there are, and who'd stop it. */
   finish: FinishContent;
+  /**
+   * The lines of a fight of more than two: someone joining (`joinThem`, `joinYou`: `{who}`,
+   * `{he}`, `{s}`, and `{target}` the one the player went for), the next one up (`nextUp`), the
+   * allies' blows and theirs (`allyHit`, `allyMiss`, `allyHurt`: `{ally}`, `{foe}`, `{dmg}`), and
+   * someone out of it (`allyDown`, `allyOut`, `foeDown`, `foeOut`; `fled`, `backDown`: `{who}`).
+   */
+  group: Record<string, string[]>;
+}
+
+/**
+ * Who throws in when a fight starts, and every beat after (`perBeat` of the odds): against the
+ * player, by what they are to someone on the other side (family, friends, their gang), the
+ * place's own guard, an NCPD officer (always), a stranger hardly ever and less in a crowd; for
+ * the player, a friend (rapport at least `friendly`) or the one they're seeing. All times their
+ * nerve (half again for the bravest, half for the most timid). Never more than `foes` with the
+ * one the player went for, or `allies`.
+ */
+export interface JoinRules {
+  kin: number;
+  friend: number;
+  gang: number;
+  guard: number;
+  stranger: number;
+  crowd: number;
+  friendly: number;
+  ally: number;
+  partner: number;
+  perBeat: number;
+  foes: number;
+  allies: number;
 }
 
 /** A way to kill someone lying out cold: bare hands, a boot, a blade, a gun, something blunt, a monowire. */
@@ -620,6 +651,10 @@ export interface FightView {
   ramMax: number;
   /** Aiming to kill, or (the player's choice, kept between fights) to wound. */
   lethal: boolean;
+  /** Everyone on their side, the one the player's going for first: to pick another. */
+  foes: Array<{ id: string; name: string; hp: number; max: number; arm: string; target: boolean }>;
+  /** Whoever's in it on the player's side. */
+  allies: Array<{ id: string; name: string; hp: number; max: number; arm: string }>;
   over: FightOutcome | null;
   result: string;
 }

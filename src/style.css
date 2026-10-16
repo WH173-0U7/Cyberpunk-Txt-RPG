@@ -3110,6 +3110,64 @@ button {
   background: var(--danger);
   box-shadow: 0 0 8px color-mix(in srgb, var(--danger) 55%, transparent);
 }
+/* The rest of a fight of more than two: small rows under each side; theirs tap to go for them. */
+.fight-crew {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.fight-mate-go,
+.fight-mate.is-ally {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 1px 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--muted) 30%, transparent);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.fight-mate-go {
+  cursor: pointer;
+}
+.fight-mate-go:hover:not(:disabled),
+.fight-mate-go:focus-visible {
+  border-color: var(--danger);
+}
+.fight-mate-who {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fight-mate-hp {
+  color: #ffd84d;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.fight-mate-arm {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.fight-mate .fight-bar {
+  height: 4px;
+}
+.fight-mate-go .fight-fill {
+  background: var(--danger);
+  box-shadow: none;
+}
 .fight-log {
   flex: 1;
   min-height: 72px;

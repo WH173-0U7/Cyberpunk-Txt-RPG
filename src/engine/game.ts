@@ -3,7 +3,7 @@ import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergySt
 import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
-import { masteryEdge, NO_EDGE, perkFamily, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
+import { masteryEdge, NO_EDGE, perkFamily, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
 import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
@@ -135,6 +135,8 @@ export interface GameRules extends TravelRules {
   rooms?: RoomsContent;
   /** The NCPD: who calls it in, how fast it comes, warrants. Without it (the tests' rules leave it out), nobody ever calls. */
   police?: PoliceContent;
+  /** Who throws in on a fight. Without it (the tests' rules leave it out), every fight is the player and one other. */
+  join?: JoinRules;
 }
 
 /** Whether counters keep the hours of whoever works them, and how many hours ahead to look for when one opens. */
@@ -212,8 +214,27 @@ interface Fight {
   nerve: { courage: number; temper: number };
   /** Who here could have put a name to the player's face when it began: what a call names them by. */
   knew: Set<string>;
+  /** Everyone else in it: more of theirs, and anyone on the player's side. */
+  others: Combatant[];
+  /** Who it was with first, and whether the player went for them (an assault on them) or they for the player. */
+  started: string;
+  byYou: boolean;
+  /** Whoever's been dealt with (down, out, gone), and what was said of those the player went for along the way. */
+  settled: Set<string>;
+  notes: string[];
   over: FightOutcome | null;
   result: string;
+}
+
+/** Someone else in a fight of more than two: of theirs, or on the player's side (`ally`); who they're fighting (`mark`: `you`, or someone's id) and how far off; their move to come. */
+interface Combatant {
+  id: string;
+  ally: boolean;
+  fighter: Fighter;
+  range: Range;
+  mark: string;
+  next: Move;
+  nerve: { courage: number; temper: number };
 }
 
 /** Bare hands. */
@@ -1257,29 +1278,11 @@ export class Game {
   private openFight(here: Presence, now: number, lead: string | null): void {
     const { person, stance, doing } = here;
     const id = person.id;
-    const { combat, society, timeScale } = this.rules;
+    const { society, timeScale } = this.rules;
     const indoors = Boolean(this.inside);
     const health = this.health(now);
     const range: Range = 'close';
-    const theirs = this.armOf(person);
-    const them: Fighter = {
-      hp: this.healthOf(person),
-      max: this.healthOf(person),
-      arm: theirs,
-      loaded: theirs.magazine,
-      spare: theirs.magazine * combat.spareMags,
-      armor: this.armorOf(person),
-      covered: false,
-      blind: 0,
-      jammed: 0,
-      crippled: 0,
-      chromeOff: 0,
-      burn: 0,
-      burning: 0,
-      regen: 0,
-      regening: 0,
-      charges: combat.classes[theirs.cls]?.charges ?? 0,
-    };
+    const them = this.fighterOf(person);
     const ram = this.ramMax();
     const state: FightState = { range, beat: 0, you: { ...this.yourFighter(range, 1), hp: health.current, max: health.max }, them, ram, ramMax: ram, ramSpent: 0 };
     const before = this.snapshot(person, now);
@@ -1289,9 +1292,11 @@ export class Game {
     const fallout = lead === null ? this.incident('assault', person, 0, now) : [id];
     learnOf(this.society, id, 'met');
     changeStanding(this.society, id, this.masked() ? {} : { met: true }, society, timeScale, now);
-    this.fightState = { with: id, state, indoors, startedAt: now, deadline: now, next: 'attack', tell: null, log: [], beatLines: [], revived: false, over: null, result: '', launched: false, nerve: { courage: person.traits.courage, temper: person.traits.temper }, knew };
+    this.fightState = { with: id, state, indoors, startedAt: now, deadline: now, next: 'attack', tell: null, log: [], beatLines: [], revived: false, over: null, result: '', launched: false, nerve: { courage: person.traits.courage, temper: person.traits.temper }, knew, others: [], started: id, byYou: lead === null, settled: new Set(), notes: [] };
     if (lead === null) this.fightLine('start', person, { ...speaker.vars, ...this.fightVars(person, state.you, state.them) });
     else this.fightState.beatLines.push(lead);
+    // Whoever here throws in, on one side or the other.
+    this.joinFight(now, true);
     this.closeBeat();
     this.nextBeat(person, now);
     if (lead === null) {
@@ -1302,6 +1307,19 @@ export class Game {
     }
     this.events.emit('societyChanged', { people: fallout });
     this.events.emit('fightChanged', this.fightView());
+  }
+
+  /** Someone's side of a fight, fresh: their health, what they carry and the rounds for it, their armor. */
+  private fighterOf(person: Person): Fighter {
+    const { combat } = this.rules;
+    const arm = this.armOf(person);
+    const hp = this.healthOf(person);
+    return { hp, max: hp, arm, loaded: arm.magazine, spare: arm.magazine * combat.spareMags, armor: this.armorOf(person), covered: false, blind: 0, jammed: 0, crippled: 0, chromeOff: 0, burn: 0, burning: 0, regen: 0, regening: 0, charges: combat.classes[arm.cls]?.charges ?? 0 };
+  }
+
+  /** What someone other than the player brings to a fight: a smart gun's tracking, how hard they are to knock out. */
+  private edgeOf(person: Person, fighter: Fighter): Edge {
+    return { ...NO_EDGE, smart: fighter.arm.tech === 'Smart', steady: this.steadyOf(person) };
   }
 
   /** What there is to do in the fight this beat, and what each would be done with. */
@@ -1350,6 +1368,17 @@ export class Game {
       ram: s.ram,
       ramMax: s.ramMax,
       lethal: this.lethalOn,
+      foes: [
+        { id: f.with, name: this.fightName(person, true), hp: s.them.hp, max: s.them.max, arm: theirs.short, target: true },
+        ...f.others.filter((c) => !c.ally).flatMap((c) => {
+          const p = this.person(c.id);
+          return p ? [{ id: c.id, name: this.fightName(p, true), hp: c.fighter.hp, max: c.fighter.max, arm: this.theirArmNow(c.fighter).short, target: false }] : [];
+        }),
+      ],
+      allies: f.others.filter((c) => c.ally).flatMap((c) => {
+        const p = this.person(c.id);
+        return p ? [{ id: c.id, name: this.fightName(p, true), hp: c.fighter.hp, max: c.fighter.max, arm: this.theirArmNow(c.fighter).short }] : [];
+      }),
       over: f.over,
       result: f.result,
     };
@@ -1380,7 +1409,7 @@ export class Game {
     const armed = Boolean(drawWeapon(this.items, gear.arms)?.gun);
     const result = resolveBeat(state, move, theirs, {
       you: this.yourEdge(state.you),
-      them: { ...NO_EDGE, smart: state.them.arm.tech === 'Smart', steady: this.steadyOf(person) },
+      them: this.edgeOf(person, state.them),
       ...(chosen ? { hack: { id: chosen.id, ram: chosen.ram, effect: gear.hacks.hacks[chosen.id]!.effect } } : {}),
       ...(dose ? { med: { heal: dose.med.heal, ...(dose.med.regen ? { regen: dose.med.regen } : {}) } } : {}),
       indoors: f.indoors,
@@ -1411,26 +1440,288 @@ export class Game {
       if (e.who === 'you' && (e.what === 'hit' || e.what === 'hack') && s.them.hp <= 0 && !finisher) finisher = e.what === 'hack' ? 'hack' : state.you.arm.cls;
     }
     if (s.them.hp <= 0 && !finisher) finisher = 'hack';
-    this.trainFrom(result.events, state.you.arm, s.them.hp <= 0 && finisher !== 'hack');
+    // Everyone else in it has their beat too: whoever else is on the player, and the allies with theirs.
+    const others = result.fled === 'you' ? null : this.otherBeats(move);
+    const events = [...result.events, ...(others?.events ?? [])];
+    this.trainFrom(events, state.you.arm, finisher !== null && finisher !== 'hack');
     // How it stands: someone down, someone gone, or talked out of it.
     if (s.you.hp <= 0 && !f.revived && this.fitted.some((x) => combat.chrome[x.id]?.revive)) {
       f.revived = true;
       s.you.hp = s.you.max;
       this.fightLine('revive', person, vars);
     }
-    // Aiming to wound, nobody dies of it; aiming to kill, as often as what dropped them does.
-    const lethal = !this.lethalOn ? 0 : finisher === 'hack' ? combat.hackLethal : (combat.classes[finisher ?? 'fists']?.lethal ?? 0);
-    if (s.them.hp <= 0) this.endFight(person, lethal, rng, vars, now);
-    else if (s.you.hp <= 0) this.endFight(person, 0, rng, vars, now, 'lost');
-    else if (result.out === 'them') this.endFight(person, 0, rng, vars, now, 'out');
-    else if (result.out === 'you') this.endFight(person, 0, rng, vars, now, 'knocked');
+    // Aiming to wound, nobody dies of it; aiming to kill, as often as what dropped them does. Downed by an ally (no finisher of the player's), nobody's killed.
+    const lethal = !this.lethalOn || !finisher ? 0 : finisher === 'hack' ? combat.hackLethal : (combat.classes[finisher]?.lethal ?? 0);
+    // The one the player's going for: down, out, gone, or talked out of it.
+    const done: FightOutcome | null = s.them.hp <= 0 ? 'won' : result.out === 'them' || others?.target === 'out' ? 'out' : result.fled === 'them' || others?.target === 'escaped' ? 'escaped' : result.talked && result.fled !== 'you' ? 'talked' : null;
+    // Whoever else is out of it goes, before it's said whether anyone's left.
+    for (const d of others?.dropped ?? []) this.dropOut(d.id, d.how, d.by, now);
+    const left = f.others.some((c) => !c.ally);
+    const downer = others?.downedBy ? this.person(others.downedBy) : undefined;
+    const knocker = others?.knockedBy ? this.person(others.knockedBy) : undefined;
+    const varsOf = (p: Person) => ({ ...this.speakerFor(p, 'hostile', '', now).vars, ...this.fightVars(p, s.you, this.combatant(p.id)?.fighter ?? s.them) });
+    if (done === 'won' && !left) this.endFight(person, lethal, rng, vars, now);
+    else if (s.you.hp <= 0) this.endFight(downer ?? person, 0, rng, downer ? varsOf(downer) : vars, now, 'lost');
+    else if (result.out === 'you' || knocker) this.endFight(knocker ?? person, 0, rng, knocker ? varsOf(knocker) : vars, now, 'knocked');
     else if (result.fled === 'you') this.endFight(person, 0, rng, vars, now, 'fled');
-    else if (result.fled === 'them') this.endFight(person, 0, rng, vars, now, 'escaped');
-    else if (result.talked) this.endFight(person, 0, rng, vars, now, 'talked');
-    else this.nextBeat(person, now);
+    else if (done && !left) this.endFight(person, 0, rng, vars, now, done);
+    else {
+      // Someone else is still in it: this one's dealt with, and the next one is up.
+      if (done) this.nextFoe(person, done === 'won' ? null : done, lethal, rng, vars, now);
+      this.joinFight(now, false);
+      this.nextBeat(this.person(f.with) ?? person, now);
+    }
     this.closeBeat();
     this.events.emit('fightChanged', this.fightView());
     return true;
+  }
+
+  /**
+   * The beat for everyone in the fight but the player and the one they're going for: anyone
+   * else on the player gets a free go at them (the player's `busy`, but for cover, which covers
+   * them from everyone), and each ally has it out with their own. Each fighter's own exchange
+   * moves them and wears off what's on them; anywhere else, only what lands counts. What lands
+   * on the player is in `events`; who's out of it in `dropped`; what an ally did to the one the
+   * player's going for in `target`.
+   */
+  private otherBeats(move: Move): { events: BeatEvent[]; dropped: Array<{ id: string; how: 'down' | 'out' | 'fled' | 'talked'; by: string | null }>; downedBy: string | null; knockedBy: string | null; target: 'out' | 'escaped' | 'down' | null } {
+    const f = this.fightState!;
+    const { combat } = this.rules;
+    const s = f.state;
+    const events: BeatEvent[] = [];
+    const dropped: Array<{ id: string; how: 'down' | 'out' | 'fled' | 'talked'; by: string | null }> = [];
+    let downedBy: string | null = null;
+    let knockedBy: string | null = null;
+    let target: 'out' | 'escaped' | 'down' | null = null;
+    const gone = (id: string) => dropped.some((d) => d.id === id) || (id === f.with && (target !== null || s.them.hp <= 0));
+    for (const c of f.others) {
+      const cp = this.person(c.id);
+      if (!cp || gone(c.id)) continue;
+      const rng = createRng(`${this.world.seed}:fight:${f.with}:${f.startedAt}:${s.beat}:${c.id}`);
+      if (!c.ally && c.mark === 'you') {
+        // Someone else on the player: they swing, the player's taken up with the one they're going for.
+        if (s.you.hp <= 0 || knockedBy) break;
+        const pairYou = { ...s.you, burning: 0, regening: 0 };
+        const r = resolveBeat({ ...s, range: c.range, you: pairYou, them: { ...c.fighter, arm: this.theirArmNow(c.fighter) } }, move === 'cover' ? 'cover' : 'busy', c.next, { you: this.yourEdge(s.you), them: this.edgeOf(cp, c.fighter), indoors: f.indoors, talkOdds: 0, rng, rules: combat });
+        s.you.hp = Math.max(0, s.you.hp - (pairYou.hp - r.state.you.hp));
+        c.fighter = { ...r.state.them, arm: c.fighter.arm };
+        c.range = r.state.range;
+        // Not the one the player's going for: named, never "he", so it's plain who; a named subject takes the singular verb.
+        const named = this.fightVars(cp, s.you, c.fighter);
+        const vars = { ...named, he: named.who!, He: named.Who!, s: 's', es: 'es', ies: 'ies', is: 'is', has: 'has' };
+        for (const e of r.events) {
+          if (e.who !== 'them') continue;
+          const key = this.eventLine(e);
+          if (key) this.fightLine(key, cp, { ...vars, dmg: 'dmg' in e ? String(e.dmg) : '' });
+          events.push(e);
+        }
+        if (r.out === 'you') knockedBy = cp.id;
+        if (s.you.hp <= 0 && !downedBy) downedBy = cp.id;
+        if (c.fighter.hp <= 0) dropped.push({ id: c.id, how: 'down', by: null });
+        else if (r.fled === 'them') dropped.push({ id: c.id, how: 'fled', by: null });
+        else if (r.talked) dropped.push({ id: c.id, how: 'talked', by: null });
+        continue;
+      }
+      if (!c.ally) continue;
+      // An ally and the one they're fighting: the one the player's going for, or someone else of theirs.
+      const main = c.mark === f.with;
+      const foe = main ? null : f.others.find((o) => o.id === c.mark && !o.ally);
+      const fp = this.person(c.mark);
+      if (!fp || (!main && !foe) || gone(c.mark)) continue;
+      const theirs = main ? s.them : foe!.fighter;
+      // The foe's own exchange only if it's this ally they're fighting.
+      const primary = Boolean(foe && foe.mark === c.id);
+      const pairThem = primary ? { ...theirs, arm: this.theirArmNow(theirs) } : { ...theirs, arm: this.theirArmNow(theirs), burning: 0, regening: 0 };
+      const r = resolveBeat({ ...s, range: c.range, you: c.fighter, them: pairThem, ram: 0, ramMax: 0, ramSpent: 0 }, c.next, primary ? foe!.next : 'busy', { you: this.edgeOf(cp, c.fighter), them: this.edgeOf(fp, theirs), indoors: f.indoors, talkOdds: 0, rng, rules: combat });
+      c.fighter = { ...r.state.you, arm: c.fighter.arm };
+      c.range = r.state.range;
+      const lost = pairThem.hp - r.state.them.hp;
+      if (main) s.them.hp = Math.max(0, s.them.hp - lost);
+      else if (primary) {
+        foe!.fighter = { ...r.state.them, arm: foe!.fighter.arm };
+        foe!.range = r.state.range;
+      } else foe!.fighter.hp = Math.max(0, foe!.fighter.hp - lost);
+      const vars = { ally: this.fightName(cp, false), Ally: this.fightName(cp, true), foe: this.fightName(fp, false), Foe: this.fightName(fp, true) };
+      for (const e of r.events) {
+        const pool = e.what === 'hit' ? (e.who === 'you' ? 'allyHit' : 'allyHurt') : e.what === 'miss' && e.who === 'you' ? 'allyMiss' : null;
+        if (pool) this.groupLine(pool, `${c.id}:${s.beat}:${events.length}`, { ...vars, dmg: 'dmg' in e ? String(e.dmg) : '' });
+      }
+      const foeHp = main ? s.them.hp : foe!.fighter.hp;
+      if (c.fighter.hp <= 0) dropped.push({ id: c.id, how: 'down', by: c.mark });
+      else if (r.out === 'you') dropped.push({ id: c.id, how: 'out', by: c.mark });
+      else if (r.fled === 'you') dropped.push({ id: c.id, how: 'fled', by: null });
+      if (main) {
+        if (foeHp <= 0) target = 'down';
+        else if (r.out === 'them') target = 'out';
+        else if (r.fled === 'them') target = 'escaped';
+      } else if (foeHp <= 0) dropped.push({ id: c.mark, how: 'down', by: c.id });
+      else if (r.out === 'them') dropped.push({ id: c.mark, how: 'out', by: c.id });
+      else if (r.fled === 'them') dropped.push({ id: c.mark, how: 'fled', by: null });
+    }
+    return { events, dropped, downedBy, knockedBy, target };
+  }
+
+  /** Someone else in the fight, by id. */
+  private combatant(id: string): Combatant | undefined {
+    return this.fightState?.others.find((c) => c.id === id);
+  }
+
+  /** A group fight's line, picked fresh, as part of the beat. */
+  private groupLine(pool: string, salt: string, vars: Record<string, string>): void {
+    const f = this.fightState;
+    const lines = this.rules.combat.group[pool];
+    if (!f || !lines?.length) return;
+    const rng = createRng(`${this.world.seed}:groupline:${f.startedAt}:${salt}:${pool}`);
+    const lately = [...f.log.slice(-4), ...f.beatLines];
+    const filled = lines.map((text) => finish(text, vars));
+    const fresh = filled.filter((text) => !saidIn(lately, text));
+    f.beatLines.push(rng.pick(fresh.length ? fresh : filled)!);
+  }
+
+  /**
+   * Someone else out of the fight: down (an ally laid up, or killed as often as what dropped
+   * them does; anyone else of theirs laid up), out cold where they fell, or gone (run off, or
+   * backed down). Whoever was fighting them turns to someone else.
+   */
+  private dropOut(id: string, how: 'down' | 'out' | 'fled' | 'talked', by: string | null, now: number): void {
+    const f = this.fightState;
+    const c = f ? this.combatant(id) : undefined;
+    const person = this.person(id);
+    if (!f || !c || !person) return;
+    const { combat } = this.rules;
+    const rng = createRng(`${this.world.seed}:dropout:${id}:${f.startedAt}:${f.state.beat}`);
+    const other = by ? this.person(by) : undefined;
+    const vars = c.ally
+      ? { ally: this.fightName(person, false), Ally: this.fightName(person, true), foe: other ? this.fightName(other, false) : 'them', Foe: other ? this.fightName(other, true) : 'Them' }
+      : { foe: this.fightName(person, false), Foe: this.fightName(person, true), ally: other ? this.fightName(other, false) : 'someone', Ally: other ? this.fightName(other, true) : 'Someone' };
+    const day = this.clockAt(now).day;
+    if (how === 'down') {
+      // An ally dropped by one of theirs may die of it; anyone dropped by an ally lives.
+      const killer = c.ally && other ? this.combatant(other.id)?.fighter.arm ?? (other.id === f.with ? f.state.them.arm : undefined) : undefined;
+      if (killer && rng.chance(combat.classes[killer.cls]?.lethal ?? 0)) {
+        this.life.dead[id] = day;
+        person.diedOn = day;
+        if (this.society.romance?.with === id) this.society.romance = null;
+        this.groupLine('allyDown', `${id}:down`, vars);
+        f.beatLines.push(`${capitalize(this.fightName(person, false))} is dead.`);
+      } else {
+        const until = day + rng.int(combat.hurtDays[0], combat.hurtDays[1]);
+        this.life.hurt[id] = until;
+        person.hurtUntil = until;
+        this.groupLine(c.ally ? 'allyDown' : 'foeDown', `${id}:down`, vars);
+      }
+    } else if (how === 'out') {
+      const minutes = rng.int(combat.knockout.minutes[0], combat.knockout.minutes[1]);
+      const spot = this.spot;
+      if (spot) this.outColdState.set(id, { until: now + (minutes * 60_000) / this.rules.timeScale, spot, room: this.roomState });
+      this.groupLine(c.ally ? 'allyOut' : 'foeOut', `${id}:out`, vars);
+    } else this.groupLine(how === 'fled' ? 'fled' : 'backDown', `${id}:${how}`, { who: this.fightName(person, false), Who: this.fightName(person, true) });
+    f.settled.add(id);
+    f.others = f.others.filter((o) => o.id !== id);
+    // Whoever was fighting them turns to someone else: the player, for one of theirs; for an ally, another of theirs.
+    for (const o of f.others) if (o.mark === id) o.mark = o.ally ? this.markFor() : 'you';
+  }
+
+  /** Who an ally goes for: someone of theirs nobody on the player's side has, else the one the player's going for. */
+  private markFor(): string {
+    const f = this.fightState!;
+    const free = f.others.find((o) => !o.ally && o.mark === 'you' && !f.others.some((a) => a.ally && a.mark === o.id));
+    return free?.id ?? f.with;
+  }
+
+  /**
+   * The one the player was going for is dealt with (down, out, gone, or talked out of it) while
+   * someone else of theirs is still in it: what comes of it is told, and the next one is up.
+   */
+  private nextFoe(person: Person, how: 'out' | 'escaped' | 'talked' | null, lethal: number, rng: Rng, vars: Record<string, string>, now: number): void {
+    const f = this.fightState!;
+    const scene = { spot: this.spot, where: { ...this.where } };
+    const done = this.settleFoe(person, how, lethal, rng, vars, now, scene);
+    f.notes.push(done.result);
+    f.beatLines.push(done.result);
+    done.report();
+    const next = f.others.find((o) => !o.ally);
+    if (!next) return;
+    this.target(next.id);
+    // Whoever on the player's side had the one dealt with turns to someone else.
+    for (const o of f.others) if (o.ally && o.mark === person.id) o.mark = this.markFor();
+    const p = this.person(next.id);
+    if (p) this.groupLine('nextUp', `${next.id}:next`, { who: this.fightName(p, false), Who: this.fightName(p, true) });
+  }
+
+  /** Turns to someone else of theirs: the one gone for now steps out of the main exchange, and the other steps in (their range, their state, their next move). */
+  private target(id: string): void {
+    const f = this.fightState!;
+    const c = this.combatant(id);
+    if (!c || c.ally) return;
+    const was = this.person(f.with);
+    // The one the player was going for keeps on at them, unless they're out of it.
+    if (was && !f.settled.has(f.with) && was.diedOn === undefined) f.others.push({ id: f.with, ally: false, fighter: f.state.them, range: f.state.range, mark: 'you', next: f.next, nerve: f.nerve });
+    f.others = f.others.filter((o) => o.id !== id);
+    f.with = id;
+    f.state = { ...f.state, range: c.range, them: c.fighter };
+    f.next = c.next;
+    f.nerve = c.nerve;
+    f.tell = null;
+  }
+
+  /** Goes for someone else of theirs, in a fight of more than two. */
+  fightTarget(id: string, now: number): boolean {
+    const f = this.fightState;
+    if (!f || f.over || id === f.with || !this.combatant(id) || this.combatant(id)!.ally) return false;
+    this.target(id);
+    const person = this.person(id);
+    if (person) this.nextBeat(person, now);
+    this.events.emit('fightChanged', this.fightView());
+    return true;
+  }
+
+  /**
+   * Whoever here throws in: against the player (by what they are to someone on the other side,
+   * the place's guard, an officer), or for them (a friend, the one they're seeing). When it
+   * starts, everyone here has a go at it; once it's on, a share of that a beat.
+   */
+  private joinFight(now: number, start: boolean): void {
+    const f = this.fightState;
+    const join = this.rules.join;
+    if (!f || f.over || !join) return;
+    const { society, timeScale } = this.rules;
+    const inIt = new Set([f.with, ...f.others.map((c) => c.id), ...f.settled]);
+    const here = this.peopleHere(now).filter((p) => !inIt.has(p.person.id) && p.doing !== 'out cold' && p.person.diedOn === undefined);
+    if (!here.length) return;
+    const rng = createRng(`${this.world.seed}:join:${f.startedAt}:${f.state.beat}`);
+    const share = start ? 1 : join.perBeat;
+    const crowd = Math.max(1, here.length) ** join.crowd;
+    const target = this.person(f.with);
+    for (const { person } of here) {
+      const foes = [target, ...f.others.filter((c) => !c.ally).map((c) => this.person(c.id))].filter((p): p is Person => Boolean(p));
+      const nerve = 0.5 + person.traits.courage;
+      // Against the player: an officer always; the place's own guard; the strongest tie to anyone of theirs; a stranger hardly ever.
+      let against = NCPD.test(person.job.role) ? 1 : GUARD.test(person.job.role) && person.job.building === this.inside?.id ? join.guard * nerve : (join.stranger * nerve) / crowd;
+      for (const foe of foes) {
+        const tie = tiesOf(this.population, person.id).find((t) => t.to === foe.id);
+        if (tie) against = Math.max(against, (FAMILY.includes(tie.kind) ? join.kin : join.friend) * nerve);
+        if (person.gang && person.gang === foe.gang) against = Math.max(against, join.gang * nerve);
+      }
+      // For the player: the one they're seeing, or a friend.
+      const standing = standingOf(this.society, person.id, society, timeScale, now);
+      const forYou = this.society.romance?.with === person.id ? join.partner * nerve : standing.rapport >= join.friendly ? join.ally * nerve : 0;
+      const foeCount = f.others.filter((c) => !c.ally).length;
+      const allyCount = f.others.filter((c) => c.ally).length;
+      const side = forYou > against ? 'ally' : 'foe';
+      if (side === 'foe' ? foeCount >= join.foes - 1 : allyCount >= join.allies) continue;
+      if (!rng.chance(Math.min(1, (side === 'ally' ? forYou : against) * share))) continue;
+      const ally = side === 'ally';
+      const mark = ally ? this.markFor() : 'you';
+      f.others.push({ id: person.id, ally, fighter: this.fighterOf(person), range: 'close', mark, next: 'attack', nerve: { courage: person.traits.courage, temper: person.traits.temper } });
+      // Someone of theirs an ally has gone for turns on the ally.
+      if (ally) {
+        const foe = this.combatant(mark);
+        if (foe && !foe.ally) foe.mark = person.id;
+      }
+      learnOf(this.society, person.id, 'seen');
+      this.groupLine(ally ? 'joinYou' : 'joinThem', `${person.id}:join`, { ...this.whoVars(person), target: target ? this.fightName(target, false) : 'them' });
+    }
   }
 
   /** Done looking at a fight that's over. */
@@ -1438,13 +1729,20 @@ export class Game {
     if (this.fightState?.over) this.fightState = null;
   }
 
-  /** Their move for the beat to come, what might give it away, and the clock on the player's. */
+  /** Their move for the beat to come, what might give it away, and the clock on the player's; and everyone else's moves. */
   private nextBeat(person: Person, now: number): void {
     const f = this.fightState;
     if (!f) return;
     const { combat } = this.rules;
     const rng = createRng(`${this.world.seed}:fight:${f.with}:${f.startedAt}:${f.state.beat}:next`);
     f.next = theirMove({ ...f.state, them: { ...f.state.them, arm: this.theirArmNow(f.state.them) } }, f.nerve, f.indoors, rng, combat);
+    // Everyone else: against whoever they're fighting.
+    for (const c of f.others) {
+      const opp = c.mark === 'you' ? f.state.you : c.mark === f.with ? f.state.them : this.combatant(c.mark)?.fighter;
+      if (!opp) continue;
+      const own = createRng(`${this.world.seed}:fight:${f.with}:${f.startedAt}:${f.state.beat}:next:${c.id}`);
+      c.next = theirMove({ ...f.state, range: c.range, you: opp, them: { ...c.fighter, arm: this.theirArmNow(c.fighter) } }, c.nerve, f.indoors, own, combat);
+    }
     // Whether the player catches what they're about to do: likelier knowing their nature, and with charisma.
     const odds = combat.tell.base + (knowledgeOf(this.society, person.id).facts.includes('nature') ? combat.tell.nature : 0) + this.charismaEdge * combat.tell.charisma;
     const key = `tell${f.next[0]!.toUpperCase()}${f.next.slice(1)}`;
@@ -1462,14 +1760,75 @@ export class Game {
     const f = this.fightState;
     if (!f) return;
     const { combat } = this.rules;
-    const day = this.clockAt(now).day;
     const name = this.fightName(person, false);
     // Where it happened, before Trauma Team or the door take the player anywhere else.
     const scene = { spot: this.spot, where: { ...this.where } };
     let outcome: FightOutcome = how ?? 'won';
     let result = '';
+    let report = () => {};
     // Put down by the NCPD, the player comes to in cuffs, their pockets their own.
     const cuffed = (how === 'lost' || how === 'knocked') && Boolean(this.rules.police) && NCPD.test(person.job.role);
+    if (!how || how === 'won' || how === 'out' || how === 'escaped' || how === 'talked') {
+      const done = this.settleFoe(person, how === 'out' || how === 'escaped' || how === 'talked' ? how : null, lethal, rng, vars, now, scene);
+      ({ outcome, result, report } = done);
+    } else if (cuffed) {
+      this.fightLine(how === 'knocked' ? 'youOut' : 'youDown', person, vars);
+      if (how === 'lost') f.state.you.hp = 1;
+      result = `${capitalize(name)} put you down. You come to in cuffs.`;
+    } else if (how === 'lost' && this.covered(now)) {
+      this.fightLine('youDown', person, vars);
+      result = this.pickedUp(this.covered(now)!, person, vars);
+    } else if (how === 'lost' || how === 'knocked') {
+      // Put down, or knocked out cold: either way they go through the player's pockets.
+      this.fightLine(how === 'knocked' ? 'youOut' : 'youDown', person, vars);
+      const share = rng.range(combat.robbed[0], combat.robbed[1]);
+      const { money, taken } = takeCash(this.money, Math.round(cash(this.money) * share));
+      this.money = money;
+      if (taken) {
+        person.eddies += taken;
+        this.life.eddies[person.id] = person.eddies;
+        this.fightLine('robbed', person, { ...vars, took: String(taken) });
+        this.events.emit('walletChanged', this.wallet);
+      }
+      if (how === 'lost') f.state.you.hp = 1;
+      result = how === 'knocked' ? `${capitalize(name)} knocked you out cold${taken ? `, and took ${taken} €$` : ''}. You come to on the floor.` : `${capitalize(name)} put you down${taken ? `, and took ${taken} €$` : ''}.`;
+    } else {
+      result = `You got away from ${name}.`;
+    }
+    f.over = outcome;
+    f.result = [...f.notes, result].join(' ');
+    // Walking away from it on their own feet toughens the player up.
+    if (outcome !== 'lost' && outcome !== 'knocked' && f.state.beat > 0) this.train('toughness', combat.training.toughness.stood);
+    f.tell = null;
+    this.healthState = { value: Math.max(1, f.state.you.hp), at: now };
+    this.drainEnergy(Math.min(4, f.state.beat), now);
+    if (outcome === 'fled') this.leave();
+    this.say(result, 'system');
+    report();
+    // Whoever the player went for and hasn't been dealt with may call it in: they were assaulted.
+    const victim = f.byYou ? this.person(f.started) : undefined;
+    if (victim && !f.settled.has(victim.id)) {
+      f.settled.add(victim.id);
+      this.crime('assault', victim, now, f.knew, 'victim', scene);
+    }
+    // ...and is taken in for it, held the longer for having fought.
+    if (cuffed) this.arrest({ officers: [person.id], crime: 'assault', why: 'scene', at: now }, now, this.rules.police!.run.resisting);
+    this.events.emit('healthChanged', this.health(now));
+  }
+
+  /**
+   * What comes of someone the player was fighting being dealt with: downed (`how` null: dead,
+   * by `lethal`; a corpo's Trauma Team gets them out alive; anyone else laid up for days), out
+   * cold where they fell, gone, or talked out of it. `report` is the call it may bring (a
+   * killing, or the one the player went for, who was assaulted), to make once it's been told.
+   */
+  private settleFoe(person: Person, how: 'out' | 'escaped' | 'talked' | null, lethal: number, rng: Rng, vars: Record<string, string>, now: number, scene: { spot: Spot | null; where: Whereabouts }): { outcome: FightOutcome; result: string; report: () => void } {
+    const f = this.fightState!;
+    const { combat } = this.rules;
+    const day = this.clockAt(now).day;
+    const name = this.fightName(person, false);
+    let outcome: FightOutcome = how ?? 'won';
+    let result: string;
     if (!how) {
       if (isCorpo(person, this.world)) {
         outcome = 'trauma';
@@ -1496,27 +1855,6 @@ export class Game {
         const where = ward ? ` in ${ward}` : '';
         result = outcome === 'trauma' ? `Trauma Team got ${name} out. ${capitalize(vars.he ?? 'they')} will live, laid up${where} for days.` : `${capitalize(name)} is down, and will be laid up${where} for days.`;
       }
-    } else if (cuffed) {
-      this.fightLine(how === 'knocked' ? 'youOut' : 'youDown', person, vars);
-      if (how === 'lost') f.state.you.hp = 1;
-      result = `${capitalize(name)} put you down. You come to in cuffs.`;
-    } else if (how === 'lost' && this.covered(now)) {
-      this.fightLine('youDown', person, vars);
-      result = this.pickedUp(this.covered(now)!, person, vars);
-    } else if (how === 'lost' || how === 'knocked') {
-      // Put down, or knocked out cold: either way they go through the player's pockets.
-      this.fightLine(how === 'knocked' ? 'youOut' : 'youDown', person, vars);
-      const share = rng.range(combat.robbed[0], combat.robbed[1]);
-      const { money, taken } = takeCash(this.money, Math.round(cash(this.money) * share));
-      this.money = money;
-      if (taken) {
-        person.eddies += taken;
-        this.life.eddies[person.id] = person.eddies;
-        this.fightLine('robbed', person, { ...vars, took: String(taken) });
-        this.events.emit('walletChanged', this.wallet);
-      }
-      if (how === 'lost') f.state.you.hp = 1;
-      result = how === 'knocked' ? `${capitalize(name)} knocked you out cold${taken ? `, and took ${taken} €$` : ''}. You come to on the floor.` : `${capitalize(name)} put you down${taken ? `, and took ${taken} €$` : ''}.`;
     } else if (how === 'out') {
       // Out cold, not hurt past a night's sleep: they lie where they fell for a while, then come to.
       this.fightLine('theyOut', person, vars);
@@ -1524,28 +1862,19 @@ export class Game {
       const spot = this.spot;
       if (spot) this.outColdState.set(person.id, { until: now + (minutes * 60_000) / this.rules.timeScale, spot, room: this.roomState });
       result = `${capitalize(name)} is out cold, and won't come to for a while.`;
-    } else if (how === 'fled') {
-      result = `You got away from ${name}.`;
     } else if (how === 'escaped') {
       result = `${capitalize(name)} got away.`;
     } else {
       result = `It ended in words, with ${name}.`;
     }
-    f.over = outcome;
-    f.result = result;
-    // Walking away from it on their own feet toughens the player up.
-    if (outcome !== 'lost' && outcome !== 'knocked' && f.state.beat > 0) this.train('toughness', combat.training.toughness.stood);
-    f.tell = null;
-    this.healthState = { value: Math.max(1, f.state.you.hp), at: now };
-    this.drainEnergy(Math.min(4, f.state.beat), now);
-    if (outcome === 'fled') this.leave();
-    this.say(result, 'system');
-    // A killing, whoever's still here may call in; anything less, the one it was done to may, now or when they come to.
-    if (outcome === 'killed') this.crime('murder', person, now, f.knew, 'witnesses', scene);
-    else this.crime('assault', person, now, f.knew, 'victim', scene);
-    // ...and is taken in for it, held the longer for having fought.
-    if (cuffed) this.arrest({ officers: [person.id], crime: 'assault', why: 'scene', at: now }, now, this.rules.police!.run.resisting);
-    this.events.emit('healthChanged', this.health(now));
+    // A killing, whoever's still here may call in; the one the player went for, assaulted, may themselves (now, or when they come to).
+    const victim = f.byYou && person.id === f.started;
+    f.settled.add(person.id);
+    const report = () => {
+      if (outcome === 'killed') this.crime('murder', person, now, f.knew, 'witnesses', scene);
+      else if (victim) this.crime('assault', person, now, f.knew, 'victim', scene);
+    };
+    return { outcome, result, report };
   }
 
   /** A hospital's name, by where it is. */
