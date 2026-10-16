@@ -40,7 +40,9 @@ import { MEDICAL } from './data/medical';
 import { HOURS } from './data/hours';
 import { ROOMS } from './data/rooms';
 import { POLICE } from './data/police';
+import { DEALING } from './data/dealing';
 import type { PoliceView } from './engine/police';
+import type { DealView } from './engine/dealing';
 import type { FinishKind } from './engine/combat';
 import { medDetail } from './engine/medical';
 import { FightPanel } from './ui/fight';
@@ -113,6 +115,7 @@ const place = new PlacePanel(
       people: $<HTMLButtonElement>('#act-people'),
       bank: $<HTMLButtonElement>('#act-bank'),
       work: $<HTMLButtonElement>('#act-work'),
+      deal: $<HTMLButtonElement>('#act-deal'),
     },
     close: $<HTMLButtonElement>('#place-close'),
   },
@@ -485,6 +488,13 @@ const people = new People(
       picker = null;
       if (game.killCold(id, way as FinishKind, Date.now())) showPeople();
     },
+    onDeal: (id, option) => {
+      lastActivity = performance.now();
+      picker = null;
+      cardTab = 'talk';
+      game.deal(id, option, Date.now());
+      showPeople();
+    },
     onHeart: (id, move) => {
       lastActivity = performance.now();
       picker = null;
@@ -603,13 +613,26 @@ function act(id: ActionId): void {
     withdrawOpen = false;
     bank.overlay.show($('#act-bank'));
   } else if (id === 'work') game.work(now);
+  else if (id === 'deal') game.walkUp(now);
   else if (id === 'pick-1' || id === 'pick-2' || id === 'pick-3') {
     const at = Number(id.slice(-1)) - 1;
-    // Officers on the player come before anything on a shift.
+    // Officers on the player come before a collector, a collector before a buyer, a buyer before anything on a shift.
     const cops = game.police(now).confront;
     if (cops) {
       const choice = cops.choices[at];
       if (choice) game.answerPolice(choice.id, now);
+      return;
+    }
+    const collector = game.collector(now);
+    if (collector) {
+      const choice = collector.choices[at];
+      if (choice && !choice.disabled) game.answerCollector(choice.id, now);
+      return;
+    }
+    const buyer = game.dealMoment(now);
+    if (buyer) {
+      const choice = buyer.choices[at];
+      if (choice && !choice.disabled) game.answerDeal(choice.id, now);
       return;
     }
     const choice = game.shiftEvent(now)?.choices[at];
@@ -640,7 +663,7 @@ function refresh(): void {
   if (bank.overlay.isOpen && !game.bank()) bank.overlay.close();
   if (people.overlay.isOpen && !game.interior && !game.location && !game.police(now).confront) people.overlay.close();
   // The NCPD has the player: nothing else on the panel till that's settled.
-  const ncpd = policeView(now);
+  const ncpd = policeView(now) ?? collectorView(now);
   if (ncpd) {
     target = null;
     map.select(null);
@@ -685,6 +708,28 @@ function policeView(now: number): PanelView | null {
     return { mode: 'here', kicker: 'NCPD · Holding cell', description, actions: [], closable: false, announce: description };
   }
   return null;
+}
+
+/** Where the player stands with the gang they deal for, as the status says it. */
+function dealLine(deal: DealView, now: number): string {
+  const day = (ms: number) => `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(ms).getDay()]} ${formatClock(ms)}`;
+  const owing = deal.debt ? `debt ${deal.debt} €$${deal.collectAt ? `, collectors in ${formatMinutes(Math.max(0, deal.collectAt - now) / 60_000)}` : ''}` : deal.front ? `owe ${deal.front.left} €$ by ${day(deal.front.due)}` : 'nothing owed';
+  const next = deal.next ? `trust ${deal.trust}, ${deal.next.title.toLowerCase()} at ${deal.next.trust} and ${deal.next.fronts} paid` : 'top of the ladder';
+  return [`${deal.title} for the ${deal.gangName}`, deal.carried ? `${deal.carried} on you` : '', owing, deal.corner ? `corner: ${deal.corner.name}` : '', `${deal.sold} sold`, next].filter(Boolean).join(' · ');
+}
+
+/** A collector on the player for a debt, and the three things to do about it; null when there's none. */
+function collectorView(now: number): PanelView | null {
+  const c = game.collector(now);
+  if (!c) return null;
+  return {
+    mode: game.interior ? 'inside' : 'here',
+    kicker: `${c.gang} · Collecting`,
+    description: c.text,
+    actions: c.choices.slice(0, 3).map((x, i) => ({ id: `pick-${i + 1}` as 'pick-1' | 'pick-2' | 'pick-3', label: x.label, ...(x.sub ? { sub: x.sub } : {}), ...(x.disabled ? { disabled: true } : {}) })),
+    closable: false,
+    announce: `${c.text} ${c.choices.map((x) => x.label).join(', ')}?`,
+  };
 }
 
 function lineNames(stationId: string): string {
@@ -769,14 +814,31 @@ function hereView(now: number): PanelView {
   const name = game.nameOf(where);
   const location = game.location;
   if (location) {
+    // A buyer at the player's corner waits on an answer: it's all the panel offers till then.
+    const buyer = game.dealMoment(now);
+    if (buyer) {
+      return {
+        mode: 'here',
+        kicker: 'On the corner',
+        description: buyer.text,
+        actions: buyer.choices.slice(0, 3).map((c, i) => ({ id: `pick-${i + 1}` as 'pick-1' | 'pick-2' | 'pick-3', label: c.label, ...(c.sub ? { sub: c.sub } : {}), ...(c.disabled ? { disabled: true } : {}) })),
+        closable: false,
+        announce: `${buyer.text} ${buyer.choices.map((c) => c.label).join(', ')}?`,
+      };
+    }
     const menu = game.menu();
     const here = game.peopleHere(now).length;
     const barred = menu ? game.barred(now) : null;
+    const corner = game.cornerAction(now);
     return {
       mode: 'here',
-      kicker: `You are here · ${location.kindLabel}`,
+      kicker: `You are here · ${location.kindLabel}${corner ? ' · Your corner' : ''}`,
       description: location.description,
-      actions: [peopleAction(here), ...(menu ? [barred ? { id: 'menu' as const, label: menu.kind === 'gear' ? 'Shop' : 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : [])],
+      actions: [
+        peopleAction(here),
+        ...(menu ? [barred ? { id: 'menu' as const, label: menu.kind === 'gear' ? 'Shop' : 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []),
+        ...(corner ? [{ id: 'deal' as const, label: corner.label, ...(corner.sub ? { sub: corner.sub } : {}), ...(corner.disabled ? { disabled: true } : {}) }] : []),
+      ],
       closable: false,
       announce: `${location.name}. ${stripMarkup(location.description)}${menu ? (menu.kind === 'gear' ? ' There is something for sale.' : ' There is a menu.') : ''} ${here ? `${here} people here.` : 'Nobody here.'}`,
     };
@@ -1252,6 +1314,9 @@ function showStatus(now: number): void {
   // A hold, a unit the player knows is coming, a warrant: the worst of it, on the line.
   const ncpd = police.held ? `Held · ${formatCountdown(police.held - now)}` : police.dispatch ? `NCPD · ${formatCountdown(police.dispatch.arriveAt - now)}` : police.warrants.length ? 'Wanted' : '';
   const heart = game.romance(now);
+  const deal = game.dealing(now);
+  // The corner the player deals from, on the map.
+  map.setCorner(deal?.corner?.id ?? null);
   const job = game.jobStatus(now);
   const jobs = game.jobsStatus(now);
   // Where the player works, on the map; lit while a shift there is on.
@@ -1262,7 +1327,7 @@ function showStatus(now: number): void {
   const pass = wallet.passUntil > now;
   const refill = energy.nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(energy.nextPointAt - now)}`;
   const condition = drunk.stage ? `${drunk.stage.label} · sober in ${formatCountdown((drunk.soberAt ?? now) - now)}` : '';
-  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', ncpd, drunk.stage?.label, mask ? 'Masked' : '', due ? `Shift on · ${formatMinutes(away)}` : job ? job.rung.title : ''].filter(Boolean).join(' · ');
+  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', ncpd, deal?.debt ? `Debt ${deal.debt} €$` : '', drunk.stage?.label, mask ? 'Masked' : '', due ? `Shift on · ${formatMinutes(away)}` : job ? job.rung.title : ''].filter(Boolean).join(' · ');
   const today = new Date(now);
   const pad = (n: number) => String(n).padStart(2, '0');
   const rows: StatusRow[] = [
@@ -1280,6 +1345,7 @@ function showStatus(now: number): void {
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
     ...(jobs.length ? jobs.map((j) => ({ label: j.side ? 'Side gig' : 'Work', value: `${j.rung.title} at ${j.building.name} · ${formatDays(j.days)} ${j.hours[0]}–${j.hours[1]}h${j.owed ? ` · ${j.owed} €$ owed` : ''} · ${j.shifts} ${j.shifts === 1 ? 'shift' : 'shifts'}${j.next ? ` · trust ${j.trust}, ${j.next.title.toLowerCase()} at ${j.next.at}` : ' · top of the ladder'} · trade ${game.trade(j.building).health} · ${j.perks.join(', ')}` })) : [{ label: 'Work', value: 'No job' }]),
+    ...(deal ? [{ label: 'Dealing', value: dealLine(deal, now), ...(deal.debt ? { tone: 'bad' as const } : {}) }] : []),
     ...(condition ? [{ label: 'Condition', value: condition, tone: 'warn' as const }] : []),
     ...(mask ? [{ label: 'Mask', value: `${mask.name} · nobody knows your face`, tone: 'warn' as const }] : []),
     { label: 'Armed', value: armed ? `${armed.name}${armed.gun ? ` · ${armed.loaded}/${armed.magazine}` : ''}` : 'Nothing but your hands' },
@@ -1422,6 +1488,7 @@ function showPeople(): void {
             work: present ? game.workWith(shown.id) : null,
             ...(present && game.workWith(shown.id) === 'switch' ? { leaving: game.switchingFrom(shown.id) ?? undefined } : {}),
             roster: present && game.workWith(shown.id) === 'quit' ? rosterOf(shown.id, now) : [],
+            deal: present ? game.dealWith(shown.id, now) : [],
             heart: game.romanceWith(shown.id, now),
             // Chat first, a flirt last.
             approaches: [{ id: 'chat', label: 'Chat' }, ...Object.entries(LINES.approaches).sort(([a], [b]) => Number(a === 'flirt') - Number(b === 'flirt')).map(([id, a]) => ({ id, label: a.label }))],
@@ -1681,6 +1748,17 @@ function wire(g: Game): void {
     queueSave();
   });
 
+  // A front, a sale, a debt, a collector: the panel, the status and anyone's card here may say so.
+  g.events.on('dealChanged', () => {
+    const now = Date.now();
+    // A collector on the player: whatever covers the panel makes way for them.
+    if (g.collector(now) && MapOverlay.open && MapOverlay.open !== fight.overlay) MapOverlay.open.close();
+    if (people.overlay.isOpen) showPeople();
+    if (!target && !g.currentTrip) refresh();
+    showStatus(now);
+    queueSave();
+  });
+
   g.events.on('chromeChanged', () => {
     if (inventory.overlay.isOpen) showInventory();
     if (shop.overlay.isOpen) showShop();
@@ -1729,7 +1807,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, police: POLICE, join: JOIN }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, police: POLICE, join: JOIN, dealing: DEALING }, progress);
   wire(game);
   map.setWorld(world);
   try {

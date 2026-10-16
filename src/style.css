@@ -909,6 +909,17 @@ button {
   outline-offset: -4px;
 }
 
+/* The corner the player deals from: a red ring round the place. */
+.node.is-corner .node-mark::after {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 2px dashed #ff4d6d;
+  border-radius: 50%;
+  opacity: 1;
+}
+
 /* Where the player works: a briefcase on the building, glowing while a shift there is on. */
 .node.is-work .node-mark::before {
   width: 13px;
@@ -1761,6 +1772,16 @@ button {
 .action.is-bank:hover,
 .action.is-bank:focus-visible {
   background: color-mix(in srgb, #ffd84d 28%, transparent);
+}
+/* Selling on the player's corner */
+.action.is-deal {
+  border-color: #ff4d6d;
+  background: color-mix(in srgb, #ff4d6d 14%, transparent);
+  text-shadow: 0 0 8px #ff4d6d;
+}
+.action.is-deal:hover,
+.action.is-deal:focus-visible {
+  background: color-mix(in srgb, #ff4d6d 28%, transparent);
 }
 /* A shift at the player's job */
 .action.is-work {

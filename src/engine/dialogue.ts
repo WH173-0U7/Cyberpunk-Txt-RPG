@@ -107,6 +107,15 @@ export interface DialogueLines {
   /** A boss on work, and the people a shift brings: a coworker asking for cover (`coverAsk`, `coverThanks`, `coverSnub`), a ganger come for the cut (`cutDemand`, `cutPaid`, `cutBack`, `cutWorse`, `{work}`), a thief caught (`caught`), and the boss who saw the player stand up for the place (`stood`). */
   work: { hire: Line[]; refuse: Line[]; masked: Line[]; shift: Line[]; promote: Line[]; quit: Line[]; notice: Line[]; moonlight: Line[]; sideGig: Line[]; broke: Line[]; rehire: Line[]; coverAsk: Line[]; coverThanks: Line[]; coverSnub: Line[]; cutDemand: Line[]; cutPaid: Line[]; cutBack: Line[]; cutWorse: Line[]; caught: Line[]; stood: Line[] };
   revenge: { person: Line[]; gang: Line[] };
+  /**
+   * Dealing for a gang (dealing.ts). A connect: taking the player on (`{drug}`, `{doses}`,
+   * `{owed}`, `{when}`, `{corner}`), not yet, fronting another package, not while they owe
+   * (`{left}`), paid in full (`{owed}`) or in part (`{pay}`, `{left}`), moving them up
+   * (`{title}`), not to a mask, done with them, letting them walk. Any member: pointing them to
+   * the connect (`{connect}`, and `{where}` when the connect has a hangout). Anyone pitched:
+   * buying (`{drug}`, `{price}`), not from a stranger, not into it, or put out by being asked.
+   */
+  deal: { join: Line[]; notYet: Line[]; refer: Line[]; front: Line[]; owing: Line[]; paid: Line[]; some: Line[]; promote: Line[]; masked: Line[]; burned: Line[]; leave: Line[]; buy: Line[]; wary: Line[]; pass: Line[]; offended: Line[] };
   /** What someone brings up of what the player did, as they remember it (memory.ts): `mem` and `mem<Kind>` say which, with `{memWho}`, `{memWord}`, `{memAgo}`, `{memItem}`, `{memTook}`, `{memTitle}` and `memTwice`, `memAgain` (brought up before), `memRobbery`, `memInsult`, `memFavorite`. */
   memory: Line[];
   /** A storefront that won't serve the player. */
@@ -140,7 +149,7 @@ export interface DialogueLines {
     notLooking: string;
   };
   /** The player's own lines, for the record, by eloquence. */
-  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; robCold: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[] };
+  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; robCold: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[]; deal: Line[]; pitch: Line[]; payUp: Line[]; walkAway: Line[] };
 }
 
 /** Everything a line can be picked and filled by; `vars.mask` is the word for the mask the player has on, or nothing. */

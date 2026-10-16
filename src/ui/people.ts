@@ -31,7 +31,7 @@ export interface LogLineView {
 }
 
 /** Which set of choices is unfolded under the conversation, if any. */
-export type Picker = 'talk' | 'ask' | 'give' | 'chop' | 'work' | 'heart' | 'more' | null;
+export type Picker = 'talk' | 'ask' | 'give' | 'chop' | 'work' | 'deal' | 'heart' | 'more' | null;
 
 /** What the heart command offers: asking them out, a date, making it official, ending it. */
 export type HeartMove = 'askOut' | 'date' | 'official' | 'end';
@@ -81,6 +81,8 @@ export interface PersonCardView {
   leaving?: string;
   /** With the player's own boss, the week's days and whether the player is on each (tapping one puts them on or takes them off). */
   roster: Array<{ day: number; label: string; on: boolean }>;
+  /** What there is to do about dealing with them: ask to deal for their gang, take a package, pay up, walk away, or sell them something (`sell:<drug>`). */
+  deal: Array<{ id: string; label: string; sub?: string; disabled?: boolean; danger?: boolean }>;
   /** What there is to do about the heart with them: ask them out, or, with the one the player is seeing, a date, making it official, ending it (that one even when they're not here). */
   heart: HeartMove[];
   /** What has passed between them, oldest first. */
@@ -137,6 +139,8 @@ export interface PeopleHandlers {
   onQuestion(id: string, fact: string): void;
   /** The player made a move of the heart: asked them out, took them out, asked to make it official, ended it. */
   onHeart(id: string, move: HeartMove): void;
+  /** The player did something about dealing with a person: an option `deal` offered. */
+  onDeal(id: string, option: string): void;
   /** A tab of the card was picked (the facts line is the way to the profile too). */
   onCardTab(tab: CardTab): void;
   /** A list was picked: who's here, or everyone known. */
@@ -183,10 +187,11 @@ export class People {
     // Everything on the card goes through one listener: commands, the choices they unfold, names in the web.
     els.card.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
-      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-item], [data-chip], [data-action], [data-kill], [data-heart], [data-open], [data-day]');
+      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-item], [data-chip], [data-action], [data-kill], [data-heart], [data-deal], [data-open], [data-day]');
       if (!button) return;
-      const { cmd, approach, fact, item, chip, action, kill, heart, open, id, day } = button.dataset;
-      if (cmd === 'talk' || cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'heart' || cmd === 'more') handlers.onPicker(cmd);
+      const { cmd, approach, fact, item, chip, action, kill, heart, deal, open, id, day } = button.dataset;
+      if (cmd === 'talk' || cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'deal' || cmd === 'heart' || cmd === 'more') handlers.onPicker(cmd);
+      else if (deal && id && !(button as HTMLButtonElement).disabled) handlers.onDeal(id, deal);
       else if (heart && id) handlers.onHeart(id, heart as HeartMove);
       else if (approach && id) handlers.onTalk(id, approach);
       else if (fact && id) handlers.onQuestion(id, fact);
@@ -205,7 +210,7 @@ export class People {
     els.reputation.replaceChildren(...view.reputation.map((line) => el('span', 'people-rep-item', line)));
     els.reputation.hidden = view.reputation.length === 0;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'approach', 'fact', 'about', 'item', 'chip', 'action', 'heart', 'open', 'id', 'tab', 'cardtab'].includes(key)) : undefined;
+    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'approach', 'fact', 'about', 'item', 'chip', 'action', 'heart', 'deal', 'open', 'id', 'tab', 'cardtab'].includes(key)) : undefined;
     const focusedId = active?.dataset.id;
     // The two lists' tabs, over the list; a card has its own.
     els.tabs.hidden = Boolean(view.card);
@@ -300,6 +305,12 @@ export class People {
         if (card.work === 'switch' && card.leaving) picker.push(el('span', 'person-gifts-label', `Means notice at ${card.leaving}`));
         picker.push(chip('Ask for work', { id: card.id, action: 'hire' }, 'person-chip'));
       }
+    } else if (card.here && card.picker === 'deal' && card.deal.length) {
+      for (const o of card.deal) {
+        const button = chip(o.sub ? `${o.label} · ${o.sub}` : o.label, { id: card.id, deal: o.id }, `person-chip${o.danger ? ' is-danger' : ''}`);
+        if (o.disabled) button.disabled = true;
+        picker.push(button);
+      }
     } else if (card.picker === 'heart' && card.heart.length) {
       picker.push(...card.heart.map((move) => chip(HEART_LABEL[move], { id: card.id, heart: move }, `person-chip${move === 'end' ? ' is-danger' : ' is-heart'}`)));
     } else if (card.cold && card.picker === 'more') {
@@ -319,6 +330,7 @@ export class People {
           ...(card.gifts.length ? [{ cmd: 'give', label: 'Give', active: card.picker === 'give' }] : []),
           ...(card.chops.length ? [{ cmd: 'chop', label: 'Chop', active: card.picker === 'chop' }] : []),
           ...(card.work ? [{ cmd: 'work', label: 'Work', active: card.picker === 'work' }] : []),
+          ...(card.deal.length ? [{ cmd: 'deal', label: 'Deal', active: card.picker === 'deal' }] : []),
           ...heart,
           { cmd: 'more', label: '⋯', active: card.picker === 'more', quiet: true },
         ]

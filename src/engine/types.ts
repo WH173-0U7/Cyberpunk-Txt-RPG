@@ -9,6 +9,7 @@ import type { FightView, HealthStatus } from './combat';
 import type { CoverageStatus } from './medical';
 import type { Room } from './rooms';
 import type { PoliceView } from './police';
+import type { DealView } from './dealing';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -326,5 +327,7 @@ export type GameEvents = {
   coverageChanged: CoverageStatus | null;
   /** Something with the NCPD changed: a call made, a unit sent or arrived, a warrant, officers on the player, a hold. The clock running down doesn't fire this; ask `Game.police(now)`. */
   policeChanged: PoliceView;
+  /** The player's dealing for a gang changed: a front, a sale, a debt, a rung; null when they're out. */
+  dealChanged: DealView | null;
   fx: { effect: FxName };
 };

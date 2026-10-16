@@ -1,0 +1,306 @@
+import { createRng } from './rng';
+import type { Quality } from './food';
+import type { Person, SkillWalk, Traits } from './people';
+import type { Stance } from './society';
+
+/**
+ * Dealing for a gang. The gangs the wiki has dealing each push their own product (canon drugs,
+ * by item id, in `src/data/drugs.ts`); a connect of theirs fronts the player a package once
+ * they've earned some trust, owed back by a day; the player sells it on the corner the gang
+ * gives them, to whoever has a habit (`habitOf`) and comes by, or pitches it to people they
+ * meet; what's sold over what's owed is theirs, and the price is their Trading against the
+ * buyer's. Paid on time, trust grows and the rungs follow, with bigger fronts and a better
+ * cut; short or late, it's a debt that grows, and collectors come for it. The numbers and the
+ * gangs' words are in `src/data/dealing.ts`; the doing of it is `Game`'s.
+ */
+
+/** A drug: canon facts (what it is, how it's taken, whether carrying it is a crime), and our weight, price and pull. */
+export interface DrugKind {
+  name: string;
+  /** How it's taken: the wiki's for the 2077 drugs (an inhaler; the Animals drink their Juice), ours for the older ones. */
+  type: string;
+  /** The edition it's from: the 2077 drugs, or the older street drugs (2020, RED) a gang without a 2077 product deals. */
+  from: '2077' | '2020';
+  /** Canon: illegal to carry at all (combat-rated, or illegal outright), not only to sell without a license. */
+  illegal: boolean;
+  grams: number;
+  /** Doses to a pocket slot. */
+  perSlot: number;
+  /** A dose on the street at everyday prices; richer streets pay more, poorer less. */
+  price: number;
+  /** How hard it hooks, 0–1: its users need it more, and pay more readily. */
+  hook: number;
+  /** Who takes it: a weight by walk of life, the ages it's taken at, and traits that lean to it (a trait's share of a full point either way). */
+  users: { walks: Partial<Record<SkillWalk, number>>; age: [number, number]; traits?: Partial<Record<keyof Traits, number>> };
+  note: string;
+}
+
+/** Someone's habit: what they take, and how badly they need it (0–1). */
+export interface Habit {
+  drug: string;
+  need: number;
+}
+
+export interface HabitRules {
+  /** The share of each walk of life with a habit. */
+  chance: Record<SkillWalk, number>;
+  /** Nobody younger takes anything (as far as the game's concerned). */
+  adultAt: number;
+  /** What a drug nobody deals in their district weighs against one that's dealt there. */
+  elsewhere: number;
+}
+
+/** A rung on a gang's ladder: the trust and the fronts paid it takes, the package it's fronted, the share of its street value owed back, and the days to pay. */
+export interface DealRung {
+  id: string;
+  /** Trust it takes. */
+  at: number;
+  /** Fronts paid off in full it takes. */
+  paid: number;
+  /** Doses fronted. */
+  front: number;
+  /** The share of the package's street value owed back to the gang. */
+  cut: number;
+  days: number;
+}
+
+/** A gang that deals: what it pushes, who of theirs fronts it (by role) and who comes to collect, its rungs' titles, and the canon places it works. */
+export interface DealGang {
+  drugs: string[];
+  connects: string[];
+  collectors: string[];
+  /** One title a rung, in the gang's own words. */
+  titles: string[];
+  /** Canon places the gang deals from, by name: a corner there first. */
+  spots?: string[];
+}
+
+export interface DealLines {
+  /** The corner's moments, told: `{who}` (`{Who}` to start a sentence), `{he}`, `{his}`, `{him}`, `{drug}`, `{price}`, `{pay}`, `{gang}`. */
+  walkUp: string[];
+  regular: string[];
+  short: string[];
+  sold: string[];
+  pushed: string[];
+  walked: string[];
+  turned: string[];
+  quiet: string[];
+  dry: string[];
+  /** The deadline: a front owed now, and the debt growing. */
+  due: string[];
+  /** Collectors, told (`{owed}`, `{pay}`, `{left}`, `{when}`): they turn up, they're paid in full or in part, they're talked round, they won't be, they take it out on the player. */
+  collect: string[];
+  collectPaid: string[];
+  collectSome: string[];
+  pleaded: string[];
+  pleadFailed: string[];
+  beaten: string[];
+  /** The gang has had enough: no more product, and the debt is a score to settle. */
+  cutOff: string[];
+}
+
+export interface DealingRules {
+  drugs: Record<string, DrugKind>;
+  gangs: Record<string, DealGang>;
+  rungs: DealRung[];
+  habits: HabitRules;
+  /** What it takes for a connect to front the player anything: how they feel about them (one of the gang vouching for them lets a neutral one do it), and how the gang does. */
+  join: { stances: Stance[]; vouched: Stance[]; rep: number };
+  /** Trust for a front paid in full and on time (more before half its time is up), off for paying late, for coming up short, and for fighting a collector. */
+  trust: { paid: number; early: number; late: number; short: number; fought: number; cutOff: number };
+  /** A debt: interest a day, hours after the deadline the collectors come and between visits, what pleading gets, what a beating takes. */
+  debt: { interest: number; graceHours: number; againHours: number; plead: { base: number; perLevel: number; most: number; hours: number; trust: number }; beat: { health: number; energy: number; trust: number }; threat: number };
+  /** The corner: the kinds of place it can be, buyers a three-hour block (from midnight), how busy each kind is, the energy a buyer takes, how much likelier a regular is to come, and how many buys make one. */
+  corner: { kinds: string[]; buyers: number[]; busy: Record<string, number>; energy: number; regulars: number; regularAt: number; rapport: number };
+  /** Pushing for more: the odds (a Trading level past theirs adds, their need adds), never past `most`; what it asks over the price. */
+  push: { base: number; perLevel: number; need: number; most: number; more: number; rapport: number };
+  /** A buyer short of the price offers what they have, if it's at least this share of it. */
+  short: { least: number };
+  /** Pitching someone without a habit: rapport it costs. */
+  pitch: { rapport: number };
+  /** What a dose fetches on richer and poorer streets. */
+  tiers: Record<Quality, number>;
+  lines: DealLines;
+}
+
+/** A package fronted: the drug, how many doses, what's owed back and what's been paid of it, by when. */
+export interface Front {
+  drug: string;
+  doses: number;
+  owed: number;
+  paid: number;
+  at: number;
+  due: number;
+}
+
+/** The player's dealings with one gang. */
+export interface DealState {
+  gang: string;
+  /** The member who fronts the player and takes the money. */
+  connect: string;
+  rung: number;
+  trust: number;
+  /** The place the gang has the player work, by location id. */
+  corner: string | null;
+  front: Front | null;
+  /** What's overdue, interest and all, and when the interest last went on. */
+  debt: number;
+  debtAt: number;
+  /** When collectors come next, while there's a debt. */
+  collectAt: number | null;
+  collections: number;
+  /** Fronts paid off in full, doses sold, eddies taken. */
+  fronts: number;
+  sold: number;
+  take: number;
+  /** Who's bought off the player: how many times, and when last. */
+  customers: Record<string, { bought: number; last: number }>;
+  /** The corner's three-hour block, and how many buyers have come by in it. */
+  block: { key: number; served: number };
+}
+
+export interface DealingState {
+  current: DealState | null;
+  /** Who in each gang put in a word for the player (a gang id's member id). */
+  vouched: Record<string, string>;
+  /** Gangs the player walked away from, as they left it, to pick up again. */
+  past: Record<string, DealState>;
+  /** Gangs that cut the player off, and when. */
+  burned: Record<string, number>;
+}
+
+export function freshDealing(): DealingState {
+  return { current: null, vouched: {}, past: {}, burned: {} };
+}
+
+/**
+ * Whether someone takes anything, and what: on their own stream, so it never moves anything
+ * else. A share of each walk of life does (`habits.chance`), adults only; what they take is
+ * weighed by who each drug's users are (walk, age, nature) and whether anyone deals it where
+ * they live (`dealtHere`, the drugs of the gangs whose turf it is).
+ */
+export function habitOf(person: Person, walk: SkillWalk, dealtHere: ReadonlySet<string>, rules: DealingRules, seed: string): Habit | null {
+  if (person.age < rules.habits.adultAt) return null;
+  const rng = createRng(`${seed}:habit:${person.id}`);
+  if (!rng.chance(rules.habits.chance[walk])) return null;
+  const weighed = Object.entries(rules.drugs).map(([id, drug]) => {
+    const [from, to] = drug.users.age;
+    let weight = (drug.users.walks[walk] ?? 0) * (person.age >= from && person.age <= to ? 1 : 0.2);
+    for (const [trait, lean] of Object.entries(drug.users.traits ?? {}) as Array<[keyof Traits, number]>) weight *= Math.max(0.1, 1 + lean * (person.traits[trait] - 0.5) * 2);
+    return { id, weight: weight * (dealtHere.has(id) ? 1 : rules.habits.elsewhere) };
+  });
+  const total = weighed.reduce((n, w) => n + w.weight, 0);
+  if (total <= 0) return null;
+  let roll = rng.next() * total;
+  const pick = weighed.find((w) => (roll -= w.weight) < 0) ?? weighed[weighed.length - 1]!;
+  const drug = rules.drugs[pick.id]!;
+  return { drug: pick.id, need: Math.min(1, rng.range(0.15, 0.7) + drug.hook * 0.4) };
+}
+
+/** The rung the player is on with a gang. */
+export function dealRungOf(state: DealState, rules: DealingRules): DealRung {
+  return rules.rungs[Math.min(state.rung, rules.rungs.length - 1)]!;
+}
+
+/** Whether the player has the trust and the fronts paid for the next rung. */
+export function canMoveUp(state: DealState, rules: DealingRules): boolean {
+  const next = rules.rungs[state.rung + 1];
+  return Boolean(next && state.trust >= next.at && state.fronts >= next.paid);
+}
+
+/** A dose's street price on a street of this tier. */
+export function streetPrice(drug: DrugKind, tier: Quality, rules: DealingRules): number {
+  return Math.max(1, Math.round(drug.price * rules.tiers[tier]));
+}
+
+/** What a package of this drug at this rung owes back. */
+export function owedFor(drug: DrugKind, rung: DealRung): number {
+  return Math.max(1, Math.round(drug.price * rung.front * rung.cut));
+}
+
+/**
+ * What the player asks a buyer: the street price, moved by the player's Trading against the
+ * buyer's (both as bonuses, `factor` = mine over theirs, to the haggle's power): a poor trader
+ * lets it go for less, a sharp one gets more.
+ */
+export function askOf(street: number, factor: number): number {
+  return Math.max(1, Math.round(street * factor));
+}
+
+/** The odds a push for more comes off: a Trading level past the buyer's adds, their need adds, never past `most`. */
+export function pushOdds(yours: number, theirs: number, need: number, rules: DealingRules): number {
+  const { push } = rules;
+  return Math.max(0.05, Math.min(push.most, push.base + push.perLevel * (yours - theirs) + push.need * need));
+}
+
+/** Buyers a corner sees in a three-hour block: by the hour, times how busy its kind of place is. */
+export function buyersIn(hour: number, kind: string, rules: DealingRules): number {
+  const { corner } = rules;
+  const base = corner.buyers[Math.floor(hour / 3) % corner.buyers.length] ?? 0;
+  return Math.max(0, Math.round(base * (corner.busy[kind] ?? 1)));
+}
+
+/** A clock's three-hour block, counted from the start of time, so a new block is a new count. */
+export function blockOf(day: number, hour: number): number {
+  return day * 8 + Math.floor(hour / 3);
+}
+
+/** A debt after `days` of interest. */
+export function withInterest(debt: number, days: number, rules: DealingRules): number {
+  return Math.round(debt * Math.pow(1 + rules.debt.interest, days));
+}
+
+/** Where the player stands with the gang they deal for, as the UI shows it. */
+export interface DealView {
+  gang: string;
+  gangName: string;
+  title: string;
+  rung: number;
+  trust: number;
+  /** The next rung: its title, and the trust and fronts paid it takes. */
+  next: { title: string; trust: number; fronts: number } | null;
+  connect: string;
+  connectName: string;
+  corner: { id: string; name: string } | null;
+  front: { drug: string; name: string; doses: number; owed: number; paid: number; left: number; due: number } | null;
+  /** Doses of the gang's product on the player now. */
+  carried: number;
+  debt: number;
+  collectAt: number | null;
+  fronts: number;
+  sold: number;
+  take: number;
+}
+
+/** Something to do about dealing with a person, as their card offers it: `ask`, `front`, `pay`, `walk`, or `sell:<drug>`. */
+export interface DealOption {
+  id: string;
+  label: string;
+  sub?: string;
+  disabled?: boolean;
+  danger?: boolean;
+}
+
+/** A choice on the panel: a buyer at the corner, or a collector come for a debt. */
+export interface DealChoice {
+  id: string;
+  label: string;
+  sub?: string;
+  disabled?: boolean;
+}
+
+/** A buyer at the player's corner, waiting on an answer. */
+export interface DealMomentView {
+  text: string;
+  person: string;
+  choices: DealChoice[];
+}
+
+/** A collector on the player, waiting on an answer. */
+export interface CollectorView {
+  text: string;
+  person: string;
+  gang: string;
+  owed: number;
+  choices: DealChoice[];
+}

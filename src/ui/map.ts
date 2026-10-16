@@ -102,6 +102,8 @@ export class CityMap {
   private state: MapState | null = null;
   private target: Target | null = null;
   private work: WorkPin[] = [];
+  /** The place the player deals from, if they deal. */
+  private corner: string | null = null;
   private workKey = '[]';
   private preview: Preview = { path: null, stations: [] };
   private trip: Trip | null = null;
@@ -214,6 +216,13 @@ export class CityMap {
   }
 
   /** Marks where the player works: a badge on each building, lit while a shift there is open. Redrawn only when it changes. */
+  /** Marks the place the player deals from (null: nowhere). */
+  setCorner(id: string | null): void {
+    if (id === this.corner) return;
+    this.corner = id;
+    this.render();
+  }
+
   setWork(pins: WorkPin[]): void {
     const key = JSON.stringify(pins);
     if (key === this.workKey) return;
@@ -1006,6 +1015,7 @@ export class CityMap {
         isHere ? 'is-here' : neighbors.has(location.id) ? 'is-adjacent' : 'is-known',
         state.visited.has(location.id) ? 'is-visited' : 'is-unexplored',
         isPicked ? 'is-selected' : '',
+        this.corner === location.id ? 'is-corner' : '',
       ],
       labelBox,
       () => {
@@ -1018,7 +1028,7 @@ export class CityMap {
       node.setAttribute('aria-label', `You are here: ${location.name}, ${district}`);
     } else {
       node.setAttribute('aria-pressed', String(isPicked));
-      node.setAttribute('aria-label', `${location.name}, ${district}${state.visited.has(location.id) ? '' : ', unexplored'}`);
+      node.setAttribute('aria-label', `${location.name}, ${district}${state.visited.has(location.id) ? '' : ', unexplored'}${this.corner === location.id ? ', your corner' : ''}`);
     }
     return node;
   }
