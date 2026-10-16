@@ -474,6 +474,38 @@ export interface CombatContent extends CombatRules {
   steady: { base: number; courage: number; gang: number };
   /** How well the player knows each kind of weapon and each weapon (fists are Street Brawler's). */
   mastery: MasteryRules;
+  /** Killing someone who lies out cold: the ways there are, and who'd stop it. */
+  finish: FinishContent;
+}
+
+/** A way to kill someone lying out cold: bare hands, a boot, a blade, a gun, something blunt, a monowire. */
+export type FinishKind = 'choke' | 'stomp' | 'cut' | 'shoot' | 'beat' | 'garrote';
+
+export interface FinishRules {
+  /** What the button says. */
+  label: string;
+  /** What it takes: bare hands (anyone), a blade (in hand, or in the arms), a loaded gun, something blunt (Gorilla Arms too), a monowire. */
+  needs: 'hands' | 'blade' | 'gun' | 'blunt' | 'wire';
+  /** Heard through the walls: everyone in the building may call it in, not only whoever's in the room. */
+  loud: boolean;
+  /** How long it takes, as times the odds someone here gets there first and stops it. */
+  slow: number;
+  /** How it's told: `{who}`, `{he}`, `{his}`, `{weapon}`, and `{s}`/`{es}` after `{he}`. */
+  lines: string[];
+}
+
+export interface FinishContent {
+  ways: Record<FinishKind, FinishRules>;
+  /**
+   * The odds someone who's here stops it: a base, times their nerve, more for the victim's
+   * family, friends and gang, more for a guard; in a crowd each leaves it to the others (over
+   * the number there to the power of `crowd`); never more than `most`. An NCPD officer always
+   * does, and draws on the player. Heard through the walls, the odds a call is made, as a share.
+   */
+  intervene: { base: number; kin: number; friend: number; gang: number; guard: number; crowd: number; most: number };
+  heard: number;
+  /** Whoever stops it: `{who}`, `{he}`, `{his}`, `{s}`, about them. */
+  stopped: string[];
 }
 
 /** Which perks a weapon brings at its levels: a gun's by its technology, anything else's by what its hits are. */

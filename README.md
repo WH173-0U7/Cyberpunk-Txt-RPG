@@ -450,7 +450,11 @@ own.
   before they're beaten, likelier the more worn down they are. They lie where they fell for
   a few minutes, hurt no worse than a headache, and nobody can talk to them till they come
   to, but you can go through their pockets (**Rob** under **⋯** on their card), with nobody
-  to stop you. It works on you too: knocked out, you're robbed, but come to with the health
+  to stop you. Or kill them, the ways you have: choke or stomp with your bare hands, cut
+  their throat with a blade, shoot them, beat them with something blunt, garrote them with a
+  monowire. The slower it is, the likelier someone here steps in and stops you (and then
+  it's a fight with them); an officer here always does. A gunshot is heard through every
+  wall. It works on you too: knocked out, you're robbed, but come to with the health
   you had. Two skills grow as you fight: **Street Brawler** (the 2077 skill for fists and
   blunt weapons) with every blow you land bare-handed or with Gorilla Arms, and more for a
   knockout, makes your fists land surer and harder and anything blunt put people out more

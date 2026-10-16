@@ -41,6 +41,7 @@ import { HOURS } from './data/hours';
 import { ROOMS } from './data/rooms';
 import { POLICE } from './data/police';
 import type { PoliceView } from './engine/police';
+import type { FinishKind } from './engine/combat';
 import { medDetail } from './engine/medical';
 import { FightPanel } from './ui/fight';
 import { fitCheck, implantDetail, implantOf } from './engine/cyberware';
@@ -472,6 +473,11 @@ const people = new People(
       picker = null;
       cardTab = 'talk';
       game.chop(id, chipId, Date.now());
+    },
+    onKill: (id, way) => {
+      lastActivity = performance.now();
+      picker = null;
+      if (game.killCold(id, way as FinishKind, Date.now())) showPeople();
     },
     onHeart: (id, move) => {
       lastActivity = performance.now();
@@ -1394,6 +1400,7 @@ function showPeople(): void {
             // Out cold, they're here but past talking to: all that's left is going through their pockets.
             here: Boolean(present) && !game.outCold(shown.id, now),
             cold: Boolean(present) && game.outCold(shown.id, now),
+            finishes: present ? game.finishes(shown.id, now).map((f) => ({ id: f.id, label: f.label })) : [],
             web: standing.web.map((link) => ({ id: link.person.id, name: nameOf(link.person.id, link.person.name), label: link.kind ? kinWord(shown, link.kind, link.person) : '?', how: how[link.how] })),
             webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Watch who they keep company with, or get them talking.`,
             picker,
@@ -1651,6 +1658,8 @@ function wire(g: Game): void {
     const district = g.districtOf(where);
     const held = g.police(Date.now()).held;
     hud.setLocation(held ? 'Holding cell' : (g.interior?.name ?? g.nameOf(where)), district?.name ?? 'Night City', g.neighborhoodOf(where));
+    // Officers on the player, or a cell: whatever covers the panel makes way for it.
+    if ((held || g.police(Date.now()).confront) && MapOverlay.open && MapOverlay.open !== fight.overlay) MapOverlay.open.close();
     if (people.overlay.isOpen) showPeople();
     if (rooms.overlay.isOpen) rooms.overlay.close();
     if (shop.overlay.isOpen && !g.menu()) shop.overlay.close();

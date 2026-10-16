@@ -114,6 +114,8 @@ describe('the NCPD', () => {
     const police = game.police(NOON);
     expect(police.reports).toBe(1);
     expect(said(out, POLICE.lines.calls)).toBe(true);
+    // Whoever called is named mid-sentence as they would be: "Behind you, the woman…", never "Behind you, A woman…".
+    for (const line of out) expect(line).not.toMatch(/[a-z,] An? [a-z]/);
     const how = policing(shop.district, game.neighborhoodOf(game.whereabouts), CALLING)!;
     const urgency = POLICE.urgency.robbery;
     expect(police.dispatch?.crime).toBe('robbery');
@@ -342,3 +344,128 @@ describe('the NCPD', () => {
     expect(game.police(later).reports).toBeGreaterThanOrEqual(reports);
   });
 });
+
+describe('killing someone out cold', () => {
+  const shop = busy();
+  /** Every blow lands and knocks someone out cold, whatever it's made with; nobody fights back with anything but fists. */
+  const knockouts = (finish = COMBAT.finish) => ({
+    ...COMBAT,
+    classes: Object.fromEntries(Object.entries(COMBAT.classes).map(([k, c]) => [k, { ...c, hit: { reach: 1, close: 1, far: 1 }, damage: [5, 5] as [number, number], lethal: 0 }])) as typeof COMBAT.classes,
+    carry: { ...COMBAT.carry, chance: { gang: 0, guard: 0, corpo: 0, street: 0, elder: 0 } },
+    knockout: { ...COMBAT.knockout, kinds: { fists: 100, blunt: 100, blade: 100, gun: 100, wire: 100 }, least: 0, most: 1, minutes: [30, 30] as [number, number] },
+    finish,
+  });
+  const nobodyStops = { ...COMBAT.finish, intervene: { ...COMBAT.finish.intervene, base: 0 } };
+  const knife: Progress['items'][number] = { id: 'knife', kind: 'weapon', weapon: 'knife', name: 'Knife', count: 1, in: 'jacket' };
+  const lexington: Progress['items'][number] = { id: 'lexington-1', kind: 'weapon', weapon: 'lexington', name: 'M-10AF Lexington', count: 1, in: 'jacket', loaded: 20 };
+  /** The player knocks someone out cold at the shop, carrying what's said. */
+  const knockedOut = (items: Progress['items'], finish = nobodyStops, police = QUIET, extra: Partial<Progress> = {}) => {
+    const { game, said: out, victim } = play(shop, police, { items, ...extra }, knockouts(finish));
+    game.attack(victim.id, NOON);
+    let t = NOON;
+    for (let n = 0; n < 30 && game.fighting; n++) game.fightMove('attack', (t += 1000));
+    if (game.fightView()?.over !== 'out') throw new Error(`not out cold: ${game.fightView()?.over}`);
+    game.leaveFight();
+    return { game, out, victim, t };
+  };
+
+  it('offers the ways the player has to do it: bare hands always, and a blade, a loaded gun, chrome', () => {
+    const bare = knockedOut([]);
+    expect(bare.game.finishes(bare.victim.id, bare.t).map((f) => f.id)).toEqual(['choke', 'stomp']);
+    const armed = knockedOut([knife, lexington]);
+    expect(armed.game.finishes(armed.victim.id, armed.t).map((f) => [f.id, f.with])).toEqual([['choke', 'your hands'], ['stomp', 'your hands'], ['cut', 'knife'], ['shoot', 'Lexington']]);
+    // An empty gun shoots nobody.
+    const empty = knockedOut([{ ...lexington, loaded: 0 }]);
+    expect(empty.game.finishes(empty.victim.id, empty.t).map((f) => f.id)).not.toContain('shoot');
+    const bladed = knockedOut([], nobodyStops, QUIET, { chrome: [{ id: 'mantis-blades', since: 0 }] });
+    expect(bladed.game.finishes(bladed.victim.id, bladed.t).find((f) => f.id === 'cut')?.with).toBe('Mantis Blades');
+    // Someone awake gets none of it.
+    const awake = play(shop, QUIET);
+    expect(awake.game.finishes(awake.victim.id, NOON)).toEqual([]);
+    expect(awake.game.killCold(awake.victim.id, 'choke', NOON)).toBe(false);
+  });
+
+  it('kills them the way chosen, told the way it was done: a murder, and a round gone for a shot', () => {
+    const { game, out, victim, t } = knockedOut([lexington]);
+    const loaded = game.inventory.find((i) => i.id === 'lexington-1')!.loaded!;
+    expect(game.killCold(victim.id, 'shoot', t)).toBe(true);
+    expect(victim.diedOn).toBe(Math.floor(t / 86_400_000));
+    expect(game.lifeSaved.dead[victim.id]).toBe(victim.diedOn);
+    expect(game.outCold(victim.id, t)).toBe(false);
+    expect(game.peopleHere(t).some((p) => p.person.id === victim.id)).toBe(false);
+    expect(game.societySaved.incidents.map((i) => i.kind)).toEqual(['assault', 'murder']);
+    expect(game.inventory.find((i) => i.id === 'lexington-1')?.loaded).toBe(loaded - 1);
+    expect(said(out, COMBAT.finish.ways.shoot.lines)).toBe(true);
+    expect(out.some((l) => /is dead\.$/.test(l))).toBe(true);
+    for (const line of out) expect(line).not.toMatch(/[{}]|undefined/);
+    // Done is done.
+    expect(game.killCold(victim.id, 'choke', t)).toBe(false);
+  });
+
+  it('can be stopped by someone here, who takes the player on instead, and it is an assault all the same', () => {
+    const always = { ...COMBAT.finish, intervene: { ...COMBAT.finish.intervene, base: 100, most: 1 } };
+    const { game, out, victim, t } = knockedOut([], always);
+    expect(game.killCold(victim.id, 'choke', t)).toBe(true);
+    expect(victim.diedOn).toBeUndefined();
+    expect(game.outCold(victim.id, t)).toBe(true);
+    expect(game.fighting).toBe(true);
+    expect(game.fightWith).not.toBe(victim.id);
+    expect(game.fightView()?.log[0]).toMatch(new RegExp(COMBAT.finish.stopped.map((l) => l.replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\{\w+\}/g, '.*')).join('|'), 'i'));
+    expect(game.societySaved.incidents.map((i) => i.kind)).toEqual(['assault', 'assault']);
+    expect(out.some((l) => /is dead/.test(l))).toBe(false);
+  });
+
+  it('is stopped by an NCPD officer in the room, who draws on the player', () => {
+    // Somewhere an officer is, off duty, with someone else to knock out.
+    let found: { b: Building; at: number } | null = null;
+    for (let hour = 10; hour < 22 && !found; hour++) {
+      const at = Date.UTC(2077, 9, 13, hour, 0);
+      for (const b of world.buildings) {
+        if (!b.business || b.kind !== 'shops') continue;
+        const here = peopleAt(population, world, { kind: 'building', id: b.id }, clockOf(at), FOOD.dishes, PEOPLE.out);
+        if (here.length >= 2 && here.some((p) => p.person.job.role.startsWith('NCPD')) && here.some((p) => !p.person.job.role.startsWith('NCPD'))) {
+          found = { b, at };
+          break;
+        }
+      }
+    }
+    if (!found) throw new Error('no officer anywhere');
+    const game = new Game(world, rulesWith(CALLING, knockouts(nobodyStops)), progressAt(found.b, { items: [] }));
+    game.start(found.at);
+    const victim = game.peopleHere(found.at).find((p) => !p.person.job.role.startsWith('NCPD'))!.person;
+    game.attack(victim.id, found.at);
+    let t = found.at;
+    for (let n = 0; n < 30 && game.fighting; n++) game.fightMove('attack', (t += 1000));
+    expect(game.fightView()?.over).toBe('out');
+    game.leaveFight();
+    // The officer saw the fight and called it in, but it's the killing they step in for.
+    expect(game.police(t).confront).toBeNull();
+    expect(game.killCold(victim.id, 'stomp', t)).toBe(true);
+    expect(victim.diedOn).toBeUndefined();
+    expect(game.police(t).confront).toMatchObject({ crime: 'assault', why: 'scene' });
+    expect(game.fighting).toBe(false);
+  });
+});
+
+describe('the lines for killing someone out cold', () => {
+  it('fill for anyone, whatever pronouns they go by, and there are enough of them', () => {
+    const forms = [
+      { he: 'she', He: 'She', him: 'her', his: 'her', His: 'Her', s: 's', es: 'es' },
+      { he: 'he', He: 'He', him: 'him', his: 'his', His: 'His', s: 's', es: 'es' },
+      { he: 'they', He: 'They', him: 'them', his: 'their', His: 'Their', s: '', es: '' },
+    ];
+    const pools = [...Object.values(COMBAT.finish.ways).map((w) => w.lines), COMBAT.finish.stopped];
+    for (const pool of pools) {
+      expect(pool.length).toBeGreaterThanOrEqual(4);
+      for (const line of pool) {
+        for (const form of forms) {
+          const text = line.replace(/\{(\w+)\}/g, (_, k: string) => ({ ...form, who: 'the woman', Who: 'The woman', weapon: 'knife' } as Record<string, string>)[k] ?? `{${k}}`);
+          expect(text, line).not.toMatch(/[{}]/);
+        }
+        // A verb ending only ever goes with a {he} earlier in the sentence.
+        for (const m of line.matchAll(/\{(s|es)\}/g)) expect(line.slice(0, m.index).match(/\{[Hh]e\}[^.!?]*$/), line).toBeTruthy();
+      }
+    }
+  });
+});
+
