@@ -46,7 +46,7 @@ describe('the people', () => {
   });
 
   it('crowd the homes on a third draw, leaving everyone the first two made (and their ties) as every save knows them', () => {
-    const none = { ...PEOPLE, crowd: { staff: 0, perHome: [0, 0] as [number, number], tall: 0, megabuilding: 0, gangs: 0 } };
+    const none = { ...PEOPLE, crowd: { staff: 0, perHome: [0, 0] as [number, number], tall: 0, megabuilding: 0, gangs: 0 }, ncpd: undefined };
     const strip = ({ bio: _bio, ...person }: Population['people'][number]) => person;
     for (const { world, population } of cities.slice(0, 20)) {
       const before = generatePeople(world, none, FOOD.dishes);
@@ -60,6 +60,25 @@ describe('the people', () => {
       for (const p of crowd) {
         const mates = tiesOf(population, p.id).filter((t) => t.kind === 'coworker' && known.has(t.to));
         expect(mates.length, `${world.seed} ${p.id}`).toBeLessThanOrEqual(PEOPLE.crowdKnows);
+      }
+    }
+  });
+
+  it('adds the NCPD on a fourth draw, leaving everyone the first three made as every save knows them', () => {
+    const without = { ...PEOPLE, ncpd: undefined };
+    const strip = ({ bio: _bio, ...person }: Population['people'][number]) => person;
+    for (const { world, population } of cities.slice(0, 10)) {
+      const before = generatePeople(world, without, FOOD.dishes);
+      expect(population.people.slice(0, before.people.length).map(strip), world.seed).toEqual(before.people.map(strip));
+      // Officers where the NCPD still goes, none where it doesn't, and in pairs at the least.
+      const officers = population.people.slice(before.people.length);
+      // (A district with no homes in this city has its officers living elsewhere: none drawn there.)
+      const housed = Object.entries(PEOPLE.ncpd!.perDistrict).filter(([d]) => world.buildings.some((b) => b.district === d && b.category === 'residential'));
+      expect(officers.length, world.seed).toBe(housed.reduce((n, [, k]) => n + k, 0));
+      for (const o of officers) {
+        expect(PEOPLE.ncpd!.roles, o.id).toContain(o.job.role);
+        expect(o.job.building, o.id).toBeNull();
+        expect(['pacifica', 'badlands'], o.id).not.toContain(o.district);
       }
     }
   });

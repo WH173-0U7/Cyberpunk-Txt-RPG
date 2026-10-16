@@ -20,6 +20,8 @@ import { hashSeed } from '../src/engine/rng';
 import { createSave, progressFor, readSave, resume, savedSeed, type Progress, type SaveData } from '../src/engine/save';
 import type { World } from '../src/engine/types';
 
+const HOUR = 3_600_000;
+
 const world = generateWorld('7f3a29c1', CITY);
 const T0 = Date.UTC(2077, 9, 12, 20, 0);
 const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT };
@@ -233,22 +235,38 @@ describe('saving', () => {
     expect(saveOf(game, now).chrome).toEqual([]);
   });
 
-  it('carries health and NCPD heat, and reads a save from before them as well and unwanted', () => {
+  it('carries health and what the NCPD has on the player, and reads a save from before them as well and clean', () => {
     const { game, now } = played(1);
     const health = { value: 42, at: now };
-    const heat = { value: 2.5, at: now };
-    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), health, heat })));
-    expect(read).toMatchObject({ health, heat });
+    const spot = { kind: 'building', id: world.buildings[0]!.id };
+    const police = {
+      reports: [{ id: 1, crime: 'robbery', at: now - HOUR, district: 'watson', place: 'Somewhere', named: true, seen: 'your face' }, { id: 'two', crime: 'jaywalking' }],
+      dispatch: { report: 1, crime: 'robbery', spot, x: 1, y: 2, arriveAt: now + HOUR, officers: ['a', 'b'], told: true },
+      warrants: [{ crime: 'robbery', district: 'watson', since: now - HOUR, until: now + 24 * HOUR }, { crime: 'murder', district: 'watson', since: now, until: null }, 'wanted'],
+      held: null,
+      confront: null,
+      pending: [{ person: 'x', crime: 'assault', at: now, named: false, seen: 'a balaclava', odds: 0.4, district: 'watson', minutes: [10, 20], spot, x: 1, y: 2 }, { person: 'y' }],
+      lastStop: now,
+      nextId: 2,
+    };
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), health, police })));
+    expect(read).toMatchObject({ health });
+    // Anything in it that isn't a record of something is dropped.
+    expect(read?.police?.reports.map((r) => r.id)).toEqual([1]);
+    expect(read?.police?.warrants.map((w) => w.crime)).toEqual(['robbery', 'murder']);
+    expect(read?.police?.pending.map((p) => p.person)).toEqual(['x']);
     const again = new Game(world, rules, resume(world, read!)!);
     expect(again.health(now).current).toBe(42);
-    expect(again.heat(now).stars).toBe(3);
-    expect(readSave({ ...saveOf(game, now), health: { value: -3, at: now }, heat: 'hot' })).toMatchObject({ health: null, heat: null });
+    expect(again.police(now)).toMatchObject({ reports: 1, dispatch: { crime: 'robbery', arriveAt: now + HOUR }, held: null, confront: null });
+    expect(again.police(now).warrants).toHaveLength(2);
+    expect(again.policeSaved).toEqual(read?.police);
+    expect(readSave({ ...saveOf(game, now), health: { value: -3, at: now }, police: 'wanted' })).toMatchObject({ health: null, police: null });
     const before: Record<string, unknown> = { ...saveOf(game, now) };
     delete before.health;
-    delete before.heat;
+    delete before.police;
     const fresh = new Game(world, rules, resume(world, readSave(before)!)!);
     expect(fresh.health(now)).toMatchObject({ current: COMBAT.health.base, max: COMBAT.health.base, fullAt: null });
-    expect(fresh.heat(now).stars).toBe(0);
+    expect(fresh.police(now)).toEqual({ dispatch: null, warrants: [], held: null, reports: 0, confront: null });
   });
 
   it('carries the choice to kill or to wound and the Trauma Team plan, and reads a save from before them as wounding and uncovered', () => {

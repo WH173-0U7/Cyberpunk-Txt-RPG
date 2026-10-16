@@ -8,6 +8,7 @@ import type { ChromeStatus } from './cyberware';
 import type { FightView, HealthStatus } from './combat';
 import type { CoverageStatus } from './medical';
 import type { Room } from './rooms';
+import type { PoliceView } from './police';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -323,5 +324,7 @@ export type GameEvents = {
   healthChanged: HealthStatus;
   /** The player signed up with Trauma Team, or lost the plan (null: none now). Running out on the clock doesn't fire this; ask `Game.covered(now)`. */
   coverageChanged: CoverageStatus | null;
+  /** Something with the NCPD changed: a call made, a unit sent or arrived, a warrant, officers on the player, a hold. The clock running down doesn't fire this; ask `Game.police(now)`. */
+  policeChanged: PoliceView;
   fx: { effect: FxName };
 };

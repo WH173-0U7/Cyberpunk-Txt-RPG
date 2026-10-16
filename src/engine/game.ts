@@ -3,7 +3,7 @@ import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergySt
 import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
-import { masteryEdge, NO_EDGE, perkFamily, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type HealthStatus, type HeatStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
+import { masteryEdge, NO_EDGE, perkFamily, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
 import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
@@ -13,6 +13,7 @@ import { drink, freshInebriation, inebriationStatus, type InebriationRules, type
 import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobRules, type JobState, type JobStatus, type Ladder, type Rung, type ShiftChoice, type ShiftEventKind } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
+import { chargesFor, freshPolice, issueWarrant, policing, warrantsAt, worstCrime, type Confrontation, type Crime, type Dispatch, type PoliceChoice, type PoliceContent, type PoliceState, type PoliceView } from './police';
 import { mainRoom, roomById, roomOf, roomsOn, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
 import { allHours, buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
@@ -122,7 +123,7 @@ export interface GameRules extends TravelRules {
   money: MoneyRules;
   /** Where the player can work, and how far up. */
   jobs: JobRules;
-  /** Fighting: the ways of fighting, the clock, what people carry, what chrome does, the heat. */
+  /** Fighting: the ways of fighting, the clock, what people carry, what chrome does. */
   combat: CombatContent;
   /** The people's own days: what happens between them, and what they're seen doing together. */
   life: LifeRules;
@@ -132,6 +133,8 @@ export interface GameRules extends TravelRules {
   hours?: HoursRules;
   /** The rooms inside buildings. Without them (the tests' rules leave them out), a building is one room, as it was. */
   rooms?: RoomsContent;
+  /** The NCPD: who calls it in, how fast it comes, warrants. Without it (the tests' rules leave it out), nobody ever calls. */
+  police?: PoliceContent;
 }
 
 /** Whether counters keep the hours of whoever works them, and how many hours ahead to look for when one opens. */
@@ -207,6 +210,8 @@ interface Fight {
   /** The launcher in the palm has been fired. */
   launched: boolean;
   nerve: { courage: number; temper: number };
+  /** Who here could have put a name to the player's face when it began: what a call names them by. */
+  knew: Set<string>;
   over: FightOutcome | null;
   result: string;
 }
@@ -214,7 +219,9 @@ interface Fight {
 /** Bare hands. */
 const FISTS: Arm = { id: 'fists', name: 'Fists', short: 'fists', cls: 'fists', magazine: 0 };
 /** The jobs that come armed and armored. */
-const GUARD = /guard|bouncer|security|trooper|patrol|sergeant/i;
+const GUARD = /guard|bouncer|security|trooper|patrol|sergeant|ncpd/i;
+/** The NCPD's own. */
+const NCPD = /^NCPD /;
 /** What an attack is called, by what it's made with. */
 const VERB: Record<ClassRules['kind'], string> = { gun: 'Shoot', blade: 'Slash', blunt: 'Strike', fists: 'Punch', wire: 'Lash', launcher: 'Fire' };
 /** Which lines tell a hit, by what it's made with. */
@@ -288,9 +295,12 @@ export class Game {
   private you: You;
   /** The chrome a ripperdoc has fitted into the player. */
   private fitted: Fitted[];
-  /** The player's health and NCPD heat as last written down (both move on the clock). */
+  /** The player's health as last written down (it comes back on the clock). */
   private healthState: Meter;
-  private heatState: Meter;
+  /** What the NCPD has on the player: reports, a unit on its way, warrants, officers here, a hold. */
+  private policeState: PoliceState;
+  /** The NCPD's officers, found once a city. */
+  private officerList: Person[] | null = null;
   /** The fight the player is in, or has just finished. */
   private fightState: Fight | null = null;
   /** Whether the player fights to kill; they don't unless they say so. */
@@ -337,9 +347,9 @@ export class Game {
     // Implants the game no longer has are gone, and one fitted twice is fitted once.
     const implants = rules.gear.chrome.implants;
     this.fitted = (progress?.chrome ?? []).filter((f, i, all) => f.id in implants && all.findIndex((g) => g.id === f.id) === i).map((f) => ({ ...f }));
-    // Saves from before fighting start the player well, and nobody looking for them.
+    // Saves from before fighting start the player well; from before the NCPD, with nothing on record.
     this.healthState = progress?.health ? { ...progress.health } : { value: this.maxHealth(), at: 0 };
-    this.heatState = progress?.heat ? { ...progress.heat } : { value: 0, at: 0 };
+    this.policeState = progress?.police ? { ...freshPolice(), ...copyOf(progress.police) } : freshPolice();
     this.lethalOn = progress?.lethal ?? false;
     this.coverage = progress?.coverage ? { ...progress.coverage } : null;
     // A job at a place this city doesn't have, or that doesn't hire anymore, is no job (an older save has one, as `job`).
@@ -587,7 +597,7 @@ export class Game {
   /** What's for sale where the player is: an eatery's menu, a store's rack, a ripperdoc's chrome, or nothing. */
   menu(now = Date.now()): Menu | null {
     const at = this.inside ?? this.location;
-    if (!at || !this.atCounter() || !this.counterOpen(at, now)) return null;
+    if (!at || !this.atCounter() || !this.counterOpen(at, now) || this.detained(now)) return null;
     const menu = this.counterMenu(at, now);
     return menu && this.jobs.some((j) => j.building === at.id) ? this.staffPriced(menu) : menu;
   }
@@ -1172,22 +1182,6 @@ export class Game {
     return { ...this.healthState };
   }
 
-  /** NCPD heat at `now`: what the player's done lately, cooling on the clock; stars, a whole one a point. */
-  heat(now: number): HeatStatus {
-    const { coolPerHour } = this.rules.combat.heat;
-    const level = Math.max(0, this.heatState.value - (Math.max(0, now - this.heatState.at) / HOUR) * this.rules.timeScale * coolPerHour);
-    return { level, stars: Math.max(0, Math.ceil(level - 1e-9)), coolAt: level > 0 ? now + (level / coolPerHour) * (HOUR / this.rules.timeScale) : null };
-  }
-
-  /** Heat, as it was last written down, for saving. */
-  get heatSaved(): Meter {
-    return { ...this.heatState };
-  }
-
-  private addHeat(amount: number, now: number): void {
-    this.heatState = { value: Math.min(this.rules.combat.heat.max, this.heat(now).level + amount), at: now };
-  }
-
   /** The most health the player has: the base, and more for chrome that gives it. */
   private maxHealth(): number {
     const bonus = this.fitted.reduce((sum, f) => sum + (this.rules.combat.chrome[f.id]?.health ?? 0), 0);
@@ -1245,7 +1239,10 @@ export class Game {
    * (`fightMove`), both moves at once, the player against the clock.
    */
   attack(id: string, now: number): boolean {
-    if (this.fighting || this.trip) return false;
+    if (this.fighting || this.trip || this.heldAt(now)) return false;
+    // With officers on the player, the only one to go for is an officer.
+    const confront = this.policeState.confront;
+    if (confront && !confront.officers.includes(id)) return false;
     const here = this.isHere(id, now);
     if (!here || here.person.diedOn !== undefined) return false;
     const { person, stance, doing } = here;
@@ -1276,15 +1273,17 @@ export class Game {
     const state: FightState = { range, beat: 0, you: { ...this.yourFighter(range, 1), hp: health.current, max: health.max }, them, ram, ramMax: ram, ramSpent: 0 };
     const before = this.snapshot(person, now);
     const speaker = this.speakerFor(person, stance, doing, now);
+    // Who could name the player, before this makes them known to the victim.
+    const knew = this.facesHere(now);
     const fallout = this.incident('assault', person, 0, now);
     learnOf(this.society, id, 'met');
     changeStanding(this.society, id, this.masked() ? {} : { met: true }, society, timeScale, now);
-    const witnesses = this.peopleHere(now).filter((p) => p.person.id !== id).length;
-    if (witnesses) this.addHeat(combat.heat.assault, now);
-    this.fightState = { with: id, state, indoors, startedAt: now, deadline: now, next: 'attack', tell: null, log: [], beatLines: [], revived: false, over: null, result: '', launched: false, nerve: { courage: person.traits.courage, temper: person.traits.temper } };
+    this.fightState = { with: id, state, indoors, startedAt: now, deadline: now, next: 'attack', tell: null, log: [], beatLines: [], revived: false, over: null, result: '', launched: false, nerve: { courage: person.traits.courage, temper: person.traits.temper }, knew };
     this.fightLine('start', person, { ...speaker.vars, ...this.fightVars(person, state.you, state.them) });
     this.closeBeat();
     this.nextBeat(person, now);
+    // Whoever saw it go for a phone, or don't; the one it's done to, once it's over.
+    this.crime('assault', person, now, knew, 'witnesses');
     this.noteFeedback(person, before, now, this.masked() ? this.rules.lines.notes.masked : '', speaker.vars);
     this.checkFired(now);
     this.events.emit('societyChanged', { people: fallout });
@@ -1452,13 +1451,16 @@ export class Game {
     const { combat } = this.rules;
     const day = this.clockAt(now).day;
     const name = this.fightName(person, false);
+    // Where it happened, before Trauma Team or the door take the player anywhere else.
+    const scene = { spot: this.spot, where: { ...this.where } };
     let outcome: FightOutcome = how ?? 'won';
     let result = '';
+    // Put down by the NCPD, the player comes to in cuffs, their pockets their own.
+    const cuffed = (how === 'lost' || how === 'knocked') && Boolean(this.rules.police) && NCPD.test(person.job.role);
     if (!how) {
       if (isCorpo(person, this.world)) {
         outcome = 'trauma';
         this.fightLine('trauma', person, vars);
-        this.addHeat(combat.heat.trauma, now);
       } else if (rng.chance(lethal)) {
         outcome = 'killed';
         this.fightLine('theyDie', person, vars);
@@ -1469,7 +1471,6 @@ export class Game {
         delete this.life.hurt[person.id];
         delete person.hurtUntil;
         const fallout = this.incident('murder', person, 0, now);
-        this.addHeat(combat.heat.murder, now);
         if (this.society.romance?.with === person.id) this.society.romance = null;
         this.events.emit('societyChanged', { people: fallout });
         result = `${capitalize(name)} is dead.`;
@@ -1482,6 +1483,10 @@ export class Game {
         const where = ward ? ` in ${ward}` : '';
         result = outcome === 'trauma' ? `Trauma Team got ${name} out. ${capitalize(vars.he ?? 'they')} will live, laid up${where} for days.` : `${capitalize(name)} is down, and will be laid up${where} for days.`;
       }
+    } else if (cuffed) {
+      this.fightLine(how === 'knocked' ? 'youOut' : 'youDown', person, vars);
+      if (how === 'lost') f.state.you.hp = 1;
+      result = `${capitalize(name)} put you down. You come to in cuffs.`;
     } else if (how === 'lost' && this.covered(now)) {
       this.fightLine('youDown', person, vars);
       result = this.pickedUp(this.covered(now)!, person, vars);
@@ -1522,6 +1527,11 @@ export class Game {
     this.drainEnergy(Math.min(4, f.state.beat), now);
     if (outcome === 'fled') this.leave();
     this.say(result, 'system');
+    // A killing, whoever's still here may call in; anything less, the one it was done to may, now or when they come to.
+    if (outcome === 'killed') this.crime('murder', person, now, f.knew, 'witnesses', scene);
+    else this.crime('assault', person, now, f.knew, 'victim', scene);
+    // ...and is taken in for it, held the longer for having fought.
+    if (cuffed) this.arrest({ officers: [person.id], crime: 'assault', why: 'scene', at: now }, now, this.rules.police!.run.resisting);
     this.events.emit('healthChanged', this.health(now));
   }
 
@@ -2245,7 +2255,7 @@ export class Game {
    * warmed to them. The main job's boss who hears of a side gig may mind.
    */
   work(now: number): boolean {
-    if (this.checkFired(now)) return false;
+    if (this.detained(now) || this.checkFired(now)) return false;
     const job = this.inside ? this.jobs.find((j) => j.building === this.inside?.id) : undefined;
     const status = job ? this.statusOf(job, now) : this.jobStatus(now);
     if (!status) return false;
@@ -2683,6 +2693,356 @@ export class Game {
     return true;
   }
 
+  // ───────────── The NCPD ─────────────
+
+  /**
+   * What the NCPD has on the player at `now`: a unit they know is on its way, the warrants out
+   * for them, a hold they're sitting out, and officers on them with what they want.
+   */
+  police(now: number): PoliceView {
+    const p = this.policeState;
+    const d = p.dispatch;
+    return {
+      dispatch: d?.told ? { crime: d.crime, arriveAt: d.arriveAt } : null,
+      warrants: warrantsAt(p, now).map((w) => ({ ...w })),
+      held: this.heldAt(now) ? p.held : null,
+      reports: p.reports.length,
+      confront: p.confront ? this.facing(p.confront, now) : null,
+    };
+  }
+
+  /** What the NCPD has on the player, for saving. */
+  get policeSaved(): PoliceState {
+    return copyOf(this.policeState);
+  }
+
+  /** Whether the player is sitting out a hold at the precinct. */
+  private heldAt(now: number): boolean {
+    const held = this.policeState.held;
+    return held !== null && held > now;
+  }
+
+  /** Whether the NCPD has the player, at gunpoint or in a cell: nothing else can be done till it's settled. */
+  private detained(now: number): boolean {
+    return Boolean(this.policeState.confront) || this.heldAt(now);
+  }
+
+  private get officers(): Person[] {
+    return (this.officerList ??= this.population.people.filter((p) => NCPD.test(p.job.role)));
+  }
+
+  /** Two officers to send: from the district if it has two who can come, else from wherever; nobody dead, laid up or out cold. */
+  private unitFor(district: string, now: number, rng: Rng): string[] {
+    const day = this.clockAt(now).day;
+    const fit = this.officers.filter((p) => p.diedOn === undefined && !(p.hurtUntil !== undefined && day <= p.hurtUntil) && !this.outCold(p.id, now));
+    const local = fit.filter((p) => p.district === district);
+    const pool = local.length >= 2 ? [...local] : [...fit];
+    const unit: string[] = [];
+    while (unit.length < 2 && pool.length) unit.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]!.id);
+    return unit;
+  }
+
+  /** The officers who have the player, here with them wherever that is. */
+  private copsHere(now: number): Presence[] {
+    const c = this.policeState.confront;
+    if (!c) return [];
+    return c.officers.flatMap((id) => {
+      const person = this.person(id);
+      return person && person.diedOn === undefined && !this.outCold(id, now) ? [{ person, doing: 'holding a gun on you', stance: this.stanceOf(person, now), scene: null }] : [];
+    });
+  }
+
+  /** How the NCPD works somewhere: the district, the odds a witness calls and the minutes a unit takes; null where it doesn't go. */
+  private policingAt(where: Point & Partial<Whereabouts>): { district: District; call: number; minutes: [number, number] } | null {
+    const police = this.rules.police;
+    const district = this.districtOf(where);
+    if (!police || !district) return null;
+    const how = policing(district.id, this.neighborhoodOf(where), police);
+    return how ? { district, ...how } : null;
+  }
+
+  /** Who here could put a name to the player's face: anyone who'd met them, and any NCPD officer, who has it on file. Nobody, in a mask. */
+  private facesHere(now: number): Set<string> {
+    if (this.masked()) return new Set();
+    const { society, timeScale } = this.rules;
+    return new Set(
+      this.peopleHere(now)
+        .map((p) => p.person)
+        .filter((p) => NCPD.test(p.job.role) || standingOf(this.society, p.id, society, timeScale, now).met)
+        .map((p) => p.id),
+    );
+  }
+
+  /**
+   * How likely someone is to call the NCPD over a crime: the district's odds for an ordinary
+   * witness alone (`base`), times more for the one it was done to, their people, a guard's job,
+   * a corpo's, nerve either way; a ganger hardly ever, and never on their gang's own turf. An
+   * officer always does.
+   */
+  private callOdds(caller: Person, victim: Person, base: number, turf: Set<string>): number {
+    const odds = this.rules.police!.caller;
+    if (NCPD.test(caller.job.role)) return 1;
+    if (caller.gang && turf.has(caller.gang)) return 0;
+    let chance = base * (1 + odds.courage * (caller.traits.courage - 0.5) * 2);
+    if (caller.id === victim.id) chance *= odds.victim;
+    else {
+      const tie = tiesOf(this.population, caller.id).find((t) => t.to === victim.id);
+      if (tie) chance *= FAMILY.includes(tie.kind) ? odds.kin : odds.friend;
+    }
+    if (GUARD.test(caller.job.role)) chance *= odds.guard;
+    if (isCorpo(caller, this.world)) chance *= odds.corpo;
+    if (caller.gang) chance *= odds.ganger;
+    return Math.max(0, Math.min(odds.most, chance));
+  }
+
+  /**
+   * Something the NCPD would want to hear of, done here. Whoever saw it (`witnesses`), the one
+   * it was done to (`victim`), or both (`all`), may call it in, each by their own odds; out
+   * cold, the victim may once they come to. Nobody calls, and there's nothing on record. A call
+   * files a report, names the player if a caller could put a name to their face, and sends a unit.
+   */
+  private crime(kind: Crime, victim: Person, now: number, knew: Set<string>, who: 'witnesses' | 'victim' | 'all', scene = { spot: this.spot, where: this.where }): void {
+    const police = this.rules.police;
+    const { spot, where: at } = scene;
+    if (!police) return;
+    const { lines } = police;
+    const p = this.policeState;
+    const rng = createRng(`${this.world.seed}:crime:${p.nextId}:${kind}:${victim.id}:${now}`);
+    const where = this.policingAt(at);
+    const mask = this.masked();
+    const seen = mask ? `a ${mask.word}` : 'your face';
+    const named = (id: string) => !mask && knew.has(id);
+    const witnesses = who === 'victim' ? [] : this.peopleHere(now).filter((x) => x.person.id !== victim.id && x.doing !== 'out cold').map((x) => x.person);
+    const alive = victim.diedOn === undefined;
+    const cold = alive && this.outCold(victim.id, now);
+    const callers = who !== 'witnesses' && alive && !cold ? [victim, ...witnesses] : witnesses;
+    const district = this.districtOf(at);
+    if (!where) {
+      if (witnesses.length || callers.length) this.say(this.policeLine(lines.zone, `zone:${spot?.id ?? 'street'}`, { district: district?.name ?? 'here' }), 'system');
+      return;
+    }
+    const turf = new Set((this.rules.people.turf[where.district.id] ?? []).map(([g]) => g));
+    // Out cold, they'll make up their mind when they come to (on the street, nobody's out cold for long).
+    if (who !== 'witnesses' && cold && spot) {
+      p.pending.push({ person: victim.id, crime: kind, at: now, named: named(victim.id), seen, odds: this.callOdds(victim, victim, where.call, turf), district: where.district.id, minutes: where.minutes, spot, x: at.x, y: at.y });
+    }
+    // A witness leaves it to someone else the more of them there are; the one it was done to doesn't.
+    const crowd = Math.max(1, witnesses.length) ** police.caller.crowd;
+    const alarm = police.crimes[kind].alarm;
+    const called = callers.filter((c) => NCPD.test(c.job.role) || rng.chance(c.id === victim.id ? this.callOdds(c, victim, where.call, turf) : Math.min(1, (this.callOdds(c, victim, where.call, turf) * alarm) / crowd)));
+    if (!called.length) {
+      if (!witnesses.length) return;
+      const local = witnesses.find((c) => c.gang && turf.has(c.gang));
+      const gang = local?.gang ? this.rules.people.gangs[local.gang]?.name : undefined;
+      this.say(gang ? this.policeLine(lines.turf, `turf:${spot?.id ?? 'street'}`, { gang }) : this.policeLine(lines.noCall, `quiet:${spot?.id ?? 'street'}`), 'system');
+      return;
+    }
+    const caller = called[0]!;
+    this.report(kind, caller, called.some((c) => named(c.id)), seen, spot, at, where.district.id, where.minutes, now, rng, NCPD.test(caller.job.role) ? lines.backup : lines.calls);
+  }
+
+  /** Puts a crime on record and sends a unit to where it happened (a building, a place, that corner of the street); told in `pool`'s words when the player is there to see the call made. */
+  private report(kind: Crime, caller: Person, named: boolean, seen: string, spot: Spot | null, at: Point, district: string, minutes: [number, number], now: number, rng: Rng, pool: string[] | null): void {
+    const police = this.rules.police!;
+    const p = this.policeState;
+    const id = p.nextId++;
+    p.reports.push({ id, crime: kind, at: now, district, place: spot ? this.spotName(spot) : 'the street', named, seen });
+    if (p.reports.length > police.keep) p.reports.splice(0, p.reports.length - police.keep);
+    if (named) issueWarrant(p, kind, district, now, police, this.rules.timeScale);
+    const arriveAt = now + (rng.range(minutes[0], minutes[1]) * police.urgency[kind] * 60_000) / this.rules.timeScale;
+    const told = Boolean(pool);
+    const d = p.dispatch;
+    // A unit already on its way here comes for the worse of it, and no later.
+    if (d && this.dispatchedTo(d, spot, at)) {
+      if (police.crimes[kind].rank > police.crimes[d.crime].rank) d.crime = kind;
+      d.arriveAt = Math.min(d.arriveAt, arriveAt);
+      d.report = id;
+      d.told ||= told;
+    } else p.dispatch = { report: id, crime: kind, spot, x: at.x, y: at.y, arriveAt, officers: this.unitFor(district, now, rng), told };
+    if (pool) {
+      const vars = { who: this.describe(caller.id, now)?.name ?? 'someone', his: pronounsOf(caller).his };
+      this.say(`${this.policeLine(pool, `call:${id}`, vars)} ${this.policeLine(police.lines.dispatch, `unit:${id}`)}`, 'error');
+    }
+    this.events.emit('policeChanged', this.police(now));
+  }
+
+  /** Whether a unit is on its way to here: the same building or place, or, out on the street, the same corner of it. */
+  private dispatchedTo(d: Dispatch, spot: Spot | null, at: Point): boolean {
+    if (d.spot || spot) return Boolean(d.spot && spot && d.spot.kind === spot.kind && d.spot.id === spot.id);
+    return Math.hypot(d.x - at.x, d.y - at.y) < 1;
+  }
+
+  /** A building's or a place's name. */
+  private spotName(spot: Spot): string {
+    return (spot.kind === 'building' ? buildingById(this.world, spot.id)?.name : this.world.locations[spot.id]?.name) ?? '';
+  }
+
+  /** A line about the NCPD, picked fresh for the moment. */
+  private policeLine(pool: string[], salt: string, vars: Record<string, string> = {}): string {
+    const rng = createRng(`${this.world.seed}:ncpd:${salt}:${this.policeState.nextId}:${this.policeState.reports.length}`);
+    return pool.length ? finish(rng.pick(pool)!, vars) : '';
+  }
+
+  /** The NCPD on the clock: a hold served, warrants lapsing, someone come to who calls it in, a unit getting there, a patrol that knows the player's face. */
+  private policeTick(now: number): void {
+    const police = this.rules.police;
+    if (!police) return;
+    const p = this.policeState;
+    const { lines, crimes } = police;
+    let changed = false;
+    if (p.held !== null && now >= p.held) {
+      p.held = null;
+      changed = true;
+      this.say(this.policeLine(lines.released, 'released'), 'system');
+    }
+    for (const w of p.warrants.filter((w) => w.until !== null && w.until <= now)) {
+      this.say(this.policeLine(lines.lapsed, `lapsed:${w.crime}`, { crime: crimes[w.crime].label }), 'system');
+      changed = true;
+    }
+    p.warrants = warrantsAt(p, now);
+    // Whoever was out cold when it happened, come to: they may call it in now.
+    for (const call of [...p.pending]) {
+      const person = this.person(call.person);
+      if (person && person.diedOn === undefined && this.outCold(call.person, now)) continue;
+      p.pending = p.pending.filter((c) => c !== call);
+      changed = true;
+      const rng = createRng(`${this.world.seed}:came-to:${call.person}:${call.at}`);
+      if (!person || person.diedOn !== undefined || !rng.chance(call.odds)) continue;
+      const spot = this.trip ? null : this.spot;
+      const there = Boolean(spot && spot.kind === call.spot.kind && spot.id === call.spot.id);
+      this.report(call.crime, person, call.named, call.seen, call.spot, call, call.district, call.minutes, now, rng, there ? lines.cameTo : null);
+    }
+    // The unit gets there: the player still there is found; gone, they've missed them. It waits on a fight to finish.
+    const d = p.dispatch;
+    if (d && now >= d.arriveAt && !this.fighting && !this.detained(now)) {
+      p.dispatch = null;
+      changed = true;
+      if (!this.trip && this.dispatchedTo(d, this.spot, this.where)) this.confront(d.officers, d.crime, 'scene', now, lines.arrive);
+      else if (d.told) this.say(this.policeLine(lines.missed, `missed:${d.report}`), 'system');
+    } else if (!d || now < d.arriveAt) {
+      // A patrol: out on the streets where the NCPD goes, wanted, and a face to know. A train goes by too fast; indoors is out of sight.
+      const wanted = worstCrime(p.warrants.map((w) => w.crime), police);
+      const every = (police.stop.minutes * 60_000) / this.rules.timeScale;
+      if (wanted && !this.detained(now) && !this.fighting && !this.inside && this.trip?.mode !== 'ncart' && !this.masked() && now - p.lastStop >= every) {
+        p.lastStop = now;
+        const where = this.policingAt(this.trip ? this.positionAt(now) : this.where);
+        const rng = createRng(`${this.world.seed}:stop:${now}`);
+        if (where && rng.chance(police.stop.chance * where.call * (1 + police.stop.rank * (crimes[wanted].rank - 1)))) {
+          if (this.trip) this.stop(now);
+          this.confront(this.unitFor(where.district.id, now, rng), wanted, 'warrant', now, lines.stop);
+          changed = true;
+        }
+      }
+    }
+    if (changed) this.events.emit('policeChanged', this.police(now));
+  }
+
+  /** Officers on the player, weapons out: nothing else till it's settled (`answerPolice`). */
+  private confront(officers: string[], crime: Crime, why: Confrontation['why'], now: number, pool: string[]): void {
+    this.policeState.confront = { officers, crime, why, at: now };
+    // A shift's moment passes; a card or the counter closes on its own.
+    this.shiftEventState = null;
+    this.events.emit('fx', { effect: 'shake' });
+    this.say(this.policeLine(pool, `confront:${now}`), 'error');
+  }
+
+  /** What the officers who have the player want, as the panel says it, and what it'd cost to go quietly. */
+  private facing(c: Confrontation, now: number): NonNullable<PoliceView['confront']> {
+    const police = this.rules.police!;
+    const charges = chargesFor([c.crime, ...warrantsAt(this.policeState, now).map((w) => w.crime)], police);
+    const short = !this.canPay(charges.fine, true);
+    const hold = charges.hold + (short ? police.shortHold : 0);
+    const cops = this.copsHere(now).map((x) => x.person);
+    const names = cops.map((o) => `Officer ${o.family}`);
+    const officers = names.length === 2 ? `${names[0]} and ${names[1]}` : (names[0] ?? 'Two NCPD officers');
+    const crime = charges.crimes.map((x) => police.crimes[x].label).join(' and ');
+    const theirs = cops[0] ? this.armOf(cops[0]) : null;
+    return {
+      crime: c.crime,
+      why: c.why,
+      // At the scene, it's what happened here; on a warrant, everything they have the player for.
+      text: finish(police.lines.facing[c.why], { officers, crime: c.why === 'scene' ? police.crimes[c.crime].label : crime }),
+      choices: [
+        { id: 'comply', label: 'Comply', sub: short ? `Short · ${hold} min held` : hold ? `${charges.fine} €$ · ${hold} min` : `${charges.fine} €$ fine` },
+        { id: 'run', label: 'Run', sub: this.masked() ? 'Masked' : 'Face seen' },
+        ...(theirs ? [{ id: 'fight' as const, label: 'Fight', sub: theirs.id === 'fists' ? 'Bare hands' : theirs.short }] : []),
+      ],
+    };
+  }
+
+  /**
+   * What the player does with officers on them. Comply: the fine for everything they have on
+   * the player, paid there and then (or held, short of it), and a hold for anything worse;
+   * every warrant settled. Run: away, by the odds (less hurt, more in a mask), and a warrant if
+   * they saw the face; caught, held longer for it. Fight: the nearest officer, while the other
+   * calls in backup.
+   */
+  answerPolice(choice: PoliceChoice, now: number): boolean {
+    const police = this.rules.police;
+    const p = this.policeState;
+    const c = p.confront;
+    if (!police || !c || this.fighting) return false;
+    const { lines } = police;
+    if (choice === 'fight') {
+      const officer = this.copsHere(now)[0]?.person;
+      if (!officer) return false;
+      this.say(this.policeLine(lines.fight, `fight:${c.at}`), 'error');
+      // The other one sees it, and calls it in: that's the backup.
+      if (!this.attack(officer.id, now)) return false;
+      p.confront = null;
+      // What they came for is on a warrant now, if they saw the face.
+      if (!this.masked()) issueWarrant(p, c.crime, this.districtOf(this.where)?.id ?? '', now, police, this.rules.timeScale);
+      this.events.emit('policeChanged', this.police(now));
+      return true;
+    }
+    if (choice === 'run') {
+      const rng = createRng(`${this.world.seed}:run:${c.at}`);
+      const health = this.health(now);
+      const mask = this.masked();
+      const odds = police.run.base - (health.current < health.max / 2 ? police.run.hurt : 0) + (mask ? police.run.masked : 0);
+      if (!rng.chance(odds)) {
+        this.say(this.policeLine(lines.caught, `caught:${c.at}`), 'error');
+        this.arrest(c, now, police.run.resisting);
+        return true;
+      }
+      p.confront = null;
+      p.lastStop = now;
+      this.say(this.policeLine(lines.ran, `ran:${c.at}`), 'system');
+      // They saw the face: it's on a warrant now, if it wasn't.
+      const district = this.districtOf(this.where)?.id ?? '';
+      if (!mask) issueWarrant(p, c.crime, district, now, police, this.rules.timeScale);
+      this.leave();
+      this.events.emit('policeChanged', this.police(now));
+      return true;
+    }
+    this.arrest(c, now, 0);
+    return true;
+  }
+
+  /** Taken in: the fine for everything on the player, paid if it can be; held for the worst of it (and `extra`, for running), or instead of a fine they can't pay. */
+  private arrest(c: Confrontation, now: number, extra: number): void {
+    const police = this.rules.police!;
+    const p = this.policeState;
+    const { lines } = police;
+    const charges = chargesFor([c.crime, ...warrantsAt(p, now).map((w) => w.crime)], police);
+    const short = !this.canPay(charges.fine, true);
+    const minutes = charges.hold + extra + (short ? police.shortHold : 0);
+    if (!short) this.pay(charges.fine, true);
+    const vars = { crime: charges.crimes.map((x) => police.crimes[x].label).join(' and '), fine: String(charges.fine), minutes: String(minutes) };
+    p.confront = null;
+    p.warrants = [];
+    p.dispatch = null;
+    p.lastStop = now;
+    if (minutes > 0) {
+      // Out of wherever they were, into the back of a cruiser.
+      this.leave();
+      p.held = now + (minutes * 60_000) / this.rules.timeScale;
+    }
+    this.say(this.policeLine(short ? lines.short : minutes > 0 ? lines.held : lines.fined, `booked:${c.at}`, vars), minutes > 0 ? 'error' : 'system');
+    if (!short) this.events.emit('walletChanged', this.wallet);
+    this.events.emit('policeChanged', this.police(now));
+  }
+
   // ───────────── People ─────────────
 
   private clockAt(now: number): Clock {
@@ -2698,12 +3058,15 @@ export class Game {
 
   /** Everyone where the player is right now, and who they're with. */
   peopleHere(now: number): Presence[] {
+    // In a cell, there's nobody; with officers on the player, they're here wherever that is.
+    if (this.heldAt(now)) return [];
+    const cops = this.copsHere(now);
     const spot = this.spot;
-    if (!spot) return [];
+    if (!spot) return cops;
     const clock = this.clockAt(now);
     // Whoever was knocked out lies where they fell till they come to, wherever their day would have them.
     const cold: string[] = [];
-    const elsewhere = new Set<string>();
+    const elsewhere = new Set<string>(cops.map((c) => c.person.id));
     const rooms = this.inside ? this.rules.rooms : undefined;
     for (const [id, o] of this.outColdState) {
       if (!this.outCold(id, now)) continue;
@@ -2720,12 +3083,15 @@ export class Game {
       if (person && person.diedOn === undefined && !present.some((p) => p.person.id === id)) present.push({ person, doing: 'out cold' });
     }
     const scenes = scenesAt(present.map((p) => p.person).filter((p) => !cold.includes(p.id)), this.population, spot, clock, this.world, this.rules.people.turf, (gang) => this.rules.people.gangs[gang]?.rivals ?? [], this.rules.life, this.world.seed);
-    return present.map(({ person, doing }) => ({
-      person,
-      doing: cold.includes(person.id) ? 'out cold' : doing,
-      stance: this.stanceOf(person, now),
-      scene: cold.includes(person.id) ? null : (scenes.get(person.id) ?? null),
-    }));
+    return [
+      ...present.map(({ person, doing }) => ({
+        person,
+        doing: cold.includes(person.id) ? 'out cold' : doing,
+        stance: this.stanceOf(person, now),
+        scene: cold.includes(person.id) ? null : (scenes.get(person.id) ?? null),
+      })),
+      ...cops,
+    ];
   }
 
   // ───────────── The heart ─────────────
@@ -3982,6 +4348,7 @@ export class Game {
    * takes note, and someone with a grudge and the nerve for it will come to collect.
    */
   rob(id: string, now: number): boolean {
+    if (this.detained(now)) return false;
     // Someone out cold here can be robbed too, with nobody to stop it.
     const cold = this.outCold(id, now) ? this.peopleHere(now).find((p) => p.person.id === id) : undefined;
     const here = this.isHere(id, now) ?? cold;
@@ -4013,6 +4380,8 @@ export class Game {
     speaker.vars = { ...speaker.vars, take: String(take), haul, weapon: drawn?.weapon.short ?? '', gun: drawn?.gun ? 'yes' : '', blade: cut === 'blade' || cut === 'thrown' ? 'yes' : '', blunt: cut === 'blunt' ? 'yes' : '' };
     const mask = this.masked();
     const before = this.snapshot(person, now);
+    // Who could name the player, before this makes them known to the victim.
+    const knew = this.facesHere(now);
     const fallout = this.incident('robbery', person, take + chip, now);
     learnOf(this.society, id, 'met');
     // Robbed is robbed, mask or not: their pockets stay empty a while. Whose doing it was, they know only with the face.
@@ -4050,6 +4419,8 @@ export class Game {
     else if (witnesses) this.say(`${saw} saw that. Word will get around ${this.world.districts[person.district]?.name ?? 'the district'}.`, 'system');
     const work = person.job.building ? this.world.buildings.find((b) => b.id === person.job.building) : undefined;
     if (work && repOf(this.society, `business:${work.id}`, society, timeScale, now) <= society.rep.banAt) this.say(`${work.name} won't be serving you again.`, 'system');
+    // Anyone here may call it in, and the one robbed too (out cold, once they come to).
+    this.crime('robbery', person, now, knew, 'all');
     this.noteFeedback(person, before, now, mask ? lines.notes.masked : '', speaker.vars);
     this.checkFired(now);
     this.events.emit('societyChanged', { people: fallout });
@@ -4289,6 +4660,8 @@ export class Game {
       this.events.emit('tripChanged', this.trip);
       this.tick(now, true);
     }
+    // Back in a cell, or with officers still on them: the panel and the sign say so.
+    if (this.rules.police && (this.detained(now) || this.policeState.dispatch)) this.events.emit('policeChanged', this.police(now));
     this.events.emit('mapChanged', this.mapState);
   }
 
@@ -4319,7 +4692,7 @@ export class Game {
 
   /** Sets off. Walking can change course partway; a train ride has to finish first. Pays the fare unless the pass covers it. */
   go(plan: TripPlan, now: number): boolean {
-    if (this.trip?.mode === 'ncart' || this.fighting) return false;
+    if (this.trip?.mode === 'ncart' || this.fighting || this.detained(now)) return false;
     const covered = plan.mode === 'ncart' && this.passActive(now);
     const fare = plan.mode === 'ncart' && !covered ? plan.fare : 0;
     if (fare && !this.canPay(fare, this.rules.money.transfers.ncart)) {
@@ -4353,6 +4726,7 @@ export class Game {
     this.punchClock(now);
     this.soberUp(now);
     this.settleThreats(now);
+    this.policeTick(now);
     this.recognize(now);
     const trip = this.trip;
     if (!trip) return;
@@ -4379,7 +4753,7 @@ export class Game {
   /** Goes into the building the player is standing outside. Nothing to do in there yet. */
   enter(now = Date.now()): boolean {
     const building = this.door;
-    if (!building || this.fighting) return false;
+    if (!building || this.fighting || this.detained(now)) return false;
     this.inside = building;
     // In through the front: the room you walk into, and no door anyone's opened for you yet.
     this.roomState = 'main';
@@ -4391,7 +4765,8 @@ export class Game {
 
   /** Steps back out onto the street, at the building's door. */
   leave(): boolean {
-    if (!this.inside || this.fighting) return false;
+    // Officers on the player: they're going nowhere unless they run (`answerPolice`).
+    if (!this.inside || this.fighting || this.policeState.confront) return false;
     this.inside = null;
     this.roomState = 'main';
     this.letIn.clear();
@@ -4453,7 +4828,7 @@ export class Game {
   /** Walks into another room of the building, on this floor or another: false (and why) if it isn't open to the player. */
   goRoom(id: string, now: number): boolean {
     const rules = this.rules.rooms;
-    if (!this.inside || !rules || this.fighting || this.trip) return false;
+    if (!this.inside || !rules || this.fighting || this.trip || this.detained(now)) return false;
     const room = roomById(this.inside, id, rules);
     if (!room || room.id === this.roomState) return false;
     const access = this.accessTo(room, now);
@@ -4474,7 +4849,7 @@ export class Game {
   /** Takes the stairs (or the elevator) to a floor: its corridor, or on the ground floor the room you walk in to. */
   goFloor(floor: number, now: number): boolean {
     const rules = this.rules.rooms;
-    if (!this.inside || !rules || this.fighting || this.trip) return false;
+    if (!this.inside || !rules || this.fighting || this.trip || this.detained(now)) return false;
     if (!Number.isInteger(floor) || floor < 1 || floor > walkableFloors(this.inside, rules)) return false;
     const room = roomById(this.inside, floor === 1 ? 'main' : `hall:${floor}`, rules);
     if (!room || room.id === this.roomState) return false;
@@ -4496,7 +4871,7 @@ export class Game {
   knock(id: string, now: number): boolean {
     const rules = this.rules.rooms;
     const building = this.inside;
-    if (!building || !rules || this.fighting) return false;
+    if (!building || !rules || this.fighting || this.detained(now)) return false;
     const room = roomById(building, id, rules);
     if (!room || (room.kind !== 'unit' && room.kind !== 'guest')) return false;
     const rng = createRng(`${this.world.seed}:${building.id}:${room.id}:knock:${now}`);
