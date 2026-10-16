@@ -984,11 +984,32 @@ nobody there has a habit or deals):
   read through `Game`'s private `habitNow` wherever it counts (`maxHealth`, `fightWindow`,
   `yourEdge`, armor, `charismaEdge`); `Game.habit(now)` is the UI's (`HabitView`, the
   `habitChanged` event), saved as `habit`. Without `rules.dealing` nobody has one.
-- The lines: the narration is `DEALING.lines` and `DEALING.habit.lines`; what people say is
-  `LINES.deal` and `LINES.you.deal`/`pitch`/`payUp`/`walkAway`. The status drop-down has a
-  Dealing row and a Habit row, and the line under the energy bar says a debt, a drug working,
-  a craving or withdrawal. Still to come, hanging off the same pieces: a crew of the player's
-  own.
+- The player's crew (`src/engine/crew.ts`, the numbers and lines `DEALING.crew`): from the
+  rung `crew.from` (`crewSize`, `most` a rung) a card's **Deal** offers taking someone on
+  (`recruit`: an ask like any other, `openness` with the `recruit` cost, only of `stances`, the
+  keener for one of the player's gang or a user of what it deals, `keen`; never an officer,
+  the connect or one of another gang). A runner (`Runner`, `DealingState.crew`) is fronted a
+  package of a `sizes` out of the player's pockets (`frontRunner`), owing `owe` of its street
+  value round where they live (`runnerStreet`) in `days`. Their days are lived with the
+  people's (`crewDays`, from `live`, each runner on `seed:crew:<id>:<day>`): `runnerDay` has
+  them picked up (`bust`, times the district's call: the product gone, held, and maybe the
+  player's name on a `dealing` warrant, `namedBy`), robbed (`robbed`, times `bad.rough`, maybe
+  laid up), or out selling (by `usersOf` round there and their Trading, which every dose sold
+  trains, `DealingState.dealt` in `practiced`), a greedy one skimming and a hooked one using
+  (`hidden`, unseen); their `mood` goes down for what goes wrong, and under `mood.quit` they
+  walk (`quit`, holding what they held) or run off with it (`ran`). Word of what anyone would
+  hear reaches the player (`crew.lines`). Settling up is in person (`collectFrom`, `settle`):
+  what they hold up to what's owed, what's over theirs once the package is sold and paid, a
+  walked one's unsold doses handed back; short (`runnerShort`: past the day, or nothing left to
+  sell), they say why (busted, robbed, or a lie when they skimmed), and the player can lean on
+  them (`leanOn`, Street Brawler against theirs, `leanOdds`: the rest from their own pocket,
+  else a grudge) or let it slide (`letSlide`, `writeOff`). `Game.crew(now)` is the UI's
+  (`RunnerView`; the status drop-down's Crew row). The lines are `LINES.deal.recruit`…`letGo`
+  and `LINES.you.recruit`/`frontRunner`/`collect`/`lean`/`slide`/`letGo`.
+- The lines: the narration is `DEALING.lines`, `DEALING.habit.lines` and `DEALING.crew.lines`;
+  what people say is `LINES.deal` and `LINES.you.deal`/`pitch`/`payUp`/`walkAway`. The status
+  drop-down has a Dealing row, a Crew row and a Habit row, and the line under the energy bar
+  says a debt, a drug working, a craving or withdrawal.
 
 ## Inebriation
 

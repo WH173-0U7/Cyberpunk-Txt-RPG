@@ -488,6 +488,15 @@ own.
   gang's rivals come to your corner, the more the more you've sold lately and the nearer
   their turf: clear off (often enough and it's theirs), pay them, or fight them for it.
   Pitch one of a rival gang, or sell on their turf, and they'll come for you.
+- **Your own crew**: once you're a supplier, anyone who trusts you can run for you (one of
+  your gang, or someone who uses what it deals, is keener; someone straight mostly says no).
+  Front them a package out of what you carry: they owe you a share of what it fetches by a
+  day, and keep the rest. They sell on their own, day by day, near where they live, faster
+  with more users round there and a better head for trading, which they pick up as they go.
+  Word reaches you when things go wrong: the NCPD picks one up and takes the lot (and they
+  may give up your name), someone robs them, a greedy one skims, a hooked one uses, and one
+  who's had enough walks, or runs off with your product and your money. Settle up in person:
+  what they owe, and if they're short, lean on them for it or let it slide.
 - **Your own habit**: you can take what you carry (**Use** in the inventory). Black Lace
   makes you hard to hurt and hit harder for less health to start with, Glitter loosens your
   tongue and blurs your aim, Juice is muscle, SynthCoke slows the world, 'Dorph and Phant

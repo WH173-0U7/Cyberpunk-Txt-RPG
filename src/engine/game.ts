@@ -5,6 +5,7 @@ import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, po
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
 import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
+import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, runnerShort, settle, writeOff, type Runner, type RunnerView } from './crew';
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
 import { askOf, blockOf, buyersIn, canMoveUp, dealRungOf, freshDealing, habitOf, heatAt, owedFor, pushOdds, streetPrice, withInterest, type CollectorView, type DealChoice, type DealingRules, type DealingState, type DealMomentView, type DealOption, type DealState, type DealView, type Front, type Habit } from './dealing';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
@@ -421,6 +422,8 @@ export class Game {
     const dealt = this.dealState.current;
     if (dealt && (!known.has(dealt.connect) || !rules.dealing?.gangs[dealt.gang])) this.dealState.current = null;
     else if (dealt) dealt.customers = Object.fromEntries(Object.entries(dealt.customers).filter(([id]) => known.has(id)));
+    // So are runners it doesn't have.
+    for (const id of Object.keys(this.dealState.crew)) if (!known.has(id)) delete this.dealState.crew[id];
     // Pockets of kinds the game no longer has are gone, and with none left the player wears the usual; anything not in a pocket is put away.
     const pockets = (progress?.gear ?? []).filter((p) => p.kind in rules.gear.kinds).map((p) => ({ ...p }));
     this.pockets = pockets.length ? pockets : rules.gear.start.map((p) => ({ ...p }));
@@ -1424,6 +1427,8 @@ export class Game {
       const curve = curves[skill];
       if (!curve) continue;
       let xp = days * ((practice.walks[walk][skill] ?? 0) + (staff ? (practice.staff[skill] ?? 0) : 0)) + fights * (practice.fight[skill] ?? 0);
+      // Selling for the player is practice at trading.
+      if (skill === 'trading') xp += (this.dealState?.dealt?.[person.id] ?? 0) * (this.rules.dealing?.crew.practice ?? 0);
       let level = base[skill];
       while (level < most && xp >= xpToNext(curve, level)) {
         xp -= xpToNext(curve, level);
@@ -3397,6 +3402,7 @@ export class Game {
       fronts: d.fronts,
       sold: d.sold,
       take: d.take,
+      crewMost: crewSize(d.rung, dealing.crew),
     };
   }
 
@@ -3422,6 +3428,10 @@ export class Game {
     } else if (!d && person.gang && dealing.gangs[person.gang] && this.dealState.burned[person.gang] === undefined) {
       options.push({ id: 'ask', label: `Deal for the ${this.rules.people.gangs[person.gang]?.name ?? person.gang}` });
     }
+    // One of the player's runners: their package, settling up; anyone else who might be one.
+    const runner = this.dealState.crew[person.id];
+    if (runner) return [...options, ...this.runnerOptions(person, runner, now)];
+    if (this.canRecruit(person)) options.push({ id: 'recruit', label: 'Take on as a runner', sub: `${Object.keys(this.dealState.crew).length} of ${this.crewMost()} runners` });
     // Whatever the player carries, anyone else here could be pitched it.
     if (!(d && this.isConnect(person, d)) && !NCPD.test(person.job.role)) {
       for (const drug of this.drugsCarried()) {
@@ -3442,6 +3452,12 @@ export class Game {
     if (what === 'pay') return this.payUp(person, now);
     if (what === 'walk') return this.walkAway(person, now);
     if (what === 'sell' && drug) return this.pitch(person, drug, now);
+    if (what === 'recruit') return this.recruit(person, now);
+    if (what === 'crew-front' && drug) return this.frontToRunner(person, drug, Number(option.split(':')[2]), now);
+    if (what === 'crew-collect') return this.collectFrom(person, now);
+    if (what === 'crew-lean') return this.leanOn(person, now);
+    if (what === 'crew-slide') return this.letSlide(person, now);
+    if (what === 'crew-letgo') return this.letGo(person, now);
     return false;
   }
 
@@ -4372,6 +4388,411 @@ export class Game {
   /** The player's dealing, for saving. */
   get dealingSaved(): DealingState {
     return copyOf(this.dealState);
+  }
+
+  // ───────────── The player's crew ─────────────
+
+  /** How many runners the player could have now: none without a gang to deal for, or below its rung. */
+  private crewMost(): number {
+    const dealing = this.rules.dealing;
+    const d = this.dealState.current;
+    return dealing && d ? crewSize(d.rung, dealing.crew) : 0;
+  }
+
+  /** Whether someone could be asked to run for the player: grown, not an officer or the connect, of no gang or the player's, and not on the crew already. */
+  private canRecruit(person: Person): boolean {
+    const dealing = this.rules.dealing;
+    const d = this.dealState.current;
+    if (!dealing || !d || this.dealState.crew[person.id]) return false;
+    if (Object.keys(this.dealState.crew).length >= this.crewMost()) return false;
+    if (person.age < dealing.habits.adultAt || NCPD.test(person.job.role) || this.isConnect(person, d)) return false;
+    return !person.gang || person.gang === d.gang;
+  }
+
+  /** The player's runners, as the UI shows them. */
+  crew(now: number): RunnerView[] {
+    const dealing = this.rules.dealing;
+    if (!dealing) return [];
+    const day = this.clockAt(now).day;
+    return Object.entries(this.dealState.crew).map(([id, r]) => ({
+      id,
+      name: this.describe(id, now)?.name ?? id,
+      drug: r.drug ? (dealing.drugs[r.drug]?.name ?? r.drug) : null,
+      stock: r.stock,
+      cash: r.cash,
+      owed: r.owed,
+      left: runnerLeft(r),
+      due: r.due,
+      short: runnerShort(r, now),
+      fronts: r.fronts,
+      held: r.heldTill !== undefined && day <= r.heldTill,
+      quit: Boolean(r.quit),
+      ran: Boolean(r.ran),
+    }));
+  }
+
+  /** What a runner's card offers: a package when they're on nothing, settling up when they hold anything or owe, leaning on them or letting it slide when they're short, letting them go. */
+  private runnerOptions(person: Person, runner: Runner, now: number): DealOption[] {
+    const dealing = this.rules.dealing!;
+    const rules = dealing.crew;
+    const left = runnerLeft(runner);
+    const short = runnerShort(runner, now);
+    const options: DealOption[] = [];
+    if (runner.ran) {
+      options.push({ id: 'crew-lean', label: 'Make them pay', sub: `${left} €$ owed`, danger: true });
+      options.push({ id: 'crew-slide', label: 'Let it go' });
+      return options;
+    }
+    if (runner.stock > 0 || runner.cash > 0 || left > 0) {
+      options.push({ id: 'crew-collect', label: runner.quit ? 'Settle up' : 'Collect', sub: left > 0 ? `${left} €$ owed${runner.due ? ` by ${this.whenWord(runner.due)}` : ''}` : runner.drug ? `${dealing.drugs[runner.drug]?.name ?? runner.drug} out` : undefined });
+    }
+    if (short && runner.cash <= 0 && runner.stock <= 0) {
+      options.push({ id: 'crew-lean', label: 'Lean on them', sub: `${left} €$ short`, danger: true });
+      options.push({ id: 'crew-slide', label: 'Let it slide' });
+    }
+    if (!runner.quit && runner.stock <= 0 && left <= 0 && runner.cash <= 0) {
+      for (const drug of this.drugsCarried()) {
+        const kind = dealing.drugs[drug];
+        if (!kind) continue;
+        const have = this.carrying(drug);
+        const street = this.runnerStreet(person, drug);
+        for (const n of rules.sizes.filter((n) => n <= have)) options.push({ id: `crew-front:${drug}:${n}`, label: `${kind.name} ×${n}`, sub: `Owes ${Math.round(n * street * rules.owe)} €$ in ${rules.days} days` });
+      }
+      options.push({ id: 'crew-letgo', label: 'Let go', danger: true });
+    }
+    return options;
+  }
+
+  /** A dose's street price where a runner sells: round where they live. */
+  private runnerStreet(person: Person, drug: string): number {
+    const dealing = this.rules.dealing!;
+    const tier = person.home ? this.tierOfSpot({ kind: 'building', id: person.home }) : 'everyday';
+    return streetPrice(dealing.drugs[drug]!, tier, dealing);
+  }
+
+  /**
+   * Asks someone here to run for the player: an ask like any other (openness with the
+   * `recruit` cost), only of someone who likes them well enough, the keener for being of the
+   * player's gang or using what it deals, the less for being straight.
+   */
+  private recruit(person: Person, now: number): boolean {
+    const dealing = this.rules.dealing!;
+    const d = this.dealState.current;
+    const here = this.isHere(person.id, now);
+    if (!d || !here || !this.canRecruit(person)) return false;
+    const rules = dealing.crew;
+    const { society, timeScale, lines } = this.rules;
+    const { stance, doing } = here;
+    const standing = standingOf(this.society, person.id, society, timeScale, now);
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const rng = createRng(`${this.world.seed}:${person.id}:recruit:${standing.asks}`);
+    const before = this.snapshot(person, now);
+    learnOf(this.society, person.id, 'met');
+    this.logged(person.id, 'you', line(lines.you.recruit, speaker, rng), now);
+    const refused = { ...standing.refused };
+    let rapport = 0;
+    let note = '';
+    let joined = false;
+    if (speaker.mood === 'asleep' || stance === 'hostile') {
+      this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
+    } else if (this.masked()) {
+      this.speech(person, line(lines.deal.masked, speaker, rng), now);
+    } else if (this.pressing(standing, 'recruit', now)) {
+      rapport = -society.openness.press;
+      note = lines.notes.pressed;
+      this.speech(person, line(lines.pressed, speaker, rng), now);
+    } else {
+      const habit = this.habitFor(person);
+      const user = Boolean(habit && dealing.gangs[d.gang]?.drugs.includes(habit.drug));
+      const keen = (person.gang === d.gang ? rules.keen.gang : 0) + (user ? rules.keen.user : 0) + (!person.gang && !habit ? rules.keen.straight : 0);
+      const reply = rules.stances.includes(stance) ? replyTo(openness('recruit', stance, this.charismaEdge, person.traits, society.openness) + keen, society.openness, rng) : 'refuse';
+      if (reply === 'answer') {
+        joined = true;
+        this.dealState.crew[person.id] = freshRunner(now, this.clockAt(now).day, rules);
+        learnFact(this.society, person.id, 'name');
+        this.speech(person, line(lines.deal.recruit, speaker, rng), now);
+        this.say(`${person.given} runs for you now. Front ${this.pronounsOf(person).him} a package from what you carry.`, 'system');
+      } else {
+        this.speech(person, reply === 'deflect' ? deflect(speaker, 'recruit', lines, rng) : line(lines.deal.recruitNo, speaker, rng), now);
+        refused.recruit = now;
+      }
+    }
+    changeStanding(this.society, person.id, { met: true, asks: standing.asks + 1, refused, rapport }, society, timeScale, now);
+    this.noteFeedback(person, before, now, note, speaker.vars);
+    this.events.emit('societyChanged', { people: [person.id] });
+    if (joined) this.events.emit('dealChanged', this.dealing(now));
+    return true;
+  }
+
+  /** A runner's pronouns, for a line the game says. */
+  private pronounsOf(person: Person): { he: string; him: string; his: string } {
+    const vars = this.dealVars(person, Date.now());
+    return { he: vars.he ?? 'they', him: vars.him ?? 'them', his: vars.his ?? 'their' };
+  }
+
+  /** Fronts a runner here a package out of the player's pockets: they owe its share by the day. */
+  private frontToRunner(person: Person, drug: string, doses: number, now: number): boolean {
+    const dealing = this.rules.dealing!;
+    const runner = this.dealState.crew[person.id];
+    const here = this.isHere(person.id, now);
+    if (!runner || !here || this.carrying(drug) < doses) return false;
+    const { lines } = this.rules;
+    const street = this.runnerStreet(person, drug);
+    const next = frontRunner(runner, drug, doses, street, now, this.rules.timeScale, dealing.crew);
+    for (let n = 0; n < doses; n++) {
+      const item = this.items.find((i) => i.kind === 'consumable' && i.id === drug);
+      if (item) this.takeOne(item);
+    }
+    this.dealState.crew[person.id] = next;
+    const speaker = this.speakerFor(person, here.stance, here.doing, now);
+    speaker.vars = { ...speaker.vars, drug: dealing.drugs[drug]?.name ?? drug, doses: String(doses), owed: String(next.owed), when: this.whenWord(next.due ?? now) };
+    const rng = createRng(`${this.world.seed}:${person.id}:front-runner:${runner.fronts}:${now}`);
+    this.logged(person.id, 'you', line(lines.you.frontRunner, speaker, rng), now);
+    this.speech(person, line(lines.deal.runnerFront, speaker, rng), now);
+    this.events.emit('inventoryChanged', this.inventory);
+    this.events.emit('societyChanged', { people: [person.id] });
+    this.events.emit('dealChanged', this.dealing(now));
+    return true;
+  }
+
+  /**
+   * Settles up with a runner here: what they hold, up to what they owe (as far as the player's
+   * pockets take it), and anything over theirs once the package is paid; a runner who's walked
+   * hands back what didn't sell, and is off the crew once square. They say how it went.
+   */
+  private collectFrom(person: Person, now: number): boolean {
+    const dealing = this.rules.dealing!;
+    const runner = this.dealState.crew[person.id];
+    const here = this.isHere(person.id, now);
+    if (!runner || !here || runner.ran) return false;
+    const { lines, society, timeScale } = this.rules;
+    const speaker = this.speakerFor(person, here.stance, here.doing, now);
+    const rng = createRng(`${this.world.seed}:${person.id}:collect:${runner.fronts}:${runner.paid}:${now}`);
+    const before = this.snapshot(person, now);
+    this.logged(person.id, 'you', line(lines.you.collect, speaker, rng), now);
+    const short = runnerShort(runner, now);
+    const busted = runner.news.some((n) => n.kind === 'busted');
+    const robbed = runner.news.some((n) => n.kind === 'robbed');
+    // What the player's pockets take of what they'd hand over; the rest stays with them.
+    const due = Math.min(runner.cash, runnerLeft(runner));
+    const room = Math.min(due, this.cashRoom(due));
+    const out = settle({ ...runner, cash: runner.cash - (due - room) }, dealing.crew);
+    const got = this.pocketCash(out.handed);
+    let r = out.runner;
+    r.cash += due - room;
+    if (out.settled) {
+      // Anything over is theirs to keep.
+      const kept = out.kept + r.cash;
+      r.cash = 0;
+      person.eddies += kept;
+      this.life.eddies[person.id] = person.eddies;
+      speaker.vars = { ...speaker.vars, kept: String(kept) };
+    }
+    if (room < due) this.say('No room on you for all of it. They hold on to the rest for now.', 'error');
+    // A runner who's walked hands back what didn't sell.
+    if (r.quit && r.stock > 0 && r.drug) {
+      if (this.stowDoses(r.drug, r.stock)) r = { ...r, stock: 0 };
+      else this.say(`No room on you for the ${r.stock} doses ${person.given} hands back. They hold on to them.`, 'error');
+    }
+    const left = runnerLeft(r);
+    speaker.vars = { ...speaker.vars, handed: String(got), left: String(left), when: r.due ? this.whenWord(r.due) : 'soon', ...(busted ? { busted: 'yes' } : {}), ...(robbed ? { robbed: 'yes' } : {}), ...(!busted && !robbed && (runner.hidden ?? 0) > 0 ? { lying: 'yes' } : {}) };
+    if (r.quit) this.speech(person, line(lines.deal.runnerQuit, speaker, rng), now);
+    else if (short && left > 0) this.speech(person, line(lines.deal.runnerShort, speaker, rng), now);
+    else if (out.settled) {
+      this.speech(person, line(lines.deal.runnerPaid, speaker, rng), now);
+      if (speaker.vars.kept && speaker.vars.kept !== '0') this.speech(person, line(lines.deal.runnerKept, speaker, rng), now);
+    } else if (got > 0) this.speech(person, line(lines.deal.runnerSome, speaker, rng), now);
+    else this.speech(person, line(lines.deal.runnerNothing, speaker, rng), now);
+    if (r.quit && left <= 0 && r.stock <= 0) {
+      delete this.dealState.crew[person.id];
+      this.say(`${person.given} is off your crew.`, 'system');
+    } else this.dealState.crew[person.id] = r;
+    if (got > 0) this.say(`${got} €$ from ${person.given}${left > 0 ? `; ${left} €$ still owed` : ''}.`, 'system');
+    changeStanding(this.society, person.id, { met: true, rapport: out.settled ? 1 : 0 }, society, timeScale, now);
+    this.noteFeedback(person, before, now, '', speaker.vars);
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('inventoryChanged', this.inventory);
+    this.events.emit('societyChanged', { people: [person.id] });
+    this.events.emit('dealChanged', this.dealing(now));
+    return true;
+  }
+
+  /** Leans on a runner who's short, or ran: the player's fists against theirs; found, the rest out of their own pocket; not, a grudge. Either way they like it less. */
+  private leanOn(person: Person, now: number): boolean {
+    const dealing = this.rules.dealing!;
+    const rules = dealing.crew;
+    const runner = this.dealState.crew[person.id];
+    const here = this.isHere(person.id, now);
+    if (!runner || !here || (!runner.ran && !runnerShort(runner, now))) return false;
+    const { lines, society, timeScale } = this.rules;
+    const speaker = this.speakerFor(person, here.stance, here.doing, now);
+    const rng = createRng(`${this.world.seed}:${person.id}:lean:${runner.paid}:${now}`);
+    const before = this.snapshot(person, now);
+    this.logged(person.id, 'you', line(lines.you.lean, speaker, rng), now);
+    const left = runnerLeft(runner);
+    const odds = here.stance === 'hostile' ? 0 : leanOdds(this.brawlerState.level, this.skillsFor(person, now).brawler, rules);
+    const found = Math.min(left, person.eddies, this.cashRoom(Math.min(left, person.eddies)));
+    let r: Runner = { ...runner, mood: runner.mood - rules.mood.leaned };
+    if (found > 0 && rng.chance(odds)) {
+      const got = this.pocketCash(found);
+      person.eddies -= got;
+      this.life.eddies[person.id] = person.eddies;
+      r = { ...r, paid: r.paid + got };
+      speaker.vars = { ...speaker.vars, handed: String(got) };
+      this.speech(person, line(lines.deal.leanPaid, speaker, rng), now);
+      this.say(`${got} €$ out of ${person.given}.`, 'system');
+      changeStanding(this.society, person.id, { met: true, rapport: -rules.lean.rapport }, society, timeScale, now);
+    } else {
+      this.speech(person, line(lines.deal.leanFailed, speaker, rng), now);
+      changeStanding(this.society, person.id, { met: true, rapport: -rules.lean.rapport, grudge: rules.lean.grudge }, society, timeScale, now);
+    }
+    if (runnerLeft(r) <= 0) {
+      r = settle(r, rules).runner;
+      if (r.ran || r.quit) delete this.dealState.crew[person.id];
+      else this.dealState.crew[person.id] = r;
+    } else this.dealState.crew[person.id] = r;
+    this.noteFeedback(person, before, now, '', speaker.vars);
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('societyChanged', { people: [person.id] });
+    this.events.emit('dealChanged', this.dealing(now));
+    return true;
+  }
+
+  /** Lets what a runner owes go: glad of it, and warmer; one who's walked or ran is off the crew. */
+  private letSlide(person: Person, now: number): boolean {
+    const dealing = this.rules.dealing!;
+    const runner = this.dealState.crew[person.id];
+    const here = this.isHere(person.id, now);
+    if (!runner || !here) return false;
+    const { lines, society, timeScale } = this.rules;
+    const speaker = this.speakerFor(person, here.stance, here.doing, now);
+    const rng = createRng(`${this.world.seed}:${person.id}:slide:${runner.shorted}:${now}`);
+    const before = this.snapshot(person, now);
+    this.logged(person.id, 'you', line(lines.you.slide, speaker, rng), now);
+    this.speech(person, line(lines.deal.slide, speaker, rng), now);
+    if (runner.ran || runner.quit) delete this.dealState.crew[person.id];
+    else this.dealState.crew[person.id] = writeOff(runner, dealing.crew);
+    changeStanding(this.society, person.id, { met: true, rapport: dealing.crew.lean.slide }, society, timeScale, now);
+    this.noteFeedback(person, before, now, '', speaker.vars);
+    this.events.emit('societyChanged', { people: [person.id] });
+    this.events.emit('dealChanged', this.dealing(now));
+    return true;
+  }
+
+  /** Lets a runner with nothing out go. */
+  private letGo(person: Person, now: number): boolean {
+    const runner = this.dealState.crew[person.id];
+    const here = this.isHere(person.id, now);
+    if (!runner || !here) return false;
+    const { lines } = this.rules;
+    const speaker = this.speakerFor(person, here.stance, here.doing, now);
+    const rng = createRng(`${this.world.seed}:${person.id}:let-go:${runner.fronts}`);
+    this.logged(person.id, 'you', line(lines.you.letGo, speaker, rng), now);
+    this.speech(person, line(lines.deal.letGo, speaker, rng), now);
+    delete this.dealState.crew[person.id];
+    this.say(`${person.given} is off your crew.`, 'system');
+    this.events.emit('societyChanged', { people: [person.id] });
+    this.events.emit('dealChanged', this.dealing(now));
+    return true;
+  }
+
+  /**
+   * The crew's own days, each runner on their own stream: out selling near home, picked up,
+   * robbed, skimming or using, walking out; word reaches the player of what anyone would hear
+   * of, and a runner who talks to the NCPD puts the player's name on a warrant.
+   */
+  private crewDays(today: number, now: number): void {
+    const dealing = this.rules.dealing;
+    if (!dealing) return;
+    const rules = dealing.crew;
+    const { police, timeScale } = this.rules;
+    let changed = false;
+    for (const [id, start] of Object.entries(this.dealState.crew)) {
+      const person = this.person(id);
+      if (!person || person.diedOn !== undefined) {
+        delete this.dealState.crew[id];
+        if (person) this.say(this.narration(rules.lines.dead, this.dealVars(person, now, { drug: start.drug ? (dealing.drugs[start.drug]?.name ?? start.drug) : 'product' }), createRng(`${this.world.seed}:crew-dead:${id}`)), 'error');
+        changed = true;
+        continue;
+      }
+      let r = start;
+      for (let day = Math.max(r.day + 1, today - this.rules.life.catchUpDays); day <= today; day++) {
+        if (person.hurtUntil !== undefined && day <= person.hurtUntil) {
+          r = { ...r, day };
+          continue;
+        }
+        const drug = r.drug ? dealing.drugs[r.drug] : undefined;
+        const trading = this.skillsFor(person, now).trading;
+        const power = this.rules.money.haggle ?? 0;
+        const priceFactor = this.rules.trading && power ? Math.pow(skillBonus(this.rules.trading, trading) / skillBonus(this.rules.trading, 4), power) : 1;
+        const rapport = standingOf(this.society, id, this.rules.society, timeScale, now).rapport;
+        const rng = createRng(`${this.world.seed}:crew:${id}:${day}`);
+        const res = runnerDay(r, {
+          day,
+          users: r.drug ? this.usersOf(r.drug, person.district).length : 0,
+          trading,
+          priceFactor,
+          street: drug && r.drug ? this.runnerStreet(person, r.drug) : 0,
+          call: police ? (policing(person.district, null, police)?.call ?? 0) : 0,
+          rough: dealing.bad.rough[person.district] ?? 1,
+          greed: person.traits.greed,
+          hooked: Boolean(r.drug && this.habitFor(person)?.drug === r.drug),
+          rapport,
+        }, rules, rng);
+        const fresh = res.runner.news.filter((n) => n.day === day);
+        r = res.runner;
+        if (res.sold) this.dealState.dealt[id] = (this.dealState.dealt[id] ?? 0) + res.sold;
+        if (res.skimmed) {
+          person.eddies += res.skimmed;
+          this.life.eddies[id] = person.eddies;
+        }
+        const vars = this.dealVars(person, now, { drug: drug?.name ?? 'product' });
+        for (const news of fresh) {
+          if (news.kind === 'busted') this.say(this.narration(rules.lines.busted, { ...vars, doses: String(news.doses ?? 0) }, rng), 'error');
+          if (news.kind === 'robbed') this.say(this.narration(rules.lines.robbed, { ...vars, doses: String(news.doses ?? 0), cash: String(news.cash ?? 0) }, rng), 'error');
+          changed = true;
+        }
+        if (res.named && police) {
+          this.namedBy(person, now);
+          this.say(this.narration(rules.lines.named, vars, rng), 'error');
+        }
+        if (res.hurtDays) {
+          const until = day + res.hurtDays;
+          this.life.hurt[id] = until;
+          person.hurtUntil = until;
+        }
+        if (res.walked === 'ran') {
+          // They keep the cash, and what didn't sell.
+          person.eddies += r.cash;
+          this.life.eddies[id] = person.eddies;
+          r = { ...r, cash: 0, stock: 0 };
+          this.say(this.narration(rules.lines.ran, vars, rng), 'error');
+          changed = true;
+        } else if (res.walked === 'quit') {
+          changed = true;
+          if (r.stock <= 0 && r.cash <= 0 && runnerLeft(r) <= 0) {
+            this.say(this.narration(rules.lines.walked, vars, rng), 'system');
+            break;
+          }
+          this.say(this.narration(rules.lines.quit, vars, rng), 'system');
+        }
+        if (res.sold) changed = true;
+      }
+      if (r.quit && r.stock <= 0 && r.cash <= 0 && runnerLeft(r) <= 0) delete this.dealState.crew[id];
+      else this.dealState.crew[id] = r;
+    }
+    if (changed) this.events.emit('dealChanged', this.dealing(now));
+  }
+
+  /** A runner gave the NCPD the player's name: on record, and a warrant for dealing. */
+  private namedBy(runner: Person, now: number): void {
+    const police = this.rules.police;
+    if (!police) return;
+    const p = this.policeState;
+    p.reports.push({ id: p.nextId++, crime: 'dealing', at: now, district: runner.district, place: 'a cell', named: true, seen: 'a runner\'s word' });
+    if (p.reports.length > police.keep) p.reports.splice(0, p.reports.length - police.keep);
+    issueWarrant(p, 'dealing', runner.district, now, police, this.rules.timeScale);
+    this.events.emit('policeChanged', this.police(now));
   }
 
   // ───────────── The player's habit ─────────────
@@ -5461,6 +5882,7 @@ export class Game {
     const spokenFor = new Set(this.society.romance ? [this.society.romance.with] : []);
     const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed, (spot) => this.tierOfSpot(spot), turfFrom(this.rules.people.turf), this.rules.people, spokenFor);
     this.cornerWars(happened, now);
+    this.crewDays(today, now);
     // Seeing someone who has died: word reaches the player, and it's over.
     const partner = this.society.romance ? this.person(this.society.romance.with) : undefined;
     if (partner?.diedOn !== undefined) {

@@ -83,7 +83,7 @@ export const SOCIETY: SocietyRules = {
     stance: { hostile: -9, cold: -2.5, wary: -1.2, neutral: 0, warm: 1.5, friend: 3 },
     perLevel: 0.8,
     traits: { chatty: 1.2, warmth: 0.8, loyalty: 1, courage: 1, greed: 1 },
-    cost: { name: -1, job: 0, likes: 0, age: 0.6, hates: 1.2, home: 2, kin: 1.6, district: -1, life: -1, here: -1, rumor: -1, news: -1.5, dream: 0.3, views: -0.5, type: 0.8, chop: 0.4, hire: 0.6, deal: 0.9, pitch: 0.3 },
+    cost: { name: -1, job: 0, likes: 0, age: 0.6, hates: 1.2, home: 2, kin: 1.6, district: -1, life: -1, here: -1, rumor: -1, news: -1.5, dream: 0.3, views: -0.5, type: 0.8, chop: 0.4, hire: 0.6, deal: 0.9, pitch: 0.3, recruit: 1.1 },
     mask: 1.2,
     answerAt: 1,
     deflectAt: -1,

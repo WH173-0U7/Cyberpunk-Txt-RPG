@@ -2,6 +2,7 @@ import { CELLS } from './game';
 import type { PocketState } from './carry';
 import type { Fitted } from './cyberware';
 import type { DealingState, DealState, Front } from './dealing';
+import type { Runner, RunnerNews } from './crew';
 import type { HabitState } from './habit';
 import type { Arms, Meter } from './combat';
 import type { Lodging } from './rooms';
@@ -319,7 +320,17 @@ function dealingOf(value: unknown): DealingState | null {
   const strings = (v: unknown) => (isObject(v) ? Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'string')) as Record<string, string> : {});
   const numbers = (v: unknown) => (isObject(v) ? Object.fromEntries(Object.entries(v).filter(([, x]) => isNumber(x))) as Record<string, number> : {});
   const past = isObject(value.past) ? Object.fromEntries(Object.entries(value.past).flatMap(([k, v]) => { const d = deal(v); return d ? [[k, d]] : []; })) : {};
-  return { current: deal(value.current), vouched: strings(value.vouched), past, burned: numbers(value.burned), corners: strings(value.corners) };
+  const runner = (v: unknown): Runner | null => {
+    if (!isObject(v) || !isNumber(v.since) || !isNumber(v.stock) || !isNumber(v.owed) || !isNumber(v.paid) || !isNumber(v.cash) || !isNumber(v.day) || !isNumber(v.mood)) return null;
+    const n = (x: unknown) => (isNumber(x) ? x : 0);
+    const news = Array.isArray(v.news) ? v.news.filter((e): e is RunnerNews => isObject(e) && (e.kind === 'busted' || e.kind === 'robbed' || e.kind === 'hurt') && isNumber(e.day)) : [];
+    return {
+      since: v.since, drug: typeof v.drug === 'string' ? v.drug : null, stock: v.stock, fronted: n(v.fronted), owed: v.owed, paid: v.paid, due: isNumber(v.due) ? v.due : null, cash: v.cash, fronts: n(v.fronts), shorted: n(v.shorted), day: v.day, mood: v.mood, news,
+      ...(isNumber(v.heldTill) ? { heldTill: v.heldTill } : {}), ...(isNumber(v.hidden) ? { hidden: v.hidden } : {}), ...(v.quit === true ? { quit: true } : {}), ...(v.ran === true ? { ran: true } : {}),
+    };
+  };
+  const crew = isObject(value.crew) ? Object.fromEntries(Object.entries(value.crew).flatMap(([k, v]) => { const r = runner(v); return r ? [[k, r]] : []; })) : {};
+  return { current: deal(value.current), vouched: strings(value.vouched), past, burned: numbers(value.burned), corners: strings(value.corners), crew, dealt: numbers(value.dealt) };
 }
 
 /** The player's habit, as far as a save's record of it is one. */

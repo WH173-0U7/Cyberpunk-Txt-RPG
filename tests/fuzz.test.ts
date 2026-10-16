@@ -24,6 +24,8 @@ import type { Building } from '../src/engine/types';
 import { ROOMS } from '../src/data/rooms';
 import { POLICE } from '../src/data/police';
 import { DEALING } from '../src/data/dealing';
+import { freshDealing } from '../src/engine/dealing';
+import { generatePeople } from '../src/engine/people';
 
 /**
  * Plays badly on purpose: a few hundred random steps in real cities, buying, wearing, dropping,
@@ -49,7 +51,8 @@ const RULES: GameRules = {
   rooms: ROOMS,
   police: POLICE,
   join: JOIN,
-  dealing: DEALING,
+  // Anyone will run for the player, so the crew gets put through its paces.
+  dealing: { ...DEALING, crew: { ...DEALING.crew, stances: ['cold', 'wary', 'neutral', 'warm', 'friend'], keen: { gang: 3, user: 3, straight: 3 } } },
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
 };
 
@@ -133,6 +136,12 @@ function check(game: Game, about: string): void {
   expect(again.habitSaved, `${about}: the habit after a save`).toEqual(game.habitSaved);
   expect(again.roomSaved, `${about}: the room after a save`).toEqual(game.roomSaved);
   expect(again.lodgingSaved, `${about}: the rented room after a save`).toEqual(game.lodgingSaved);
+  // A runner never holds less than nothing, nor owes it.
+  for (const r of game.crew(Date.now())) {
+    expect(r.stock, `${about}: ${r.name}'s stock`).toBeGreaterThanOrEqual(0);
+    expect(r.cash, `${about}: ${r.name}'s cash`).toBeGreaterThanOrEqual(0);
+    expect(r.left, `${about}: ${r.name} owes`).toBeGreaterThanOrEqual(0);
+  }
   const health = game.health(Date.now());
   expect(health.current, `${about}: health`).toBeGreaterThanOrEqual(1);
   expect(health.current, `${about}: health`).toBeLessThanOrEqual(health.max);
@@ -185,8 +194,10 @@ describe('playing badly', () => {
         passUntil: 0,
         trip: null,
         inside: null,
-        // Something to sell, to pitch whoever's about.
-        items: [{ id: 'glitter', kind: 'consumable', name: 'Glitter', count: 6, in: 'jacket' }],
+        // Something to sell, to pitch whoever's about, or front a runner.
+        items: [{ id: 'glitter', kind: 'consumable', name: 'Glitter', count: 12, in: 'jacket' }],
+        // A supplier for the Tyger Claws, who can take on runners.
+        dealing: { ...freshDealing(), current: { gang: 'tyger_claws', connect: generatePeople(world, PEOPLE, FOOD.dishes).people.find((p) => p.gang === 'tyger_claws' && DEALING.gangs.tyger_claws!.connects.includes(p.job.role))!.id, rung: DEALING.crew.from, trust: 40, corner: null, front: null, debt: 0, debtAt: 0, collectAt: null, collections: 0, fronts: 6, sold: 60, take: 900, customers: {}, block: { key: -1, served: 0 } } },
         gear: null,
         money: { bills: 900, coins: 0, account: 1500 },
         energy: null,
@@ -275,7 +286,15 @@ describe('playing badly', () => {
             const what = rng.next();
             // Someone lying out cold: gone through, or killed, any way the player has.
             const ways = game.finishes(who, now);
-            if (ways.length && rng.chance(0.5)) {
+            // Taken on as a runner, fronted, settled with, leaned on, let off, let go.
+            const crew = game.dealWith(who, now).filter((o) => !o.disabled && /^(crew|recruit)/.test(o.id));
+            if (crew.length && rng.chance(0.4)) {
+              game.deal(who, rng.pick(crew)!.id, now);
+              // A runner on nothing is fronted a package there and then, so their days have something to sell.
+              const front = game.dealWith(who, now).filter((o) => o.id.startsWith('crew-front'));
+              if (front.length) game.deal(who, rng.pick(front)!.id, now);
+            }
+            else if (ways.length && rng.chance(0.5)) {
               game.killCold(who, rng.pick(ways)!.id, now);
               playOut();
             } else if (what < 0.22) game.talk(who, now);
