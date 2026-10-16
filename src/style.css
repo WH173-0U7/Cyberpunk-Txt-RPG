@@ -3256,3 +3256,120 @@ button {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: #ff8095;
 }
+
+/* The kicker, and the room the player is in on the same line: tap it for the rest of the building. */
+.place-kicker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  /* Room for the corner button */
+  padding-right: 40px;
+}
+.place-kicker-row .place-kicker {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.place-room {
+  flex: none;
+  max-width: 55%;
+  min-height: 32px;
+  margin: -6px 0 -4px;
+  padding: 4px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--primary);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+.place-room:hover,
+.place-room:focus-visible {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+/* The rooms of a building: one row each, a door to knock on at the end of a home's */
+.rooms-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rooms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rooms-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.rooms-go {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.rooms-go:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.rooms-row.is-here .rooms-go {
+  border-color: var(--primary);
+  color: var(--primary);
+  opacity: 1;
+}
+.rooms-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rooms-note {
+  flex: none;
+  color: var(--muted);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.rooms-knock {
+  flex: none;
+}
+.rooms-floors {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+.rooms-step {
+  min-width: 44px;
+  padding: 6px 0;
+}
+.rooms-at {
+  min-width: 86px;
+  color: var(--primary);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+}

@@ -91,6 +91,14 @@ own.
   door, and the weather stays outside. Eateries have a menu (below); there's nothing to do
   in the other buildings yet. **Leave** steps back out, and walking off somewhere goes out
   the door first. Being inside is saved.
+- **Rooms**: buildings have rooms, and the room you're in, under the panel's heading, opens
+  the rest. A storefront has its floor (where the counter is), a restroom, and a back room
+  only its staff go into; a hospital has a ward. Motels and capsule hotels have numbered rooms
+  floor by floor, and their desk rents you one for the night, yours till noon. Apartment
+  blocks and megabuildings have a lobby and floors of units, and everyone lives in one: take
+  the stairs, knock, and someone who likes you lets you in (a stranger or a mask gets the
+  door kept shut). You only see who's in the same room, and only they see you: a restroom or
+  a rented room is private.
 - **Eating out**: inside anything that sells food (noodle bars, grills, food stalls, dumpling
   houses, diners, restaurants, fast food) and at places that serve it, **Menu** opens what's
   on. Every dish and drink is a real Night City one, from RaMMMMen and Hawt Dawgs

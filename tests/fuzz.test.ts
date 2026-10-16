@@ -21,6 +21,7 @@ import { Game, streetSpot, type GameRules } from '../src/engine/game';
 import { createRng, hashSeed } from '../src/engine/rng';
 import { createSave, readSave, resume, type Progress } from '../src/engine/save';
 import type { Building } from '../src/engine/types';
+import { ROOMS } from '../src/data/rooms';
 
 /**
  * Plays badly on purpose: a few hundred random steps in real cities, buying, wearing, dropping,
@@ -42,6 +43,7 @@ const RULES: GameRules = {
   gear: GEAR,
   money: MONEY,
   hours: HOURS,
+  rooms: ROOMS,
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
 };
 
@@ -114,6 +116,8 @@ function check(game: Game, about: string): void {
   expect(again.chromeSaved, `${about}: chrome after a save`).toEqual(game.chromeSaved);
   expect(again.healthSaved, `${about}: health after a save`).toEqual(game.healthSaved);
   expect(again.heatSaved, `${about}: heat after a save`).toEqual(game.heatSaved);
+  expect(again.roomSaved, `${about}: the room after a save`).toEqual(game.roomSaved);
+  expect(again.lodgingSaved, `${about}: the rented room after a save`).toEqual(game.lodgingSaved);
   const health = game.health(Date.now());
   expect(health.current, `${about}: health`).toBeGreaterThanOrEqual(1);
   expect(health.current, `${about}: health`).toBeLessThanOrEqual(health.max);
@@ -156,7 +160,7 @@ describe('playing badly', () => {
     for (const seed of seeds) {
       const world = generateWorld(seed, CITY);
       const rng = createRng(`fuzz:${seed}`);
-      const stores = world.buildings.filter((b) => b.business && ['food', 'clothing', 'commodity', 'services', 'firearms', 'melee', 'cyberware', 'netrunning', 'medical'].includes(b.category));
+      const stores = world.buildings.filter((b) => (b.business && ['food', 'clothing', 'commodity', 'services', 'firearms', 'melee', 'cyberware', 'netrunning', 'medical', 'lodging'].includes(b.category)) || b.kind === 'apartments');
       let progress: Progress = {
         where: { ...streetSpot(world.locations[world.start] ?? { x: 50, y: 50 }), place: world.start },
         visited: [world.start],
@@ -258,6 +262,15 @@ describe('playing badly', () => {
             const fitted = game.chromeSaved;
             if (carried.length && rng.chance(0.6)) game.install(rng.pick(carried)!.id, now);
             else if (fitted.length) game.uninstall(rng.pick(fitted)!.id, now);
+          } else if (roll < 0.98 && game.roomsView(now)) {
+            // Somewhere else in the building: a room on this floor, a door to knock on, another floor.
+            const view = game.roomsView(now)!;
+            const room = rng.pick(view.rooms)!.room;
+            const what = rng.next();
+            if (what < 0.5) game.goRoom(room.id, now);
+            else if (what < 0.75) game.knock(room.id, now);
+            else game.goFloor(rng.int(1, view.floors), now);
+            expect(game.room(), `${about}: a room`).not.toBeNull();
           } else if (game.bank()) {
             const what = rng.next();
             if (what < 0.3) game.deposit();

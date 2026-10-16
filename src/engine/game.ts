@@ -13,6 +13,7 @@ import { drink, freshInebriation, inebriationStatus, type InebriationRules, type
 import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobRules, type JobState, type JobStatus, type Ladder, type Rung, type ShiftChoice, type ShiftEventKind } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
+import { mainRoom, roomById, roomOf, roomsOn, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
 import { allHours, buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
@@ -129,6 +130,8 @@ export interface GameRules extends TravelRules {
   clock?: (now: number) => Clock;
   /** Opening hours: counters shut while nobody who works them is in. Not said, every counter is always open. */
   hours?: HoursRules;
+  /** The rooms inside buildings. Without them (the tests' rules leave them out), a building is one room, as it was. */
+  rooms?: RoomsContent;
 }
 
 /** Whether counters keep the hours of whoever works them, and how many hours ahead to look for when one opens. */
@@ -182,6 +185,9 @@ export interface Description {
 }
 
 const HOUR = 3_600_000;
+
+/** What a night's room is on a motel's or a capsule hotel's menu. */
+export const ROOM_FOR_THE_NIGHT = 'room-for-the-night';
 
 /** A fight, between beats. */
 interface Fight {
@@ -265,7 +271,13 @@ export class Game {
   /** How well the player knows each kind of weapon, and each weapon. */
   private armsState: Arms;
   /** Whoever's been knocked out cold, till when and where they lie (not saved: they come to). */
-  private readonly outColdState = new Map<string, { until: number; spot: Spot }>();
+  private readonly outColdState = new Map<string, { until: number; spot: Spot; room: string }>();
+  /** The room the player is in, inside a building (`main` is the one you walk into). */
+  private roomState = 'main';
+  /** The units someone has let the player into, this time inside. */
+  private readonly letIn = new Set<string>();
+  /** The room the player has rented at a motel or a capsule hotel, and till when. */
+  private lodgingState: Lodging | null;
   /** The jobs the player holds: the main one, and maybe a side gig whose hours don't clash with it. */
   private jobs: JobState[];
   /** Shifts worked in each line of work (by the ladder's key), the experience a new job starts higher with. */
@@ -359,6 +371,11 @@ export class Game {
     this.resumed = Boolean(progress);
     const indoors = progress?.inside ? world.buildings.find((b) => b.id === progress.inside) : undefined;
     if (indoors && !this.trip && this.where.building === indoors.id && canEnter(indoors)) this.inside = indoors;
+    // The room they were in, if the building still has it; a unit they were let into, they're still let into.
+    const room = this.inside && progress?.room && rules.rooms ? roomById(this.inside, progress.room, rules.rooms) : null;
+    this.roomState = room?.id ?? 'main';
+    if (room?.kind === 'unit') this.letIn.add(room.id);
+    this.lodgingState = progress?.lodging ? { ...progress.lodging } : null;
     if (progress) {
       for (const id of progress.visited) this.visit(this.locationById(id));
       for (const id of progress.discovered) this.discovered.add(this.locationById(id).id);
@@ -570,7 +587,7 @@ export class Game {
   /** What's for sale where the player is: an eatery's menu, a store's rack, a ripperdoc's chrome, or nothing. */
   menu(now = Date.now()): Menu | null {
     const at = this.inside ?? this.location;
-    if (!at || !this.counterOpen(at, now)) return null;
+    if (!at || !this.atCounter() || !this.counterOpen(at, now)) return null;
     const menu = this.counterMenu(at, now);
     return menu && this.jobs.some((j) => j.building === at.id) ? this.staffPriced(menu) : menu;
   }
@@ -655,7 +672,9 @@ export class Game {
     const chrome = chromeKey ? gear.chrome.stores[chromeKey] : undefined;
     const hackStock = business ? gear.hacks.stores[business] : undefined;
     const care = chromeKey ? gear.medical.stores[chromeKey] : undefined;
-    if (!key && !chrome && !hackStock && !care) return null;
+    // A motel's or a capsule hotel's desk rents its rooms by the night.
+    const rent = business && this.rules.rooms ? this.rules.rooms.rent[business] : undefined;
+    if (!key && !chrome && !hackStock && !care && !rent) return null;
     const ids = key ? (gear.racks[key] ?? []) : [];
     const stock = key ? gear.arms.stores[key] : undefined;
     // A clothing store sells at its tier; a store with only bags on the rack prices them the way its district eats.
@@ -707,8 +726,22 @@ export class Game {
     const off = this.covered(now)?.plan.medsOff ?? 0;
     const meds = care?.meds ? Object.entries(gear.medical.meds).map(([id, m]): MenuItem => ({ id, name: m.name, note: m.note, kind: 'med', price: Math.max(1, Math.round(priceFor(m.price, quality, food) * (1 - off))), detail: medDetail(m) })) : [];
     const plans = care?.plans ? Object.entries(gear.medical.plans).map(([id, p]): MenuItem => ({ id, name: p.name, note: p.note, kind: 'plan', price: p.price, detail: `Trauma Team · ${p.days} days` })) : [];
-    const all = [...treatment, ...ware, ...meds, ...plans, ...programs, ...weapons, ...ammo, ...items];
+    const room = rent && 'block' in at ? this.roomToRent(at) : null;
+    const lodging: MenuItem[] = rent && room ? [{ id: ROOM_FOR_THE_NIGHT, name: rent.name, note: rent.note, kind: 'room', price: priceFor(rent.price, quality, food), detail: `${room.name} · till noon` }] : [];
+    const all = [...lodging, ...treatment, ...ware, ...meds, ...plans, ...programs, ...weapons, ...ammo, ...items];
     return all.length ? { venue, items: all, kind: 'gear' } : null;
+  }
+
+  /** The room a motel's or a capsule hotel's desk would hand the player tonight: the one they have, else one drawn for the night. */
+  private roomToRent(building: Building): Room | null {
+    const rules = this.rules.rooms;
+    if (!rules) return null;
+    const had = this.lodgingState?.building === building.id ? roomById(building, this.lodgingState.room, rules) : null;
+    if (had) return had;
+    const floors = walkableFloors(building, rules);
+    const rng = createRng(`${building.id}:rent:${this.clockAt(Date.now()).day}`);
+    const guests = roomsOn(building, rng.int(1, floors), rules).filter((r) => r.kind === 'guest');
+    return guests.length ? rng.pick(guests) : null;
   }
 
   /** Whether the player can pay for something on the menu here: in cash, or by transfer where the counter takes one. */
@@ -760,7 +793,7 @@ export class Game {
     if (item.kind === 'quickhack' && this.items.some((i) => i.kind === 'quickhack' && i.id === item.id)) return `You've got ${item.name} already.`;
     if (!this.canPay(item.price, this.takesTransfers(menu))) return this.shortBy(item.name, item.price, this.takesTransfers(menu));
     // Treatment and a plan are services: nothing to carry.
-    const service = item.kind === 'treatment' || item.kind === 'plan';
+    const service = item.kind === 'treatment' || item.kind === 'plan' || item.kind === 'room';
     if (item.kind !== 'gear' && !service && !fitting && !this.pocketFor(this.protoFor(item), this.boxOf(item))) {
       const proto = this.protoFor(item);
       // Something long wants a bag that takes it, and the pockets of your clothes never will.
@@ -790,8 +823,11 @@ export class Game {
     let bought: string;
     const on = this.covered(now);
     const plan = item.kind === 'plan' ? this.rules.gear.medical.plans[item.id] : undefined;
+    const renting = item.kind === 'room' && this.inside ? this.roomToRent(this.inside) : null;
     if (item.kind === 'treatment') {
       bought = `Treated for ${item.price} €$: back to full health.`;
+    } else if (renting && this.rules.rooms) {
+      bought = `${this.narration(this.rules.rooms.lines.rented, { room: renting.name }, createRng(`${this.world.seed}:rent:${now}`))} (${item.price} €$)`;
     } else if (plan) {
       bought = on?.id === item.id ? `Renewed ${plan.name} for ${item.price} €$: ${plan.days} more days.` : `Signed up with Trauma Team for ${item.price} €$: ${plan.name}, ${plan.days} days.${on ? ` It replaces your ${on.plan.name}.` : ''}`;
     } else if (chromed) {
@@ -830,6 +866,13 @@ export class Game {
     if (item.kind === 'treatment') this.healthState = { value: this.maxHealth(), at: now };
     // The same plan again runs on from when it ends; another starts now, in its place.
     if (plan) this.coverage = { plan: item.id, until: (on?.id === item.id ? on.until : now) + plan.days * DAY };
+    // A night's room is the player's till noon: the next noon, or this one when it's still the small hours.
+    if (renting && this.inside) {
+      const hour = this.clockAt(now).hour;
+      const hours = hour < 6 ? 12 - hour : 36 - hour;
+      const from = this.rented(now)?.room === renting.id ? (this.lodgingState?.until ?? now) : now;
+      this.lodgingState = { building: this.inside.id, room: renting.id, until: Math.max(from, now + hours * HOUR) };
+    }
     this.say(bought, 'system');
     this.events.emit('walletChanged', this.wallet);
     this.events.emit('inventoryChanged', this.inventory);
@@ -987,7 +1030,7 @@ export class Game {
   clinic(now = Date.now()): { name: string; fee: number } | null {
     const at = this.inside ?? this.location;
     const key = at ? this.chromeKey(at) : null;
-    if (!at || !key || !this.rules.gear.chrome.stores[key]?.fits || !this.counterOpen(at, now)) return null;
+    if (!at || !key || !this.rules.gear.chrome.stores[key]?.fits || !this.atCounter() || !this.counterOpen(at, now)) return null;
     return { name: at.name, fee: priceFor(this.rules.gear.chrome.fitting, drawQuality(this.world, at), this.rules.food) };
   }
 
@@ -1461,7 +1504,7 @@ export class Game {
       this.fightLine('theyOut', person, vars);
       const minutes = rng.int(combat.knockout.minutes[0], combat.knockout.minutes[1]);
       const spot = this.spot;
-      if (spot) this.outColdState.set(person.id, { until: now + (minutes * 60_000) / this.rules.timeScale, spot });
+      if (spot) this.outColdState.set(person.id, { until: now + (minutes * 60_000) / this.rules.timeScale, spot, room: this.roomState });
       result = `${capitalize(name)} is out cold, and won't come to for a while.`;
     } else if (how === 'fled') {
       result = `You got away from ${name}.`;
@@ -1525,6 +1568,8 @@ export class Game {
     const from = { ...this.where };
     const building = 'block' in at ? at : null;
     this.inside = null;
+    this.roomState = 'main';
+    this.letIn.clear();
     this.where = building ? { ...streetSpot(snapToStreet(this.world.layout, { x: building.x + building.w / 2, y: building.y + building.h / 2 })), building: building.id } : { ...streetSpot(at), place: at.id };
     if (building && canEnter(building)) this.inside = building;
     this.settle(this.where);
@@ -1878,7 +1923,7 @@ export class Game {
   bank(now = Date.now()): { name: string; fee: number; withdrawals: number[] } | null {
     const at = this.inside;
     // A branch whose people the player has crossed keeps its counter closed to them, like any storefront.
-    if (at?.business !== 'bank' || this.barred(now) || !this.counterOpen(at, now)) return null;
+    if (at?.business !== 'bank' || !this.atCounter() || this.barred(now) || !this.counterOpen(at, now)) return null;
     return { name: at.name, fee: this.rules.money.coinFee, withdrawals: [...this.rules.money.withdrawals] };
   }
 
@@ -2659,12 +2704,17 @@ export class Game {
     // Whoever was knocked out lies where they fell till they come to, wherever their day would have them.
     const cold: string[] = [];
     const elsewhere = new Set<string>();
+    const rooms = this.inside ? this.rules.rooms : undefined;
     for (const [id, o] of this.outColdState) {
       if (!this.outCold(id, now)) continue;
-      if (o.spot.kind === spot.kind && o.spot.id === spot.id) cold.push(id);
+      if (o.spot.kind === spot.kind && o.spot.id === spot.id && (!rooms || o.room === this.roomState)) cold.push(id);
       else elsewhere.add(id);
     }
-    const present = peopleAt(this.population, this.world, spot, clock, this.rules.food.dishes, this.rules.people.out).filter((p) => !elsewhere.has(p.person.id));
+    // Inside, only whoever is in the same room: everyone else in the building is out of sight.
+    const inside = this.inside;
+    const present = peopleAt(this.population, this.world, spot, clock, this.rules.food.dishes, this.rules.people.out).filter(
+      (p) => !elsewhere.has(p.person.id) && (!rooms || !inside || roomOf(p.person, inside, p.doing, clock, this.population, rooms) === this.roomState),
+    );
     for (const id of cold) {
       const person = this.person(id);
       if (person && person.diedOn === undefined && !present.some((p) => p.person.id === id)) present.push({ person, doing: 'out cold' });
@@ -4331,6 +4381,9 @@ export class Game {
     const building = this.door;
     if (!building || this.fighting) return false;
     this.inside = building;
+    // In through the front: the room you walk into, and no door anyone's opened for you yet.
+    this.roomState = 'main';
+    this.letIn.clear();
     this.events.emit('interiorChanged', building);
     this.recognize(now);
     return true;
@@ -4340,9 +4393,146 @@ export class Game {
   leave(): boolean {
     if (!this.inside || this.fighting) return false;
     this.inside = null;
+    this.roomState = 'main';
+    this.letIn.clear();
     // Walking out on a shift's moment lets it pass.
     this.shiftEventState = null;
     this.events.emit('interiorChanged', null);
+    return true;
+  }
+
+  // ───────────── Rooms ─────────────
+
+  /** The room the player is in, inside a building; null outside, or with no rooms in the rules. */
+  room(): Room | null {
+    const rules = this.rules.rooms;
+    if (!this.inside || !rules) return null;
+    return roomById(this.inside, this.roomState, rules) ?? mainRoom(this.inside, rules);
+  }
+
+  get roomSaved(): string | null {
+    return this.inside ? this.roomState : null;
+  }
+
+  get lodgingSaved(): Lodging | null {
+    return this.lodgingState ? { ...this.lodgingState } : null;
+  }
+
+  /** The room the player has rented, while it's theirs. */
+  rented(now: number): Lodging | null {
+    return this.lodgingState && this.lodgingState.until > now ? { ...this.lodgingState } : null;
+  }
+
+  /** Whether the player is where a building's counter is (the room you walk into); anywhere but inside a building, they are. */
+  private atCounter(): boolean {
+    return !this.inside || !this.rules.rooms || this.roomState === 'main';
+  }
+
+  /** Where the player can go from the room they're in: the rooms on this floor, whether each is open to them, and the floors there are. */
+  roomsView(now: number): RoomsView | null {
+    const rules = this.rules.rooms;
+    const here = this.room();
+    if (!this.inside || !rules || !here) return null;
+    const rooms = roomsOn(this.inside, here.floor, rules).map((room) => ({ room, access: this.accessTo(room, now) }));
+    return { room: here, floor: here.floor, floors: walkableFloors(this.inside, rules), rooms };
+  }
+
+  /** Whether the player can walk into a room: the staff's rooms are theirs alone, a home's units take being let in, a rented room the key. */
+  private accessTo(room: Room, now: number): RoomAccess {
+    if (room.id === this.roomState) return 'here';
+    const works = this.jobs.some((j) => j.building === this.inside?.id);
+    if (room.kind === 'back' || room.kind === 'office') return works ? 'open' : 'staff';
+    if (room.kind === 'unit') return this.letIn.has(room.id) ? 'open' : 'locked';
+    if (room.kind === 'guest') {
+      const rented = this.rented(now);
+      return rented && rented.building === this.inside?.id && rented.room === room.id ? 'yours' : 'locked';
+    }
+    return 'open';
+  }
+
+  /** Walks into another room of the building, on this floor or another: false (and why) if it isn't open to the player. */
+  goRoom(id: string, now: number): boolean {
+    const rules = this.rules.rooms;
+    if (!this.inside || !rules || this.fighting || this.trip) return false;
+    const room = roomById(this.inside, id, rules);
+    if (!room || room.id === this.roomState) return false;
+    const access = this.accessTo(room, now);
+    const rng = createRng(`${this.world.seed}:${this.inside.id}:${room.id}:${now}`);
+    const vars = { room: room.name, work: this.inside.name };
+    if (access === 'staff') {
+      this.say(this.narration(rules.lines.staffOnly, vars, rng), 'error');
+      return false;
+    }
+    if (access === 'locked') {
+      this.say(this.narration(room.kind === 'unit' ? rules.lines.locked : rules.lines.guestLocked, vars, rng), 'error');
+      return false;
+    }
+    this.moveTo(room, now);
+    return true;
+  }
+
+  /** Takes the stairs (or the elevator) to a floor: its corridor, or on the ground floor the room you walk in to. */
+  goFloor(floor: number, now: number): boolean {
+    const rules = this.rules.rooms;
+    if (!this.inside || !rules || this.fighting || this.trip) return false;
+    if (!Number.isInteger(floor) || floor < 1 || floor > walkableFloors(this.inside, rules)) return false;
+    const room = roomById(this.inside, floor === 1 ? 'main' : `hall:${floor}`, rules);
+    if (!room || room.id === this.roomState) return false;
+    this.moveTo(room, now);
+    return true;
+  }
+
+  private moveTo(room: Room, now: number): void {
+    this.roomState = room.id;
+    this.events.emit('roomChanged', room);
+    this.recognize(now);
+  }
+
+  /**
+   * Knocks on a unit's door. Whoever lives there and is in answers it, or doesn't: someone who
+   * likes the player (or is seeing them) lets them in; someone who knows them talks through the
+   * door; a stranger, or a masked face at the peephole, gets nothing. Nobody home, no answer.
+   */
+  knock(id: string, now: number): boolean {
+    const rules = this.rules.rooms;
+    const building = this.inside;
+    if (!building || !rules || this.fighting) return false;
+    const room = roomById(building, id, rules);
+    if (!room || (room.kind !== 'unit' && room.kind !== 'guest')) return false;
+    const rng = createRng(`${this.world.seed}:${building.id}:${room.id}:knock:${now}`);
+    const clock = this.clockAt(now);
+    const home = peopleAt(this.population, this.world, { kind: 'building', id: building.id }, clock, this.rules.food.dishes, this.rules.people.out).filter((p) => roomOf(p.person, building, p.doing, clock, this.population, rules) === room.id);
+    const awake = home.filter((p) => !/asleep/.test(p.doing));
+    const say = (pool: string[], vars: Record<string, string> = {}) => this.say(this.narration(pool, { room: room.name, ...vars }, rng), 'system');
+    if (!home.length) {
+      say(rules.lines.noAnswer);
+      return true;
+    }
+    if (!awake.length) {
+      say(rules.lines.asleep);
+      return true;
+    }
+    const mask = this.masked();
+    if (mask) {
+      say(rules.lines.masked, { mask: mask.word });
+      return true;
+    }
+    // Whoever likes the player best comes to the door.
+    const warmth: Record<Stance, number> = { hostile: 0, cold: 1, wary: 2, neutral: 3, warm: 4, friend: 5 };
+    const rank = (p: Person) => (this.society.romance?.with === p.id ? 9 : warmth[this.stanceOf(p, now)]);
+    const door = [...awake].sort((a, b) => rank(b.person) - rank(a.person))[0]!.person;
+    const stance = this.stanceOf(door, now);
+    const name = this.describe(door.id, now)?.name ?? 'Someone';
+    const known = knowledgeOf(this.society, door.id).met;
+    if (this.society.romance?.with === door.id || stance === 'warm' || stance === 'friend') {
+      this.letIn.add(room.id);
+      say(rules.lines.letIn, { who: name });
+      this.moveTo(room, now);
+    } else if (known && stance !== 'hostile') {
+      say(rules.lines.through, { who: name });
+    } else {
+      say(rules.lines.stranger);
+    }
     return true;
   }
 

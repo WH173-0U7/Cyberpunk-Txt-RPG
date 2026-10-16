@@ -7,6 +7,7 @@ import type { You } from './romance';
 import type { ChromeStatus } from './cyberware';
 import type { FightView, HealthStatus } from './combat';
 import type { CoverageStatus } from './medical';
+import type { Room } from './rooms';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -308,6 +309,8 @@ export type GameEvents = {
   charismaChanged: SkillStatus;
   /** A fighting skill gained experience or a level: Street Brawler, or Toughness. */
   skillChanged: { skill: 'brawler' | 'toughness' | 'weapon'; status: SkillStatus };
+  /** The player walked into another room of the building they're in. */
+  roomChanged: Room;
   /** The player got a job, worked a shift, moved up, quit or was let go (null: no job now). */
   jobChanged: JobStatus | null;
   /** The player changed the pronouns they go by. */

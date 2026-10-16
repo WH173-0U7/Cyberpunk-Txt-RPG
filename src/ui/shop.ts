@@ -4,7 +4,7 @@ export interface ShopItemView {
   id: string;
   name: string;
   note: string;
-  kind: 'food' | 'drink' | 'alcohol' | 'gear' | 'clothing' | 'weapon' | 'ammo' | 'cyberware' | 'quickhack' | 'med' | 'treatment' | 'plan';
+  kind: 'food' | 'drink' | 'alcohol' | 'gear' | 'clothing' | 'weapon' | 'ammo' | 'cyberware' | 'quickhack' | 'med' | 'treatment' | 'plan' | 'room';
   /** For clothing: the slot, the style, the brand; for a weapon, its class and maker; for ammo, the box; for an implant, the part of the body: in place of the kind's label. */
   detail?: string;
   price: number;
@@ -36,7 +36,7 @@ export interface ShopElements extends OverlayElements {
   list: HTMLElement;
 }
 
-const KIND_LABEL: Record<ShopItemView['kind'], string> = { food: 'Food', drink: 'Drink', alcohol: 'Alcohol', gear: 'Gear', clothing: 'Clothing', weapon: 'Weapon', ammo: 'Ammo', cyberware: 'Cyberware', quickhack: 'Quickhack', med: 'Meds', treatment: 'Treatment', plan: 'Trauma Team' };
+const KIND_LABEL: Record<ShopItemView['kind'], string> = { food: 'Food', drink: 'Drink', alcohol: 'Alcohol', gear: 'Gear', clothing: 'Clothing', weapon: 'Weapon', ammo: 'Ammo', cyberware: 'Cyberware', quickhack: 'Quickhack', med: 'Meds', treatment: 'Treatment', plan: 'Trauma Team', room: 'Lodging' };
 
 /**
  * An eatery's menu, or a store's rack, over the map. It shows whatever view it's given; the

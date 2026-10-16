@@ -92,6 +92,26 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 
 - `Game.interior` is the building the player is in (`enter()`, `leave()`, the
   `interiorChanged` event); it's saved as `inside`. New rules for being inside go in `Game`.
+- Rooms (`src/engine/rooms.ts`, the words and numbers in `src/data/rooms.ts`, `rules.rooms`):
+  worked out from what a building is, never drawn into the city, so a room moves nothing and
+  needs no generator bump. A storefront has the room you walk into (`main`, named for what it
+  sells), a restroom and the back (staff only; a hospital a ward too), its ground floor only;
+  a motel or a capsule hotel its numbered rooms on every floor; an apartment block or a
+  megabuilding its lobby and floors of units (`hall:<floor>`, `unit:<floor>:<letter>`); a
+  tower its lobby and office floors. `roomsOn`, `roomById`, `walkableFloors`. Who is in which
+  room is `roomOf` (at home, their household's unit, `unitOf`; laid up, the ward; at work, the
+  floor or now and then out back; anyone else the floor or now and then the restroom, drawn for
+  the hour), and `Game.peopleHere` is only whoever is in the player's room, so a witness is
+  someone in the same room. `Game.room()`, `roomsView` (what the overlay lists, with each
+  room's `RoomAccess`), `goRoom`, `goFloor` and `knock` (someone home who likes the player, or
+  is seeing them, lets them in; a stranger or a mask gets nothing) move the player, `roomChanged`
+  the event; saved as `room` (a unit they were let into stays open to them). A counter (a menu,
+  a rack, a bank, a ripperdoc's chair) is only in the room you walk into (`atCounter`). A motel's
+  or a capsule hotel's desk rents a room for the night (`ROOM_FOR_THE_NIGHT`, `rooms.rent`, a
+  service like treatment): `Game.rented(now)`, saved as `lodging`, the player's till noon and
+  nobody else's. Without `rules.rooms` (the tests' rules leave it out) a building is one room,
+  as it was. The panel shows the room under its kicker (`PanelView.room`), which opens the
+  rooms overlay (`src/ui/rooms.ts`): this floor's rooms, a door to knock on, the stairs.
 - `insideView` in `src/main.ts` is the panel inside. It has the building's `category` and
   `business` to decide what to show.
 - Opening hours (`rules.hours`, `HOURS` in `src/data/hours.ts`): a storefront's counter (its
