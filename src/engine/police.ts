@@ -9,7 +9,10 @@ import type { Spot } from './people';
  * player complies, runs or fights. A report names the player only when someone who knows them
  * saw their face; a named report is a warrant, which lapses in time, but for murder.
  */
-export type Crime = 'assault' | 'robbery' | 'murder';
+export type Crime = 'assault' | 'robbery' | 'murder' | 'possession' | 'dealing';
+
+/** Why officers have the player: at the scene of something called in, on a warrant, or stopped to search their pockets. */
+export type ConfrontWhy = 'scene' | 'warrant' | 'search';
 
 export interface PoliceRules {
   /** By district: the chance an ordinary witness, alone, calls it in, and the minutes a unit takes to come; null where the NCPD doesn't go. */
@@ -23,8 +26,15 @@ export interface PoliceRules {
    * witness's odds over the number of them to the power of `crowd`. Never more than `most`.
    */
   caller: { victim: number; kin: number; friend: number; guard: number; corpo: number; courage: number; ganger: number; crowd: number; most: number };
-  /** Each crime: what it's called, the fine, the minutes held for it (0: a fine only), the days a warrant for it lasts (null: for good), how bad it is, and how much likelier a witness is to call it in. */
-  crimes: Record<Crime, { label: string; fine: number; hold: number; lapseDays: number | null; rank: number; alarm: number }>;
+  /** Each crime: what it's called, the fine, the minutes held for it (0: a fine only), the days a warrant for it lasts (null: for good), how bad it is, how much likelier a witness is to call it in, and for a drug found on the player, more of both a dose. */
+  crimes: Record<Crime, { label: string; fine: number; hold: number; lapseDays: number | null; rank: number; alarm: number; perDose?: { fine: number; hold: number } }>;
+  /**
+   * Searching the player's pockets, whenever officers have them: an illegal drug is
+   * possession, a dealer's weight of any (`weight` doses) is dealing, and all of it is taken.
+   * A patrol stops someone carrying now and then (`stop`, times the district's call; `weighed`
+   * times more with a dealer's weight on them, `corner` times on the corner they deal from).
+   */
+  search: { weight: number; stop: number; weighed: number; corner: number };
   /** A unit comes faster for worse: the minutes, times this, by crime. */
   urgency: Record<Crime, number>;
   /** Running from the officers: the odds, less hurt, more in a mask; caught, held this much longer for resisting. */
@@ -45,8 +55,12 @@ export interface PoliceLines {
   zone: string[];
   dispatch: string[];
   arrive: string[];
-  /** What the panel says while officers have the player, at the scene or on a warrant. */
-  facing: { scene: string; warrant: string };
+  /** What the panel says while officers have the player, at the scene, on a warrant or stopping them to search them. */
+  facing: Record<ConfrontWhy, string>;
+  /** A patrol stopping someone carrying; what a search turns up (`{found}`, `{gang}`, `{owed}`), and nothing found. */
+  frisk: string[];
+  seized: string[];
+  clean: string[];
   missed: string[];
   stop: string[];
   fined: string[];
@@ -104,11 +118,11 @@ export interface Warrant {
   until: number | null;
 }
 
-/** Officers here, weapons out, for the player: at the scene, or on a warrant. */
+/** Officers here, weapons out, for the player: at the scene, on a warrant, or to search them. */
 export interface Confrontation {
   officers: string[];
   crime: Crime;
-  why: 'scene' | 'warrant';
+  why: ConfrontWhy;
   at: number;
 }
 
@@ -153,7 +167,7 @@ export interface PoliceView {
   reports: number;
   confront: {
     crime: Crime;
-    why: 'scene' | 'warrant';
+    why: ConfrontWhy;
     /** What the officers want, as the panel says it. */
     text: string;
     choices: Array<{ id: PoliceChoice; label: string; sub: string }>;
@@ -163,10 +177,11 @@ export interface PoliceView {
 /** What the player does with officers on them: goes quietly, runs for it, or takes them on. */
 export type PoliceChoice = 'comply' | 'run' | 'fight';
 
-/** What a crime is charged at, all told: the crimes, the fine and the minutes held. */
-export function chargesFor(crimes: Crime[], rules: PoliceRules): { crimes: Crime[]; fine: number; hold: number } {
-  const all = [...new Set(crimes)].sort((a, b) => rules.crimes[b].rank - rules.crimes[a].rank);
-  return { crimes: all, fine: all.reduce((n, c) => n + rules.crimes[c].fine, 0), hold: all.reduce((n, c) => n + rules.crimes[c].hold, 0) };
+/** What crimes are charged at, all told: the crimes, the fine and the minutes held; with doses found for a drug crime, more of both a dose. */
+export function chargesFor(crimes: Crime[], rules: PoliceRules, doses: Partial<Record<Crime, number>> = {}): { crimes: Crime[]; fine: number; hold: number } {
+  const all = [...new Set([...crimes, ...(Object.entries(doses) as Array<[Crime, number]>).filter(([, n]) => n > 0).map(([c]) => c)])].sort((a, b) => rules.crimes[b].rank - rules.crimes[a].rank);
+  const per = (c: Crime, key: 'fine' | 'hold') => (rules.crimes[c].perDose?.[key] ?? 0) * (doses[c] ?? 0);
+  return { crimes: all, fine: all.reduce((n, c) => n + rules.crimes[c].fine + per(c, 'fine'), 0), hold: all.reduce((n, c) => n + rules.crimes[c].hold + per(c, 'hold'), 0) };
 }
 
 /** How the NCPD works where something happened: the chance a witness calls, and how long a unit takes; null where it doesn't go. */

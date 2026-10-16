@@ -22,11 +22,15 @@ export const POLICE: PoliceContent = {
     assault: { label: 'assault', fine: 250, hold: 0, lapseDays: 7, rank: 1, alarm: 1 },
     robbery: { label: 'robbery', fine: 600, hold: 10, lapseDays: 14, rank: 2, alarm: 1 },
     murder: { label: 'murder', fine: 3000, hold: 30, lapseDays: null, rank: 3, alarm: 2 },
+    // The wiki: combat-rated drugs (Black Lace) and Glitter are illegal to carry at all, and selling any drug without a license is a crime.
+    possession: { label: 'possession', fine: 300, hold: 20, lapseDays: 14, rank: 1, alarm: 1, perDose: { fine: 25, hold: 3 } },
+    dealing: { label: 'dealing', fine: 1000, hold: 45, lapseDays: 30, rank: 2, alarm: 1.3, perDose: { fine: 40, hold: 4 } },
   },
-  urgency: { assault: 1, robbery: 0.9, murder: 0.6 },
+  urgency: { assault: 1, robbery: 0.9, murder: 0.6, possession: 1, dealing: 0.8 },
   run: { base: 0.45, hurt: 0.25, masked: 0.1, resisting: 10 },
   shortHold: 15,
   stop: { chance: 0.3, rank: 0.5, minutes: 15 },
+  search: { weight: 10, stop: 0.25, weighed: 2, corner: 2 },
   keep: 30,
   lines: {
     calls: [
@@ -47,7 +51,19 @@ export const POLICE: PoliceContent = {
     facing: {
       scene: '{officers}, weapons drawn, here about the {crime}. They want you to come quietly.',
       warrant: '{officers} have your face on a warrant for {crime}, and their weapons out.',
+      search: '{officers}, hands on their holsters, want a look in your pockets.',
     },
+    frisk: [
+      'An NCPD cruiser slows beside you, and two officers get out. "Hands where we can see them. Empty your pockets."',
+      'Two officers on patrol peel off toward you. "You. Against the wall. Let\'s see what you\'re carrying."',
+      'A drone drops to eye level, scanning, and two officers follow it in: "Pockets. Now."',
+    ],
+    seized: [
+      'They go through your pockets and come up with {found}. It goes in an evidence bag.',
+      'A pat-down, then your pockets inside out: {found}, bagged and tagged.',
+      'They find {found}, and they keep it.',
+    ],
+    clean: ['They pat you down and find nothing worth the paperwork. "Move along."', 'Pockets out, nothing in them that interests them. They let you go.', 'A search, a shrug, and they wave you on.'],
     missed: ['The NCPD shows up where it happened, and finds you gone.', 'A unit rolls up to the scene. You\'re long gone.'],
     stop: [
       'An NCPD cruiser pulls up. Two officers get out: your face is on a warrant.',

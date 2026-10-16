@@ -695,7 +695,7 @@ function policeView(now: number): PanelView | null {
   if (cops) {
     return {
       mode: game.interior ? 'inside' : 'here',
-      kicker: cops.why === 'scene' ? 'NCPD · On the scene' : 'NCPD · Warrant',
+      kicker: cops.why === 'scene' ? 'NCPD · On the scene' : cops.why === 'search' ? 'NCPD · Stop and search' : 'NCPD · Warrant',
       description: cops.text,
       actions: cops.choices.slice(0, 3).map((c, i) => ({ id: `pick-${i + 1}` as 'pick-1' | 'pick-2' | 'pick-3', label: c.label, ...(c.sub ? { sub: c.sub } : {}) })),
       closable: false,

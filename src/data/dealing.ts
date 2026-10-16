@@ -86,6 +86,17 @@ export const DEALING: DealingRules = {
   short: { least: 0.5 },
   pitch: { rapport: 4 },
   tiers: { luxury: 1.5, everyday: 1, poverty: 0.7 },
+  bad: {
+    robber: 0.06,
+    rough: { watson: 1.5, pacifica: 2, badlands: 2, santo_domingo: 1.3, heywood: 1, westbrook: 0.7, city_center: 0.5 },
+    undercover: 0.25,
+    read: { base: 0.25, perLevel: 0.07, most: 0.9 },
+    snitch: { base: 0.03, pushed: 0.05, turned: 0.07, regular: 0.3 },
+    seen: 0.15,
+    tab: { payBack: 0.55, loyalty: 0.5, extra: 0.15, days: 7 },
+    rob: { doses: [0.5, 1], cash: [0.3, 0.8] },
+    talk: { base: 0.35, perLevel: 0.06, most: 0.85 },
+  },
   lines: {
     walkUp: [
       '{Who} drifts over, eyes on everything but you, and asks if you are holding {drug}.',
@@ -181,6 +192,58 @@ export const DEALING: DealingRules = {
       'The {gang} are done with you: no more product, and they mean to have their {owed} €$ one way or another.',
       'Word comes down: the {gang} have cut you off. What you owe, they will collect.',
       'You are out with the {gang}. The {owed} €$ is not.',
+    ],
+    robber: [
+      '{Who} comes up like a buyer, close, and then there is a {weapon} in your ribs: the product and the cash.',
+      'Halfway through asking for {drug}, {who} pulls a {weapon}. "All of it. Now."',
+      '{Who} was never buying: the {weapon} comes out, low, where nobody else can see it.',
+      '"Easy," says {who}, letting you see the {weapon}. "Hand it over and nobody bleeds."',
+    ],
+    handOver: [
+      'You hand it over: {took}. {Who} backs off into the crowd and is gone.',
+      '{took}, gone into {his} pockets. {Who} does not run; {he} does not need to.',
+      'You give up {took}. {Who} pats your cheek, and walks.',
+    ],
+    talkedDown: [
+      'You keep your voice low and your hands where {who} can see them, and talk. The {weapon} goes away.',
+      'Something you say lands: {who} thinks better of it, and slips off.',
+      'You talk {him} round, and {he} melts back into the street with nothing.',
+    ],
+    talkFailed: [
+      '{Who} is not listening. The {weapon} jabs, once, to make the point, and then it is all gone: {took}.',
+      'Words do not do it. {Who} takes {took}, and a swing at you for wasting {his} time.',
+      'You talk; {who} hits you, and takes {took} anyway.',
+    ],
+    tell: [
+      'Something is off: the shoes are too clean for this corner.',
+      'The way {he} stands is wrong, square and patient, like {he} has done this on a course.',
+      'You catch it: {his} eyes keep going to the end of the street, where a car is parked with nobody in it.',
+      'There is a bulge under the jacket where a holster would be, and nobody round here wears one like that.',
+    ],
+    busted: [
+      'The cash is still in your hand when {who} flips a badge. "NCPD. Do not move." A car pulls up across the street.',
+      '"Thanks," says {who}, and then the badge: "You are under arrest." Two more officers step out of nowhere.',
+      '{Who} takes the dose and keeps hold of your wrist. "NCPD. You picked the wrong buyer."',
+    ],
+    tabAsk: [
+      '{Who}, a regular, comes up short again: {pay} €$, and could you put the rest on tab?',
+      'Your regular {who} has {pay} €$ and a promise. Tab it, just this once?',
+      '{Who} has {pay} €$, and asks if it can go on the tab, like friends do.',
+    ],
+    tabTaken: [
+      'On tab: {who} owes you {owed} €$ now.',
+      'You let it ride. {Who} owes {owed} €$, and swears on {his} mother.',
+      '{owed} €$ on the tab, for {who}. You will see.',
+    ],
+    tabPaid: [
+      '{Who} settles the tab first, and a little over: {pay} €$.',
+      'Good as {his} word: {who} pays off the tab, {pay} €$ with something for your trouble.',
+      '{Who} hands over {pay} €$ for the tab before you can ask.',
+    ],
+    tabDodged: [
+      "{Who} says nothing about the tab, and you notice.",
+      '{Who} talks fast about something else. The tab is still open.',
+      '"Next time," says {who}, about the tab. It is always next time.',
     ],
   },
 };
