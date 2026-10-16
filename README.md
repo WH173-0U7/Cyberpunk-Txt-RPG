@@ -117,6 +117,12 @@ own.
   in their pocket. They keep hours on your phone's clock: home at night, work by day (with
   days off), their hangout in the evening, out on the streets in between. Inside a building
   or at a place, **People** lists who's there and what they're doing; tap one for their card.
+  Its **Known** tab lists everyone you've met or know by name, the latest first, so you can
+  open anyone's card from anywhere. A card has two tabs: **Talk**, the conversation, and
+  **Profile**: how they feel about you (stance, rapport, ♥, grudge), how often you've talked,
+  everything you know about them (work, age, home, what they eat and drink, who they hate,
+  their type, what they want, their nature), what's still unknown, what they remember of you
+  ("Gift: Ramen ×2 · last week", "You walked out · today") and their web.
 - **An economy**: the eddies move while you're away. Payday is Friday, when everyone draws a
   week's money (a gang's members from the gang's chest, filled by the cut it takes from the
   storefronts on its turf), and every day living takes some back; most evenings the chatty go
@@ -217,8 +223,8 @@ own.
   the relation and the name. And you can **Ask about** the few worth asking about: anyone
   you've seen them with, anyone who shares their family name, whoever's here with them and
   the last people you've talked to (six at most, and nobody you've asked about already);
-  they'll tell you what the person is to them, that they've never heard of them, or nothing. Tap
-  the card's facts line and their web unfolds under it: them in the middle and everyone you
+  they'll tell you what the person is to them, that they've never heard of them, or nothing. On
+  the card's Profile tab their web closes the page: them in the middle and everyone you
   know them to know around them, each spoke labeled with the relation or "?" (dashed) when
   all you know is that they're connected; tap a name to open that person's card (even if
   they're not here, then you can only look).

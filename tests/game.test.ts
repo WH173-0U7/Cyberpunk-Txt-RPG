@@ -2308,6 +2308,25 @@ describe('Game', () => {
           expect(game.societySaved.memories[worker.id]?.find((m) => m.kind === 'gift')).toMatchObject({ what: dish.id, times: 2 });
         });
 
+        it('says what someone remembers of the player in a few words, and keeps everyone met in a list, the latest first', () => {
+          const { game, now, boss } = withBoss('b-noodle', 38, 20);
+          expect(game.between(boss.id, now)).toEqual([]);
+          expect(game.acquaintances(now).map((a) => a.person.id)).not.toContain(boss.id);
+          expect(game.askForWork(boss.id, now)).toBe(true);
+          expect(game.quit(now + MINUTE, boss.id)).toBe(true);
+          // Freshest first: walked out, after being taken on.
+          expect(game.between(boss.id, now + MINUTE)).toEqual(['You walked out · today', 'Took you on · today']);
+          expect(game.between(boss.id, now + MINUTE, 1)).toEqual(['You walked out · today']);
+          // Talked to, they're on the Known list, by name, and the latest dealt with comes first.
+          const known = game.acquaintances(now + MINUTE);
+          expect(known[0]).toMatchObject({ person: { id: boss.id }, name: expect.stringContaining(boss.given), dead: false });
+          const other = game.peopleHere(now).find((p) => p.person.id !== boss.id);
+          if (other) {
+            expect(game.talk(other.person.id, now + 2 * MINUTE)).toBe(true);
+            expect(game.acquaintances(now + 2 * MINUTE)[0]?.person.id).toBe(other.person.id);
+          }
+        });
+
         it("won't be taken back by a boss they walked out on, while the boss remembers it", () => {
           const { game, now, boss } = withBoss('b-noodle', 38, 20);
           expect(game.askForWork(boss.id, now)).toBe(true);

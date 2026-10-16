@@ -485,15 +485,20 @@ it needs no generator bump. The pieces:
   ends it. Lines are `LINES.romance`, `LINES.approaches.flirt`, `LINES.you.askOut`/`date`/
   `official`/`endIt`, and memory lines for `date`, `dumped` and `cheated`.
 - `src/ui/people.ts` is the overlay (a `MapOverlay` off the panel's **People** action); the
-  game decides who is here and what the actions do. A person's card is deliberately spare:
-  a header whose facts line unfolds (`factsOpen`) into everything known and their web, in
-  the transcript's place; the transcript (your lines after a `›`, theirs bare, the notes
-  small and colored by tone); one command row (Talk, which unfolds the ways in, Ask, Give,
+  game decides who is here and what the actions do. Its list has two tabs (`PeopleTab`):
+  **Here**, and **Known**, everyone the player has met or knows by name, the latest dealt
+  with first (`Game.acquaintances`), any of them opening their card here or not. A person's
+  card is deliberately spare: a header with one line of what's known; two tabs (`CardTab`),
+  **Talk**, the transcript (your lines after a `›`, theirs bare, the notes small and colored
+  by tone), and **Profile**, in the transcript's place (the facts line opens it too): how they
+  stand (stance, rapport, ♥, grudge), how often you've talked, each fact known as a label and
+  a value (`profileOf` in `main.ts`), what's still unknown, what they remember of the player
+  (`Game.between`, a few words a memory) and their web; one command row (Talk, which unfolds the ways in, Ask, Give,
   Chop, Work, ♥ for the heart's moves, `⋯` for the hostile acts (insult, rob, attack), each only when it can be
   done; ♥ shows on the card of the one the player is seeing even when they're not here, to
   end it by message)
   whose choices (`Picker`) unfold only while open; keep new things to do with a person
-  behind a command, not as another row, and new things to know behind the facts line. Lines
+  behind a command, not as another row, and new things to know on the Profile tab. Lines
   a person says use the `talk` tone, which the feed skips while the card is open.
 
 ## Fighting

@@ -1970,7 +1970,7 @@ button {
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
-/* What you know, on one line until tapped: then all of it, and their web in the transcript's place */
+/* What you know, on one line: tapped, the profile */
 .person-facts {
   display: flex;
   align-items: baseline;
@@ -2003,12 +2003,89 @@ button {
   border-bottom: 1.5px solid currentColor;
   transform: rotate(45deg);
 }
-.person-facts.is-open .person-facts-text {
-  white-space: normal;
+.person-facts::after {
+  transform: rotate(-45deg);
 }
-.person-facts.is-open::after {
-  margin-bottom: -2px;
-  transform: rotate(225deg);
+/* Two tabs, a list's (Here, Known) or a card's (Talk, Profile): words, the one showing underlined */
+.people-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+}
+.people-tab {
+  min-height: 36px;
+  padding: 6px 12px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.people-tab.is-on {
+  border-bottom-color: var(--primary);
+  color: var(--primary);
+}
+.people-tab:focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: -3px;
+}
+.person-tabs {
+  margin: 0;
+}
+/* The profile, in the transcript's place: a label and a line for each thing known, then the web */
+.person-profile {
+  flex: 1;
+  min-height: 140px;
+  padding: 10px 2px 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+  scrollbar-width: thin;
+}
+.person-profile-rows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 7px 14px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.person-profile-label {
+  margin: 0;
+  padding-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.person-profile-value {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.person-profile-value.is-unknown {
+  color: var(--muted);
+}
+.person-profile-line {
+  display: block;
+}
+.person-profile .person-web-box {
+  flex: none;
+  min-height: 0;
+  height: 230px;
+  border: 0;
+}
+.person-profile .person-web-box.is-empty {
+  height: auto;
+  gap: 10px;
+}
+.person-web-title {
+  align-self: flex-start;
 }
 /* The web, in the transcript's place while it's open: the graph scales to what's left of the card */
 .person-web-box {

@@ -3215,6 +3215,62 @@ export class Game {
     return [`Into ${who}`, this.rules.lines.romance.wants[heart.wants], style ? `Likes ${style}` : ''].filter(Boolean).join(' · ');
   }
 
+  /**
+   * What someone remembers of the player, freshest first, as a profile lists it: a few words
+   * a memory ("Gift: Ramen ×2 · last week", "Heard you robbed Ana · today"), at most `limit`.
+   */
+  between(id: string, now: number, limit = 4): string[] {
+    const { society, timeScale, food } = this.rules;
+    const nameOf = (other?: string) => (other ? this.describe(other, now)?.name : undefined) ?? 'someone';
+    const did: Record<string, [string, string]> = { robbery: ['robbed', 'rob'], insult: ['insulted', 'insult'], assault: ['attacked', 'attack'], murder: ['killed', 'kill'] };
+    return memoriesOf(this.society, id, society.memory, timeScale, now)
+      .slice(0, limit)
+      .map((m) => {
+        const [past, base] = did[m.what ?? ''] ?? ['crossed', 'cross'];
+        const eddies = m.amount ? ` ${m.amount} €$` : '';
+        const said: Record<Memory['kind'], string> = {
+          wronged: m.what === 'robbery' ? `Robbed by you${eddies ? ` of${eddies}` : ''}` : m.what === 'insult' ? 'Insulted by you' : m.what === 'assault' ? 'Attacked by you' : 'Wronged by you',
+          heard: `Heard you ${past} ${nameOf(m.about)}`,
+          saw: `Saw you ${base} ${nameOf(m.about)}`,
+          settled: `Collected${eddies || ' what you owed'} off you`,
+          gift: `Gift: ${food.dishes.find((d) => d.id === m.what)?.name ?? 'something'}`,
+          goodWord: `A good word from ${nameOf(m.about)}`,
+          hired: 'Took you on',
+          promoted: `Moved you up${m.what ? ` to ${m.what}` : ''}`,
+          quit: 'You walked out',
+          notice: 'You gave notice',
+          fired: 'Let you go',
+          chopped: `Chopped a chip for you${eddies ? ` (${eddies.trim()})` : ''}`,
+          asked: `You asked about ${nameOf(m.about)}`,
+          date: `A date${m.what ? ` at ${m.what}` : ''}`,
+          dumped: 'You ended it',
+          cheated: `Caught you with ${nameOf(m.about)}`,
+        };
+        return `${said[m.kind]}${m.times > 1 ? ` ×${m.times}` : ''} · ${this.agoWord(daysSince(m.at, timeScale, now))}`;
+      });
+  }
+
+  /**
+   * Everyone the player has met or knows by name, the latest dealt with first: for a list to
+   * open anyone from, here or not. Their name or look, how they feel, what's known of their
+   * work, whether they're dead, and when the player last had to do with them.
+   */
+  acquaintances(now: number): Array<{ person: Person; name: string; stance: Stance; job?: string; dead: boolean; last: number }> {
+    const { society, timeScale } = this.rules;
+    return knownPeople(this.society)
+      .flatMap((id) => {
+        const person = this.person(id);
+        const k = knowledgeOf(this.society, id);
+        if (!person || !(k.met || k.facts.includes('name'))) return [];
+        const described = this.describe(id, now);
+        const standing = standingOf(this.society, id, society, timeScale, now);
+        // When they last had to do with the player: the last line between them, or a talk (0: only ever heard of).
+        const last = Math.max(k.log.at(-1)?.at ?? 0, standing.lastTalkAt ?? 0);
+        return [{ person, name: described?.name ?? person.name, stance: this.stanceOf(person, now), ...(described?.facts.job ? { job: described.facts.job } : {}), dead: person.diedOn !== undefined && k.facts.includes('dead'), last }];
+      })
+      .sort((a, b) => b.last - a.last || a.name.localeCompare(b.name));
+  }
+
   /** What has passed between the player and a person, oldest first. */
   conversation(id: string): LogEntry[] {
     return knowledgeOf(this.society, id).log.map((entry) => ({ ...entry }));
