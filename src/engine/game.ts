@@ -10,7 +10,7 @@ import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuI
 import { medDetail, medTotal, TREATMENT, type Coverage, type CoverageStatus, type MedicalStock, type MedKind } from './medical';
 import { answer, compose, deflect, describeStranger, drawnWord, eloquenceOf, FAMILY, fill, finish, historyOf, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
-import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobRules, type JobState, type JobStatus, type Ladder, type Rung } from './jobs';
+import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobRules, type JobState, type JobStatus, type Ladder, type Rung, type ShiftChoice, type ShiftEventKind } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
 import { allHours, buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
@@ -563,7 +563,14 @@ export class Game {
   menu(now = Date.now()): Menu | null {
     const at = this.inside ?? this.location;
     if (!at || !this.counterOpen(at, now)) return null;
-    return this.counterMenu(at, now);
+    const menu = this.counterMenu(at, now);
+    return menu && this.jobs.some((j) => j.building === at.id) ? this.staffPriced(menu) : menu;
+  }
+
+  /** A menu at the staff price: the player's own workplace takes a share off everything but Trauma Team's plans. */
+  private staffPriced(menu: Menu): Menu {
+    const off = this.rules.jobs.perks.discount;
+    return { ...menu, staff: off, items: menu.items.map((i) => (i.kind === 'plan' ? i : { ...i, price: Math.max(1, Math.round(i.price * (1 - off))) })) };
   }
 
   /** What a counter sells, open or not. */
@@ -586,6 +593,8 @@ export class Game {
    */
   private counterOpen(at: Building | Location, now: number): boolean {
     if (!this.rules.hours?.close || !('block' in at) || !at.business || allHours(at)) return true;
+    // Keys: the player's own counter, high enough up the ladder, is open to them whoever's in.
+    if (this.jobs.some((j) => j.building === at.id && j.rung >= this.rules.jobs.perks.keys)) return true;
     const clock = this.clockAt(now);
     return this.staffOf(at).some((p) => {
       const where = whereIs(p, this.world, clock, this.rules.food.dishes, this.rules.people.out);
@@ -1986,7 +1995,7 @@ export class Game {
     const closed = !shiftOpen(this.clockAt(now).hour, ladder.hours);
     const blocked = !here ? 'away' : off ? 'off' : done ? 'done' : closed ? 'closed' : null;
     const side = this.jobs.indexOf(job) > 0;
-    return { building, boss: bossOf(building, this.population), rung, next: nextRung(job, ladder.rungs), trust: job.trust, shifts: job.shifts, pay: this.shiftPayAt(rung, building, job.raise ?? 0), side, hours: ladder.hours, days, owed: job.owed ?? 0, here, open: !off && !done && !closed, blocked };
+    return { building, boss: bossOf(building, this.population), rung, next: nextRung(job, ladder.rungs), trust: job.trust, shifts: job.shifts, pay: this.shiftPayAt(rung, building, job.raise ?? 0), side, hours: ladder.hours, days, owed: job.owed ?? 0, here, open: !off && !done && !closed, blocked, perks: this.perksOf(job, building) };
   }
 
   /** The days a job has the player on: as set, else the roster a new job of its hours starts with. */
@@ -2170,7 +2179,7 @@ export class Game {
     job.owed = (job.owed ?? 0) + pay;
     const line_ = lineOf(building, jobs);
     if (line_) this.career[line_] = (this.career[line_] ?? 0) + 1;
-    this.say(`A shift ${rung.doing} at ${building.name}: ${pay} €$ on your pay, ${job.owed} €$ owed by payday.`, 'system');
+    this.say(`A shift ${rung.doing} at ${building.name}: ${pay} €$ on your pay, ${job.owed} €$ owed by payday.${this.staffMeal(building)}`, 'system');
     changeRep(this.society, `business:${building.id}`, jobs.rep, society, timeScale, now);
     if (boss) {
       learnOf(this.society, boss.id, 'met');
@@ -2205,6 +2214,8 @@ export class Game {
         job.heard = true;
       }
     }
+    this.staffUniform(job, building, now);
+    this.drawShiftEvent(job, building, pay, now);
     this.events.emit('jobChanged', this.jobStatus(now));
     this.events.emit('societyChanged', { people: boss ? [boss.id] : [] });
     return true;
@@ -2346,6 +2357,243 @@ export class Game {
       this.leaveJob(job, now, 'fired');
     }
     return fired;
+  }
+
+  /** What a job gets the player besides pay, as the status says it. */
+  private perksOf(job: JobState, building: Building): string[] {
+    const { perks } = this.rules.jobs;
+    const line_ = lineOf(building, this.rules.jobs) ?? '';
+    const meal = perks.meal[line_];
+    return [`${Math.round(perks.discount * 100)}% off`, meal === 'food' ? 'a meal a shift' : meal === 'drink' ? 'a drink a shift' : '', job.uniform ? 'uniform' : '', job.rung >= perks.keys ? 'keys' : ''].filter(Boolean);
+  }
+
+  /** After a shift, the staff meal or drink where the line of work has one: the cheapest of its kind on the menu, into a pocket. What the shift's line says of it. */
+  private staffMeal(building: Building): string {
+    const meal = this.rules.jobs.perks.meal[lineOf(building, this.rules.jobs) ?? ''];
+    const dish = meal ? [...(menuFor(this.world, building, this.rules.food)?.items.filter((i) => i.kind === meal) ?? [])].sort((a, b) => a.price - b.price || a.id.localeCompare(b.id))[0] : undefined;
+    if (!dish) return '';
+    const what = meal === 'food' ? 'meal' : 'drink';
+    const pocket = this.pocketFor({ id: dish.id, kind: 'consumable' });
+    if (!pocket) return ` There's a staff ${what}, ${dish.name}, but no room on you for it.`;
+    const owned = this.items.find((i) => i.id === dish.id && i.kind === 'consumable' && i.in === pocket);
+    if (owned) owned.count += 1;
+    else this.items.push({ id: dish.id, kind: 'consumable', name: dish.name, count: 1, in: pocket });
+    this.events.emit('inventoryChanged', this.inventory);
+    return ` Staff ${what} on the house: ${dish.name}.`;
+  }
+
+  /** The uniform off the rack, once the rung comes with one where the line of work has them. */
+  private staffUniform(job: JobState, building: Building, now: number): void {
+    const at = this.rules.jobs.perks.uniform[lineOf(building, this.rules.jobs) ?? ''];
+    if (at === undefined || job.rung < at || job.uniform) return;
+    // The store's uniform: a top off its rack (a shirt, else a jacket), never a mask, the same for everyone there.
+    const { kinds } = this.rules.gear;
+    const tops = (slot: string) => (this.rack(building, now)?.items ?? []).filter((i) => i.kind === 'clothing' && kinds[i.id]?.slot === slot && !kinds[i.id]?.mask).sort((a, b) => a.id.localeCompare(b.id));
+    const choice = tops('inner').length ? tops('inner') : tops('outer');
+    const garment = choice.length ? createRng(`${this.world.seed}:uniform:${building.id}`).pick(choice) : undefined;
+    if (!garment) return;
+    const proto = this.protoFor(garment);
+    const pocket = this.pocketFor(proto);
+    if (!pocket) {
+      this.say(`Your uniform's waiting at the counter, a ${garment.name.toLowerCase()}, for when you've room on you for it.`, 'system');
+      return;
+    }
+    this.items.push({ ...proto, name: garment.name, count: 1, in: pocket });
+    job.uniform = true;
+    this.say(`Your uniform, on the house: ${garment.name}. Put it on from the inventory.`, 'system');
+    this.events.emit('inventoryChanged', this.inventory);
+  }
+
+  /** A shift's moment waiting on the player (not saved: closing the game lets it pass). */
+  private shiftEventState: { kind: ShiftEventKind; building: string; job: JobState; pay: number; person?: string; gang?: string; text: string } | null = null;
+
+  /**
+   * Now and then a shift brings something that wants a choice, with the people there: a rush
+   * (where the line of work has them), a customer here palming something, someone from the
+   * gang whose turf it is come for the cut, a coworker here asking for cover.
+   */
+  private drawShiftEvent(job: JobState, building: Building, pay: number, now: number): void {
+    const { jobs, people, lines } = this.rules;
+    const { events } = jobs;
+    const rng = createRng(`${this.world.seed}:shift-event:${building.id}:${job.shifts}`);
+    if (!rng.chance(events.chance)) return;
+    const line_ = lineOf(building, jobs) ?? '';
+    const fits = (kind: ShiftEventKind) => !events.where[kind] || (events.where[kind] as string[]).includes(line_);
+    const here = this.peopleHere(now);
+    const staff = new Set(this.staffOf(building).map((p) => p.id));
+    const boss = bossOf(building, this.population);
+    const options: Array<{ kind: ShiftEventKind; person?: Person; gang?: string }> = [];
+    if (fits('rush')) options.push({ kind: 'rush' });
+    if (fits('shoplifter')) {
+      // A customer here, else someone from the district who's out and about, nowhere in particular, and walks in.
+      const customers = here.filter((p) => !staff.has(p.person.id) && p.person.age >= 16);
+      let thief = customers.length ? rng.pick(customers).person : undefined;
+      if (!thief) {
+        const clock = this.clockAt(now);
+        const homes = new Set(this.world.buildings.filter((b) => b.district === building.district).map((b) => b.id));
+        const around = this.population.people.filter((p) => p.diedOn === undefined && p.age >= 16 && p.home !== null && homes.has(p.home) && !staff.has(p.id));
+        for (let i = 0; i < 12 && around.length && !thief; i++) {
+          const p = rng.pick(around);
+          if (!whereIs(p, this.world, clock, this.rules.food.dishes, people.out)) thief = p;
+        }
+      }
+      if (thief) options.push({ kind: 'shoplifter', person: thief });
+    }
+    const turf = turfFrom(people.turf)(building.district).filter(([gang, share]) => share > 0 && people.gangs[gang]);
+    if (fits('cut') && turf.length) {
+      const total = turf.reduce((n, [, share]) => n + share, 0);
+      let roll = rng.next() * total;
+      const gang = (turf.find(([, share]) => (roll -= share) < 0) ?? turf[0])?.[0] as string;
+      const today = this.clockAt(now).day;
+      const inHere = here.filter((p) => p.person.gang === gang).map((p) => p.person);
+      const members = inHere.length ? inHere : this.population.people.filter((p) => p.gang === gang && p.diedOn === undefined && !(p.hurtUntil !== undefined && today <= p.hurtUntil));
+      if (members.length) options.push({ kind: 'cut', person: rng.pick(members), gang });
+    }
+    const mates = here.filter((p) => staff.has(p.person.id) && p.person.id !== boss?.id);
+    if (fits('cover') && mates.length) options.push({ kind: 'cover', person: rng.pick(mates).person });
+    const weighed = options.filter((o) => events.weights[o.kind] > 0);
+    if (!weighed.length) return;
+    let roll = rng.next() * weighed.reduce((n, o) => n + events.weights[o.kind], 0);
+    const event = weighed.find((o) => (roll -= events.weights[o.kind]) < 0) ?? (weighed[weighed.length - 1] as (typeof weighed)[number]);
+    const state = { kind: event.kind, building: building.id, job, pay, ...(event.person ? { person: event.person.id } : {}), ...(event.gang ? { gang: event.gang } : {}), text: '' };
+    const vars = this.shiftVars(state, now);
+    state.text = fill(rng.pick(events.lines[`${event.kind}Open`] ?? ['']), vars);
+    // The panel tells it, and waits on the choice; the feed is left for what comes of it.
+    this.shiftEventState = state;
+    // The coworker asks, and the one come for the cut says what they want.
+    const person = event.person;
+    if (person && (event.kind === 'cover' || event.kind === 'cut')) {
+      const speaker = this.speakerFor(person, this.stanceOf(person, now), event.kind === 'cut' ? 'collecting' : 'on shift', now);
+      speaker.vars = { ...speaker.vars, work: building.name };
+      learnOf(this.society, person.id, 'seen');
+      this.speech(person, line(event.kind === 'cut' ? lines.work.cutDemand : lines.work.coverAsk, speaker, rng), now);
+    }
+  }
+
+  /** What a shift's moment is told with: who (by name if the player knows it, else their look), their pronouns, the place, the gang. */
+  private shiftVars(state: { building: string; person?: string; gang?: string }, now: number): Record<string, string> {
+    const person = state.person ? this.person(state.person) : undefined;
+    const known = person ? this.describe(person.id, now) : null;
+    const who = known ? (known.named ? known.name : known.name.charAt(0).toLowerCase() + known.name.slice(1)) : '';
+    const said = person ? this.speakerFor(person, this.stanceOf(person, now), '', now).vars : {};
+    return { who, he: said.he ?? 'they', his: said.his ?? 'their', him: said.him ?? 'them', work: this.buildingOf(state.building)?.name ?? '', gang: state.gang ? (this.rules.people.gangs[state.gang]?.name ?? '') : '' };
+  }
+
+  /** The shift's moment waiting on the player here, and the choices it offers; null when there's none. */
+  shiftEvent(now = Date.now()): { kind: ShiftEventKind; text: string; choices: ShiftChoice[]; person?: string; gang?: string } | null {
+    const state = this.shiftEventState;
+    if (!state || this.inside?.id !== state.building) return null;
+    const { rush, cover } = this.rules.jobs.events;
+    const energy = this.energy(now).current;
+    const choices: Record<ShiftEventKind, ShiftChoice[]> = {
+      rush: [{ id: 'hustle', label: 'Hustle', sub: `${rush.energy} energy, tips`, disabled: energy < rush.energy }, { id: 'pace', label: 'Keep pace' }],
+      shoplifter: [{ id: 'stop', label: 'Stop them' }, { id: 'let', label: 'Let it go' }],
+      cut: [{ id: 'pay', label: 'Hand it over' }, { id: 'stand', label: 'Stand up' }],
+      cover: [{ id: 'cover', label: 'Cover', sub: `+${Math.round(state.pay * cover.pay)} €$, ${cover.energy} energy`, disabled: energy < cover.energy }, { id: 'decline', label: 'Not today' }],
+    };
+    return { kind: state.kind, text: state.text, choices: choices[state.kind] ?? [], ...(state.person ? { person: state.person } : {}), ...(state.gang ? { gang: state.gang } : {}) };
+  }
+
+  /** Answers the shift's moment here: what it costs and gets the player, with the place, the boss and whoever was in it. */
+  answerShift(choice: string, now = Date.now()): boolean {
+    const state = this.shiftEventState;
+    const view = this.shiftEvent(now);
+    const pick = view?.choices.find((c) => c.id === choice);
+    if (!state || !pick || pick.disabled) return false;
+    this.shiftEventState = null;
+    const { jobs, society, timeScale, lines } = this.rules;
+    const { events } = jobs;
+    const building = this.buildingOf(state.building) as Building;
+    const { job } = state;
+    const rng = createRng(`${this.world.seed}:shift-answer:${state.building}:${job.shifts}:${choice}`);
+    const person = state.person ? this.person(state.person) : undefined;
+    const before = person ? this.snapshot(person, now) : null;
+    const vars = this.shiftVars(state, now);
+    const boss = bossOf(building, this.population);
+    const tell = (key: string, more: Record<string, string> = {}) => this.say(fill(rng.pick(events.lines[key] ?? ['']), { ...vars, ...more }), 'system');
+    const to = (who: Person | null | undefined, by: { rapport?: number; grudge?: number }) => {
+      if (who) changeStanding(this.society, who.id, by, society, timeScale, now);
+    };
+    const says = (who: Person | undefined, pool: Line[]) => {
+      if (!who) return;
+      const speaker = this.speakerFor(who, this.stanceOf(who, now), 'on shift', now);
+      speaker.vars = { ...speaker.vars, work: building.name };
+      this.speech(who, line(pool, speaker, rng), now);
+    };
+    // The boss, if they're about, says something to the player who stood up for the place.
+    const bossSaw = () => {
+      if (boss && this.isHere(boss.id, now)) says(boss, lines.work.stood);
+    };
+    // Too tired after all: the moment waits.
+    const tired = (energy: number) => {
+      if (this.spendEnergy(energy, now)) return false;
+      this.shiftEventState = state;
+      return true;
+    };
+    if (choice === 'hustle') {
+      if (tired(events.rush.energy)) return false;
+      const tips = Math.max(1, Math.round(rng.int(events.rush.tips[0], events.rush.tips[1]) * jobs.tiers[this.tierOf(building)]));
+      // Tips are cash: what the wallet and the change pocket hold, and the rest on the pay.
+      const loot = splitLoot(tips, this.rules.money);
+      const bills = Math.min(loot.bills, walletRoom(this.pockets, this.money, this.rules.gear));
+      const coins = Math.min(loot.coins, changeRoom(this.pockets, this.items, this.money, this.rules.gear, this.rules.food.dishes));
+      this.money = { ...this.money, bills: this.money.bills + bills, coins: this.money.coins + coins };
+      job.owed = (job.owed ?? 0) + tips - bills - coins;
+      job.trust += events.rush.trust;
+      changeRep(this.society, `business:${building.id}`, events.rush.rep, society, timeScale, now);
+      tell('rushHustle', { tips: String(tips) });
+      this.events.emit('walletChanged', this.wallet);
+    } else if (choice === 'pace') {
+      tell('rushPace');
+    } else if (choice === 'stop') {
+      job.trust += events.shoplifter.trust;
+      changeRep(this.society, `business:${building.id}`, events.shoplifter.rep, society, timeScale, now);
+      to(boss, { rapport: events.shoplifter.rapport });
+      to(person, { grudge: events.shoplifter.grudge });
+      if (person) learnOf(this.society, person.id, 'met');
+      tell('shoplifterStop');
+      says(person, lines.work.caught);
+      bossSaw();
+    } else if (choice === 'let') {
+      to(person, { rapport: events.shoplifter.thanks });
+      tillOf(this.life.tills, building.id).pending -= events.shoplifter.loss;
+      tell('shoplifterLet');
+    } else if (choice === 'pay') {
+      if (state.gang) changeRep(this.society, `gang:${state.gang}`, events.cut.paid, society, timeScale, now);
+      tell('cutPay');
+      says(person, lines.work.cutPaid);
+    } else if (choice === 'stand') {
+      const odds = Math.min(0.9, events.cut.odds + this.charismaState.level * events.cut.perLevel);
+      const backed = rng.chance(odds);
+      if (state.gang) changeRep(this.society, `gang:${state.gang}`, -events.cut.gangRep, society, timeScale, now);
+      to(person, { grudge: events.cut.grudge });
+      if (backed) {
+        to(boss, { rapport: events.cut.rapport });
+        job.trust += events.cut.trust;
+        tell('cutStand');
+        says(person, lines.work.cutBack);
+        bossSaw();
+      } else {
+        to(boss, { rapport: -events.cut.worse });
+        tell('cutWorse');
+        says(person, lines.work.cutWorse);
+      }
+    } else if (choice === 'cover') {
+      if (tired(events.cover.energy)) return false;
+      const extra = Math.round(state.pay * events.cover.pay);
+      job.owed = (job.owed ?? 0) + extra;
+      to(person, { rapport: events.cover.rapport });
+      tell('coverYes', { pay: String(extra) });
+      says(person, lines.work.coverThanks);
+    } else if (choice === 'decline') {
+      to(person, { rapport: -events.cover.refuse });
+      tell('coverNo');
+      says(person, lines.work.coverSnub);
+    }
+    if (person && before) this.noteFeedback(person, before, now);
+    this.events.emit('jobChanged', this.jobStatus(now));
+    this.events.emit('societyChanged', { people: [person?.id, boss?.id].filter((x): x is string => Boolean(x)) });
+    return true;
   }
 
   // ───────────── People ─────────────
@@ -3927,6 +4175,8 @@ export class Game {
   leave(): boolean {
     if (!this.inside || this.fighting) return false;
     this.inside = null;
+    // Walking out on a shift's moment lets it pass.
+    this.shiftEventState = null;
     this.events.emit('interiorChanged', null);
     return true;
   }

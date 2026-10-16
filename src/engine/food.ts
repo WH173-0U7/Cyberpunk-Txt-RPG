@@ -98,6 +98,8 @@ export interface Menu {
   items: MenuItem[];
   /** An eatery's menu, or a store's rack of gear. */
   kind: 'food' | 'gear';
+  /** The share off at the staff price, where the player works. */
+  staff?: number;
 }
 
 /** A dish that doesn't say turns up everywhere. */

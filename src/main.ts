@@ -98,6 +98,8 @@ const place = new PlacePanel(
       pass: $<HTMLButtonElement>('#act-pass'),
       stop: $<HTMLButtonElement>('#act-stop'),
       enter: $<HTMLButtonElement>('#act-enter'),
+      'pick-1': $<HTMLButtonElement>('#act-pick-1'),
+      'pick-2': $<HTMLButtonElement>('#act-pick-2'),
       leave: $<HTMLButtonElement>('#act-leave'),
       menu: $<HTMLButtonElement>('#act-menu'),
       people: $<HTMLButtonElement>('#act-people'),
@@ -509,6 +511,10 @@ function act(id: ActionId): void {
     withdrawOpen = false;
     bank.overlay.show($('#act-bank'));
   } else if (id === 'work') game.work(now);
+  else if (id === 'pick-1' || id === 'pick-2') {
+    const choice = game.shiftEvent(now)?.choices[id === 'pick-1' ? 0 : 1];
+    if (choice) game.answerShift(choice.id, now);
+  }
 }
 
 /** Something done to someone in the people overlay. */
@@ -694,6 +700,20 @@ function workAction(shift: JobStatus, now: number): PanelAction {
 
 function insideView(building: Building): PanelView {
   const now = Date.now();
+  // Something on the shift wants a choice: it's all the panel offers until it's answered.
+  const moment = game.shiftEvent(now);
+  if (moment) {
+    return {
+      mode: 'inside',
+      kicker: `On shift · Block ${building.block}`,
+      meta: [categoryOf(building).label, building.kindLabel].join(' · '),
+      description: moment.text,
+      actions: moment.choices.slice(0, 2).map((c, i) => ({ id: i ? ('pick-2' as const) : ('pick-1' as const), label: c.label, ...(c.sub ? { sub: c.sub } : {}), ...(c.disabled ? { disabled: true } : {}) })),
+      closable: true,
+      closeLabel: `Leave ${building.name}`,
+      announce: `On shift at ${building.name}. ${moment.text} ${moment.choices.map((c) => c.label).join(' or ')}?`,
+    };
+  }
   const menu = game.menu();
   const here = game.peopleHere(now).length;
   const barred = game.barred(now);
@@ -1083,7 +1103,7 @@ function showStatus(now: number): void {
     { label: 'Eddies', value: `€$ ${wallet.eddies} on you${wallet.account ? ` · €$ ${wallet.account} banked` : ''}${wallet.chips ? ` · €$ ${wallet.chips} on chips` : ''}` },
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
-    ...(jobs.length ? jobs.map((j) => ({ label: j.side ? 'Side gig' : 'Work', value: `${j.rung.title} at ${j.building.name} · ${formatDays(j.days)} ${j.hours[0]}–${j.hours[1]}h${j.owed ? ` · ${j.owed} €$ owed` : ''} · ${j.shifts} ${j.shifts === 1 ? 'shift' : 'shifts'}${j.next ? ` · trust ${j.trust}, ${j.next.title.toLowerCase()} at ${j.next.at}` : ' · top of the ladder'} · trade ${game.trade(j.building).health}` })) : [{ label: 'Work', value: 'No job' }]),
+    ...(jobs.length ? jobs.map((j) => ({ label: j.side ? 'Side gig' : 'Work', value: `${j.rung.title} at ${j.building.name} · ${formatDays(j.days)} ${j.hours[0]}–${j.hours[1]}h${j.owed ? ` · ${j.owed} €$ owed` : ''} · ${j.shifts} ${j.shifts === 1 ? 'shift' : 'shifts'}${j.next ? ` · trust ${j.trust}, ${j.next.title.toLowerCase()} at ${j.next.at}` : ' · top of the ladder'} · trade ${game.trade(j.building).health} · ${j.perks.join(', ')}` })) : [{ label: 'Work', value: 'No job' }]),
     ...(condition ? [{ label: 'Condition', value: condition, tone: 'warn' as const }] : []),
     ...(mask ? [{ label: 'Mask', value: `${mask.name} · nobody knows your face`, tone: 'warn' as const }] : []),
     { label: 'Armed', value: armed ? `${armed.name}${armed.gun ? ` · ${armed.loaded}/${armed.magazine}` : ''}` : 'Nothing but your hands' },
@@ -1114,7 +1134,7 @@ function showShop(): void {
   const chrome = game.chromeSaved;
   const cover = game.covered(now);
   shop.render({
-    kicker: qualityLabel(menu),
+    kicker: menu.staff ? `${qualityLabel(menu)} · staff −${Math.round(menu.staff * 100)}%` : qualityLabel(menu),
     blurb: barred ?? menuBlurb(menu),
     status: shopStatus,
     // Cash, or a transfer where this counter takes one: the game knows which.

@@ -1164,6 +1164,65 @@ export const LINES: DialogueLines = {
       '{gig} too, huh? Hustle. I respect it.',
       only("Two jobs? You'll sleep when you're dead, {choom}.", young),
     ],
+    // A coworker asking the player to take the rest of their shift.
+    coverAsk: [
+      "Any chance you can take the rest of my shift? Something came up.",
+      "Do me a favor? Cover for me till close. I'll owe you.",
+      only("My kid's sick. Can you stay on? Please.", kind),
+      only('Cover me. I got somewhere to be and it ain\'t here.', ganger),
+      only("I'd ask anyone else, but there isn't anyone else. Stay on?", quiet),
+      only("Cover the back half of my shift? I'll make it worth your while. Eventually.", greedy),
+      only('Cover me, {choom}? Got a thing tonight.', young),
+    ],
+    coverThanks: [
+      'You are a lifesaver. Seriously.',
+      "Owe you one. I mean it.",
+      only("Thank you. I won't forget it.", kind),
+      only('Solid. Real solid.', young),
+      only('Appreciated. Truly.', corpo),
+    ],
+    coverSnub: [
+      'Right. Sure. Never mind.',
+      "Fine. I'll figure it out.",
+      only("Wow. Okay. Remember that next time you need something.", hot),
+      only("Didn't think you would.", hard),
+    ],
+    // Someone come for the gang's cut of the place.
+    cutDemand: [
+      "Collection day. {work} knows the number.",
+      "Envelope. Now. Don't make it a whole thing.",
+      "The cut, {choom}. Same as every week.",
+      only("Protection's not free. Pay up.", hard),
+      only("You new? Nobody told you how it works at {work}?", first),
+    ],
+    cutPaid: ['Pleasure doing business.', 'See you next week.', 'Smart.', only("Good. Keeps everybody healthy.", hard)],
+    cutBack: [
+      "Short, huh. Fine. This once.",
+      "Next week it's all of it. Remember my face.",
+      only("Got some nerve. I like that. Don't push it.", brave),
+      only("Tch. Not worth the trouble. Today.", timid),
+    ],
+    cutWorse: [
+      "Wrong answer. Price just doubled.",
+      "You think this is a negotiation? Double, next week.",
+      only("Mouth like that costs extra.", hot),
+    ],
+    // A shoplifter, caught at the door.
+    caught: [
+      'Alright, alright. Take it. Relax.',
+      "It's just a… fine. Here.",
+      only('Get your hands off me.', hot),
+      only("You don't get paid enough to care, {choom}.", young),
+      only("I wasn't- okay. Okay. Sorry.", timid),
+    ],
+    // The boss, who saw the player stand up for the place.
+    stood: [
+      'Saw that. Good.',
+      "That's what I like to see.",
+      only("Thanks for that. Most wouldn't have.", kind),
+      only("Noted. Don't get yourself killed over it.", hard),
+      only('Commendable. It will be remembered.', corpo),
+    ],
   },
 
   revenge: {

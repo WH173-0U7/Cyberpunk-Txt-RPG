@@ -44,6 +44,28 @@ describe('work', () => {
     expect(shiftPay(dishes, 'everyday', JOBS)).toBeGreaterThan(shiftPay(dishes, 'poverty', JOBS));
   });
 
+  it('keeps its perks and shift moments to lines of work that exist, with a line for every turn they take', () => {
+    const lines = new Set(Object.keys(JOBS.ladders));
+    const { perks, events } = JOBS;
+    expect(perks.discount).toBeGreaterThan(0);
+    expect(perks.discount).toBeLessThan(1);
+    for (const line of [...Object.keys(perks.meal), ...Object.keys(perks.uniform)]) expect(lines.has(line), line).toBe(true);
+    for (const [line, rung] of Object.entries(perks.uniform)) expect(rung, line).toBeLessThan(JOBS.ladders[line]!.rungs.length);
+    expect(perks.keys).toBeLessThan(Math.min(...Object.values(JOBS.ladders).map((l) => l.rungs.length)));
+    for (const list of Object.values(events.where)) for (const line of list ?? []) expect(lines.has(line), line).toBe(true);
+    expect(Object.values(events.weights).every((w) => w >= 0)).toBe(true);
+    const turns = { rush: ['Open', 'Hustle', 'Pace'], shoplifter: ['Open', 'Stop', 'Let'], cut: ['Open', 'Pay', 'Stand', 'Worse'], cover: ['Open', 'Yes', 'No'] };
+    const vars = new Set(['who', 'Who', 'he', 'He', 'his', 'His', 'him', 'work', 'gang', 'tips', 'pay']);
+    for (const [kind, keys] of Object.entries(turns)) {
+      for (const key of keys) {
+        const pool = events.lines[`${kind}${key}`];
+        expect(pool?.length, `${kind}${key}`).toBeGreaterThan(0);
+        for (const text of pool ?? []) for (const [, name] of text.matchAll(/\{(\w+)\}/g)) expect(vars.has(name!), `${text}: {${name}}`).toBe(true);
+      }
+    }
+    expect(Object.keys(events.lines).length).toBe(Object.values(turns).flat().length);
+  });
+
   it('opens a shift from the first hour up to the last, past midnight for a night, and counts the small hours as the night before', () => {
     // Nine to five: nothing starts at five.
     expect(shiftOpen(9, [9, 17])).toBe(true);

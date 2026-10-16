@@ -202,7 +202,7 @@ describe('saving', () => {
   it('carries both jobs and the shifts worked in each line, cleaning what it cannot use', () => {
     const { game, now } = played(1);
     const [a, b] = world.buildings.filter((x) => x.business);
-    const main = { building: a?.id ?? 'a', rung: 0, trust: 2, shifts: 2, lastShiftDay: 39366, days: [1, 3, 5], owed: 48, raise: 0.05, missed: 1, checked: 39367, paidOn: 39364, heard: false };
+    const main = { building: a?.id ?? 'a', rung: 0, trust: 2, shifts: 2, lastShiftDay: 39366, days: [1, 3, 5], owed: 48, raise: 0.05, missed: 1, checked: 39367, paidOn: 39364, heard: false, uniform: true };
     const side = { building: b?.id ?? 'b', rung: 1, trust: 8, shifts: 8, lastShiftDay: 39365 };
     const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), jobs: [main, side, { building: 'x', rung: -2 }], career: { food: 12, nightlife: 'lots', vehicles: -1 } })));
     expect(read?.jobs).toEqual([main, side]);

@@ -322,7 +322,17 @@ own.
   briefcase on the map, glowing while a shift there is on; tap it to plan the walk. The line
   under the energy bar says "Shift on · 7 min" when one's open somewhere else, else your
   rung, and the status drop-down has a row for each job: days, hours, what's owed, shifts and
-  what the next rung takes. (People's own troubles, and helping with them, come later.)
+  what the next rung takes. Working somewhere has its perks: a fifth off at your own
+  counter, a staff meal at an eatery or a drink at a bar after every shift, a uniform off the
+  rack at a clothing store once you're on the shop floor, and from the third rung the keys,
+  so the counter's open to you when nobody else is in. About one shift in three something
+  happens, and the panel waits on your choice: a **rush** (hustle through it for tips, or keep
+  pace), a **shoplifter** (stop them for the boss and make an enemy, or let the till take the
+  loss), someone from the gang whose turf it is **come for the cut** (hand it over, or stand
+  up to them and hope they back down), or a coworker asking you to **cover** the rest of their
+  shift (half a shift more on your pay, and a friend; or a little sour if you won't). The
+  people in it are real, and remember. (People's own troubles, and helping with them, come
+  later.)
 - **Masks**: a gas mask, a ballistic mask, a balaclava or a menpō (all real 2077 pieces, on
   the thrift rack, at Saeko's and in the clothing stores) hides your face, and anything you
   do to someone from behind it is nobody's doing: no grudge, no word around the district, no

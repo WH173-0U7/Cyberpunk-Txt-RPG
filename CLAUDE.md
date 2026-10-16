@@ -624,10 +624,35 @@ that don't clash, and climbs a ladder of rungs at each:
   `LINES.work` (`hire`, with `experienced` and `referee` in the vars, `notice`,
   `moonlight`/`sideGig` with `{gig}`) and `LINES.you.work`/`quit`/`notice`, with `{title}`,
   `{work}` and `{pay}` in the speaker's vars; the event is `jobChanged`.
+- Perks (`JOBS.perks`, `PerkRules`): the player's own counter is at the staff price
+  (`Game.menu()` through the private `staffPriced`, everything but Trauma Team's plans, the
+  menu's `staff` share for the shop's strip); a shift where the line of work has a meal
+  (`perks.meal`: food at an eatery, a drink at a bar) puts the cheapest of that kind on the
+  menu into a pocket (`staffMeal`, told on the shift's own line); from `perks.uniform`'s rung
+  a clothing store hands over its uniform once (`staffUniform`: a top off its rack, never a
+  mask, the same for everyone there, `JobState.uniform`); from `perks.keys` the counter is
+  open to the player whoever's in (`counterOpen`). `JobStatus.perks` says them for the status.
+- Shift moments (`JOBS.events`, `ShiftEventRules`): after a shift, `events.chance` of the
+  time, one of what could happen there by `weights` and `where` (the lines of work each
+  comes up in): a `rush`; a `shoplifter` (a customer here, else someone from the district
+  out and about, nowhere in particular); someone from the gang whose turf it is come for the
+  `cut` (`turfFrom`, a member here first); a coworker here asking for `cover`. It waits in
+  `Game`'s private `shiftEventState` (not saved; leaving lets it pass) and is
+  `Game.shiftEvent(now)` (its text, its two `ShiftChoice`s, who's in it), answered by
+  `Game.answerShift(choice, now)`: tips (cash through `walletRoom`/`changeRoom`, the rest on
+  the pay), trust, rep with the place and the gang, rapport and grudges with the real people
+  in it (a note on their card), half a shift more for cover, the till's loss for a thief let
+  go. The narration is `events.lines` (`{who}`, `{work}`, `{gang}`, `{tips}`, `{pay}`; the
+  jobs test wants every turn's pool); what people say is `LINES.work.coverAsk`/`coverThanks`/
+  `coverSnub`, `cutDemand`/`cutPaid`/`cutBack`/`cutWorse`, `caught` and the boss's `stood`. A
+  new moment is another `ShiftEventKind` with its numbers, its choices in `shiftEvent`, its
+  turn in `answerShift` and its lines.
 - The UI: a boss's card gets a **Work** command (`Picker` `work`): `Ask for work` (with
   "Means notice at …" over it for a switch), or for the player's own boss the days of the
   week as toggles (`data-day`, `onRoster`) and `Quit`; the panel inside the workplace gets a
-  **Work** action (`ActionId` `work`) whose subtitle is the pay and energy, or why not now;
+  **Work** action (`ActionId` `work`) whose subtitle is the pay and energy, or why not now,
+  and while a shift's moment waits, the panel is it ("On shift", its text, its two choices as
+  `pick-1`/`pick-2`);
   the status drop-down has a row per job, **Work** and **Side gig**. The map carries a work
   pin on each workplace (`CityMap.setWork`, from `showStatus`), lit while a shift there is
   open; tapping it picks the building like a block, and again goes. The line under the energy
