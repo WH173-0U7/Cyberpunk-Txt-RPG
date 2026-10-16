@@ -113,9 +113,10 @@ export interface DialogueLines {
    * (`{left}`), paid in full (`{owed}`) or in part (`{pay}`, `{left}`), moving them up
    * (`{title}`), not to a mask, done with them, letting them walk. Any member: pointing them to
    * the connect (`{connect}`, and `{where}` when the connect has a hangout). Anyone pitched:
-   * buying (`{drug}`, `{price}`), not from a stranger, not into it, or put out by being asked.
+   * buying (`{drug}`, `{price}`), not from a stranger, not into it, or put out by being asked;
+   * one of a rival gang, pitched the player's gang's product (`{ours}`), taking it as war.
    */
-  deal: { join: Line[]; notYet: Line[]; refer: Line[]; front: Line[]; owing: Line[]; paid: Line[]; some: Line[]; promote: Line[]; masked: Line[]; burned: Line[]; leave: Line[]; buy: Line[]; wary: Line[]; pass: Line[]; offended: Line[] };
+  deal: { join: Line[]; notYet: Line[]; refer: Line[]; front: Line[]; owing: Line[]; paid: Line[]; some: Line[]; promote: Line[]; masked: Line[]; burned: Line[]; leave: Line[]; buy: Line[]; wary: Line[]; pass: Line[]; offended: Line[]; rival: Line[] };
   /** What someone brings up of what the player did, as they remember it (memory.ts): `mem` and `mem<Kind>` say which, with `{memWho}`, `{memWord}`, `{memAgo}`, `{memItem}`, `{memTook}`, `{memTitle}` and `memTwice`, `memAgain` (brought up before), `memRobbery`, `memInsult`, `memFavorite`. */
   memory: Line[];
   /** A storefront that won't serve the player. */

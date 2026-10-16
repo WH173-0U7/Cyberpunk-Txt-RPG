@@ -483,6 +483,11 @@ own.
   face may spot them; sell to them and you're busted) or a robber with a weapon (hand it
   over, talk them down, or fight). A regular short of the price may want the rest on tab, and
   may pay you back with a little over, or never.
+- **Turf wars**: the gangs fight over corners in their own days, and a corner can change
+  hands overnight; lose yours and your connect finds you another, if there is one. Your
+  gang's rivals come to your corner, the more the more you've sold lately and the nearer
+  their turf: clear off (often enough and it's theirs), pay them, or fight them for it.
+  Pitch one of a rival gang, or sell on their turf, and they'll come for you.
 - **Everyone is good at something**: people have their own levels in what you do. A ganger
   fights hard and talks badly, a guard is handy with their gun, a corpo or an old lady is no
   fighter but has a way with words that makes them hard to talk down. Their card says how

@@ -1641,6 +1641,13 @@ export const LINES: DialogueLines = {
       only('At my age? No.', elder),
       only("I'll pretend you didn't ask.", corpo),
     ],
+    rival: [
+      "You're selling {ours} product to me? On my street?",
+      'Walk away. Now. Before I remember your face.',
+      "{ours} trash. You've got some nerve.",
+      only("You picked the wrong corner, the wrong buyer and the wrong gang.", hot),
+      only('Get lost. Tell the {ours} we said hello.', quiet),
+    ],
     offended: [
       'Are you serious? Get away from me.',
       'Do I look like I need that? Back off.',

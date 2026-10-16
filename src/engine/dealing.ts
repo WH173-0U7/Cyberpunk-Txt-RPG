@@ -108,6 +108,34 @@ export interface DealLines {
   tabTaken: string[];
   tabPaid: string[];
   tabDodged: string[];
+  /** Turf wars (`{gang}` the rivals, `{ours}` the player's gang, `{corner}`, `{pay}`): rivals at the corner, the player clearing off, paying them, standing up to them; the corner lost, taken back, a new one given, none to give; selling on a rival's turf. */
+  rivals: string[];
+  clearedOff: string[];
+  paidOff: string[];
+  stoodUp: string[];
+  lost: string[];
+  retaken: string[];
+  newCorner: string[];
+  noCorner: string[];
+  rivalTurf: string[];
+}
+
+/**
+ * Turf wars. A corner is held by a gang (`DealingState.corners`, else a gang's own canon spot
+ * is its own); a fight in its district won by a rival of the holder, in the people's own days,
+ * takes it by `take`, and the gang that held it takes it back the same way. At the player's
+ * corner, the rivals of their gang come by now and then (`rivals`: a chance a buyer's worth,
+ * more for the player's heat, a point a sale halving a day, and for the rivals' share of the
+ * district's turf): clearing off gives up the block, and `yield` times running gives up the
+ * corner; paying them is a share of the cash; standing up to them is a fight, and trust with
+ * the player's own gang. Selling on a rival's turf, or pitching one of theirs, may set them
+ * on the player (`threat`).
+ */
+export interface WarRules {
+  take: number;
+  rivals: { base: number; heat: number; near: number; pay: [number, number]; yield: number; trust: number };
+  heat: { decay: number };
+  threat: { chance: number; amount: [number, number]; hours: [number, number] };
 }
 
 /**
@@ -154,6 +182,7 @@ export interface DealingRules {
   /** What a dose fetches on richer and poorer streets. */
   tiers: Record<Quality, number>;
   bad: BadRules;
+  war: WarRules;
   lines: DealLines;
 }
 
@@ -191,6 +220,10 @@ export interface DealState {
   customers: Record<string, { bought: number; last: number; tab?: number; tabAt?: number }>;
   /** The corner's three-hour block, and how many buyers have come by in it. */
   block: { key: number; served: number };
+  /** The player's heat with rival gangs (a point a sale, halving a day) as of when; the times running they've cleared off the corner for them. */
+  heat?: number;
+  heatAt?: number;
+  yielded?: number;
 }
 
 export interface DealingState {
@@ -201,10 +234,19 @@ export interface DealingState {
   past: Record<string, DealState>;
   /** Gangs that cut the player off, and when. */
   burned: Record<string, number>;
+  /** Who holds a corner (a place's id) that's changed hands, or been claimed for the player; a gang's own canon spots are its own otherwise, and anywhere else nobody's. */
+  corners: Record<string, string>;
 }
 
 export function freshDealing(): DealingState {
-  return { current: null, vouched: {}, past: {}, burned: {} };
+  return { current: null, vouched: {}, past: {}, burned: {}, corners: {} };
+}
+
+/** The player's heat at `now`: what it was, halved for every day since. */
+export function heatAt(state: DealState, now: number, rules: DealingRules, timeScale: number): number {
+  if (!state.heat || state.heatAt === undefined) return 0;
+  const days = Math.max(0, now - state.heatAt) / (86_400_000 / timeScale);
+  return state.heat * Math.pow(rules.war.heat.decay, days);
 }
 
 /**
