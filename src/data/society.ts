@@ -93,9 +93,9 @@ export const SOCIETY: SocietyRules = {
   },
   memory: {
     cap: 12,
-    days: { wronged: 30, heard: 14, saw: 10, settled: 21, gift: 7, goodWord: 10, hired: 7, promoted: 7, quit: 21, notice: 14, fired: 30, chopped: 10, asked: 5, date: 14, dumped: 45, cheated: 30 },
-    weight: { wronged: 10, heard: 6, saw: 5, settled: 7, gift: 3, goodWord: 4, hired: 3, promoted: 4, quit: 6, notice: 3, fired: 6, chopped: 2, asked: 2, date: 3, dumped: 8, cheated: 7 },
-    repeat: { wronged: 3, heard: 2, saw: 1, settled: 1, gift: 1, goodWord: 1, hired: 1, promoted: 1, quit: 2, notice: 1, fired: 2, chopped: 1, asked: 1, date: 1, dumped: 2, cheated: 2 },
+    days: { wronged: 30, heard: 14, saw: 10, settled: 21, gift: 7, goodWord: 10, hired: 7, promoted: 7, quit: 21, notice: 14, fired: 30, chopped: 10, date: 14, dumped: 45, cheated: 30 },
+    weight: { wronged: 10, heard: 6, saw: 5, settled: 7, gift: 3, goodWord: 4, hired: 3, promoted: 4, quit: 6, notice: 3, fired: 6, chopped: 2, date: 3, dumped: 8, cheated: 7 },
+    repeat: { wronged: 3, heard: 2, saw: 1, settled: 1, gift: 1, goodWord: 1, hired: 1, promoted: 1, quit: 2, notice: 1, fired: 2, chopped: 1, date: 1, dumped: 2, cheated: 2 },
     recall: 0.75,
     heardAt: 5,
     goodWord: 0.4,
@@ -155,12 +155,6 @@ export const SOCIETY: SocietyRules = {
         { when: { needs: ['drawn', 'sweet'] }, by: 1, why: 'Glad you asked' },
         { when: stranger, by: -1, why: 'A personal question from a stranger' },
         { when: { needs: ['taken'] }, by: -1, why: 'Spoken for, and you know it' },
-      ],
-      kin: [
-        { when: { needs: ['tieFamily'], traits: { loyalty: 'high' }, stance: ['neutral', 'wary', 'cold'] }, by: -1, why: 'Protective of {his} family' },
-        { when: { needs: ['ex'] }, by: -2, why: "Didn't want to hear that name" },
-        { when: { needs: ['tieFriend'], traits: { chatty: 'high' } }, by: 1, why: 'Happy to talk about a friend' },
-        { when: { needs: ['tieCrew'] }, by: 1, why: 'Proud of {his} crew' },
       ],
     },
     approach: {

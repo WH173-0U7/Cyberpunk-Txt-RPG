@@ -8,7 +8,7 @@ import type { EnergyState } from './energy';
 import type { InebriationState } from './inebriation';
 import type { JobState } from './jobs';
 import type { LifeState } from './life';
-import type { Memory } from './memory';
+import { MEMORY_KINDS, type Memory } from './memory';
 import type { Romance, You } from './romance';
 import type { SkillState } from './skills';
 import type { SocietyState } from './society';
@@ -338,7 +338,7 @@ function memoriesOf(memories: unknown): SocietyState['memories'] {
   if (typeof memories !== 'object' || memories === null || Array.isArray(memories)) return out;
   for (const [id, list] of Object.entries(memories as Record<string, unknown>)) {
     if (!Array.isArray(list)) continue;
-    const kept = list.filter((m): m is Memory => typeof m === 'object' && m !== null && typeof (m as Memory).kind === 'string' && isNumber((m as Memory).at) && Number.isInteger((m as Memory).times) && Number.isInteger((m as Memory).said));
+    const kept = list.filter((m): m is Memory => typeof m === 'object' && m !== null && MEMORY_KINDS.has((m as Memory).kind) && isNumber((m as Memory).at) && Number.isInteger((m as Memory).times) && Number.isInteger((m as Memory).said));
     if (kept.length) out[id] = kept;
   }
   return out;

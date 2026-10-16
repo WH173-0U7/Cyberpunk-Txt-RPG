@@ -120,7 +120,7 @@ own.
   Its **Known** tab lists everyone you've met or know by name, the latest first, so you can
   open anyone's card from anywhere. A card has two tabs: **Talk**, the conversation, and
   **Profile**: how they feel about you (stance, rapport, ♥, grudge), how often you've talked,
-  everything you know about them (work, age, home, what they eat and drink, who they hate,
+  their sex (plain to see), everything you know about them (work, age, home, what they eat and drink, who they hate,
   their type, what they want, their nature), what's still unknown, what they remember of you
   ("Gift: Ramen ×2 · last week", "You walked out · today") and their web.
 - **An economy**: the eddies move while you're away. Payday is Friday, when everyone draws a
@@ -220,11 +220,7 @@ own.
 - **Who knows whom**: the same rule. Opening **People** takes in everyone there, and any
   two who are actually connected you've *seen together* (connected somehow, you don't know
   how). Once someone likes you they drop names ("My sister Ana works at…"), which tells you
-  the relation and the name. And you can **Ask about** the few worth asking about: anyone
-  you've seen them with, anyone who shares their family name, whoever's here with them and
-  the last people you've talked to (six at most, and nobody you've asked about already);
-  they'll tell you what the person is to them, that they've never heard of them, or nothing. On
-  the card's Profile tab their web closes the page: them in the middle and everyone you
+  the relation and the name, and the news they tell does too. On the card's Profile tab their web closes the page: them in the middle and everyone you
   know them to know around them, each spoke labeled with the relation or "?" (dashed) when
   all you know is that they're connected; tap a name to open that person's card (even if
   they're not here, then you can only look).
@@ -282,9 +278,8 @@ own.
   Jun last week"), what their gang did, or what they heard around the district; a death or a
   wedding they bring up for weeks. Being told of someone is an introduction (the name, and
   the tie when it was family), and being told who got together, married, split up or fell
-  out puts that right in what you know of them. Ask someone about a relative who's died and
-  they'll tell you (the card says **Dead** after); ask about an ex and they're done with
-  them. Wherever you are, the people there are with each other too: a couple
+  out puts that right in what you know of them; told of a death, the card says **Dead**
+  after. Wherever you are, the people there are with each other too: a couple
   sharing a table or not speaking, family arguing, friends drinking, a crew holding court,
   coworkers on a break, a ganger leaning on the help, rivals staring each other down. The
   **People** list says who is with whom.

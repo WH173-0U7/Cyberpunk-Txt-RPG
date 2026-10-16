@@ -324,7 +324,8 @@ describe('saving', () => {
     const someone = game.population.people[0];
     if (!someone) throw new Error('no people');
     const memory = { kind: 'wronged' as const, at: now, what: 'robbery', amount: 30, times: 1, said: 0 };
-    const society = { ...game.societySaved, memories: { [someone.id]: [memory, { kind: 'gift', at: 'yesterday' }], nobody: 'x' } };
+    // A kind the game no longer has (being asked about someone) is forgotten with the rest.
+    const society = { ...game.societySaved, memories: { [someone.id]: [memory, { kind: 'gift', at: 'yesterday' }, { kind: 'asked', at: now, about: someone.id, times: 1, said: 0 }], nobody: 'x' } };
     const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), society })));
     expect(read?.society?.memories).toEqual({ [someone.id]: [memory] });
     const progress = read && resume(world, read);

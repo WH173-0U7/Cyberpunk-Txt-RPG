@@ -13,7 +13,7 @@ import { drink, freshInebriation, inebriationStatus, type InebriationRules, type
 import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobRules, type JobState, type JobStatus, type Ladder, type Rung, type ShiftChoice, type ShiftEventKind } from './jobs';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
-import { allHours, buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { allHours, buildingById, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
@@ -28,7 +28,6 @@ import {
   heardFrom,
   knowledgeOf,
   knownPeople,
-  knowsOf,
   learnFact,
   learnLink,
   learnOf,
@@ -80,9 +79,6 @@ import type {
 } from './types';
 
 /** The fog lifts in square cells this many map units across (a couple of building widths). */
-/** The most people the Ask picker offers to ask someone about. */
-export const ASK_ABOUT = 6;
-
 export const CELL = 2;
 export const CELLS = Math.ceil(WORLD / CELL);
 /**
@@ -181,6 +177,8 @@ export interface Description {
   facts: Partial<Record<Fact, string>>;
   /** The same, in order, for reading out. */
   lines: string[];
+  /** Their sex, plain to see ("Female", "Male · goes by they"). */
+  sex: string;
 }
 
 const HOUR = 3_600_000;
@@ -3241,7 +3239,8 @@ export class Game {
     // Seeing the player: that first.
     const romance = this.society.romance?.with === id ? this.society.romance : null;
     const heart = romance ? `${romance.stage === 'together' ? 'Together with you' : 'Seeing you'} · ${romance.dates} ${romance.dates === 1 ? 'date' : 'dates'}` : '';
-    return { name: named ? name : describeStranger(person, people), named, facts, lines: [heart, ...order.map((f) => facts[f])].filter((line): line is string => Boolean(line)) };
+    const sex = `${capitalize(sexOf(person))}${person.pronouns === 'they' ? ' · goes by they' : ''}`;
+    return { name: named ? name : describeStranger(person, people), named, facts, lines: [heart, ...order.map((f) => facts[f])].filter((line): line is string => Boolean(line)), sex };
   }
 
   /** Someone's type, as the card says it: whom they're drawn to, what wins them over, the look they like. */
@@ -3279,7 +3278,6 @@ export class Game {
           notice: 'You gave notice',
           fired: 'Let you go',
           chopped: `Chopped a chip for you${eddies ? ` (${eddies.trim()})` : ''}`,
-          asked: `You asked about ${nameOf(m.about)}`,
           date: `A date${m.what ? ` at ${m.what}` : ''}`,
           dumped: 'You ended it',
           cheated: `Caught you with ${nameOf(m.about)}`,
@@ -3676,125 +3674,6 @@ export class Game {
     // Practice: a little more for what landed, a little less for what didn't.
     this.gainCharisma(2 + Math.sign(reaction.score));
     this.noteFeedback(person, before, now, reaction.why);
-    this.events.emit('societyChanged', { people: learned });
-    return true;
-  }
-
-  /**
-   * Who it's worth asking someone about, from what the player can see or knows, never the
-   * ties as they are: anyone seen with them, connected somehow (how, the player can't tell);
-   * anyone who shares their family name; anyone here with them; the last few the player has
-   * talked to. Never anyone the player has asked them about already, or knows how they're
-   * tied; at most `ASK_ABOUT` of them, so it doesn't grow with every name the player learns.
-   */
-  worthAsking(id: string, now: number): Person[] {
-    const person = this.person(id);
-    if (!person) return [];
-    const named = (p: Person | undefined): p is Person => Boolean(p) && p?.id !== id && knowledgeOf(this.society, (p as Person).id).facts.includes('name');
-    // Not asked yet, nor told how they're tied: nothing known, or only that they're connected.
-    const open = (p: Person) => (linkOf(this.society, id, p.id)?.kind ?? null) === null;
-    const seenWith = Object.entries(this.society.links)
-      .filter(([key, link]) => link.kind === null && key.split('|').includes(id))
-      .map(([key]) => this.person(key.split('|').find((k) => k !== id) ?? ''));
-    const knownNamed = this.knownPeople().filter(named);
-    const family = knownNamed.filter((p) => p.family === person.family);
-    const here = this.peopleHere(now).map((p) => p.person);
-    const lately = knownNamed
-      .map((p) => ({ p, at: knowledgeOf(this.society, p.id).log.at(-1)?.at ?? 0 }))
-      .filter(({ at }) => at > 0)
-      .sort((a, b) => b.at - a.at)
-      .slice(0, 3)
-      .map(({ p }) => p);
-    const picked: Person[] = [];
-    for (const p of [...seenWith, ...family, ...here, ...lately]) {
-      if (picked.length >= ASK_ABOUT) break;
-      if (named(p) && !picked.includes(p) && open(p)) picked.push(p);
-    }
-    return picked;
-  }
-
-  /**
-   * Asks someone here about someone the player knows of. Whether they answer is their
-   * openness: how they feel about the player, the player's charisma, how loyal they are;
-   * what they say is the truth. Asked what they've said already, they say so; asked again
-   * soon after a no, they think less of the player.
-   */
-  ask(id: string, aboutId: string, now: number): boolean {
-    const here = this.isHere(id, now);
-    const other = this.person(aboutId);
-    // Only someone the player can name.
-    if (!here || !other || aboutId === id || !knowsOf(this.society, aboutId) || !knowledgeOf(this.society, aboutId).facts.includes('name')) return false;
-    const { person, stance, doing } = here;
-    const { society, timeScale, lines } = this.rules;
-    const standing = standingOf(this.society, id, society, timeScale, now);
-    const before = this.snapshot(person, now);
-    const { sitting, grilled } = this.grilling(standing, now);
-    learnOf(this.society, id, 'met');
-    const otherPronouns = pronounsOf(other);
-    const tie = tiesOf(this.population, id).find((t) => t.to === aboutId);
-    const today = this.clockAt(now).day;
-    // Someone they're done with lately: an ex, a friend fallen out with, and nothing between them since.
-    const ex = !tie && this.life.events.some((e) => (e.kind === 'breakup' || e.kind === 'fallout') && e.who.includes(id) && e.who.includes(aboutId));
-    const speaker = this.speakerFor(person, stance, doing, now);
-    speaker.vars = {
-      ...speaker.vars,
-      other: other.given,
-      otherHe: otherPronouns.he,
-      otherHim: otherPronouns.him,
-      otherHis: otherPronouns.his,
-      word: tie ? kinWord(person, tie.kind, other) : '',
-      otherAgo: other.diedOn !== undefined ? this.agoWord(today - other.diedOn) : '',
-      // What the other is to them, broadly, for how they'd talk about them: family, a friend, the crew, work.
-      tieFamily: tie && FAMILY.includes(tie.kind) ? 'yes' : '',
-      tieFriend: tie?.kind === 'friend' ? 'yes' : '',
-      tieCrew: tie?.kind === 'crew' ? 'yes' : '',
-      tieWork: tie?.kind === 'coworker' ? 'yes' : '',
-      grilled: grilled ? 'yes' : '',
-    };
-    // How they take being asked about one of their own, or an ex.
-    const reaction = reactionTo(society.reactions.asked.kin, { ...speaker, vars: { ...speaker.vars, ex: ex ? 'yes' : '' } });
-    speaker.vars.touchy = reaction.score < 0 ? 'yes' : '';
-    const rng = createRng(`${this.world.seed}:${id}:ask:${aboutId}:${standing.asks}`);
-    this.logged(id, 'you', line(lines.you.askAbout, speaker, rng), now);
-    const key = `about:${aboutId}`;
-    const known = linkOf(this.society, id, aboutId);
-    const refused = { ...standing.refused };
-    const learned = [id];
-    let pressed = false;
-    if (speaker.mood === 'asleep' || stance === 'hostile') {
-      this.narrate(person, line(stance === 'hostile' ? lines.hostile : lines.asleep, speaker, rng), now);
-    } else if (known && known.kind !== null) {
-      // Told already they're done with them (heard of the split), they say so; else that they've said.
-      if (known.kind === 'none' && ex) this.speech(person, compose(lines.ask.ex, speaker, lines, rng), now);
-      else this.speech(person, line(lines.ask.repeat, speaker, rng), now);
-    } else if (this.pressing(standing, key, now)) {
-      pressed = true;
-      this.speech(person, line(lines.pressed, speaker, rng), now);
-    } else {
-      const reply = replyTo(openness('kin', stance, this.charismaState.level, person.traits, society.openness, Boolean(this.masked()), momentOf(speaker, grilled)) + reaction.score * society.reactions.openness, society.openness, rng);
-      if (reply === 'answer') {
-        const dead = other.diedOn !== undefined;
-        this.speech(person, compose(tie ? (dead ? lines.ask.dead : lines.ask.knows) : ex ? lines.ask.ex : lines.ask.unknown, speaker, lines, rng), now);
-        if (tie) {
-          learnLink(this.society, id, aboutId, tie.kind, 'asked', now);
-          learnOf(this.society, aboutId, 'told');
-          if (dead) learnFact(this.society, aboutId, 'dead');
-          learned.push(aboutId);
-          this.gainCharisma(2);
-        } else {
-          relearnLink(this.society, id, aboutId, 'none', 'asked', now);
-        }
-      } else {
-        this.speech(person, reply === 'deflect' ? deflect(speaker, 'kin', lines, rng) : line(lines.refuse, speaker, rng), now);
-        refused[key] = now;
-      }
-    }
-    // Awake and willing to hear it, they remember being asked, and take it how they take it.
-    const heard = speaker.mood !== 'asleep' && stance !== 'hostile';
-    if (heard) this.remember(id, { kind: 'asked', at: now, about: aboutId }, now);
-    const rapport = heard ? (pressed ? -society.openness.press : 0) + Math.round(reaction.score * society.reactions.rapport) - grilled * society.openness.grill.rapport : 0;
-    changeStanding(this.society, id, { met: true, asks: standing.asks + 1, refused, rapport, ...(heard ? { lastAskAt: now, sitting } : {}) }, society, timeScale, now);
-    this.noteFeedback(person, before, now, !heard ? '' : [pressed ? lines.notes.pressed : '', grilled ? lines.notes.grilled : '', reaction.why].filter(Boolean).join(' · '), speaker.vars);
     this.events.emit('societyChanged', { people: learned });
     return true;
   }

@@ -265,12 +265,12 @@ describe('society', () => {
     const state = freshSociety();
     const rules = RULES.memory;
     remember(state, 'rosa', { kind: 'gift', at: T0, what: 'taco' }, rules, 1, T0);
-    remember(state, 'rosa', { kind: 'asked', at: T0, about: 'mateo' }, rules, 1, T0);
-    // A gift outweighs a question.
+    remember(state, 'rosa', { kind: 'chopped', at: T0, amount: 40 }, rules, 1, T0);
+    // A gift outweighs a favor.
     expect(recall(state, 'rosa', rules, 1, T0)?.kind).toBe('gift');
     recalled(state, 'rosa', recall(state, 'rosa', rules, 1, T0)!);
     // Brought up as often as it bears, it gives way to the next.
-    expect(recall(state, 'rosa', rules, 1, T0)?.kind).toBe('asked');
+    expect(recall(state, 'rosa', rules, 1, T0)?.kind).toBe('chopped');
     recalled(state, 'rosa', recall(state, 'rosa', rules, 1, T0)!);
     expect(recall(state, 'rosa', rules, 1, T0)).toBeNull();
     // A grievance is brought up again and again, up to its count.
@@ -281,18 +281,18 @@ describe('society', () => {
       recalled(state, 'rosa', m!);
     }
     expect(recall(state, 'rosa', rules, 1, T0)).toBeNull();
-    // A gift is gone in a week, being wronged in a month; sped up sixty times, a month is half a day.
-    expect(memoriesOf(state, 'rosa', rules, 1, T0 + 8 * DAY).map((m) => m.kind)).toEqual(['wronged']);
+    // A gift is gone in a week, a chop in ten days, being wronged in a month; sped up sixty times, a month is half a day.
+    expect(memoriesOf(state, 'rosa', rules, 1, T0 + 11 * DAY).map((m) => m.kind)).toEqual(['wronged']);
     expect(memoriesOf(state, 'rosa', rules, 1, T0 + 31 * DAY)).toEqual([]);
     expect(memoriesOf(state, 'rosa', rules, 60, T0 + 13 * HOUR)).toEqual([]);
     // Past the cap the weakest goes, never what just happened.
     const full = freshSociety();
-    for (let i = 0; i < rules.cap; i++) remember(full, 'rosa', { kind: 'asked', at: T0 + i, about: `p${i}` }, rules, 1, T0 + i);
+    for (let i = 0; i < rules.cap; i++) remember(full, 'rosa', { kind: 'goodWord', at: T0 + i, about: `p${i}` }, rules, 1, T0 + i);
     remember(full, 'rosa', { kind: 'wronged', at: T0 + 100, what: 'robbery', amount: 5 }, rules, 1, T0 + 100);
-    remember(full, 'rosa', { kind: 'asked', at: T0 + 200, about: 'last' }, rules, 1, T0 + 200);
+    remember(full, 'rosa', { kind: 'goodWord', at: T0 + 200, about: 'last' }, rules, 1, T0 + 200);
     const kept = memoriesOf(full, 'rosa', rules, 1, T0 + 200);
     expect(kept).toHaveLength(rules.cap);
-    expect(kept[0]).toMatchObject({ kind: 'asked', about: 'last' });
+    expect(kept[0]).toMatchObject({ kind: 'goodWord', about: 'last' });
     expect(kept.some((m) => m.kind === 'wronged')).toBe(true);
     // People the city no longer has are forgotten, and so is anything about them.
     forgetMemories(full, new Set(['rosa', 'p5']));

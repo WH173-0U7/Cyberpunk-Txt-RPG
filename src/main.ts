@@ -398,11 +398,6 @@ const people = new People(
       cardTab = 'talk';
       game.chop(id, chipId, Date.now());
     },
-    onAsk: (id, aboutId) => {
-      lastActivity = performance.now();
-      cardTab = 'talk';
-      game.ask(id, aboutId, Date.now());
-    },
     onHeart: (id, move) => {
       lastActivity = performance.now();
       picker = null;
@@ -1233,13 +1228,11 @@ function showPeople(): void {
             // Out cold, they're here but past talking to.
             here: Boolean(present) && !game.outCold(shown.id, now),
             web: standing.web.map((link) => ({ id: link.person.id, name: nameOf(link.person.id, link.person.name), label: link.kind ? kinWord(shown, link.kind, link.person) : '?', how: how[link.how] })),
-            webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Ask about people you've met, watch who they keep company with, or get them talking.`,
+            webHint: `You don't know who ${described.named ? shown.given : 'they'} know${described.named ? 's' : ''}. Watch who they keep company with, or get them talking.`,
             picker,
             questions: (Object.entries(LINES.questions) as Array<[Question, { label: string }]>)
               .filter(([fact]) => !standing.knowledge.facts.includes(fact))
               .map(([fact, q]) => ({ fact, label: q.label })),
-            // A few worth asking about (seen with them, family by the name, here with them, talked to lately), never everyone known.
-            askAbout: present ? game.worthAsking(shown.id, now).map((p) => ({ id: p.id, name: p.name })) : [],
             gifts: gifts.map((g) => ({ id: g.id, name: g.name, count: g.count })),
             // A hot chip can be put to a netrunner the player can tell is one; the label says what it holds and what they'd keep.
             chops: present && game.canChop(shown.id) ? hot.map((c) => ({ id: c.id, label: `€$ ${c.balance ?? 0} chip · cut ${chipCut(c.balance ?? 0, MONEY)}` })) : [],
@@ -1281,6 +1274,8 @@ function profileOf(standing: PersonStanding, described: Description): Array<{ la
     ['nature', 'Nature'],
   ];
   for (const [fact, label, prefix] of facts) {
+    // Plain to see, from the first look.
+    if (fact === 'age') rows.push({ label: 'Sex', value: described.sex });
     const value = f[fact];
     if (value) rows.push({ label, value: prefix ? value.replace(prefix, '') : value });
   }

@@ -67,7 +67,6 @@ export interface PersonCardView {
   /** Things to ask them about themselves. */
   questions: Array<{ fact: string; label: string }>;
   /** People the player knows of, to ask this person about. */
-  askAbout: Array<{ id: string; name: string }>;
   /** What the player could give them. */
   gifts: Array<{ id: string; name: string; count: number }>;
   /** Locked credchips this person could chop, with what's on each and their cut; empty unless they're a netrunner the player can tell. */
@@ -129,7 +128,6 @@ export interface PeopleHandlers {
   onGift(id: string, itemId: string): void;
   /** The player asked a person to chop a locked credchip. */
   onChop(id: string, chipId: string): void;
-  onAsk(id: string, aboutId: string): void;
   onQuestion(id: string, fact: string): void;
   /** The player made a move of the heart: asked them out, took them out, asked to make it official, ended it. */
   onHeart(id: string, move: HeartMove): void;
@@ -179,14 +177,13 @@ export class People {
     // Everything on the card goes through one listener: commands, the choices they unfold, names in the web.
     els.card.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
-      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-about], [data-item], [data-chip], [data-action], [data-heart], [data-open], [data-day]');
+      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-item], [data-chip], [data-action], [data-heart], [data-open], [data-day]');
       if (!button) return;
-      const { cmd, approach, fact, about, item, chip, action, heart, open, id, day } = button.dataset;
+      const { cmd, approach, fact, item, chip, action, heart, open, id, day } = button.dataset;
       if (cmd === 'talk' || cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'heart' || cmd === 'more') handlers.onPicker(cmd);
       else if (heart && id) handlers.onHeart(id, heart as HeartMove);
       else if (approach && id) handlers.onTalk(id, approach);
       else if (fact && id) handlers.onQuestion(id, fact);
-      else if (about && id) handlers.onAsk(id, about);
       else if (item && id) handlers.onGift(id, item);
       else if (chip && id) handlers.onChop(id, chip);
       else if (day !== undefined && id) handlers.onRoster(id, Number(day));
@@ -277,8 +274,7 @@ export class People {
     if (card.here && card.picker === 'talk') {
       picker.push(...card.approaches.map((a) => chip(a.label, { id: card.id, approach: a.id }, 'person-chip')));
     } else if (card.here && card.picker === 'ask') {
-      if (card.questions.length) picker.push(...card.questions.map((q) => chip(q.label, { id: card.id, fact: q.fact }, 'person-chip')));
-      if (card.askAbout.length) picker.push(el('span', 'person-gifts-label', 'About'), ...card.askAbout.map((a) => chip(a.name, { id: card.id, about: a.id }, 'person-chip')));
+      picker.push(...card.questions.map((q) => chip(q.label, { id: card.id, fact: q.fact }, 'person-chip')));
     } else if (card.here && card.picker === 'give') {
       picker.push(...card.gifts.map((g) => chip(g.count > 1 ? `${g.name} ×${g.count}` : g.name, { id: card.id, item: g.id }, 'person-gift')));
     } else if (card.here && card.picker === 'chop') {
@@ -310,7 +306,7 @@ export class People {
     const commands: Array<{ cmd: string; label: string; active?: boolean; quiet?: boolean }> = card.here
       ? [
           { cmd: 'talk', label: 'Talk', active: card.picker === 'talk' },
-          ...(card.questions.length || card.askAbout.length ? [{ cmd: 'ask', label: 'Ask', active: card.picker === 'ask' }] : []),
+          ...(card.questions.length ? [{ cmd: 'ask', label: 'Ask', active: card.picker === 'ask' }] : []),
           ...(card.gifts.length ? [{ cmd: 'give', label: 'Give', active: card.picker === 'give' }] : []),
           ...(card.chops.length ? [{ cmd: 'chop', label: 'Chop', active: card.picker === 'chop' }] : []),
           ...(card.work ? [{ cmd: 'work', label: 'Work', active: card.picker === 'work' }] : []),

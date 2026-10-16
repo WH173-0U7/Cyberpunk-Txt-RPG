@@ -293,26 +293,28 @@ it needs no generator bump. The pieces:
   `saidBy`: asked one again, they say they've said it, `LINES.repeat`; known any other way,
   they just answer); and
   the `log` of what was said, the last `LOG_CAP` lines) and `links` (what the player knows
-  of a tie, keyed `a|b`; `kind` null for "connected somehow", `'none'` for "asked, and
-  they'd never heard of them"). The UI shows a person only through `Game.describe` (name
+  of a tie, keyed `a|b`; `kind` null for "connected somehow", `'none'` for "they'd never
+  heard of them", in an older save that could ask). The UI shows a person only through `Game.describe` (name
   or their look, and the facts known), `standingWith` (web) and `conversation`, never the
   `Person` or the population's ties directly; new ways of finding things out go through
   `learnOf`, `learnFact` and `learnLink` (`Game.look` for what's plain to see, the topics
-  in `talk`, `Game.ask` and `Game.askFact`), and everything said goes through `logLine`. The
-  Ask picker offers only `Game.worthAsking` to ask someone about (at most `ASK_ABOUT`, from
-  what the player knows: seen with them, their family name, here with them, talked to lately,
-  and none already asked), never everyone known, which grows with every name learned. A
-  tie that has changed since (told of a couple, a wedding, a split, a falling out or a
+  in `talk` and `Game.askFact`), and everything said goes through `logLine`. The Ask picker
+  asks someone about themselves only: there's no asking one person about another (it went,
+  as more odd than useful; the web fills from being seen together, names dropped and the
+  news). Someone's sex is plain to see from the first look (`sexOf` in people.ts: a woman's
+  female, a man's male, someone who goes by they either, on its own stream; `Description.sex`,
+  the Profile's Sex row). A tie that has changed since (told of a couple, a wedding, a split, a falling out or a
   making up) is `relearnLink`, which replaces what the player knew.
 - People remember what the player did, thing by thing (`src/engine/memory.ts`): a `Memory`
   is a `kind` (`MemoryKind`: wronged, heard, saw, settled, gift, goodWord, hired, promoted,
-  quit, fired, chopped, asked), when, `about` whom, `what`, an `amount`, how many `times` and
+  quit, notice, fired, chopped, date, dumped, cheated; `MEMORY_KINDS`, which a save is read
+  by, so a kind the game drops is forgotten), when, `about` whom, `what`, an `amount`, how many `times` and
   how often it's been `said`, kept per person in `SocietyState.memories` (saved under
   `society`), with the numbers in `SOCIETY.memory` (days each kind lasts, its weight, how
   often it's brought up, the `cap`). The incident cascade writes what was done, seen and
   heard (from `heardAt` grudge up); `Game`'s private `remember` writes the rest (gifts, a
   good word through `passGoodWord` to the people closest to whoever got one, work, chops,
-  questions, someone collecting). `Game.talk` brings up `recall`'s pick (`memory.recall` of
+  dates, someone collecting). `Game.talk` brings up `recall`'s pick (`memory.recall` of
   the time) from `LINES.memory`, filled by `memoryVars` (`mem`, `mem<Kind>`, `memWho`,
   `memWord`, `memAgo`, `memTook`, `memItem`, `memTwice`…); a grievance (`GRIEVANCES`) is all
   they say. What memory changes goes through it too: a boss with `quit` or `fired` on their
@@ -320,7 +322,7 @@ it needs no generator bump. The pieces:
   to remember is another `MemoryKind` with its numbers and lines (the dialogue test pins
   every memory line, and every news line, to exactly one kind).
 - `src/engine/skills.ts` is a skill that grows with use (experience, levels, a bonus per
-  level); charisma (`src/data/skills.ts`), applied in `Game.talk`, `gift` and `ask`, and
+  level); charisma (`src/data/skills.ts`), applied in `Game.talk`, `gift` and `askFact`, and
   the two fighting skills, Street Brawler and Toughness (see Fighting). A new skill is another `SkillRules` in `src/data/skills.ts`, a state on
   `Game`, a save field and an event.
 - `src/engine/dialogue.ts` puts lines together from fragments in `src/data/dialogue.ts`
@@ -371,7 +373,7 @@ it needs no generator bump. The pieces:
   `LINES.approaches` for the player's line and the liked/flat/disliked reply). The
   speaker's `touchy`/`keen` vars let answers show it. A new thing to react to is another list
   there and a pool of lines.
-- After every exchange (`talk`, `ask`, `askFact`, `gift`, `insult`, `rob`, `chop`,
+- After every exchange (`talk`, `askFact`, `gift`, `insult`, `rob`, `chop`,
   `askForWork`, `quit`, `askOut`, `date`, `makeOfficial`, `endRomance`) `Game`'s private `noteFeedback` writes a `note` on the record (a
   `LogEntry` with `who: 'note'` and a `tone`): the reasons (`LINES.notes`, a reaction's
   why), rapport and grudge moved, charisma XP or the level, and the stance if it changed,
@@ -415,9 +417,7 @@ it needs no generator bump. The pieces:
   `newsWith` the other one in it, `newsGang` the gang's name, `newsWord`, `newsAgo`,
   `newsTook`, `newsWon`, `newsHurt`, `newsKilled`) for the `news` topic, whose lines in
   `src/data/dialogue.ts` fit by kind and role; telling it is an introduction to whoever it
-  was about, and teaches the player the tie as it is now (or the death). Asked about someone
-  dead, their people say so (`LINES.ask.dead`); about an ex, they're done with them
-  (`LINES.ask.ex`). `scenesAt` pairs the people at a spot by their ties
+  was about, and teaches the player the tie as it is now (or the death). `scenesAt` pairs the people at a spot by their ties
   (and a ganger on their turf with the help, who gets the `leanedOn` side of it, rivals with
   each other) with a phrase from
   `LIFE.scenes`, drawn for the place, the day and the three-hour block; it's `Presence.scene`,
@@ -491,8 +491,8 @@ it needs no generator bump. The pieces:
   card is deliberately spare: a header with one line of what's known; two tabs (`CardTab`),
   **Talk**, the transcript (your lines after a `›`, theirs bare, the notes small and colored
   by tone), and **Profile**, in the transcript's place (the facts line opens it too): how they
-  stand (stance, rapport, ♥, grudge), how often you've talked, each fact known as a label and
-  a value (`profileOf` in `main.ts`), what's still unknown, what they remember of the player
+  stand (stance, rapport, ♥, grudge), how often you've talked, their sex, each fact known as a
+  label and a value (`profileOf` in `main.ts`), what's still unknown, what they remember of the player
   (`Game.between`, a few words a memory) and their web; one command row (Talk, which unfolds the ways in, Ask, Give,
   Chop, Work, ♥ for the heart's moves, `⋯` for the hostile acts (insult, rob, attack), each only when it can be
   done; ♥ shows on the card of the one the player is seeing even when they're not here, to

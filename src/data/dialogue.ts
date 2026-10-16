@@ -1229,55 +1229,6 @@ export const LINES: DialogueLines = {
     only("Third time's the charm? {answer}", grilled),
   ],
 
-  ask: {
-    knows: [
-      "{other}? That's my {word}.",
-      'Sure, I know {other}. My {word}.',
-      '{other} is my {word}. Why?',
-      '{other}. My {word}. What about {otherHim}?',
-      only('{other}? My {word}. Good people.', { needs: ['tieFriend'] }),
-      only("{other}'s my {word}. Watch how you say that name.", both(loyal, { needs: ['tieFamily'] })),
-      only('{other}? We work together. My {word}, I suppose.', { needs: ['tieWork'] }),
-      only('{other} runs with us. {gang} business, so careful.', { needs: ['tieCrew', 'gang'] }),
-      loud('{other}? My {word}. Why do you want to know?', touchy, 3),
-      only('{other}, my {word}. Talks too much. Love {otherHim} anyway.', both(kind, { needs: ['tieFamily'] })),
-    ],
-    unknown: [
-      '{other}? Never heard of {otherHim}.',
-      "Doesn't ring a bell.",
-      'No idea who that is.',
-      "{other}... no. There's a lot of people in {district}.",
-      'Never met {otherHim}.',
-      only('{other}? Nope. And I know everybody.', chatty),
-      only('Should I know {otherHim}?', wary),
-    ],
-    repeat: [
-      only('{other}? I told you. My {word}.', { needs: ['word'] }),
-      only('Still my {word}, last I checked.', { needs: ['word'] }),
-      only('{other} again? Never heard of {otherHim}. Still.', { lacks: ['word'] }),
-      only("I told you. Don't know any {other}.", { lacks: ['word'] }),
-      only("Same answer as before: {other}'s my {word}.", { needs: ['word'] }),
-      only('My {word}. You asked already. Writing a book?', both(chatty, { needs: ['word'] })),
-      only('Already said: {other}, my {word}.', both(quiet, { needs: ['word'] })),
-      only("Still don't know {otherHim}. Asking twice won't change it.", { lacks: ['word'] }),
-      only('{other}? Same as last time. No idea.', { lacks: ['word'] }),
-      only('Asked and answered, {choom}. Never heard of {otherHim}.', both(ganger, { lacks: ['word'] })),
-    ],
-    dead: [
-      '{other} was my {word}. Died {otherAgo}.',
-      'We buried {other} {otherAgo}. My {word}.',
-      "{other}... my {word}. Gone, {otherAgo}. Don't ask me how.",
-      only('{other} was my {word}. Was. You understand?', hard),
-      only('My {word} {other}. {otherAgo}, we lost {otherHim}. I still set a plate out.', kind),
-    ],
-    ex: [
-      "{other}? We're done. Don't say that name in here.",
-      "Ask someone else about {other}. I'm finished with {otherHim}.",
-      "{other} and me? Over. That's all you get.",
-      only('{other}. Ha. No. Next question.', hot),
-    ],
-  },
-
   gift: {
     thanks: [
       "Huh. Thanks. Didn't have to.",
@@ -1710,14 +1661,6 @@ export const LINES: DialogueLines = {
     only("That chip I cleaned for you. If anyone asks, I've never seen you.", both(timid, { needs: ['memChopped'] })),
     only('That chip I chopped. If it comes back on {gang}, it comes back on you.', both(ganger, { needs: ['memChopped', 'gang'] })),
     only('That chip was a fun one. Ten minutes, tops. Bring me harder ones.', both(young, { needs: ['memChopped'] })),
-    // Asked about someone.
-    only('Why were you asking about my {memWord} {memWho}?', { needs: ['memAsked', 'memWord'] }),
-    only('Still looking for {memWho}?', { needs: ['memAsked'] }),
-    only("You were asking about {memWho}. Why's that?", both(wary, { needs: ['memAsked'] })),
-    only('You were asking about my {memWord} {memWho}. Next time, ask {memHim} yourself.', both(loyal, { needs: ['memAsked', 'memWord'] })),
-    only("Did you ever find {memWho}? I've been dying to know what that was about.", both(chatty, { needs: ['memAsked'] })),
-    only("I told you what I know about {memWho}. That's all of it. Honest.", both(timid, { needs: ['memAsked'] })),
-    only("People who ask about {memWho} on {gang} turf get remembered. You're remembered.", both(ganger, { needs: ['memAsked', 'gang'] })),
     // The heart.
     only('That night at {memPlace}. I keep thinking about it.', { needs: ['memDate', 'memPlace', 'withYou'] }),
     only('{memPlace}, {memAgo}. Do it again soon?', { needs: ['memDate', 'memPlace', 'withYou'] }),
@@ -2142,17 +2085,6 @@ export const LINES: DialogueLines = {
       only('"Hey. What\'s new?"', easy),
       only('"Got a minute for a friendly face?"', smooth),
       only('"You look like you\'ve got a story. Tell me one."', smooth),
-    ],
-    askAbout: [
-      only('"You know {other}?"', blunt),
-      only('"Heard of {other}?"', blunt),
-      only('"{other}. You know the name?"', blunt),
-      only('"{other}. Ring a bell?"', easy),
-      only('"What can you tell me about {other}?"', easy),
-      only('"Ever run into {other}?"', easy),
-      only('"Friend of mine, {other}. Thought you two might have crossed paths."', smooth),
-      only('"I\'m trying to find out about {other}. Anything you can tell me?"', smooth),
-      only('"Word is you know everyone. {other}, for instance?"', smooth),
     ],
     gift: [
       'You hand over the {item}.',

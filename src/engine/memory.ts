@@ -33,8 +33,6 @@ export type MemoryKind =
   | 'fired'
   /** Chopped a hot chip for the player: `amount` was on it. */
   | 'chopped'
-  /** Was asked about `about`. */
-  | 'asked'
   /** Went out with the player: `what` is where. */
   | 'date'
   /** Was dumped by the player. */
@@ -74,6 +72,9 @@ export interface MemoryRules {
   /** Rapport a good word passes on to the people closest to someone the player was good to, as a share of what it was worth to them, by closeness. */
   goodWord: number;
 }
+
+/** Every kind there is, for reading a save: anything else (a kind the game no longer has) is forgotten. */
+export const MEMORY_KINDS: ReadonlySet<string> = new Set<MemoryKind>(['wronged', 'heard', 'saw', 'settled', 'gift', 'goodWord', 'hired', 'promoted', 'quit', 'notice', 'fired', 'chopped', 'date', 'dumped', 'cheated']);
 
 /** The ones that are a grievance: brought up, they're the whole of what's said. */
 export const GRIEVANCES: ReadonlySet<MemoryKind> = new Set<MemoryKind>(['wronged', 'heard', 'saw', 'quit', 'fired', 'dumped', 'cheated']);

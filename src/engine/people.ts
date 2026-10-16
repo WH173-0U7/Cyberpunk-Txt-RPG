@@ -623,6 +623,15 @@ export function handleOf(person: Person, world: World, content: PeopleContent): 
   return rng.chance(chance) && content.handles.pool.length ? rng.pick(content.handles.pool) : null;
 }
 
+export type Sex = 'female' | 'male';
+
+/** Someone's sex, as plain to see as their look: a woman's female, a man's male, and someone who goes by they either, drawn on its own stream. */
+export function sexOf(person: Person): Sex {
+  if (person.pronouns === 'she') return 'female';
+  if (person.pronouns === 'he') return 'male';
+  return createRng(`${person.id}:sex`).chance(0.5) ? 'female' : 'male';
+}
+
 /** What someone wants out of life, weighed by who they are. Drawn on its own stream; a life that changes them (joining a gang) can change it. */
 export function dreamOf(person: Person, world: World, content: PeopleContent): Dream {
   const walks = walksOf(person, world);

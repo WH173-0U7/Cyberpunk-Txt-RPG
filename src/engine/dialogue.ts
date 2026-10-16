@@ -95,7 +95,6 @@ export interface DialogueLines {
   /** Asked what they already said, with `{answer}` for it. */
   repeat: Line[];
   /** Asked whether they know someone: they do (`{other}`, `{word}`), they don't, or they've said already; they did, and `{other}` is dead (`{otherAgo}`); they did, and they're done with them (an ex, a friend fallen out with). */
-  ask: { knows: Line[]; unknown: Line[]; repeat: Line[]; dead: Line[]; ex: Line[] };
   gift: { thanks: Line[]; favorite: Line[]; refuse: Line[] };
   insult: { reply: Line[]; shove: Line[] };
   rob: { done: Line[]; nothing: Line[]; fought: Line[] };
@@ -140,7 +139,7 @@ export interface DialogueLines {
     notLooking: string;
   };
   /** The player's own lines, for the record, by eloquence. */
-  you: { talk: Line[]; askAbout: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[] };
+  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[] };
 }
 
 /** Everything a line can be picked and filled by; `vars.mask` is the word for the mask the player has on, or nothing. */
