@@ -358,7 +358,7 @@ function jobOf(j: JobState): JobState {
   const { building, rung, trust, shifts, lastShiftDay } = j;
   const days = Array.isArray(j.days) ? j.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6) : undefined;
   const count = (n: unknown) => (isNumber(n) && n >= 0 ? n : undefined);
-  const extras = { days: days?.length ? days : undefined, owed: count(j.owed), raise: count(j.raise), missed: count(j.missed), checked: Number.isInteger(j.checked) ? j.checked : undefined, paidOn: Number.isInteger(j.paidOn) ? j.paidOn : undefined, heard: typeof j.heard === 'boolean' ? j.heard : undefined };
+  const extras = { days: days?.length ? days : undefined, owed: count(j.owed), raise: count(j.raise), missed: count(j.missed), checked: Number.isInteger(j.checked) ? j.checked : undefined, paidOn: Number.isInteger(j.paidOn) ? j.paidOn : undefined, heard: typeof j.heard === 'boolean' ? j.heard : undefined, uniform: j.uniform === true ? true : undefined };
   return { building, rung, trust, shifts, lastShiftDay, ...Object.fromEntries(Object.entries(extras).filter(([, v]) => v !== undefined)) };
 }
 

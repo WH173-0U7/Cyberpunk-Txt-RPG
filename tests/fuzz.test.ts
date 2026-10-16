@@ -247,6 +247,12 @@ describe('playing badly', () => {
             } else game.insult(who, now);
           } else if (roll < 0.86 && game.jobStatus(now)?.here) {
             game.work(now);
+            const moment = game.shiftEvent(now);
+            if (moment) {
+              expect(moment.text, `${about}: a shift's moment`).not.toMatch(/[{}]|undefined|NaN/);
+              const choice = rng.pick(moment.choices);
+              if (rng.chance(0.85)) game.answerShift(choice.id, now);
+            }
           } else if (game.clinic() && roll < 0.95) {
             const carried = game.inventory.filter((i) => i.kind === 'cyberware');
             const fitted = game.chromeSaved;

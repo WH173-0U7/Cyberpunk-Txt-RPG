@@ -104,7 +104,8 @@ export interface DialogueLines {
   /** A boss asked for work (`{title}` the bottom rung, `{work}` the place, `{pay}` a shift): taken on, turned down, or not in a mask; a word after a shift; moved up (`{title}` the new rung); told the player quits. */
   /** `broke`: a boss whose place is struggling, turning the player away; `rehire`: a boss the player walked out on (`memQuit`) or who let them go (`memFired`), still remembering it. */
   /** `notice`: told the player is leaving for other work; `moonlight`/`sideGig`: hearing of a side gig (`{gig}`), minding it or not. `hire` has `experienced` when the player starts above the bottom, `referee` the old boss who put in a word. */
-  work: { hire: Line[]; refuse: Line[]; masked: Line[]; shift: Line[]; promote: Line[]; quit: Line[]; notice: Line[]; moonlight: Line[]; sideGig: Line[]; broke: Line[]; rehire: Line[] };
+  /** A boss on work, and the people a shift brings: a coworker asking for cover (`coverAsk`, `coverThanks`, `coverSnub`), a ganger come for the cut (`cutDemand`, `cutPaid`, `cutBack`, `cutWorse`, `{work}`), a thief caught (`caught`), and the boss who saw the player stand up for the place (`stood`). */
+  work: { hire: Line[]; refuse: Line[]; masked: Line[]; shift: Line[]; promote: Line[]; quit: Line[]; notice: Line[]; moonlight: Line[]; sideGig: Line[]; broke: Line[]; rehire: Line[]; coverAsk: Line[]; coverThanks: Line[]; coverSnub: Line[]; cutDemand: Line[]; cutPaid: Line[]; cutBack: Line[]; cutWorse: Line[]; caught: Line[]; stood: Line[] };
   revenge: { person: Line[]; gang: Line[] };
   /** What someone brings up of what the player did, as they remember it (memory.ts): `mem` and `mem<Kind>` say which, with `{memWho}`, `{memWord}`, `{memAgo}`, `{memItem}`, `{memTook}`, `{memTitle}` and `memTwice`, `memAgain` (brought up before), `memRobbery`, `memInsult`, `memFavorite`. */
   memory: Line[];

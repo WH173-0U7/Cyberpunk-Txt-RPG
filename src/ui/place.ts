@@ -2,7 +2,8 @@ import { typewrite, type Typing } from './typewriter';
 
 const TYPE_MS = 9;
 
-export type ActionId = 'walk' | 'ride' | 'pass' | 'stop' | 'enter' | 'leave' | 'menu' | 'people' | 'bank' | 'work';
+/** `pick-1`, `pick-2`: the choices of a shift's moment, in order. */
+export type ActionId = 'walk' | 'ride' | 'pass' | 'stop' | 'enter' | 'leave' | 'menu' | 'people' | 'bank' | 'work' | 'pick-1' | 'pick-2';
 
 export interface PanelAction {
   id: ActionId;

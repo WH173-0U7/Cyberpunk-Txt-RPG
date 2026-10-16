@@ -67,6 +67,57 @@ export interface JobRules {
   quit: number;
   /** How the boss has to feel about the player to move them up. */
   promoteAt: Stance[];
+  /** What working somewhere gets the player besides pay. */
+  perks: PerkRules;
+  /** What can happen on a shift, waiting on the player's choice. */
+  events: ShiftEventRules;
+}
+
+/**
+ * Perks: a staff price at the counter where the player works; a staff meal or drink after a
+ * shift where the line of work has one (the cheapest of that kind on the menu); a uniform off
+ * the rack once, from a rung up, where the line has one; and from a rung up, keys, so the
+ * counter is open to the player when nobody else is in.
+ */
+export interface PerkRules {
+  /** The share off at the player's own workplace. */
+  discount: number;
+  /** The kind of thing on the menu a shift gets the player, by line of work. */
+  meal: Record<string, 'food' | 'drink'>;
+  /** The rung a uniform comes with, by line of work. */
+  uniform: Record<string, number>;
+  /** The rung that comes with keys. */
+  keys: number;
+}
+
+/** Something that happens on a shift: a rush, a shoplifter, a gang come for its cut, a coworker asking for cover. */
+export type ShiftEventKind = 'rush' | 'shoplifter' | 'cut' | 'cover';
+
+export interface ShiftEventRules {
+  /** How often a shift brings something. */
+  chance: number;
+  /** How often each, against the others that could happen there. */
+  weights: Record<ShiftEventKind, number>;
+  /** The lines of work each comes up in (missing: every one). */
+  where: Partial<Record<ShiftEventKind, string[]>>;
+  /** Hustling through a rush: the energy, the tips (before the place's tier) and the trust. */
+  rush: { energy: number; tips: [number, number]; trust: number; rep: number };
+  /** Stopping a shoplifter: trust, standing with the place, the boss's thanks, the thief's grudge; letting them go, their thanks and what the place loses. */
+  shoplifter: { trust: number; rep: number; rapport: number; grudge: number; thanks: number; loss: number };
+  /** Standing up to a gang come for its cut: the odds (more a charisma level), and what it does either way. */
+  cut: { odds: number; perLevel: number; rapport: number; trust: number; gangRep: number; grudge: number; paid: number; worse: number };
+  /** Covering for a coworker: the energy, the share of a shift it pays, and the rapport; turning them down costs `refuse`. */
+  cover: { energy: number; pay: number; rapport: number; refuse: number };
+  /** What happens, by event and choice: `{who}` (as the player knows them), `{work}`, `{gang}`, `{tips}`, `{pay}`. */
+  lines: Record<string, string[]>;
+}
+
+/** A choice on a shift event. */
+export interface ShiftChoice {
+  id: string;
+  label: string;
+  sub?: string;
+  disabled?: boolean;
 }
 
 /** A job, worked out for a moment: where, for whom, which rung, when, what's owed, and whether a shift can start. */
@@ -92,6 +143,8 @@ export interface JobStatus {
   open: boolean;
   /** Why a shift can't start now: not here, not a rostered day, done for today, or outside the hours. Null when it can. */
   blocked: 'away' | 'off' | 'done' | 'closed' | null;
+  /** What the job gets the player besides pay, as the status says it ("20% off", "keys"). */
+  perks: string[];
 }
 
 /** The player's job, as saved. */
@@ -120,6 +173,8 @@ export interface JobState {
   paidOn?: number;
   /** The main job's boss has heard of the side gig. */
   heard?: boolean;
+  /** The uniform has been handed over. */
+  uniform?: boolean;
 }
 
 const RUNS_IT = /runs the|owner|manager|chef|maître|proprietor/i;

@@ -11,7 +11,10 @@ import type { JobRules, Ladder, Rung } from '../engine/jobs';
  * don't overlap: a day job and a night one. Walking out costs four rapport with the boss,
  * notice one; half the shifts worked in a line of work count as trust starting elsewhere in it,
  * and a boss who liked the player puts in a word worth four. Four rostered days missed in a row
- * and the job's gone.
+ * and the job's gone. Working somewhere is a fifth off at its counter, a staff meal at an eatery
+ * or a drink at a bar after each shift, a uniform at a clothing store from the shop floor up,
+ * and keys from the third rung. About one shift in three, something happens that wants a
+ * choice: a rush, a shoplifter, a gang come for its cut, a coworker who needs cover.
  */
 const rung = (id: string, title: string, doing: string, pay: number, energy: number, at: number): Rung => ({ id, title, doing, pay, energy, at });
 const DAY: [number, number] = [9, 17];
@@ -51,4 +54,41 @@ export const JOBS: JobRules = {
   raise: { thriving: 0.05, most: 0.25 },
   moonlight: { loyalty: 0.65, rapport: 3 },
   promoteAt: ['warm', 'friend'],
+  perks: {
+    discount: 0.2,
+    meal: { food: 'food', nightlife: 'drink' },
+    uniform: { clothing: 1 },
+    keys: 2,
+  },
+  events: {
+    chance: 0.35,
+    weights: { rush: 3, shoplifter: 2, cut: 1, cover: 2 },
+    where: {
+      rush: ['food', 'nightlife', 'clothing', 'commodity', 'entertainment', 'lodging'],
+      shoplifter: ['clothing', 'commodity', 'firearms', 'melee', 'cyberware', 'netrunning', 'tattoo-studio', 'medical'],
+    },
+    rush: { energy: 2, tips: [6, 18], trust: 1, rep: 1 },
+    shoplifter: { trust: 2, rep: 1, rapport: 3, grudge: 10, thanks: 3, loss: 25 },
+    cut: { odds: 0.35, perLevel: 0.08, rapport: 4, trust: 1, gangRep: 3, grudge: 10, paid: 1, worse: 2 },
+    cover: { energy: 2, pay: 0.5, rapport: 6, refuse: 2 },
+    lines: {
+      rushOpen: [
+        "A rush hits {work}: the line's out the door and everyone wants it now.",
+        'Out of nowhere {work} is packed, and nobody in it wants to wait.',
+        'A crowd off the last train floods in, every one of them in a hurry.',
+      ],
+      rushHustle: ['You put your head down and keep up with it. {tips} €$ in tips by the end, and the boss noticed.', 'You hustle through it, two at a time. It comes to {tips} €$ in tips.'],
+      rushPace: ['You keep your own pace. The line thins out on its own, eventually.', 'You let the rush come to you. Nobody tips, and nobody dies.'],
+      shoplifterOpen: ['{Who} is palming something off a shelf by the door.', 'You catch {who} slipping something into a jacket.'],
+      shoplifterStop: ['You step in front of the door. {Who} hands it back and won\'t look at you on the way out.', 'You stop {who} at the door and take it back. The boss will hear about it.'],
+      shoplifterLet: ['You look the other way. {Who} is gone, and so is the stock.', 'Not your eddies, not your problem. {Who} walks out with it.'],
+      cutOpen: ['{Who}, in {gang} colors, leans on the counter: collection day.', '{Who} walks in like {work} belongs to the {gang}. They want their cut.'],
+      cutPay: ["The envelope comes out from under the till and into {who}'s jacket. Another week paid for.", 'You hand it over. {Who} counts it, nods, and goes.'],
+      cutStand: ['You tell {who} the place is short this week. A long look, and then {who} lets it go. For now.', "You don't hand it over, and {who} doesn't push. Not today."],
+      cutWorse: ['You stand your ground. The {gang} will take double next week, and the boss knows who to thank.', '{Who} hears you out, smiles, and says the price just went up.'],
+      coverOpen: ['{Who} catches you on the way out: could you cover the rest of {his} shift?', "{Who} asks if you'll take the back half of {his} shift."],
+      coverYes: ['You stay on and cover for {who}: half a shift more, {pay} €$ on your pay.'],
+      coverNo: ['You tell {who} not today. {He} finds someone else, or doesn\'t.'],
+    },
+  },
 };
