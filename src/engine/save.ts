@@ -308,12 +308,12 @@ function dealingOf(value: unknown): DealingState | null {
     const block = isObject(v.block) && isNumber(v.block.key) && isNumber(v.block.served) ? { key: v.block.key, served: v.block.served } : { key: -1, served: 0 };
     const customers = isObject(v.customers) ? Object.fromEntries(Object.entries(v.customers).filter(([, c]) => isObject(c) && isNumber(c.bought) && isNumber(c.last))) as DealState['customers'] : {};
     const n = (x: unknown) => (isNumber(x) ? x : 0);
-    return { gang: v.gang, connect: v.connect, rung: v.rung, trust: v.trust, corner: typeof v.corner === 'string' ? v.corner : null, front, debt: n(v.debt), debtAt: n(v.debtAt), collectAt: isNumber(v.collectAt) ? v.collectAt : null, collections: n(v.collections), fronts: n(v.fronts), sold: n(v.sold), take: n(v.take), customers, block };
+    return { gang: v.gang, connect: v.connect, rung: v.rung, trust: v.trust, corner: typeof v.corner === 'string' ? v.corner : null, front, debt: n(v.debt), debtAt: n(v.debtAt), collectAt: isNumber(v.collectAt) ? v.collectAt : null, collections: n(v.collections), fronts: n(v.fronts), sold: n(v.sold), take: n(v.take), customers, block, ...(isNumber(v.heat) ? { heat: v.heat } : {}), ...(isNumber(v.heatAt) ? { heatAt: v.heatAt } : {}), ...(isNumber(v.yielded) ? { yielded: v.yielded } : {}) };
   };
   const strings = (v: unknown) => (isObject(v) ? Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'string')) as Record<string, string> : {});
   const numbers = (v: unknown) => (isObject(v) ? Object.fromEntries(Object.entries(v).filter(([, x]) => isNumber(x))) as Record<string, number> : {});
   const past = isObject(value.past) ? Object.fromEntries(Object.entries(value.past).flatMap(([k, v]) => { const d = deal(v); return d ? [[k, d]] : []; })) : {};
-  return { current: deal(value.current), vouched: strings(value.vouched), past, burned: numbers(value.burned) };
+  return { current: deal(value.current), vouched: strings(value.vouched), past, burned: numbers(value.burned), corners: strings(value.corners) };
 }
 
 function isCoverage(value: unknown): value is Coverage {

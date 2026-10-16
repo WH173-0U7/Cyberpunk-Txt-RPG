@@ -15,10 +15,10 @@ import { POLICE } from '../src/data/police';
 import { CHARISMA, TRADING } from '../src/data/skills';
 import { SOCIETY } from '../src/data/society';
 import { TRAVEL } from '../src/data/travel';
-import { freshDealing, type DealingRules, type DealingState, type DealState } from '../src/engine/dealing';
+import { freshDealing, heatAt, type DealingRules, type DealingState, type DealState } from '../src/engine/dealing';
 import { Game, streetSpot, type GameRules } from '../src/engine/game';
 import { generateWorld } from '../src/engine/generate';
-import { generatePeople, type Clock, type Spot } from '../src/engine/people';
+import { generatePeople, whereIs, type Clock, type Person, type Spot } from '../src/engine/people';
 import { chargesFor, freshPolice, type PoliceContent } from '../src/engine/police';
 import type { Progress } from '../src/engine/save';
 import type { Location } from '../src/engine/types';
@@ -40,6 +40,11 @@ const at = (spot: Spot, extra: Partial<Progress> = {}): Progress => {
   const place = world.locations[spot.id] as Location;
   return { where: { ...streetSpot(place), place: place.id }, visited: [], discovered: [], explored: [], eddies: 0, passUntil: 0, trip: null, inside: null, items: [], gear: null, money: { bills: 300, coins: 0, account: 0 }, energy: null, inebriation: null, society: null, charisma: null, job: null, life: null, ...extra };
 };
+const whereIsAt = (p: Person, clock: Clock) => whereIs(p, world, clock, FOOD.dishes, PEOPLE.out)?.spot ?? null;
+const buildingAt = (id: string): Partial<Progress> => {
+  const b = world.buildings.find((x) => x.id === id)!;
+  return { where: { ...streetSpot({ x: b.x + b.w / 2, y: b.y - 0.5 }), building: b.id }, inside: b.id };
+};
 const atCorner = (extra: Partial<Progress> = {}) => at({ kind: 'location', id: corner.id }, { dealing: dealing(), ...extra });
 const doses = (drug: string, count: number): Progress['items'][number] => ({ id: drug, kind: 'consumable', name: DEALING.drugs[drug]!.name, count, in: 'jacket' });
 const play = (rules: GameRules, progress: Progress, now = NIGHT) => {
@@ -51,7 +56,8 @@ const carried = (game: Game, drug: string) => game.inventory.filter((i) => i.id 
 /** The first buyer through, over a few blocks if need be. */
 const firstUp = (game: Game, from = NIGHT) => {
   for (let n = 0; n < 6; n++) {
-    const t = from + n * 3 * 3_600_000 / TRAVEL.timeScale;
+    // A corner's blocks go by the clock's hours, which the tests' clock doesn't speed up.
+    const t = from + n * 3 * 3_600_000;
     if (game.walkUp(t) && game.dealMoment(t)) return t;
   }
   return null;
@@ -200,5 +206,83 @@ describe('bad customers', () => {
       outcomes.add('tab');
     }
     expect(outcomes.has('tab')).toBe(true);
+  });
+});
+
+describe('turf wars', () => {
+  /** Rivals at the corner every time, and nothing else going wrong. */
+  const warring = (): DealingRules => ({ ...calm(), war: { ...DEALING.war, rivals: { ...DEALING.war.rivals, base: 100 } } });
+  const rivalsHere = (g: Game, from = NIGHT) => {
+    const t = firstUp(g, from);
+    return t === null ? null : { t, moment: g.dealMoment(t)! };
+  };
+
+  it('brings the rivals of the player\'s gang to the corner: clear off, pay them, or fight', () => {
+    const game = play(rulesWith(warring()), atCorner({ items: [doses('glitter', 10)] }));
+    const up = rivalsHere(game)!;
+    expect(up.moment.choices.map((c) => c.id)).toEqual(['clear', 'pay', 'fight']);
+    const rival = game.person(up.moment.person)!;
+    expect(PEOPLE.gangs.tyger_claws!.rivals).toContain(rival.gang);
+    expect(up.moment.text).not.toMatch(/[{}]/);
+    // Paying them is a share of the cash.
+    game.answerDeal('pay', up.t);
+    expect(game.wallet.eddies).toBeLessThan(300);
+    // Standing up to them is a fight, and trust with the gang.
+    const brave = play(rulesWith(warring()), atCorner({ items: [doses('glitter', 10)] }));
+    const b = rivalsHere(brave)!;
+    brave.answerDeal('fight', b.t);
+    expect(brave.fighting).toBe(true);
+    expect(brave.dealing(b.t)!.trust).toBe(DEALING.war.rivals.trust);
+  });
+
+  it('gives up the corner to them for clearing off often enough, and the connect has another', () => {
+    const game = play(rulesWith(warring()), atCorner({ items: [doses('glitter', 10)] }));
+    let t = NIGHT;
+    for (let n = 0; n < DEALING.war.rivals.yield; n++) {
+      const up = rivalsHere(game, t);
+      if (!up) break;
+      t = up.t;
+      game.answerDeal('clear', t);
+      // The block is over for the player.
+      expect(game.cornerAction(t)?.disabled ?? true).toBe(true);
+      t += 3 * 3_600_000;
+    }
+    const view = game.dealing(t)!;
+    expect(view.corner?.id).not.toBe(corner.id);
+    expect(game.dealingSaved.corners[corner.id]).not.toBe('tyger_claws');
+  });
+
+  it('changes a corner\'s hands when a rival wins a fight in its district, and back again', () => {
+    const game = play(rulesWith(calm()), atCorner({ dealing: { ...dealing(), corners: { [corner.id]: 'tyger_claws' } } }));
+    const ours = population.people.find((p) => p.gang === 'tyger_claws')!;
+    const rivalGang = PEOPLE.gangs.tyger_claws!.rivals[0]!;
+    const theirs = population.people.find((p) => p.gang === rivalGang)!;
+    const wars = (game as unknown as { cornerWars(events: unknown[], now: number): void }).cornerWars.bind(game);
+    const fight = (id: number, winner: string, loser: string) => ({ id, day: 0, kind: 'fight', who: [winner, loser], gang: null, district: corner.district, took: 0, where: null });
+    // Over enough fights, one takes it.
+    for (let id = 1; id < 40 && game.dealingSaved.corners[corner.id] === 'tyger_claws'; id++) wars([fight(id, theirs.id, ours.id)], NIGHT);
+    expect(game.dealingSaved.corners[corner.id]).toBe(rivalGang);
+    expect(game.dealing(NIGHT)!.corner?.id).not.toBe(corner.id);
+    for (let id = 100; id < 140 && game.dealingSaved.corners[corner.id] === rivalGang; id++) wars([fight(id, ours.id, theirs.id)], NIGHT);
+    expect(game.dealingSaved.corners[corner.id]).toBe('tyger_claws');
+  });
+
+  it('sets a rival gang on the player who pitches one of theirs', () => {
+    const rivalGang = PEOPLE.gangs.tyger_claws!.rivals[0]!;
+    const clock = clockOf(NIGHT);
+    const rival = population.people.find((p) => p.gang === rivalGang && whereIsAt(p, clock));
+    if (!rival) return;
+    const spot = whereIsAt(rival, clock)!;
+    const game = play(rulesWith(calm()), { ...at(spot.kind === 'location' ? spot : { kind: 'location', id: corner.id }), ...(spot.kind === 'building' ? buildingAt(spot.id) : {}), dealing: dealing(), items: [doses('glitter', 3)] });
+    if (!game.peopleHere(NIGHT).some((p) => p.person.id === rival.id)) return;
+    game.deal(rival.id, 'sell:glitter', NIGHT);
+    expect(game.societySaved.threats.some((t) => t.gang === rivalGang)).toBe(true);
+    expect(game.standingWith(rival.id, NIGHT)!.standing.grudge).toBeGreaterThan(0);
+  });
+
+  it('cools off: heat halves a day', () => {
+    const d = dealing({ heat: 8, heatAt: NIGHT }).current!;
+    expect(heatAt(d, NIGHT, DEALING, TRAVEL.timeScale)).toBe(8);
+    expect(heatAt(d, NIGHT + 86_400_000 / TRAVEL.timeScale, DEALING, TRAVEL.timeScale)).toBeCloseTo(4);
   });
 });

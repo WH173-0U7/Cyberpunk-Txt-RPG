@@ -401,7 +401,7 @@ describe('dealing through a save', () => {
 
 describe('the lines of dealing', () => {
   it('fill for anyone, and there are enough of them', () => {
-    const vars: Record<string, string> = { who: 'a woman in Tyger Claws colors', Who: 'A woman in Tyger Claws colors', he: 'she', his: 'her', him: 'her', drug: 'Glitter', price: '18', pay: '12', gang: 'Tyger Claws', owed: '120', left: '40', when: 'Fri 18:00', weapon: 'knife', took: '3 doses of Glitter and 20 €$' };
+    const vars: Record<string, string> = { who: 'a woman in Tyger Claws colors', Who: 'A woman in Tyger Claws colors', he: 'she', He: 'She', his: 'her', him: 'her', drug: 'Glitter', price: '18', pay: '12', gang: 'Tyger Claws', owed: '120', left: '40', when: 'Fri 18:00', weapon: 'knife', took: '3 doses of Glitter and 20 €$', ours: 'Maelstrom', corner: 'Jig-Jig Street' };
     for (const [key, pool] of Object.entries(DEALING.lines)) {
       expect(pool.length, key).toBeGreaterThanOrEqual(3);
       for (const text of pool) expect(text.replace(/\{(\w+)\}/g, (_: string, k: string) => vars[k] ?? `{${k}}`), `${key}: ${text}`).not.toMatch(/[{}]/);
@@ -411,7 +411,7 @@ describe('the lines of dealing', () => {
     const g = game(blank({}));
     const rng = createRng('lines');
     const speakerOf = (person: Person): Speaker => (g as unknown as { speakerFor(p: Person, s: string, d: string, n: number): Speaker }).speakerFor(person, 'neutral', '', NOON);
-    const deal = { drug: 'Glitter', doses: '8', owed: '79', when: 'Fri 18:00', corner: 'Jig-Jig Street', title: 'pusher', connect: 'Kenji', left: '40', pay: '20', price: '18', mask: '' };
+    const deal = { drug: 'Glitter', doses: '8', owed: '79', when: 'Fri 18:00', corner: 'Jig-Jig Street', title: 'pusher', connect: 'Kenji', left: '40', pay: '20', price: '18', mask: '', ours: 'Maelstrom' };
     for (const person of [connect, ...population.people.slice(0, 40)]) {
       for (const stance of ['neutral', 'warm', 'cold', 'friend', 'wary'] as const) {
         const speaker = { ...speakerOf(person), stance, vars: { ...speakerOf(person).vars, ...deal } };

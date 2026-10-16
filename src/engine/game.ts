@@ -5,14 +5,14 @@ import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, po
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
 import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
-import { askOf, blockOf, buyersIn, canMoveUp, dealRungOf, freshDealing, habitOf, owedFor, pushOdds, streetPrice, withInterest, type CollectorView, type DealChoice, type DealingRules, type DealingState, type DealMomentView, type DealOption, type DealState, type DealView, type Front, type Habit } from './dealing';
+import { askOf, blockOf, buyersIn, canMoveUp, dealRungOf, freshDealing, habitOf, heatAt, owedFor, pushOdds, streetPrice, withInterest, type CollectorView, type DealChoice, type DealingRules, type DealingState, type DealMomentView, type DealOption, type DealState, type DealView, type Front, type Habit } from './dealing';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
 import { medDetail, medTotal, TREATMENT, type Coverage, type CoverageStatus, type MedicalStock, type MedKind } from './medical';
 import { answer, compose, deflect, describeStranger, drawnWord, eloquenceOf, FAMILY, fill, finish, historyOf, saidIn, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
 import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobRules, type JobState, type JobStatus, type Ladder, type Rung, type ShiftChoice, type ShiftEventKind } from './jobs';
-import { applyLife, freshLife, learned, liveUntil, newsFor, scenesAt, type LifeRules, type LifeState, type Scene } from './life';
+import { applyLife, freshLife, learned, liveUntil, newsFor, scenesAt, type LifeEvent, type LifeRules, type LifeState, type Scene } from './life';
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
 import { chargesFor, freshPolice, issueWarrant, policing, warrantsAt, worstCrime, type Confrontation, type Crime, type Dispatch, type PoliceChoice, type PoliceContent, type PoliceState, type PoliceView } from './police';
 import { mainRoom, roomById, roomOf, roomsOn, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
@@ -337,7 +337,7 @@ export class Game {
   /** The player's dealing for a gang: the one they deal for now, any they walked away from or were cut off by. */
   private dealState: DealingState;
   /** A buyer at the player's corner, waiting on an answer (not saved: they don't wait). */
-  private dealMomentState: { kind: 'buy' | 'robber'; person: string; drug: string; ask: number; pay: number; short: boolean; regular: boolean; tab?: boolean; undercover?: boolean; at: number; text: string } | null = null;
+  private dealMomentState: { kind: 'buy' | 'robber' | 'rivals'; gang?: string; person: string; drug: string; ask: number; pay: number; short: boolean; regular: boolean; tab?: boolean; undercover?: boolean; at: number; text: string } | null = null;
   /** A collector on the player, waiting on an answer (not saved: they come back for it). */
   private collectState: { by: string; gang: string; at: number } | null = null;
   /** The drugs dealt in each district, everyone's habit, and who has one by district and drug: worked out once a city. */
@@ -3192,7 +3192,8 @@ export class Game {
   private cornerFor(gang: string, connect: Person): Location | null {
     const dealing = this.rules.dealing!;
     const turf = this.turfOf(gang);
-    const places = Object.values(this.world.locations).filter((l) => turf.has(l.district));
+    // Never a corner another gang holds.
+    const places = Object.values(this.world.locations).filter((l) => turf.has(l.district) && (this.holderOf(l) ?? gang) === gang);
     const spots = (dealing.gangs[gang]?.spots ?? []).flatMap((name) => places.filter((l) => l.name === name));
     const spot = spots.find((l) => l.district === connect.district) ?? spots[0];
     if (spot) return spot;
@@ -3200,6 +3201,69 @@ export class Game {
     const from: Point = home ? { x: home.x + home.w / 2, y: home.y + home.h / 2 } : (places[0] ?? { x: 0, y: 0 });
     const far = (p: Point) => Math.hypot(p.x - from.x, p.y - from.y);
     return places.filter((l) => dealing.corner.kinds.includes(l.kind)).sort((a, b) => far(a) - far(b) || a.id.localeCompare(b.id))[0] ?? null;
+  }
+
+  /** Who holds a corner: whoever took it or claimed it, else the gang whose canon spot it is, else nobody. */
+  private holderOf(place: Location): string | null {
+    const held = this.dealState.corners[place.id];
+    if (held) return held;
+    const gangs = this.rules.dealing?.gangs ?? {};
+    return Object.keys(gangs).find((g) => gangs[g]?.spots?.includes(place.name) && this.turfOf(g).has(place.district)) ?? null;
+  }
+
+  /** The gangs at war with a gang. */
+  private rivalsOf(gang: string): string[] {
+    return this.rules.people.gangs[gang]?.rivals ?? [];
+  }
+
+  /**
+   * Corners changing hands in the people's own days: a fight in a held corner's district, won
+   * by a rival of the gang holding it, may take it; the gang that held it takes it back the
+   * same way. The player's own corner lost, their connect puts them on another, if there is one.
+   */
+  private cornerWars(happened: LifeEvent[], now: number): void {
+    const dealing = this.rules.dealing;
+    const d = this.dealState.current;
+    if (!dealing || !d) return;
+    const corners = new Set([...Object.keys(this.dealState.corners), ...(d.corner ? [d.corner] : [])]);
+    let changed = false;
+    for (const event of happened) {
+      if (event.kind !== 'fight' && event.kind !== 'death') continue;
+      const winner = this.person(event.who[0])?.gang;
+      const loser = this.person(event.who[1])?.gang;
+      if (!winner || !loser || winner === loser || !this.rivalsOf(loser).includes(winner)) continue;
+      for (const id of corners) {
+        const place = this.world.locations[id];
+        if (!place || place.district !== event.district || this.holderOf(place) !== loser) continue;
+        const rng = createRng(`${this.world.seed}:corner-war:${id}:${event.id}`);
+        if (!rng.chance(dealing.war.take)) continue;
+        this.dealState.corners[id] = winner;
+        changed = true;
+        const vars = { gang: this.rules.people.gangs[winner === d.gang ? loser : winner]?.name ?? '', ours: this.rules.people.gangs[d.gang]?.name ?? d.gang, corner: place.name };
+        if (winner === d.gang) this.say(this.narration(dealing.lines.retaken, vars, rng), 'system');
+        else if (id === d.corner) this.loseCorner(d, vars, rng);
+      }
+    }
+    if (changed) this.events.emit('dealChanged', this.dealing(now));
+  }
+
+  /** The player's corner gone to a rival: told, and another one from the connect, or none. */
+  private loseCorner(d: DealState, vars: Record<string, string>, rng: Rng): void {
+    const dealing = this.rules.dealing!;
+    this.say(this.narration(dealing.lines.lost, vars, rng), 'error');
+    this.dealMomentState = null;
+    d.yielded = 0;
+    const connect = this.person(d.connect);
+    const next = connect ? this.cornerFor(d.gang, connect) : null;
+    d.corner = next?.id ?? null;
+    if (next) {
+      this.dealState.corners[next.id] = d.gang;
+      if (!this.discovered.has(next.id)) {
+        this.discovered.add(next.id);
+        this.events.emit('mapChanged', this.mapState);
+      }
+      this.say(this.narration(dealing.lines.newCorner, { ...vars, corner: next.name }, rng), 'system');
+    } else this.say(this.narration(dealing.lines.noCorner, vars, rng), 'system');
   }
 
   /** A gang's members in these roles, alive and on their feet: who'd front the player, or come to collect. */
@@ -3282,7 +3346,8 @@ export class Game {
     const known = this.describe(person.id, now);
     const who = known ? (known.named ? known.name : known.name.charAt(0).toLowerCase() + known.name.slice(1)) : 'someone';
     const said = this.speakerFor(person, this.stanceOf(person, now), '', now).vars;
-    return { who, Who: who.charAt(0).toUpperCase() + who.slice(1), he: said.he ?? 'they', his: said.his ?? 'their', him: said.him ?? 'them', ...more };
+    const he = said.he ?? 'they';
+    return { who, Who: who.charAt(0).toUpperCase() + who.slice(1), he, He: he.charAt(0).toUpperCase() + he.slice(1), his: said.his ?? 'their', him: said.him ?? 'them', ...more };
   }
 
   /** A clock time as the panel says it: "Fri 18:00". */
@@ -3427,7 +3492,8 @@ export class Game {
           : { gang, connect: person.id, rung: 0, trust: 0, corner: corner?.id ?? null, front: null, debt: 0, debtAt: now, collectAt: null, collections: 0, fronts: 0, sold: 0, take: 0, customers: {}, block: { key: -1, served: 0 } };
         learnFact(this.society, person.id, 'name');
         learnFact(this.society, person.id, 'job');
-        // The corner is on the player's map now.
+        // The corner is the gang's, for the player, and on their map now.
+        if (corner) this.dealState.corners[corner.id] = gang;
         if (corner && !this.discovered.has(corner.id)) {
           this.discovered.add(corner.id);
           this.events.emit('mapChanged', this.mapState);
@@ -3605,6 +3671,8 @@ export class Game {
     if (d && dealing.gangs[d.gang]?.drugs.includes(drug)) {
       d.sold += 1;
       d.take += got;
+      d.heat = heatAt(d, now, dealing, this.rules.timeScale) + 1;
+      d.heatAt = now;
       const was = d.customers[buyer.id];
       d.customers[buyer.id] = { bought: (was?.bought ?? 0) + 1, last: now };
     }
@@ -3648,6 +3716,7 @@ export class Game {
     learnOf(this.society, person.id, 'met');
     this.logged(person.id, 'you', line(lines.you.pitch, speaker, rng), now);
     const habit = this.habitFor(person);
+    const d = this.dealState.current;
     const refused = { ...standing.refused };
     let rapport = 0;
     let note = '';
@@ -3657,12 +3726,31 @@ export class Game {
       rapport = -society.openness.press;
       note = lines.notes.pressed;
       this.speech(person, line(lines.pressed, speaker, rng), now);
+    } else if (d && person.gang && this.rivalsOf(d.gang).includes(person.gang)) {
+      // One of a rival gang, offered the player's gang's product: war, and maybe here and now.
+      speaker.vars = { ...speaker.vars, ours: this.rules.people.gangs[d.gang]?.name ?? d.gang };
+      this.speech(person, line(lines.deal.rival, speaker, rng), now);
+      changeStanding(this.society, person.id, { met: true, asks: standing.asks + 1, rapport: -dealing.pitch.rapport * 2, grudge: 15 }, society, timeScale, now);
+      this.setOnPlayer(person.gang, now, rng);
+      this.noteFeedback(person, before, now, '', speaker.vars);
+      if (rng.chance(person.traits.temper)) this.openFight({ person, doing, stance: this.stanceOf(person, now), scene: null }, now, `${person.given} takes it as war, and swings.`);
+      this.events.emit('societyChanged', { people: [person.id] });
+      return true;
     } else if (habit?.drug === drug) {
       const regular = (this.dealState.current?.customers[person.id]?.bought ?? 0) >= dealing.corner.regularAt;
       const reply = regular ? 'answer' : replyTo(openness('pitch', stance, this.charismaEdge, person.traits, society.openness, Boolean(this.masked())) + habit.need, society.openness, rng);
       if (reply === 'answer' && person.eddies >= price) {
         this.speech(person, line(lines.deal.buy, speaker, rng), now);
-        if (this.sale(person, drug, price, now)) this.say(`Sold: a dose of ${dealing.drugs[drug]?.name ?? drug} to ${person.given}, ${price} €$.`, 'system');
+        if (this.sale(person, drug, price, now)) {
+          this.say(`Sold: a dose of ${dealing.drugs[drug]?.name ?? drug} to ${person.given}, ${price} €$.`, 'system');
+          // On a rival's turf, they may hear of it.
+          const turf = d ? turfFrom(this.rules.people.turf)(this.districtOf(this.where)?.id ?? '').map(([g]) => g).filter((g) => this.rivalsOf(d.gang).includes(g)) : [];
+          if (d && turf.length && rng.chance(dealing.war.threat.chance)) {
+            const rival = rng.pick(turf);
+            this.say(this.narration(dealing.lines.rivalTurf, { gang: this.rules.people.gangs[rival]?.name ?? rival, ours: this.rules.people.gangs[d.gang]?.name ?? d.gang }, rng), 'system');
+            this.setOnPlayer(rival, now, rng);
+          }
+        }
       } else {
         this.speech(person, line(lines.deal.wary, speaker, rng), now);
         refused.pitch = now;
@@ -3682,6 +3770,13 @@ export class Game {
     this.noteFeedback(person, before, now, note, speaker.vars);
     this.events.emit('societyChanged', { people: [person.id] });
     return true;
+  }
+
+  /** A rival gang set on the player: they'll come for them, as a gang comes to settle a score. */
+  private setOnPlayer(gang: string, now: number, rng: Rng): void {
+    const { threat } = this.rules.dealing!.war;
+    if (this.society.threats.some((t) => t.gang === gang)) return;
+    this.society.threats.push({ id: this.society.nextId++, due: now + (rng.range(threat.hours[0], threat.hours[1]) * HOUR) / this.rules.timeScale, by: null, gang, incident: 0, amount: rng.int(threat.amount[0], threat.amount[1]) });
   }
 
   /** Whether the player is at the corner the gang gave them. */
@@ -3758,6 +3853,16 @@ export class Game {
     const { bad } = dealing;
     const policed = this.policingAt(corner);
     const drugName = (id: string) => dealing.drugs[id]?.name ?? id;
+    // Rivals of the player's gang, come to take the corner: more for the player's heat and the rivals' turf here.
+    const rival = this.rivalsAt(d, corner, now, rng);
+    if (rival?.gang) {
+      const vars = this.dealVars(rival, now, { gang: this.rules.people.gangs[rival.gang]?.name ?? rival.gang, ours: this.rules.people.gangs[d.gang]?.name ?? d.gang });
+      learnOf(this.society, rival.id, 'seen');
+      this.dealMomentState = { kind: 'rivals', gang: rival.gang, person: rival.id, drug: drugs[0] as string, ask: 0, pay: 0, short: false, regular: false, at: now, text: this.narration(dealing.lines.rivals, vars, rng) };
+      this.events.emit('fx', { effect: 'shake' });
+      this.events.emit('dealChanged', this.dealing(now));
+      return true;
+    }
     // An NCPD officer posing as a buyer, where the NCPD goes.
     const officer = policed && rng.chance(Math.min(1, bad.undercover * policed.call)) ? this.undercoverFor(corner.district, now, rng) : undefined;
     if (officer) {
@@ -3803,6 +3908,23 @@ export class Game {
     return true;
   }
 
+  /** A rival of the player's gang come to the corner, by the odds (`war.rivals`): one of theirs who lives in the corner's district. */
+  private rivalsAt(d: DealState, corner: Location, now: number, rng: Rng): Person | undefined {
+    const { war } = this.rules.dealing!;
+    const shares = turfFrom(this.rules.people.turf)(corner.district);
+    const rivals = this.rivalsOf(d.gang);
+    const share = shares.filter(([g]) => rivals.includes(g)).reduce((n, [, w]) => n + w, 0);
+    const heat = heatAt(d, now, this.rules.dealing!, this.rules.timeScale);
+    if (!rivals.length || !rng.chance(Math.min(1, war.rivals.base * (1 + heat * war.rivals.heat) * (war.rivals.near + share)))) return undefined;
+    const gang = rng.pick(rivals);
+    const roles = this.rules.people.gangs[gang]?.roles ?? [];
+    // One of theirs from round here, else a crew come over from their own turf.
+    const members = this.membersIn(gang, roles, now);
+    const local = members.filter((p) => p.district === corner.district);
+    const pool = local.length ? local : members;
+    return pool.length ? rng.pick(pool) : undefined;
+  }
+
   /** A tab a buyer runs with the player: paid off, with a little over, by the odds and their loyalty; else dodged, and written off once it's old. The line that says so, or nothing. */
   private settleTab(d: DealState, buyer: Person, now: number, rng: Rng): string {
     const dealing = this.rules.dealing!;
@@ -3841,6 +3963,21 @@ export class Game {
     const m = this.dealMomentState;
     const dealing = this.rules.dealing;
     if (!m || !dealing || !this.atCorner() || this.detained(now) || this.fighting) return null;
+    if (m.kind === 'rivals') {
+      const by = this.person(m.person);
+      const arm = by ? this.armOf(by) : null;
+      const cash = this.money.bills + this.money.coins;
+      const cut = Math.round(cash * dealing.war.rivals.pay[0]);
+      return {
+        text: m.text,
+        person: m.person,
+        choices: [
+          { id: 'clear', label: 'Clear off' },
+          { id: 'pay', label: 'Pay them', sub: `${cut} €$`, disabled: cut <= 0 },
+          { id: 'fight', label: 'Fight', sub: arm && arm.id !== 'fists' ? arm.short : 'Bare hands' },
+        ],
+      };
+    }
     if (m.kind === 'robber') {
       const by = this.person(m.person);
       const arm = by ? this.armOf(by) : null;
@@ -3881,6 +4018,40 @@ export class Game {
     const name = dealing.drugs[m.drug]?.name ?? m.drug;
     const tell = (pool: string[], more: Record<string, string> = {}, tone: Tone = 'system') => this.say(this.narration(pool, this.dealVars(buyer, now, { drug: name, ...more }), rng), tone);
     const before = this.snapshot(buyer, now);
+    if (m.kind === 'rivals') {
+      const d = this.dealState.current;
+      const gang = m.gang ?? buyer.gang ?? '';
+      const vars = { gang: this.rules.people.gangs[gang]?.name ?? gang, ours: d ? (this.rules.people.gangs[d.gang]?.name ?? d.gang) : '' };
+      if (!d) return false;
+      if (choice === 'fight') {
+        d.yielded = 0;
+        d.trust += dealing.war.rivals.trust;
+        this.openFight({ person: buyer, doing: 'taking your corner', stance: this.stanceOf(buyer, now), scene: null }, now, this.narration(dealing.lines.stoodUp, this.dealVars(buyer, now, vars), rng));
+        this.events.emit('dealChanged', this.dealing(now));
+        return true;
+      }
+      if (choice === 'pay') {
+        const cash = this.money.bills + this.money.coins;
+        const grab = takeCash(this.money, Math.round(cash * rng.range(dealing.war.rivals.pay[0], dealing.war.rivals.pay[1])));
+        this.money = grab.money;
+        this.life.treasuries[gang] = (this.life.treasuries[gang] ?? 0) + grab.taken;
+        tell(dealing.lines.paidOff, { ...vars, pay: String(grab.taken) });
+        this.events.emit('walletChanged', this.wallet);
+      } else {
+        // Off the corner for the block; give it up often enough and it's theirs.
+        const clock = this.clockAt(now);
+        d.block = { key: blockOf(clock.day, clock.hour), served: Number.MAX_SAFE_INTEGER };
+        d.yielded = (d.yielded ?? 0) + 1;
+        tell(dealing.lines.clearedOff, vars);
+        const corner = d.corner ? this.world.locations[d.corner] : undefined;
+        if (corner && d.yielded >= dealing.war.rivals.yield && gang) {
+          this.dealState.corners[corner.id] = gang;
+          this.loseCorner(d, { ...vars, corner: corner.name }, rng);
+        }
+      }
+      this.events.emit('dealChanged', this.dealing(now));
+      return true;
+    }
     if (m.kind === 'robber') {
       const weapon = this.armOf(buyer).short;
       if (choice === 'fight') {
@@ -5094,6 +5265,7 @@ export class Game {
     // Whoever the player is seeing is no one else's to fall for.
     const spokenFor = new Set(this.society.romance ? [this.society.romance.with] : []);
     const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed, (spot) => this.tierOfSpot(spot), turfFrom(this.rules.people.turf), this.rules.people, spokenFor);
+    this.cornerWars(happened, now);
     // Seeing someone who has died: word reaches the player, and it's over.
     const partner = this.society.romance ? this.person(this.society.romance.with) : undefined;
     if (partner?.diedOn !== undefined) {

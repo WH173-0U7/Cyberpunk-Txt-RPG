@@ -97,6 +97,12 @@ export const DEALING: DealingRules = {
     rob: { doses: [0.5, 1], cash: [0.3, 0.8] },
     talk: { base: 0.35, perLevel: 0.06, most: 0.85 },
   },
+  war: {
+    take: 0.35,
+    rivals: { base: 0.03, heat: 0.12, near: 0.3, pay: [0.3, 0.6], yield: 2, trust: 2 },
+    heat: { decay: 0.5 },
+    threat: { chance: 0.35, amount: [40, 120], hours: [2, 8] },
+  },
   lines: {
     walkUp: [
       '{Who} drifts over, eyes on everything but you, and asks if you are holding {drug}.',
@@ -201,13 +207,13 @@ export const DEALING: DealingRules = {
     ],
     handOver: [
       'You hand it over: {took}. {Who} backs off into the crowd and is gone.',
-      '{took}, gone into {his} pockets. {Who} does not run; {he} does not need to.',
+      '{took}, gone into {his} pockets. {Who} does not even run.',
       'You give up {took}. {Who} pats your cheek, and walks.',
     ],
     talkedDown: [
       'You keep your voice low and your hands where {who} can see them, and talk. The {weapon} goes away.',
       'Something you say lands: {who} thinks better of it, and slips off.',
-      'You talk {him} round, and {he} melts back into the street with nothing.',
+      'You talk {him} round, and {who} melts back into the street with nothing.',
     ],
     talkFailed: [
       '{Who} is not listening. The {weapon} jabs, once, to make the point, and then it is all gone: {took}.',
@@ -216,7 +222,7 @@ export const DEALING: DealingRules = {
     ],
     tell: [
       'Something is off: the shoes are too clean for this corner.',
-      'The way {he} stands is wrong, square and patient, like {he} has done this on a course.',
+      'Something in the stance is wrong: square and patient, like a course taught it.',
       'You catch it: {his} eyes keep going to the end of the street, where a car is parked with nobody in it.',
       'There is a bulge under the jacket where a holster would be, and nobody round here wears one like that.',
     ],
@@ -244,6 +250,52 @@ export const DEALING: DealingRules = {
       "{Who} says nothing about the tab, and you notice.",
       '{Who} talks fast about something else. The tab is still open.',
       '"Next time," says {who}, about the tab. It is always next time.',
+    ],
+    rivals: [
+      '{Who} and two more in {gang} colors come out of the crowd and stand either side of you. This corner is theirs now, they say.',
+      '{gang}: {who} at the front, others behind. "You are selling {ours} trash on our corner."',
+      'The buyers melt away. {Who}, {gang} to the bone, takes their place: "Clear off, or get cleared."',
+      '{Who} leans on the wall beside you, {gang} ink on show. "Funny. I heard this was our corner."',
+    ],
+    clearedOff: [
+      'You pocket what you have and walk. Behind you, {who} takes your spot.',
+      'Not today. You clear off, and the {gang} have the corner for the night.',
+      'You give {who} the corner. The {ours} will hear about it.',
+    ],
+    paidOff: [
+      '{pay} €$ buys you the rest of the night. {Who} counts it and steps back.',
+      '{Who} takes the {pay} €$ like it is owed, and lets you be.',
+      'You pay {pay} €$ to stay. {Who} will be back for more.',
+    ],
+    stoodUp: [
+      'You do not move. {Who} takes that the only way the {gang} know how.',
+      'You tell {who} where the {gang} can go, and {who} swings first.',
+      'It is your corner. {Who} disagrees, with {his} fists.',
+    ],
+    lost: [
+      'Word comes down: the {gang} have taken {corner}. Your connect wants you somewhere else.',
+      '{corner} is {gang} ground now, after last night. You will not be selling there.',
+      'The {gang} won {corner} off the {ours}. Somebody bled for it, and it was not them.',
+    ],
+    retaken: [
+      'The {ours} have {corner} back. The {gang} paid for it.',
+      '{corner} is the {ours}\' again, after a long night.',
+      'Word is the {ours} took {corner} back off the {gang}.',
+    ],
+    newCorner: [
+      'Your connect has a new corner for you: {corner}.',
+      'You sell at {corner} now. Your connect says it is safer. Your connect says a lot of things.',
+      'The {ours} put you on {corner} instead.',
+    ],
+    noCorner: [
+      'There is no corner left for you. Your connect will find you one when there is.',
+      'The {ours} have nowhere to put you for now. No corner.',
+      'No corner for you, for now. The war has eaten them all.',
+    ],
+    rivalTurf: [
+      'This is {gang} turf. Someone will tell them a {ours} dealer was here.',
+      'Selling on {gang} ground: they will hear of it.',
+      'Eyes on you from a doorway. The {gang} will know about this.',
     ],
   },
 };

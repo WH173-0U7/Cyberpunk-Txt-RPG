@@ -948,10 +948,26 @@ nobody there has a habit or deals):
   warrant). A regular short of the price can have the rest on tab (`customers[id].tab`),
   which `settleTab` collects with a little over (`bad.tab`, by their loyalty) the next time
   they come by, or doesn't, and writes off in `tab.days`.
+- Turf wars (`DEALING.war`): a corner is held by a gang (`DealingState.corners`, claimed for
+  the player's gang when it gives them one; else a gang's own canon spot is its own, and
+  anywhere else nobody's: `holderOf`), and `cornerFor` never gives a corner another gang
+  holds. The people's own days fight over them: `cornerWars` (from `live`, over the day's
+  events, so `life.ts` draws nothing new) has a `fight` or a `death` in a held corner's
+  district, won by a rival of the holder, take it by `take`, and the old holder take it back
+  the same way; the player's corner lost, `loseCorner` has the connect put them on another,
+  or none. At the corner, the rivals of the player's gang come by (`rivalsAt`: `rivals.base`,
+  more for the player's `heat`, a point a sale halving a day, `heatAt`, and for the rivals'
+  share of the district's turf; one of theirs from round there, else from their own turf):
+  Clear off (the block's over, and `rivals.yield` times running gives them the corner), Pay
+  them (a share of the cash, to their treasury) or Fight (a fight they started, and
+  `rivals.trust` with the player's gang). Pitching one of a rival gang (`LINES.deal.rival`) is
+  a grudge, maybe a fight there and then (by their temper), and the gang set on the player
+  (`setOnPlayer`: a gang `Threat`); so is a sale made on a rival's turf, by `threat.chance`
+  (`rivalTurf`).
 - The lines: the narration is `DEALING.lines`; what people say is `LINES.deal` and
   `LINES.you.deal`/`pitch`/`payUp`/`walkAway`. The status drop-down has a Dealing row, and the
-  line under the energy bar says a debt. Still to come, hanging off the same pieces: turf
-  wars over corners, a habit of the player's own, and a crew of the player's own.
+  line under the energy bar says a debt. Still to come, hanging off the same pieces: a habit
+  of the player's own, and a crew of the player's own.
 
 ## Inebriation
 
