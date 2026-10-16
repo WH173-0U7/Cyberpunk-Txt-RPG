@@ -488,6 +488,17 @@ own.
   gang's rivals come to your corner, the more the more you've sold lately and the nearer
   their turf: clear off (often enough and it's theirs), pay them, or fight them for it.
   Pitch one of a rival gang, or sell on their turf, and they'll come for you.
+- **Your own habit**: you can take what you carry (**Use** in the inventory). Black Lace
+  makes you hard to hurt and hit harder for less health to start with, Glitter loosens your
+  tongue and blurs your aim, Juice is muscle, SynthCoke slows the world, 'Dorph and Phant
+  pick you up. Every dose hooks you a little more and works a little less. Hooked and
+  without, you crave it, then go into withdrawal (worse with people and a gun, your energy
+  draining), and a bad enough habit put off too long drops you in a hospital, detoxed and
+  billed. Any dose can be an overdose, more likely on top of others: Trauma Team if you pay
+  for it, someone nearby calling it in if you're lucky, and if nobody does, you're dead and
+  the city starts over. 'Dorph and Phant can wreck your nerves for good; Black Lace wears
+  your feelings away until you can't talk your way out of a fight, and then until you start
+  them.
 - **Everyone is good at something**: people have their own levels in what you do. A ganger
   fights hard and talks badly, a guard is handy with their gun, a corpo or an old lady is no
   fighter but has a way with words that makes them hard to talk down. Their card says how

@@ -964,10 +964,31 @@ nobody there has a habit or deals):
   a grudge, maybe a fight there and then (by their temper), and the gang set on the player
   (`setOnPlayer`: a gang `Threat`); so is a sale made on a rival's turf, by `threat.chance`
   (`rivalTurf`).
-- The lines: the narration is `DEALING.lines`; what people say is `LINES.deal` and
-  `LINES.you.deal`/`pitch`/`payUp`/`walkAway`. The status drop-down has a Dealing row, and the
-  line under the energy bar says a debt. Still to come, hanging off the same pieces: a habit
-  of the player's own, and a crew of the player's own.
+- The player's own habit (`src/engine/habit.ts`, the numbers and lines `DEALING.habit`): a
+  dose is a drug carried, taken with **Use** (`Game.consume` hands it to `useDrug`; not in a
+  fight or with officers or a collector on them). It does what its `effects` say while it
+  lasts (after the wiki: Black Lace's armor, damage and crits for less health, Glitter's
+  talk and blur, Juice's muscle, SynthCoke's time to think, 'Dorph's second wind), times its
+  strength, which tolerance takes down the more dependent the player is (`takeDose`). Each
+  dose is `dependence.perDose` times the drug's hook on that drug (`HabitState.drugs`),
+  fading `cleanDay` a day clean (`dependenceAt`); hooked and without long enough, `stageAt` is
+  craving, then withdrawal (charisma and aim down, a point of energy every `drainMinutes`),
+  then `severe`: `habitTick` (from `tick`) collapses the player into the nearest hospital
+  (`toHospital`, billed by `hospitalBill`), the dependence `detox` less. Any dose may be an
+  overdose (`overdoseOdds`: the drug's `base`, more for every dose in `stackHours`): Trauma
+  Team on a plan, else someone here gets help by `saved`, else the player is dead and the
+  game emits `flatlined`, and `main.ts` starts the city over. 'Dorph and Phant can damage
+  the nerves (`nerve`: aim lost for good); Black Lace takes the player toward the edge
+  (`edgeAt`, fading by the day): past `numb`, charisma down and no talking or running in a
+  fight; past `snap`, now and then they go for someone here. What it all does is `effectsAt`,
+  read through `Game`'s private `habitNow` wherever it counts (`maxHealth`, `fightWindow`,
+  `yourEdge`, armor, `charismaEdge`); `Game.habit(now)` is the UI's (`HabitView`, the
+  `habitChanged` event), saved as `habit`. Without `rules.dealing` nobody has one.
+- The lines: the narration is `DEALING.lines` and `DEALING.habit.lines`; what people say is
+  `LINES.deal` and `LINES.you.deal`/`pitch`/`payUp`/`walkAway`. The status drop-down has a
+  Dealing row and a Habit row, and the line under the energy bar says a debt, a drug working,
+  a craving or withdrawal. Still to come, hanging off the same pieces: a crew of the player's
+  own.
 
 ## Inebriation
 

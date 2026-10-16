@@ -5,6 +5,7 @@ import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, po
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
 import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
+import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
 import { askOf, blockOf, buyersIn, canMoveUp, dealRungOf, freshDealing, habitOf, heatAt, owedFor, pushOdds, streetPrice, withInterest, type CollectorView, type DealChoice, type DealingRules, type DealingState, type DealMomentView, type DealOption, type DealState, type DealView, type Front, type Habit } from './dealing';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
@@ -336,6 +337,8 @@ export class Game {
   private readonly skillCache = new Map<string, { day: number; fights: number; skills: PersonSkills }>();
   /** The player's dealing for a gang: the one they deal for now, any they walked away from or were cut off by. */
   private dealState: DealingState;
+  /** The player's own habit: what they've taken, what's working, how dependent they are, the edge. */
+  private habitState: HabitState;
   /** A buyer at the player's corner, waiting on an answer (not saved: they don't wait). */
   private dealMomentState: { kind: 'buy' | 'robber' | 'rivals'; gang?: string; person: string; drug: string; ask: number; pay: number; short: boolean; regular: boolean; tab?: boolean; undercover?: boolean; at: number; text: string } | null = null;
   /** A collector on the player, waiting on an answer (not saved: they come back for it). */
@@ -386,6 +389,8 @@ export class Game {
     this.tradingState = progress?.trading ? { ...progress.trading } : freshSkill();
     this.toughnessState = progress?.toughness ? { ...progress.toughness } : freshSkill();
     this.armsState = { types: { ...progress?.arms?.types }, models: { ...progress?.arms?.models } };
+    // Before anything works out the player's health: a dose can change the most of it.
+    this.habitState = progress?.habit ? { ...freshHabit(), ...copyOf(progress.habit) } : freshHabit();
     // Saves from before the player said otherwise go by they.
     this.you = progress?.you ? { ...progress.you } : { pronouns: 'they' };
     // Implants the game no longer has are gone, and one fitted twice is fitted once.
@@ -1241,7 +1246,7 @@ export class Game {
 
   /** The player's health at `now`: back on the clock since it was last written down. */
   health(now: number): HealthStatus {
-    const max = this.maxHealth();
+    const max = this.maxHealth(now);
     const { regenPerHour } = this.rules.combat.health;
     const value = Math.min(max, this.healthState.value + (Math.max(0, now - this.healthState.at) / HOUR) * this.rules.timeScale * regenPerHour);
     const fullAt = value >= max ? null : now + ((max - value) / regenPerHour) * (HOUR / this.rules.timeScale);
@@ -1254,9 +1259,9 @@ export class Game {
   }
 
   /** The most health the player has: the base, and more for chrome that gives it. */
-  private maxHealth(): number {
+  private maxHealth(now = Date.now()): number {
     const bonus = this.fitted.reduce((sum, f) => sum + (this.rules.combat.chrome[f.id]?.health ?? 0), 0);
-    return Math.round(this.rules.combat.health.base * (1 + bonus));
+    return Math.round(this.rules.combat.health.base * (1 + bonus) * this.habitNow(now).maxHealth);
   }
 
   /** Whether the player fights to kill (true) or to wound; kept between fights. */
@@ -1445,6 +1450,7 @@ export class Game {
     const meds = this.medsOnHand();
     const next = meds[0];
     const doses = meds.filter((m) => m.item.id === next?.item.id).reduce((n, m) => n + m.item.count, 0);
+    const numb = this.habitNow(Date.now()).numb;
     const moves: FightView['moves'] = f.over
       ? []
       : [
@@ -1455,8 +1461,9 @@ export class Game {
           ...(deck && hacks.length ? [{ id: 'hack' as const, label: 'Hack', sub: `${s.ram}/${s.ramMax} RAM`, enabled: hacks.some((h) => h.ram <= s.ram) }] : []),
           // Heal says the med it would take, and how many of that one there are.
           ...(next ? [{ id: 'heal' as const, label: 'Heal', sub: `${next.med.name}${doses > 1 ? ` ×${doses}` : ''}`, enabled: s.you.hp < s.you.max }] : []),
-          { id: 'talk', label: 'Talk down', sub: '', enabled: true },
-          { id: 'run', label: 'Run', sub: '', enabled: s.you.crippled <= 0 },
+          // On the edge, there's no talking and no running: only the fight.
+          { id: 'talk', label: 'Talk down', sub: numb ? 'Past words' : '', enabled: !numb },
+          { id: 'run', label: 'Run', sub: numb ? 'Not now' : '', enabled: s.you.crippled <= 0 && !numb },
         ];
     const theirs = this.theirArmNow(s.them);
     return {
@@ -2142,7 +2149,7 @@ export class Game {
     const score = (o: (typeof options)[number], r: Range) => worth(o.arm, combat.classes[o.arm.cls]?.kind === 'gun' ? o.loaded + (o.spare > 0 ? 0.5 : 0) : 1, r, combat);
     const best = [...options].sort((a, b) => score(b, range) - score(a, range))[0]!;
     const pick = score(best, range) > 0 ? best : [...options].sort((a, b) => Math.max(...RANGES.map((r) => score(b, r))) - Math.max(...RANGES.map((r) => score(a, r))))[0]!;
-    const armor = this.fitted.reduce((sum, x) => sum + (combat.chrome[x.id]?.armor ?? 0), 0);
+    const armor = this.fitted.reduce((sum, x) => sum + (combat.chrome[x.id]?.armor ?? 0), 0) + Math.round(this.habitNow(Date.now()).armor);
     return { hp, max: this.maxHealth(), arm: pick.arm, loaded: pick.loaded, spare: pick.spare, armor, covered: false, blind: 0, jammed: 0, crippled: 0, chromeOff: 0, burn: 0, burning: 0, regen: 0, regening: 0, charges: combat.classes[pick.arm.cls]?.charges ?? 0 };
   }
 
@@ -2169,9 +2176,14 @@ export class Game {
       if (sys?.guard && (system !== 'berserk' || close)) guard *= sys.guard;
     }
     aim *= 1 - 0.3 * this.inebriation(Date.now()).severity;
+    // Whatever the player has taken: Black Lace's damage and crits, Glitter's blur, withdrawal's shakes, nerves gone.
+    const high = this.habitNow(Date.now());
+    aim *= high.aim;
+    melee *= high.melee;
     const edge: Edge = { ...NO_EDGE, aim, melee, guard, smart, evade, wound: this.lethalOn ? 1 : combat.nonLethal };
     // The player's levels, the way anyone's count: Street Brawler, Toughness, the weapon's kind and the weapon, and its perks.
-    return trainedEdge(edge, you.arm, { brawler: this.brawler().level, toughness: this.toughness().level, type: this.weaponType(you.arm.cls).level, model: this.weaponModel(you.arm.id).level }, this.weaponPerks(you.arm), combat);
+    const trained = trainedEdge(edge, you.arm, { brawler: this.brawler().level, toughness: this.toughness().level, type: this.weaponType(you.arm.cls).level, model: this.weaponModel(you.arm.id).level }, this.weaponPerks(you.arm), combat);
+    return { ...trained, power: trained.power * high.power, crit: trained.crit + high.crit, steady: trained.steady * high.steady };
   }
 
   /** The time the player has for a move: the base, and more with reflex chrome (some of it only when they're hurt). */
@@ -2181,7 +2193,7 @@ export class Game {
       const effect = combat.chrome[f.id];
       if (!effect?.window) return ms;
       return effect.below && you.hp > you.max * effect.below ? ms : ms + effect.window;
-    }, combat.window);
+    }, combat.window + this.habitNow(Date.now()).window);
   }
 
   /** The RAM the player's cyberdeck has for quickhacks, with what the frontal cortex adds; none without a deck. */
@@ -2466,6 +2478,7 @@ export class Game {
     const item = this.items.find((i) => i.id === id && i.kind === 'consumable' && (from === undefined || i.in === from));
     const med = item ? this.rules.gear.medical.meds[id] : undefined;
     if (item && med) return this.medicate(item, med, now);
+    if (item && this.rules.gear.drugs[id]) return this.useDrug(item, now);
     const dish = item ? this.rules.food.dishes.find((d) => d.id === id) : undefined;
     if (!item || !dish) return false;
     this.takeOne(item);
@@ -4361,6 +4374,188 @@ export class Game {
     return copyOf(this.dealState);
   }
 
+  // ───────────── The player's habit ─────────────
+
+  /** What the player's habit does to them now; nothing at all without dealing's rules. */
+  private habitNow(now: number): ReturnType<typeof effectsAt> {
+    const rules = this.rules.dealing?.habit;
+    return rules ? effectsAt(this.habitState, now, rules, this.rules.timeScale) : { charisma: 0, aim: 1, power: 1, melee: 1, armor: 0, window: 0, crit: 0, maxHealth: 1, steady: 1, numb: false };
+  }
+
+  /** Where the player's habit stands, for the UI: what's working and till when, the worst of craving or withdrawal, how dependent on each drug, the edge, the nerves. */
+  habit(now: number): HabitView | null {
+    const dealing = this.rules.dealing;
+    if (!dealing) return null;
+    const rules = dealing.habit;
+    const { timeScale } = this.rules;
+    const name = (id: string) => dealing.drugs[id]?.name ?? id;
+    const stage = stageAt(this.habitState, now, rules, timeScale);
+    const fx = this.habitNow(now);
+    return {
+      active: this.habitState.active.filter((a) => a.until > now).map((a) => ({ drug: a.drug, name: name(a.drug), until: a.until })),
+      stage: stage ? { drug: stage.drug, name: name(stage.drug), stage: stage.stage } : null,
+      drugs: Object.entries(this.habitState.drugs).map(([id, use]) => ({ drug: id, name: name(id), dependence: Math.round(dependenceAt(use, now, rules, timeScale)) })).filter((d) => d.dependence > 0),
+      edge: Math.round(edgeAt(this.habitState, now, rules, timeScale)),
+      numb: fx.numb,
+      nerve: this.habitState.nerve,
+    };
+  }
+
+  get habitSaved(): HabitState {
+    return copyOf(this.habitState);
+  }
+
+  /**
+   * Takes a dose: what it does at once (health, energy), what it does while it lasts, the
+   * dependence it adds and the tolerance that comes with it, any lasting harm; and the odds it's
+   * an overdose (`overdose`). Not in a fight, nor with officers or a collector on the player.
+   */
+  private useDrug(item: Item, now: number): boolean {
+    const dealing = this.rules.dealing;
+    const drug = this.rules.gear.drugs[item.id];
+    if (!dealing || !drug || this.fighting || this.detained(now)) return false;
+    const rules = dealing.habit;
+    const { timeScale } = this.rules;
+    const rng = createRng(`${this.world.seed}:dose:${item.id}:${now}`);
+    const odds = overdoseOdds(this.habitState, item.id, now, rules, timeScale);
+    const health = this.health(now);
+    const energy = this.energy(now);
+    const edge = edgeAt(this.habitState, now, rules, timeScale);
+    const { state, strength, nerve } = takeDose(this.habitState, item.id, drug.hook, now, rules, timeScale, rng);
+    this.habitState = { ...state, told: undefined };
+    this.takeOne(item);
+    const effect = rules.effects[item.id];
+    this.say(this.narration(rules.lines.use[item.id] ?? [], { drug: drug.name }, rng), 'system');
+    // What it gives at once: a second wind, a little health.
+    if (effect?.heal) this.healthState = { value: Math.min(this.maxHealth(now), health.current + effect.heal * strength), at: now };
+    else this.healthState = { value: Math.min(this.maxHealth(now), health.current), at: now };
+    if (effect?.energy) this.energyState = { ...this.energyState, current: Math.min(energy.max, energy.current + Math.round(effect.energy * strength)), updatedAt: now };
+    if (nerve) this.say(this.narration(rules.lines.nerve, {}, rng), 'error');
+    if (strength < 0.7) this.say(this.narration(rules.lines.tolerant, { drug: drug.name }, rng), 'system');
+    if (edge < rules.edge.numb && edgeAt(this.habitState, now, rules, timeScale) >= rules.edge.numb) this.say(this.narration(rules.lines.numb, {}, rng), 'error');
+    this.events.emit('inventoryChanged', this.inventory);
+    this.events.emit('healthChanged', this.health(now));
+    this.events.emit('energyChanged', this.energy(now));
+    if (rng.chance(odds)) this.overdose(item.id, now, rng);
+    this.events.emit('habitChanged', this.habit(now));
+    return true;
+  }
+
+  /** A hospital's bill, paid from the account or the cash if it can be, else whatever there is taken; the line that says so. */
+  private hospitalBill(bill: number): string {
+    if (bill <= 0) return '';
+    if (this.canPay(bill, true) && this.pay(bill, true)) {
+      this.events.emit('walletChanged', this.wallet);
+      return `The bill: ${bill} €$.`;
+    }
+    const took = this.money.account + this.money.bills + this.money.coins;
+    this.money = { bills: 0, coins: 0, account: 0 };
+    this.events.emit('walletChanged', this.wallet);
+    return `The bill is ${bill} €$, and they take the ${took} €$ you have.`;
+  }
+
+  /** Carried to the hospital nearest, put back to a share of the most health, and billed for it; where it was, and the bill's line. */
+  private toHospital(share: number, copay: number, now: number): { ward: string; bill: string } {
+    const { gear, food } = this.rules;
+    const ward = nearestHospital(this.world, this.where);
+    const at = ward ? (ward.spot.kind === 'location' ? this.world.locations[ward.spot.id] : buildingById(this.world, ward.spot.id)) : undefined;
+    const restored = Math.max(1, Math.round(this.maxHealth(now) * share));
+    this.healthState = { value: restored, at: now };
+    if (this.trip) this.stop(now);
+    this.dealMomentState = null;
+    this.shiftEventState = null;
+    const bill = this.hospitalBill(Math.round(priceFor(restored * gear.medical.perPoint, at ? drawQuality(this.world, at) : 'everyday', food) * copay));
+    if (at) this.carryTo(at);
+    this.events.emit('healthChanged', this.health(now));
+    return { ward: at?.name ?? 'a hospital', bill };
+  }
+
+  /**
+   * An overdose. On a Trauma Team plan, they get the player out. Else someone here may get help
+   * in time (the odds `saved`), and the player wakes in the hospital, billed. Nobody, and the
+   * player is dead: the city goes on without them (`flatlined`).
+   */
+  private overdose(drug: string, now: number, rng: Rng): void {
+    const rules = this.rules.dealing!.habit;
+    const name = this.rules.gear.drugs[drug]?.name ?? drug;
+    this.events.emit('fx', { effect: 'shake' });
+    this.say(this.narration(rules.lines.overdose, { drug: name }, rng), 'error');
+    const cover = this.covered(now);
+    if (cover) {
+      const { ward, bill } = this.toHospital(cover.plan.restore, cover.plan.copay, now);
+      this.say(this.narration(rules.lines.trauma, { ward, bill }, rng), 'system');
+      return;
+    }
+    const here = this.peopleHere(now).filter((p) => p.doing !== 'out cold' && p.person.diedOn === undefined);
+    if (here.length && rng.chance(rules.overdose.saved)) {
+      const helper = rng.pick(here).person;
+      const who = this.dealVars(helper, now).who ?? 'someone';
+      const { ward, bill } = this.toHospital(0.2, 1, now);
+      this.say(this.narration(rules.lines.saved, { who, ward, bill }, rng), 'system');
+      return;
+    }
+    const place = this.inside?.name ?? this.location?.name ?? this.nameOf(this.where);
+    this.events.emit('flatlined', { text: this.narration(rules.lines.flatline, { place }, rng) });
+  }
+
+  /**
+   * The habit on the clock: doses wearing off; craving, then withdrawal (told once each, and
+   * energy draining while it lasts), then a collapse into the hospital, detoxed; and on the
+   * edge, now and then, lashing out at whoever's here.
+   */
+  private habitTick(now: number): void {
+    const dealing = this.rules.dealing;
+    if (!dealing) return;
+    const rules = dealing.habit;
+    const { timeScale } = this.rules;
+    const h = this.habitState;
+    const name = (id: string) => dealing.drugs[id]?.name ?? id;
+    let changed = false;
+    const worn = h.active.filter((a) => a.until <= now);
+    if (worn.length) {
+      h.active = h.active.filter((a) => a.until > now);
+      for (const a of worn) this.say(this.narration(rules.lines.wearOff, { drug: name(a.drug) }, createRng(`${this.world.seed}:worn:${a.drug}:${a.until}`)), 'system');
+      // Black Lace's toll on the most health lifts; what's left of it stays as it is.
+      this.events.emit('healthChanged', this.health(now));
+      changed = true;
+    }
+    const busy = this.fighting || this.detained(now) || this.trip?.mode === 'ncart';
+    const stage = stageAt(h, now, rules, timeScale);
+    const key = stage ? `${stage.stage}:${stage.drug}` : undefined;
+    if (stage && key !== h.told && !busy) {
+      h.told = key;
+      changed = true;
+      const rng = createRng(`${this.world.seed}:stage:${key}:${now}`);
+      if (stage.stage === 'severe') {
+        // The body gives up waiting: a collapse, the hospital, a detox that takes the edge off the habit.
+        this.events.emit('fx', { effect: 'shake' });
+        const use = h.drugs[stage.drug] as NonNullable<HabitState['drugs'][string]>;
+        h.drugs[stage.drug] = { ...use, dependence: dependenceAt(use, now, rules, timeScale) * (1 - rules.severe.detox), last: now };
+        const { ward, bill } = this.toHospital(rules.severe.health, 1, now);
+        this.say(this.narration(rules.lines.severe, { drug: name(stage.drug), ward, bill }, rng), 'error');
+        h.told = undefined;
+      } else this.say(this.narration(stage.stage === 'withdrawal' ? rules.lines.withdrawal : rules.lines.craving, { drug: name(stage.drug) }, rng), stage.stage === 'withdrawal' ? 'error' : 'system');
+    } else if (!stage && h.told) h.told = undefined;
+    // Withdrawal drains the player, a point at a time.
+    if ((stage?.stage === 'withdrawal' || stage?.stage === 'severe') && now - (h.drainAt ?? 0) >= (rules.withdrawal.drainMinutes * 60_000) / timeScale) {
+      h.drainAt = now;
+      this.drainEnergy(1, now);
+    }
+    // Past the edge: now and then, the player goes for whoever's here.
+    const edge = edgeAt(h, now, rules, timeScale);
+    if (edge >= rules.edge.snap && !busy && now - (h.snapAt ?? 0) >= HOUR / timeScale) {
+      h.snapAt = now;
+      const rng = createRng(`${this.world.seed}:snap:${now}`);
+      const here = this.peopleHere(now).filter((p) => p.doing !== 'out cold' && !NCPD.test(p.person.job.role));
+      if (here.length && rng.chance(rules.edge.snapChance)) {
+        const victim = rng.pick(here);
+        this.say(this.narration(rules.lines.snap, { who: this.dealVars(victim.person, now).who ?? 'someone' }, rng), 'error');
+        this.openFight(victim, now, null);
+      }
+    }
+    if (changed) this.events.emit('habitChanged', this.habit(now));
+  }
+
   // ───────────── Finishing someone ─────────────
 
   /** The ways the player could kill someone lying out cold here, by what they carry and have fitted: their hands always, and a blade, a loaded gun, something blunt or a monowire if they have one. */
@@ -5615,7 +5810,8 @@ export class Game {
 
   /** Charisma as levels past an ordinary person's (short of it, below nothing): what openness and the odds of a word landing go by. */
   private get charismaEdge(): number {
-    return skillEdge(this.rules.charisma, this.charismaState.level);
+    // A high, withdrawal or the edge moves the player's way with words, a level at a time.
+    return skillEdge(this.rules.charisma, Math.max(1, this.charismaState.level + this.habitNow(Date.now()).charisma));
   }
 
   get charismaSaved(): SkillState {
@@ -6591,6 +6787,7 @@ export class Game {
     this.settleThreats(now);
     this.policeTick(now);
     this.dealTick(now);
+    this.habitTick(now);
     this.recognize(now);
     const trip = this.trip;
     if (!trip) return;
