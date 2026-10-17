@@ -40,7 +40,6 @@ export const JOBS: JobRules = {
     lodging: ladder(DAY, rung('housekeeping', 'Housekeeping', 'changing sheets', 22, 4, 0), rung('desk', 'Front desk', 'on the front desk', 36, 2, 6), rung('duty', 'Duty manager', 'running the desk', 54, 2, 14), rung('house', 'House manager', 'running the place', 76, 2, 24)),
     medical: ladder([8, 16], rung('orderly', 'Orderly', 'mopping the ward', 28, 4, 0), rung('pharmacy-tech', 'Pharmacy tech', 'filling prescriptions', 46, 2, 6), rung('medtech', 'Medtech', 'patching people up', 70, 3, 14), rung('charge', 'Charge medtech', 'running the shift', 100, 3, 24)),
   },
-  most: 2,
   roster: { day: [1, 2, 3, 4, 5], night: [4, 5, 6] },
   tiers: { luxury: 1.6, everyday: 1, poverty: 0.7 },
   trustPerShift: 1,

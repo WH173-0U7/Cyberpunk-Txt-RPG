@@ -312,9 +312,10 @@ own.
   openness to it, like any ask (how they feel about you, your charisma; never with a mask
   on, and a boss you've crossed says no). Each ladder keeps its own hours: shops and
   eateries by day (nine to five, ten to six, a clinic eight to four), Monday to Friday; bars,
-  clubs and arcades six till two, Thursday to Saturday. **Two jobs at once**, a day job and a
-  side gig on hours that don't clash; asking anywhere else means handing one in (the card
-  says "Means notice at…"), which costs less with that boss than walking out, and a boss
+  clubs and arcades six till two, Thursday to Saturday. **As many jobs as fit the day**, a main job
+  and side gigs, as long as no two have hours that clash (today that's a day job and a night
+  one); asking for work whose hours clash with one you have means handing that one in (the
+  card says "Means notice at…"), which costs less with that boss than walking out, and a boss
   who liked you puts in a word. Half the shifts you've worked in a line of work count as
   trust at the next place in it, so experience and a good word start you a rung or two up
   (never the top: that's earned in-house). Inside your workplace, on a day you're on and in

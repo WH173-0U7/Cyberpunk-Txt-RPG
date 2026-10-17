@@ -322,7 +322,7 @@ export class Game {
   private readonly letIn = new Set<string>();
   /** The room the player has rented at a motel or a capsule hotel, and till when. */
   private lodgingState: Lodging | null;
-  /** The jobs the player holds: the main one, and maybe a side gig whose hours don't clash with it. */
+  /** The jobs the player holds: the main one, and any side gigs, none whose hours clash with another's. */
   private jobs: JobState[];
   /** Shifts worked in each line of work (by the ladder's key), the experience a new job starts higher with. */
   private career: Record<string, number>;
@@ -414,7 +414,7 @@ export class Game {
     this.jobs = held.flatMap((j) => {
       const workplace = world.buildings.find((b) => b.id === j.building);
       return workplace && ladderFor(workplace, rules.jobs) ? [{ ...j, ...(j.days ? { days: [...j.days] } : {}) }] : [];
-    }).slice(0, rules.jobs.most);
+    });
     this.career = { ...(progress?.career ?? {}) };
     // People this city doesn't have (the generator changed) are forgotten.
     const known = new Set(this.population.people.map((p) => p.id));
@@ -2590,7 +2590,7 @@ export class Game {
     return menuFor(this.world, building, food)?.venue.quality ?? (building.business ? gear.quality[building.business] : undefined) ?? drawQuality(this.world, building);
   }
 
-  /** The job a new one at `building` would take the place of: one whose hours overlap it, or the last when there's no room for another. */
+  /** The job a new one at `building` would take the place of: one whose hours overlap it. As many as fit the day, none overlapping. */
   private displacedBy(building: Building): JobState | undefined {
     const ladder = ladderFor(building, this.rules.jobs);
     if (!ladder) return undefined;
@@ -2599,13 +2599,13 @@ export class Game {
       const hours = other ? ladderFor(other, this.rules.jobs)?.hours : undefined;
       return hours ? overlaps(hours, ladder.hours) : false;
     });
-    return clash ?? (this.jobs.length >= this.rules.jobs.most ? this.jobs[this.jobs.length - 1] : undefined);
+    return clash;
   }
 
   /**
    * What there is to do about work with someone who runs a place that hires: ask them for a job
-   * (`hire`), ask for one that means handing in notice elsewhere (`switch`: its hours clash, or
-   * there's no room for another), or, for a boss of the player's, `quit`. Null for anyone else.
+   * (`hire`), ask for one that means handing in notice elsewhere (`switch`: its hours clash with
+   * one the player has), or, for a boss of the player's, `quit`. Null for anyone else.
    */
   workWith(id: string): 'hire' | 'switch' | 'quit' | null {
     const person = this.person(id);

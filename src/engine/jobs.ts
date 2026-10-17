@@ -39,8 +39,6 @@ export interface Ladder {
 export interface JobRules {
   /** Who hires, by business id, else by building category: their hours and ladder. */
   ladders: Record<string, Ladder>;
-  /** How many jobs at once (never two whose hours overlap). */
-  most: number;
   /** The days a new job puts the player on, by its hours: a day job's, a night job's (0 Sunday – 6 Saturday). */
   roster: { day: number[]; night: number[] };
   /** Rapport lost with a boss given notice (less than walking out). */
