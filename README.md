@@ -153,6 +153,16 @@ own.
   shift pays a quarter less); a good week and it's thriving (a quarter more). The panel inside
   says how trade is, and people talk about it: broke, flush, behind on the rent, a landlord
   who fixes nothing, the corp that owns the block, a till that paid them short.
+- **Stock and prices**: every storefront has shelves. What it sells comes off them, and each
+  day it buys stock back from its suppliers out of the till, so a place that can't pay them
+  runs low. Now and then the trucks stop coming to one kind of store in a district for a few
+  days, and its shelves empty. The menu says when only a few of something are left, and when
+  it's **sold out**; prices climb as the shelves empty (up to two fifths over), a slow place
+  sitting on full shelves takes a tenth off, and an eatery's last hour takes a quarter off.
+  The strip over a menu says what all that does to its prices ("prices +18%"). The status
+  drop-down has a **Market** row (what's dearer or cheaper than usual in the district) and a
+  **News** row, and headlines turn up in the feed ("Food short in Watson: bare shelves, and
+  prices up."); people complain about what they can't get, and the bare shelves at work.
 - **Getting on with people**: **Talk** unfolds the ways in: **Chat** (safe: nobody minds,
   the chatty like it), **Compliment**, **Joke**, **Gossip** or **How are you?**, and each
   lands by who they are. A compliment pleases the warm and the young and falls flat with the

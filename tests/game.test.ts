@@ -16,6 +16,7 @@ import { MEDICAL } from '../src/data/medical';
 import { HOURS } from '../src/data/hours';
 import { priceFor } from '../src/engine/food';
 import { freshLife, newsFor, tieKey } from '../src/engine/life';
+import { parOf, priceFactor } from '../src/engine/economy';
 import { FAMILY, openness } from '../src/engine/dialogue';
 import { bossOf, type JobRules, type JobState, type ShiftEventKind } from '../src/engine/jobs';
 import { memoriesOf } from '../src/engine/memory';
@@ -1754,6 +1755,45 @@ describe('Game', () => {
         expect(game.buy(dish.id)).toBe(true);
         // Starting the game lived the last days' books already; what the player spent waits for the next.
         expect(game.lifeSaved.tills['b-noodle']?.pending).toBe(dish.price * 2);
+      });
+
+      it("counts what's left on a storefront's shelves, prices by them, sells out, and takes a share off in an eatery's last hour", () => {
+        const today = Math.floor(T0 / DAY);
+        // A day already lived, so the shelves are as the save has them.
+        const shelves = (stock: number) => ({ life: { ...freshLife(), day: today, tills: { 'b-noodle': { days: [], pending: 0, cash: 500, stock } } } });
+        const full = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside('b-noodle', 38, 20), ...shelves(1) });
+        full.start(T0);
+        const dish = full.menu(T0)?.items.find((i) => i.kind === 'food');
+        if (!dish) throw new Error('Nothing on the menu');
+        expect(dish.left).toBe(parOf(dish.price, LIFE.economy));
+        expect(full.menu(T0)?.market).toBeUndefined();
+        // Low shelves: fewer left, dearer, and the strip says by how much.
+        const low = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside('b-noodle', 38, 20), ...shelves(0.2) });
+        low.start(T0);
+        const menu = low.menu(T0);
+        const short = menu?.items.find((i) => i.id === dish.id);
+        expect(menu?.market).toBeCloseTo(priceFactor(0.2, 'steady', LIFE.economy) - 1);
+        expect(short?.price).toBeGreaterThan(dish.price);
+        expect(short?.left).toBe(Math.round(0.2 * parOf(dish.price, LIFE.economy)));
+        // Bought up, it's sold out, and the counter says so.
+        for (let k = 0; k < (short?.left ?? 0); k++) expect(low.buy(dish.id, T0), `buy ${k}`).toBe(true);
+        expect(low.menu(T0)?.items.find((i) => i.id === dish.id)?.left).toBe(0);
+        expect(low.canBuy(dish.id, T0)).toMatch(/Sold out/);
+        expect(low.buy(dish.id, T0)).toBe(false);
+        expect(low.lifeSaved.tills['b-noodle']?.bought?.[dish.id]).toBe(short?.left);
+        // The last hour before an eatery shuts, a share off.
+        const last = Date.UTC(2077, 9, 12, 22, 30);
+        for (let day = 0; day < 7; day++) {
+          const at = last + day * DAY;
+          const late = new Game(world, { ...RULES, startingEddies: 100, hours: HOURS }, { ...progressInside('b-noodle', 38, 20), life: { ...freshLife(), day: Math.floor(at / DAY), tills: { 'b-noodle': { days: [], pending: 0, cash: 500, stock: 1 } } } });
+          late.start(at);
+          const evening = late.menu(at);
+          if (!evening) continue;
+          expect(evening.closing).toBe(LIFE.economy.prices.closing.off);
+          expect(evening.items.find((i) => i.id === dish.id)?.price).toBe(Math.max(1, Math.round(dish.price * (1 - LIFE.economy.prices.closing.off))));
+          return;
+        }
+        throw new Error('the counter was never open in its last hour');
       });
 
       it('takes the player on at the bottom of the ladder when the boss will, owes a shift a day till payday, and moves them up on trust', () => {

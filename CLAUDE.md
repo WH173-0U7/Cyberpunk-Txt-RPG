@@ -584,9 +584,30 @@ it needs no generator bump. The pieces:
   store sees about the same trade, a dear thing bought only by who can half afford it), a
   `splurge` of what's over the `cushion`, a habit (`vice`, from `Game.viceOf`: the gang that deals
   it where they live), the rent (a landlord spends `upkeep` of it at a store of the district);
-  then the storefronts' rent on `rentDay` and their books (takings, `supplies` out, the gangs'
+  then the storefronts' rent on `rentDay` and their books (takings, restocking out, the gangs'
   cut by `turfFrom`, and on payday what's over `reserve` weeks of costs to the boss, or out for
-  a corp). A till keeps a week of nets; `healthOf` reads it as thriving, steady or struggling,
+  a corp).
+- Stock and prices (`stock`, `prices`, `market` in the same rules): a storefront's `Till.stock`
+  is how full its shelves are (0–1; missing, full), and full shelves are `stock.weeks` of its
+  costs at its prices. A day's takings take stock off them (fewer things for the money when
+  it's dear), and the books buy it back up to full from the suppliers (outside the city: a
+  `Flows.out`) at the `supplies` share, with no more than `stock.restock` of the till; under
+  `stock.soldOut` a store sells nothing, takes nothing from outside, and its customers go to
+  another of its kind in the district (`stocked`). Now and then a supply shock (`stock.shock`)
+  cuts one kind of store's deliveries in a district for a few days. `priceFactor` is what the
+  shelves make of prices (dearer under `prices.low`; a struggling place on full shelves
+  `prices.glut` off, for the player only, since nobody else buys more for it); `parOf` how many
+  of a thing at a price full shelves hold, `leftOf` how many are left (less `Till.bought`, the
+  player's buys since the last restock). The market's state is `LifeState.market` (`shocks`,
+  `short`: `district:category` keys short now, `news`: `MarketNews` headlines, a kind of store
+  across a district going `short` under `market.short` and `back` over `market.back`, and each
+  `shock`). `Game`'s private `marketPriced` puts it on a storefront's menu (`MenuItem.left`,
+  `Menu.market`, and in an eatery's last `prices.closing.hours` `Menu.closing` off; a chain's
+  and a hospital's prices are set, a service never runs short); `canBuy` refuses what's sold
+  out; `Game.market(now)` is the Market and News rows of the status drop-down (`MarketView`,
+  kept until a day is lived), and the headlines of the days just lived go to the feed. The
+  speaker's `shortGoods` (what's short where they live) and `lowStock` (their workplace's
+  shelves) fit the shortage lines. `Game.trade` is kept until a day is lived too. A till keeps a week of nets; `healthOf` reads it as thriving, steady or struggling,
   which `Game.trade(building)` gives the UI (the line inside, the status row), scales the
   player's shift pay (`economy.pay`) and makes a struggling boss refuse to hire
   (`LINES.work.broke`). The speaker's vars (`Game`'s private `meansVars`): `broke` (not a week's
@@ -1161,7 +1182,8 @@ Eateries sell food, into the inventory (eating it comes later):
   kitchen) and `Game.buy(id)` buys off it. A venue's `quality` (luxury, everyday, poverty) is
   drawn from its district's `dining` weights, fixed for chains and named eateries, and sets
   the prices and what's on; the draws use their own RNG streams, so menus never change the
-  city. New things to do with food (eating, energy) go in `Game`.
+  city. New things to do with food (eating, energy) go in `Game`. A storefront's menu carries
+  its stock and prices by supply and demand (see the economy, under People).
 - `src/data/food.ts` is the content: every dish is a real 2077 product or dish from the wiki
   (its "Cyberpunk 2077 Food", "Drinks" and "Alcohol" lists and the vendor store pages), with
   our own notes and prices; `kitchens` are per business id and place kind; `fixed` menus are

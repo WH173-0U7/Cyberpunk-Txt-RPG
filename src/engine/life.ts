@@ -1,4 +1,4 @@
-import { economyDay, healthOf, staffCostOf, type EconomyRules, type Till, type Vice } from './economy';
+import { economyDay, healthOf, staffCostOf, type EconomyRules, type MarketState, type Till, type Vice } from './economy';
 import type { Quality } from './food';
 import { bossOf } from './jobs';
 import { drawnTo, heartOf, INVERSE, leastStaff, personById, seatRota, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
@@ -125,6 +125,8 @@ export interface LifeState {
   savings?: Record<string, number>;
   arrears?: Record<string, number>;
   street?: Record<string, number>;
+  /** Supply shocks, the kinds of store short where, and the headlines. */
+  market?: MarketState;
   /** The job someone has now, where it isn't what they started with (taken on somewhere, let go, a gang's), and the day it changed. */
   jobs: Record<string, { role: string; building: string | null; day: number }>;
   /** The gang someone has joined. */
