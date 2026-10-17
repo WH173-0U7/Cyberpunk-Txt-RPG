@@ -118,9 +118,13 @@ You start with 50 €$ and the clothes you're wearing.
 ### Money
 
 - **Eddies (€$)** come as **cash** and an **account**.
-  - **Bills** go in your wallet, which holds 1,000 €$; **coins** go in the change pocket. Coins
-    are heavy (six grams to the eddie), and you pay coins first. The game keeps your cash as two
-    totals, a bills total and a coins total, not as individual notes.
+  - **Notes** are the wiki's eurodollars: €$1, €$5, €$10, €$20, €$50, €$100 and €$500. Your
+    wallet holds 40 of them, whatever they're worth, so big notes carry more. **Coins** are €$1,
+    loose in the change pocket and heavy (six grams each).
+  - Paying cash, the coins go first, then the notes that cover the rest, exactly if they can, and
+    the change comes back in notes and coins, as far as your pockets have room. The inventory's
+    wallet page lists every note you carry.
+  - People carry real notes too: the poor small ones and a handful of coins, the rich big ones.
   - The **account** is weightless and safe. Chains, luxury places, gear racks and the NCART take
     a transfer from it; everyone else wants cash.
 - **Banks** (EuroBank, Asukaga & Finch): deposit your cash (the bank keeps 5% of any coins it

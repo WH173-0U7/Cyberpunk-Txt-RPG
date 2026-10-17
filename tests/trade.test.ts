@@ -200,7 +200,7 @@ describe('selling to a store', () => {
     expect(poor.sellables(NOON)!.items[0]!.why).toBe('Till too light');
     expect(poor.sell('w-1', 'jacket', NOON)).toBe(false);
     expect(poor.inventory.some((i) => i.id === 'w-1')).toBe(true);
-    const full = game(inside(b, { items: [gun()], money: { bills: 1000, coins: 0, account: 0 } }));
+    const full = game(inside(b, { items: [gun()], money: { bills: GEAR.kinds.wallet!.holds!, coins: 0, account: 0, notes: { '1': GEAR.kinds.wallet!.holds! } } }));
     tillOf(inner(full).life.tills, b.id).cash = 100_000;
     expect(full.sell('w-1', 'jacket', NOON)).toBe(false);
     expect(full.inventory.some((i) => i.id === 'w-1')).toBe(true);

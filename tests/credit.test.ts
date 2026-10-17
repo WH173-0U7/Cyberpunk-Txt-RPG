@@ -153,9 +153,12 @@ describe('a loan shark', () => {
     expect(g.debts(NOON).shark).toMatchObject({ owed: 250, late: false });
     // Pay back is on offer now, and borrowing past the most is not.
     expect(g.moneyWith(person.id, NOON)[0]).toMatchObject({ id: 'repay' });
-    // As much as the wallet holds, and no more.
+    // As much as the wallet holds, and no more: a wallet near full of one-eddie notes has no room for five hundreds.
     expect(g.moneyMove(person.id, 'borrow:500', NOON)).toBe(true);
+    const was = inner(g).money;
+    inner(g).money = { bills: GEAR.kinds.wallet!.holds! - 2, coins: 0, account: 0, notes: { '1': GEAR.kinds.wallet!.holds! - 2 } };
     expect(g.moneyMove(person.id, 'borrow:500', NOON), 'no room in the wallet').toBe(false);
+    inner(g).money = was;
     inner(g).money = { bills: 0, coins: 0, account: 0 };
     expect(g.moneyMove(person.id, 'borrow:500', NOON)).toBe(true);
     inner(g).money = { bills: 0, coins: 0, account: 0 };

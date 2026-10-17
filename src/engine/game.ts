@@ -9,7 +9,7 @@ import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, ru
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
 import { cutShare, foundOdds, harmOdds, mixedShare, sickOdds } from './cutting';
 import { askOf, blockOf, buyersIn, canMoveUp, dealRungOf, drugLevel, freshDealing, habitOf, heatAt, owedFor, pushOdds, streetPrice, withInterest, type CollectorView, type DealChoice, type DealingRules, type DealingState, type DealMomentView, type DealOption, type DealState, type DealView, type Front, type Habit } from './dealing';
-import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
+import { cash, cashFor, changeCoins as coinsToBills, chipCut, countNotes, deposit as toAccount, freshMoney, grabCash, makeNotes, notesLine, notesOf, payCash, pocket, purseOf, sumNotes, takeCash, takeFrom, withdraw as fromAccount, withNotes, type Cash, type CashRoom, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
 import { medDetail, medTotal, TREATMENT, type Coverage, type CoverageStatus, type MedicalStock, type MedKind } from './medical';
 import { answer, compose, deflect, describeStranger, drawnWord, eloquenceOf, FAMILY, fill, finish, historyOf, saidIn, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
@@ -413,7 +413,9 @@ export class Game {
     this.where = progress ? { ...progress.where } : { ...streetSpot(start), place: start.id };
     this.trip = progress?.trip ?? null;
     // Saves from before cash was bills and coins had one number: it was bills.
-    this.money = progress?.money ? { ...progress.money } : freshMoney(progress?.eddies ?? rules.startingEddies);
+    // A new player starts with a few small notes; a save keeps its own, and an older one's bills are worked out as notes.
+    const money = progress?.money ? { ...progress.money } : freshMoney(progress?.eddies ?? rules.startingEddies);
+    this.money = withNotes(money, progress?.money ? notesOf(money, rules.money) : makeNotes(money.bills, rules.money, rules.money.most.street));
     this.passUntil = progress?.passUntil ?? 0;
     this.energyState = progress?.energy ? { ...progress.energy } : freshEnergy(rules.energy);
     this.drunkState = progress?.inebriation ? { ...progress.inebriation } : freshInebriation();
@@ -531,7 +533,7 @@ export class Game {
 
   get wallet(): Wallet {
     const { bills, coins, account } = this.money;
-    return { eddies: cash(this.money), bills, coins, account, chips: this.chipTotal(), passUntil: this.passUntil };
+    return { eddies: cash(this.money), bills, coins, notes: { ...notesOf(this.money, this.rules.money) }, account, chips: this.chipTotal(), passUntil: this.passUntil };
   }
 
   /** The credchips carried: all of them, the clean ones (in the player's name), or the locked ones (somebody else's still). */
@@ -599,9 +601,7 @@ export class Game {
       }
     }
     // The coins go first, so the room for change is what's left once they're out of the pocket.
-    const spent = { ...this.money, coins: this.money.coins - Math.min(this.money.coins, price) };
-    const room = changeRoom(this.pockets, this.items, spent, this.rules.gear, this.rules.food.dishes);
-    const paid = payCash(this.money, price, this.rules.money, room);
+    const paid = payCash(this.money, price, this.rules.money, this.changeSpace(price));
     if (!paid) return false;
     this.money = paid.money;
     if (paid.kept) this.say(`No room for the change: ${paid.kept} €$ stays on the counter.`, 'system');
@@ -2110,7 +2110,7 @@ export class Game {
       // Put down, or knocked out cold: either way they go through the player's pockets.
       this.fightLine(how === 'knocked' ? 'youOut' : 'youDown', person, vars);
       const share = rng.range(combat.robbed[0], combat.robbed[1]);
-      const { money, taken } = takeCash(this.money, Math.round(cash(this.money) * share));
+      const { money, taken } = grabCash(this.money, Math.round(cash(this.money) * share), this.rules.money);
       this.money = money;
       if (taken) {
         person.eddies += taken;
@@ -2621,17 +2621,17 @@ export class Game {
   withdraw(amount: number): boolean {
     if (!this.bank()) return false;
     const room = walletRoom(this.pockets, this.money, this.rules.gear);
-    const money = fromAccount(this.money, amount);
-    if (!money) {
+    const out = fromAccount(this.money, amount, this.rules.money);
+    if (!out) {
       this.say(`There isn't ${amount} €$ in the account: ${this.money.account} €$.`, 'error');
       return false;
     }
-    if (amount > room) {
-      this.say(`Your wallet won't hold ${amount} €$ more in bills${room ? ` (room for ${room})` : ''}.`, 'error');
+    if (countNotes(out.notes) > room) {
+      this.say(`Your wallet won't hold ${countNotes(out.notes)} more notes${room ? ` (room for ${room})` : ''}.`, 'error');
       return false;
     }
-    this.money = money;
-    this.say(`Withdrew ${amount} €$ in bills. ${money.account} €$ left in the bank.`, 'system');
+    this.money = out.money;
+    this.say(`Withdrew ${amount} €$: ${notesLine(out.notes)}. ${out.money.account} €$ left in the bank.`, 'system');
     this.events.emit('walletChanged', this.wallet);
     return true;
   }
@@ -2644,14 +2644,14 @@ export class Game {
       this.say('No coins to change.', 'error');
       return false;
     }
-    const notes = changed.money.bills - this.money.bills;
-    if (notes > walletRoom(this.pockets, this.money, this.rules.gear)) {
-      this.say(`Your wallet won't hold ${notes} €$ more in bills.`, 'error');
+    const notes = sumNotes(changed.notes);
+    if (countNotes(changed.notes) > walletRoom(this.pockets, this.money, this.rules.gear)) {
+      this.say(`Your wallet won't hold ${countNotes(changed.notes)} more notes.`, 'error');
       return false;
     }
     const coins = this.money.coins;
     this.money = changed.money;
-    this.say(`Changed ${coins} €$ in coins for ${notes} €$ in bills${changed.fee ? `; the bank kept ${changed.fee} €$` : ''}.`, 'system');
+    this.say(`Changed ${coins} €$ in coins for ${notes} €$ in notes (${notesLine(changed.notes)})${changed.fee ? `; the bank kept ${changed.fee} €$` : ''}.`, 'system');
     this.events.emit('walletChanged', this.wallet);
     return true;
   }
@@ -3325,12 +3325,9 @@ export class Game {
     if (choice === 'hustle') {
       if (tired(events.rush.energy)) return false;
       const tips = Math.max(1, Math.round(rng.int(events.rush.tips[0], events.rush.tips[1]) * jobs.tiers[this.tierOf(building)]));
-      // Tips are cash: what the wallet and the change pocket hold, and the rest on the pay.
-      const loot = splitLoot(tips, this.rules.money);
-      const bills = Math.min(loot.bills, walletRoom(this.pockets, this.money, this.rules.gear));
-      const coins = Math.min(loot.coins, changeRoom(this.pockets, this.items, this.money, this.rules.gear, this.rules.food.dishes));
-      this.money = { ...this.money, bills: this.money.bills + bills, coins: this.money.coins + coins };
-      job.owed = (job.owed ?? 0) + tips - bills - coins;
+      // Tips are cash, in small notes and coins: what the wallet and the change pocket hold, and the rest on the pay.
+      const got = this.pocketCash(tips);
+      job.owed = (job.owed ?? 0) + tips - got;
       job.trust += events.rush.trust;
       changeRep(this.society, `business:${building.id}`, events.rush.rep, society, timeScale, now);
       tell('rushHustle', { tips: String(tips) });
@@ -3579,19 +3576,46 @@ export class Game {
     return true;
   }
 
-  /** Cash the player's pockets could take of this much: what the wallet and the change pocket hold. */
-  private cashRoom(amount: number): number {
-    const loot = splitLoot(amount, this.rules.money);
-    return Math.min(loot.bills, walletRoom(this.pockets, this.money, this.rules.gear)) + Math.min(loot.coins, changeRoom(this.pockets, this.items, this.money, this.rules.gear, this.rules.food.dishes));
+  /** How much more cash the player's pockets take: notes in the wallet, coins in the change pocket (with these things in the pockets too). */
+  private cashSpace(extra: Item[] = [], money: Money = this.money): CashRoom {
+    return { notes: walletRoom(this.pockets, money, this.rules.gear), coins: changeRoom(this.pockets, [...this.items, ...extra], money, this.rules.gear, this.rules.food.dishes) };
   }
 
-  /** Cash into the player's pockets, as far as they hold it; what it came to. */
-  private pocketCash(amount: number): number {
-    const loot = splitLoot(amount, this.rules.money);
-    const bills = Math.min(loot.bills, walletRoom(this.pockets, this.money, this.rules.gear));
-    const coins = Math.min(loot.coins, changeRoom(this.pockets, this.items, this.money, this.rules.gear, this.rules.food.dishes));
-    this.money = { ...this.money, bills: this.money.bills + bills, coins: this.money.coins + coins };
-    return bills + coins;
+  /** The room for change paying `price`: the coins go first, so what the change pocket bears once they're out of it. */
+  private changeSpace(price: number): CashRoom {
+    return this.cashSpace([], { ...this.money, coins: this.money.coins - Math.min(this.money.coins, price) });
+  }
+
+  /** Cash the player's pockets could take of this much, handed over in notes no bigger than `most` (the street's, unless it's a till's). */
+  private cashRoom(amount: number, most = this.rules.money.most.street): number {
+    const { got } = pocket(this.money, cashFor(amount, this.rules.money, most), this.rules.money, this.cashSpace());
+    return sumNotes(got.notes) + got.coins;
+  }
+
+  /** Cash into the player's pockets, in notes no bigger than `most`, as far as they hold it; what it came to. */
+  private pocketCash(amount: number, most = this.rules.money.most.street): number {
+    return this.pocketGiven(cashFor(amount, this.rules.money, most)).total;
+  }
+
+  /** Particular notes and coins into the player's pockets (with these things going in too), as far as they hold them: what went in, and what it came to. */
+  private pocketGiven(given: Cash, extra: Item[] = []): { got: Cash; total: number } {
+    const { money, got } = pocket(this.money, given, this.rules.money, this.cashSpace(extra));
+    this.money = money;
+    return { got, total: sumNotes(got.notes) + got.coins };
+  }
+
+  /** How the cash on someone is made up, note by note: drawn for what they carry and how they live, the same every time for the same sum. */
+  private purseOn(person: Person): Cash {
+    const economy = this.rules.life.economy;
+    const means = ledgerOf(person, this.world, this.population, economy, this.tierFn, this.world.seed, this.livingStaff).means;
+    return purseOf(person.eddies, means, this.rules.money, createRng(`${this.world.seed}:purse:${person.id}:${person.eddies}`));
+  }
+
+  /** Cash owed out of the player's pockets, change back as at any counter: what it came to toward it (never more). */
+  private cashOut(amount: number): number {
+    const { money, taken } = takeCash(this.money, amount, this.rules.money, this.changeSpace(amount));
+    this.money = money;
+    return Math.min(taken, Math.max(0, Math.round(amount)));
   }
 
   /** What the player's Trading against a buyer's does to a price they ask: theirs over the buyer's, to the haggle's power. */
@@ -3873,7 +3897,8 @@ export class Game {
     if (!d || !here) return false;
     d.connect = person.id;
     const left = (d.front ? d.front.owed - d.front.paid : 0) + d.debt;
-    const grab = takeCash(this.money, left);
+    const grab = takeCash(this.money, left, this.rules.money, this.changeSpace(left));
+    grab.taken = Math.min(grab.taken, Math.max(0, left));
     if (left <= 0 || grab.taken <= 0) return false;
     const { society, timeScale, lines } = this.rules;
     const speaker = this.speakerFor(person, here.stance, here.doing, now);
@@ -4385,7 +4410,7 @@ export class Game {
       }
       if (choice === 'pay') {
         const cash = this.money.bills + this.money.coins;
-        const grab = takeCash(this.money, Math.round(cash * rng.range(dealing.war.rivals.pay[0], dealing.war.rivals.pay[1])));
+        const grab = grabCash(this.money, Math.round(cash * rng.range(dealing.war.rivals.pay[0], dealing.war.rivals.pay[1])), this.rules.money);
         this.money = grab.money;
         this.life.treasuries[gang] = (this.life.treasuries[gang] ?? 0) + grab.taken;
         tell(dealing.lines.paidOff, { ...vars, pay: String(grab.taken) });
@@ -4494,7 +4519,7 @@ export class Game {
       took.push(`${n} ${n === 1 ? 'dose' : 'doses'} of ${dealing.drugs[drug]?.name ?? drug}`);
     }
     const cash = this.money.bills + this.money.coins;
-    const grab = takeCash(this.money, Math.round(cash * rng.range(rob.cash[0], rob.cash[1])));
+    const grab = grabCash(this.money, Math.round(cash * rng.range(rob.cash[0], rob.cash[1])), this.rules.money);
     this.money = grab.money;
     robber.eddies += grab.taken;
     this.life.eddies[robber.id] = robber.eddies;
@@ -4637,7 +4662,8 @@ export class Game {
     const tell = (pool: string[], more: Record<string, string>, tone: Tone = 'system') => this.say(this.narration(pool, this.dealVars(by, now, { gang, owed: String(d.debt), ...more }), rng), tone);
     // Cash to the gang, what there is of it up to the debt.
     const hand = () => {
-      const grab = takeCash(this.money, d.debt);
+      const grab = takeCash(this.money, d.debt, this.rules.money, this.changeSpace(d.debt));
+      grab.taken = Math.min(grab.taken, d.debt);
       this.money = grab.money;
       d.debt -= grab.taken;
       this.life.treasuries[c.gang] = (this.life.treasuries[c.gang] ?? 0) + grab.taken;
@@ -5209,7 +5235,7 @@ export class Game {
       return `The bill: ${bill} €$.`;
     }
     const took = this.money.account + this.money.bills + this.money.coins;
-    this.money = { bills: 0, coins: 0, account: 0 };
+    this.money = { bills: 0, coins: 0, account: 0, notes: {} };
     this.events.emit('walletChanged', this.wallet);
     return `The bill is ${bill} €$, and they take the ${took} €$ you have.`;
   }
@@ -7460,6 +7486,9 @@ export class Game {
     const drawn = drawWeapon(this.items, arms);
     const fought = !cold && !emptied && rng.chance(person.traits.courage * (drawn ? (drawn.gun ? arms.rob.gun : arms.rob.melee) : arms.rob.bare));
     const wanted = emptied ? 0 : Math.round(person.eddies * (cold ? rng.range(0.8, 1) : rng.range(0.4, 0.8)) * (fought ? 0.5 : 1));
+    // What's in their pocket, note by note: awake, they hand over the small ones first and keep the big ones back; out cold, the big ones come first.
+    const purse = this.purseOn(person);
+    const handed = takeFrom(purse, wanted, !cold).taken;
     // Their credchip too, if they carry one and there's a slot for it: it comes locked, and wants chopping before any of it is yours.
     const chipWanted = emptied ? 0 : person.chip;
     const chipPocket = chipWanted ? this.pocketFor({ id: 'credchip', kind: 'credchip' }) : null;
@@ -7470,11 +7499,11 @@ export class Game {
     const valuable = valuableId ? this.rules.gear.valuables?.[valuableId] : undefined;
     const valuablePocket = valuableId && valuable ? this.pocketFor({ id: valuableId, kind: 'junk' }) : null;
     const taken: Item | null = valuableId && valuable && valuablePocket ? { id: valuableId, kind: 'junk', name: valuable.name, count: 1, in: valuablePocket } : null;
-    // Cash is cash: bills as far as the wallet will hold them, coins as far as the pocket will (with the chip in it).
-    const loot = splitLoot(wanted, this.rules.money);
-    const bills = Math.min(loot.bills, walletRoom(this.pockets, this.money, this.rules.gear));
-    const coins = Math.min(loot.coins, changeRoom(this.pockets, [...this.items, ...(chipItem ? [chipItem] : []), ...(taken ? [taken] : [])], this.money, this.rules.gear, this.rules.food.dishes));
-    const take = bills + coins;
+    // Cash is cash: the notes as far as the wallet holds them, the coins as far as the pocket will (with the chip and the rest in it).
+    const space = this.cashSpace([...(chipItem ? [chipItem] : []), ...(taken ? [taken] : [])]);
+    const fitted = pocket(this.money, handed, this.rules.money, space);
+    const take = sumNotes(fitted.got.notes) + fitted.got.coins;
+    const handedAll = sumNotes(handed.notes) + handed.coins;
     const speaker = this.speakerFor(person, stance, doing, now);
     // A valuable by whose it was ("her Cufflinks", "his Omamori"): no article fits them all.
     const haul = [take ? `${take} €$` : '', chip ? `a credchip with ${chip} €$ on it` : '', taken ? `${speaker.vars.his ?? 'their'} ${taken.name}` : ''].filter(Boolean).join(' and ');
@@ -7497,7 +7526,7 @@ export class Game {
         : line(cold ? (got ? lines.rob.cold : lines.rob.coldNothing) : got ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
     this.logged(id, 'them', outcome, now);
     if (got) {
-      this.money = { ...this.money, bills: this.money.bills + bills, coins: this.money.coins + coins };
+      this.money = fitted.money;
       // What's taken is gone from them: less in their pockets, and their chip in yours.
       person.eddies = Math.max(0, person.eddies - take);
       this.life.eddies[person.id] = person.eddies;
@@ -7508,7 +7537,8 @@ export class Game {
       }
       if (taken) this.putAway(this.items, (this.items.push(taken), taken), taken.in);
       this.say(outcome, 'system');
-      if (wanted > take) this.say(`Your pockets won't hold the rest: ${wanted - take} €$ stays with ${person.given}.`, 'system');
+      if (take) this.say(`You pocket ${[notesLine(fitted.got.notes), fitted.got.coins ? `${fitted.got.coins} €$ in coins` : ''].filter(Boolean).join(' and ')}.`, 'system');
+      if (handedAll > take) this.say(`Your pockets won't hold the rest: ${handedAll - take} €$ stays with ${person.given}.`, 'system');
       if (chipWanted && !chip) this.say(`No room on you for ${speaker.vars.his} credchip: it stays in ${speaker.vars.his} hand.`, 'system');
       if (chip) this.say(`The chip is locked to ${person.given}. A netrunner will have to chop it before any of it is yours.`, 'system');
       if (fought) this.drainEnergy(2, now);
@@ -7718,7 +7748,7 @@ export class Game {
         continue;
       }
       const gang = threat.gang ? people.gangs[threat.gang] : undefined;
-      const grab = takeCash(this.money, threat.amount);
+      const grab = grabCash(this.money, threat.amount, this.rules.money);
       let take = grab.taken;
       // Short of cash, they take the chips on you, whoever's name is on them, biggest first.
       const lost: Item[] = [];
@@ -8042,9 +8072,7 @@ export class Game {
   private payRent(amount: number, building: Building): number {
     const fromAccount = Math.min(this.money.account, Math.max(0, amount));
     this.money = { ...this.money, account: this.money.account - fromAccount };
-    const { money, taken } = takeCash(this.money, amount - fromAccount);
-    this.money = money;
-    const paid = fromAccount + taken;
+    const paid = fromAccount + this.cashOut(amount - fromAccount);
     const economy = this.rules.life.economy;
     const owner = ownerNow(ownersOf(this.world, this.population, economy, this.world.seed).of.get(building.id), (id) => this.person(id), (id) => tiesOf(this.population, id));
     const landlord = owner ? this.person(owner) : undefined;
@@ -8331,9 +8359,7 @@ export class Game {
     if (!rules || !loan || !this.bank(now)) return false;
     const fromAccount = Math.min(this.money.account, loan.owed);
     this.money = { ...this.money, account: this.money.account - fromAccount };
-    const { money, taken } = takeCash(this.money, loan.owed - fromAccount);
-    this.money = money;
-    const paid = fromAccount + taken;
+    const paid = fromAccount + this.cashOut(loan.owed - fromAccount);
     if (!paid) return false;
     loan.owed -= paid;
     const name = this.buildingOf(loan.bank)?.name ?? 'the bank';
@@ -8418,8 +8444,8 @@ export class Game {
     const before = this.snapshot(person, now);
     const shark = this.creditState.shark;
     const today = this.clockAt(now).day;
-    // Cash, into the wallet: as much as it'll hold.
-    if (walletRoom(this.pockets, this.money, this.rules.gear) < amount) {
+    // Cash, into the wallet: all of it, or none.
+    if (this.cashRoom(amount, this.rules.money.most.till) < amount) {
       this.creditLine(rules.lines.noRoom, { amount: String(amount) }, `${person.id}:room:${now}`);
       return false;
     }
@@ -8438,7 +8464,7 @@ export class Game {
     loan.borrowed += amount;
     loan.paid = today;
     this.life.treasuries[gang] = (this.life.treasuries[gang] ?? 0) - amount;
-    this.money = { ...this.money, bills: this.money.bills + amount };
+    this.pocketCash(amount, this.rules.money.most.till);
     this.speech(person, line(this.rules.lines.money.sharkLend, speaker, rng), now);
     this.creditLine(rules.lines.sharkLent, { gang: speaker.vars.gang ?? '', owed: String(loan.owed) }, `${gang}:${now}`);
     this.noteFeedback(person, before, now);
@@ -8450,7 +8476,8 @@ export class Game {
     const rules = this.rules.credit!;
     const loan = this.creditState.shark;
     if (!loan || loan.gang !== person.gang) return false;
-    const grab = takeCash(this.money, loan.owed);
+    const grab = takeCash(this.money, loan.owed, this.rules.money, this.changeSpace(loan.owed));
+    grab.taken = Math.min(grab.taken, loan.owed);
     if (!grab.taken) return false;
     const speaker = this.speakerFor(person, stance, doing, now);
     const rng = createRng(`${this.world.seed}:${person.id}:payshark:${loan.owed}:${now}`);
@@ -8493,8 +8520,8 @@ export class Game {
       this.noteFeedback(person, before, now);
       return false;
     }
-    const grab = takeCash(this.money, amount);
-    if (grab.taken < amount) return false;
+    if (cash(this.money) < amount) return false;
+    const grab = takeCash(this.money, amount, this.rules.money, this.changeSpace(amount));
     this.money = grab.money;
     const economy = this.rules.life.economy;
     const ledger = ledgerOf(person, this.world, this.population, economy, this.tierFn, this.world.seed, this.livingStaff);
@@ -8695,9 +8722,7 @@ export class Game {
   private takePlayers(amount: number): number {
     const fromAccount = Math.min(this.money.account, Math.max(0, amount));
     this.money = { ...this.money, account: this.money.account - fromAccount };
-    const { money, taken } = takeCash(this.money, amount - fromAccount);
-    this.money = money;
-    return fromAccount + taken;
+    return fromAccount + this.cashOut(amount - fromAccount);
   }
 
   /** Pays someone from the player's account and cash into their own account; nobody, and it leaves the city. What was paid. */
@@ -9002,14 +9027,15 @@ export class Game {
     }
     // The cash, as far as the wallet and the change pocket hold it, with the thing gone from the pocket.
     const left = this.items.map((i) => (i === item ? { ...i, count: i.count - offer.units } : i)).filter((i) => i.count > 0);
-    const loot = splitLoot(offer.amount, this.rules.money);
-    if (loot.bills > walletRoom(this.pockets, this.money, this.rules.gear) || loot.coins > changeRoom(this.pockets, left, this.money, this.rules.gear, this.rules.food.dishes)) {
+    const paidIn = cashFor(offer.amount, this.rules.money, this.rules.money.most.till);
+    const space: CashRoom = { notes: walletRoom(this.pockets, this.money, this.rules.gear), coins: changeRoom(this.pockets, left, this.money, this.rules.gear, this.rules.food.dishes) };
+    if (countNotes(paidIn.notes) > space.notes || paidIn.coins > space.coins) {
       this.tradeLine(rules.lines.noRoom, vars, `${buyer.building.id}:room:${now}`, 'error');
       return false;
     }
     item.count -= offer.units;
     if (item.count <= 0) this.items.splice(this.items.indexOf(item), 1);
-    this.money = { ...this.money, bills: this.money.bills + loot.bills, coins: this.money.coins + loot.coins };
+    this.money = pocket(this.money, paidIn, this.rules.money, space).money;
     // Out of its till, and onto its shelves.
     const till = tillOf(this.life.tills, buyer.building.id);
     till.cash = (till.cash ?? 0) - offer.amount;

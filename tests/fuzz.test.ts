@@ -130,6 +130,10 @@ function check(game: Game, about: string): void {
   if (credit.shark) expect(credit.shark.owed, `${about}: a loan shark's cap`).toBeLessThanOrEqual(Math.ceil(credit.shark.borrowed * CREDIT.shark.cap));
   for (const [id, lent] of Object.entries(credit.lent)) expect(lent.owed, `${about}: lent to ${id}`).toBeGreaterThan(0);
   for (const view of game.businesses()) expect(view.till, `${about}: the till at ${view.building.name}`).toBeGreaterThanOrEqual(0);
+  // The notes are what the bills come to, and the wallet holds them.
+  const held = Object.entries(game.wallet.notes).reduce((n, [d, k]) => n + Number(d) * k, 0);
+  expect(held, `${about}: notes against bills`).toBe(game.wallet.bills);
+  expect(Object.entries(game.wallet.notes).every(([d, k]) => MONEY.notes.includes(Number(d)) && Number.isInteger(k) && k > 0), `${about}: notes`).toBe(true);
   const hunger = game.hunger(Date.now())!;
   expect(hunger.value, `${about}: how full`).toBeGreaterThanOrEqual(0);
   expect(hunger.value, `${about}: how full`).toBeLessThanOrEqual(100);

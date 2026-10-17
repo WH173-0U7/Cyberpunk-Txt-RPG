@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cellOf, Game, streetSpot, type GameRules } from '../src/engine/game';
-import { outfit, type GearContent } from '../src/engine/carry';
+import { notesHeld, outfit, type GearContent } from '../src/engine/carry';
 import { FOOD } from '../src/data/food';
 import { GEAR as ALL_GEAR } from '../src/data/gear';
 import { STORES } from '../src/data/clothing';
@@ -206,7 +206,7 @@ describe('Game', () => {
     expect(arrived?.payload).toMatchObject({ from: null, place: { id: 'alley' }, district: { id: 'test' } });
     expect(sorted(game.mapState.visited)).toEqual(['alley']);
     expect(sorted(game.mapState.discovered)).toEqual(['alley', 'market']);
-    expect(game.wallet).toEqual({ eddies: 5, bills: 5, coins: 0, account: 0, chips: 0, passUntil: 0 });
+    expect(game.wallet).toEqual({ eddies: 5, bills: 5, coins: 0, notes: { '5': 1 }, account: 0, chips: 0, passUntil: 0 });
   });
 
   describe('on foot', () => {
@@ -999,7 +999,7 @@ describe('Game', () => {
       expect(game.gearSaved).toEqual(GEAR.start);
       const { grams, pockets } = game.carry();
       expect(pockets.map((p) => p.id)).toEqual(['tank', 'jacket', 'pants', 'high-tops', 'wallet']);
-      const walletGrams = Math.round(GEAR.kinds.wallet!.grams + 100 * GEAR.gramsPerBill);
+      const walletGrams = Math.round(GEAR.kinds.wallet!.grams + notesHeld(game.wallet) * GEAR.gramsPerNote);
       expect(pockets[4]).toMatchObject({ bills: 100, holds: GEAR.kinds.wallet!.holds, grams: walletGrams, over: false });
       expect(pockets[2]?.load).toEqual({ slots: 1, grams: walletGrams });
       const clothes = GEAR.start.filter((p) => p.in === null).reduce((sum, p) => sum + (GEAR.kinds[p.kind]?.grams ?? 0), 0);
@@ -1177,8 +1177,8 @@ describe('Game', () => {
     });
 
     it('nets a robbery only what the wallet and the pocket will hold', () => {
-      // A wallet that holds exactly the bills carried and no chips, and pants with no room for a first coin.
-      const full: GearContent = { ...GEAR, kinds: { ...GEAR.kinds, wallet: { ...GEAR.kinds.wallet!, holds: 100, chips: 0 }, pants: { ...GEAR.kinds.pants!, slots: 1 } } };
+      // A wallet that holds exactly the notes carried (a new player's 100 €$ is five twenties) and no chips, and pants with no room for a first coin.
+      const full: GearContent = { ...GEAR, kinds: { ...GEAR.kinds, wallet: { ...GEAR.kinds.wallet!, holds: 5, chips: 0 }, pants: { ...GEAR.kinds.pants!, slots: 1 } } };
       for (let day = 0; day < 14; day++) {
         const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
         const game = new Game(world, { ...RULES, startingEddies: 100, gear: full }, progressInside('b-noodle', 38, 20));
@@ -1233,7 +1233,7 @@ describe('Game', () => {
 
     it('makes room for change once the coins paid are out of the pocket', () => {
       // Pants a few grams from full, with two coins in: paying with them first leaves room for the change.
-      const tight: GearContent = { ...GEAR, kinds: { ...GEAR.kinds, pants: { ...GEAR.kinds.pants!, maxGrams: Math.round(GEAR.kinds.wallet!.grams + 100 * GEAR.gramsPerBill + 2 * GEAR.gramsPerCoin) + 1 } } };
+      const tight: GearContent = { ...GEAR, kinds: { ...GEAR.kinds, pants: { ...GEAR.kinds.pants!, maxGrams: Math.round(GEAR.kinds.wallet!.grams + notesHeld({ bills: 100, coins: 2 }) * GEAR.gramsPerNote + 2 * GEAR.gramsPerCoin) + 1 } } };
       const game = new Game(world, { ...RULES, gear: tight }, { ...progressInside('b-noodle', 38, 20), money: { bills: 100, coins: 2, account: 0 } });
       game.start(T0);
       const { take, outputs } = record(game);
