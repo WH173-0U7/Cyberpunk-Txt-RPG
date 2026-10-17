@@ -34,7 +34,7 @@ export interface Reaction {
   why: string;
 }
 /** What the player can ask someone about themselves. */
-export type Question = Exclude<Fact, 'nature' | 'drinks' | 'dream' | 'dead'>;
+export type Question = Exclude<Fact, 'nature' | 'drinks' | 'dream' | 'dead' | 'body'>;
 export type Reply = 'answer' | 'deflect' | 'refuse';
 
 /** When a fragment fits: everything given must hold. */

@@ -42,8 +42,8 @@ keeps its own save, so it never touches the stable game's.
 
 0. **Make yourself.** The main menu's **New game** opens the character builder: a lifepath
    (Streetkid, Nomad or Corpo: where you start, what you have, who already knows you and how
-   people take to you), a name and the pronouns you go by, and a look. **Continue** picks up a
-   saved game.
+   people take to you), a name and the pronouns you go by, a look (hair color, length and style,
+   eyes, a mark) and a body (build, chest, genitals). **Continue** picks up a saved game.
 1. **Look around.** The map opens on you. Tap a place, a station or a building to see it on the
    panel under the map.
 2. **Walk somewhere.** Tap **Walk** (or tap the same thing again). Walking takes real minutes,
@@ -181,7 +181,9 @@ You start with what your lifepath gives you: a Streetkid 50 €$, a Nomad 35 €
   Talking gets you their name; **Ask** gets you the rest (work, age, home, tastes, enemies, what
   they want, their type) if they'll tell you, by how they feel about you, your charisma and the
   moment. Their card's **Profile** tab keeps everything you know, and their web of the people you
-  know they know.
+  know they know. Everyone has a look of their own (hair, eyes, a mark, build, chest), plain to see
+  from the first time you lay eyes on them; what's under their clothes you know only once you're
+  together.
 - **Talking.** **Talk** unfolds the ways in: Chat, Compliment, Joke, Gossip, How are you?, and
   Flirt. Each lands by who they are, and a note under every exchange says how it went and why.
   Every line is put together on the spot, in the speaker's own voice and their gang's slang.

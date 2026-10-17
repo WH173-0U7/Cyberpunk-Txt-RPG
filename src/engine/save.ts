@@ -431,7 +431,7 @@ function youOf(value: unknown): You | null {
     name.trim() !== '' &&
     (lifepath === 'streetkid' || lifepath === 'nomad' || lifepath === 'corpo') &&
     isObject(look) &&
-    ['hair', 'color', 'eyes', 'mark'].every((k) => typeof look[k] === 'string');
+    ['color', 'length', 'style', 'eyes', 'mark', 'build', 'chest', 'genitals', 'size'].every((k) => typeof look[k] === 'string');
   return made ? ({ pronouns: value.pronouns, name, lifepath, look } as You) : { pronouns: value.pronouns };
 }
 

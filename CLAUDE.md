@@ -1622,29 +1622,46 @@ otherwise a new game is a new city. Dying (`flatlined`) or erasing the save is `
 save cleared, nothing more saved (`over`), the menu saying why.
 
 - `src/engine/character.ts` is the engine's shapes (`Character`: name, pronouns, `Lifepath`,
-  `Look`; `CharacterRules`), `validCharacter`, `lookWords` (a look as a line puts it: "cyan
-  mohawk", "chrome optics", "scar") and `nameFor` (a name from the pools of the people where the
-  lifepath starts); `src/data/character.ts` is the content (`CHARACTER`, on `rules.character`).
+  `Look`; `CharacterRules`), `validCharacter`, `lookOf` and `lookWords` (below) and `nameFor` (a
+  name from the pools of the people where the lifepath starts); `src/data/character.ts` is the
+  content (`CHARACTER`, on `rules.character`).
   The lifepaths are the wiki's three, each starting where its prologue does (the Streetkid at El
   Coyote Cojo in the Glen, the Nomad at the Sunset Motel in the Badlands, the Corpo on Corpo Plaza
   under Arasaka Tower), with its cash and account, the clothes nearest its starting gear
   (`outfit`, by slot: the same pocket ids as `GEAR.start`, so the wallet stays where it is), its
   reputation (`rep`), the people round there who know it (`known`: how many, from which district,
   one of a gang or only corpos, at what rapport, their holos the player's) and how each voice
-  takes to it (`voices`, added in `Game`'s private `leaning`, so on every ask). The look is a few
-  parts of the wiki's creator (hair, its color, eyes, a mark), all words. There are no
+  takes to it (`voices`, added in `Game`'s private `leaning`, so on every ask). There are no
   attributes: the builder doesn't hand out skills.
+- Looks, the player's and everyone's: a `Look` is an option's id for each `LookPart` (after the
+  wiki's creator: the hair's `color`, `length` and `style`, the `eyes`, a `mark`, the `build`, and
+  under the clothes the `chest`, the `genitals` and their `size`), the options and their words in
+  `CHARACTER.looks` (`bold` for what anyone would remark on: a dye, a bold cut, a shaved head).
+  `styleless` lengths take no style (a buzz cut, shaved), `sized` genitals a size. Everyone else's
+  is `lookOf(person)`, drawn on its own stream (`<id>:look`, so it moves nothing and needs no
+  bump) by `CHARACTER.people`'s weights for each part, added up for anyone, by pronouns, by gang
+  (as the wiki has them: Maelstrom's optics and chrome, the Animals juiced, the Mox's dyes and
+  mohawks, the Tyger Claws' and the Valentinos' ink) and for the young and the old; under
+  `adultAt` nobody has a chest, genitals or size drawn (`''`), and the stream reads the same
+  either way. `lookWords` is a look as a line puts it ("long black hair in a ponytail", "chrome
+  optics", "large penis"); `Game.looksOf(look, body)` as a profile does: `Description.looks` (the
+  hair, eyes and mark), `build` and `chest`, plain to see from the first look, and `genitals` only
+  once the player knows the `body` fact, learned when they're together (`makeOfficial`). The
+  Profile shows them after Sex (Looks, Build, Chest, Genitals); the player's own are the status
+  drop-down's You and Body rows.
 - `new Game(world, rules, undefined, character)` is a new game as someone (`becomes`: `Game.you`
   gets the name, lifepath and look, the start, the cash, the outfit and the people who know them;
   the reputation and the holos are written down at `start`, `arrive`). `Game.character` is null for
   a save from before the builder, which plays as it always did; `You` carries it (saved as
   `you`, read by `youOf`, which keeps the pronouns of a character that doesn't read right).
   Restarting the city keeps the character. The speaker's vars have `youStreetkid`/`youNomad`/
-  `youCorpo` and the look (`yourHair`, `yourEyes`, `yourMark`, empty behind a mask), for the
-  greetings that notice them and the player's own story in a conversation.
-- `src/ui/builder.ts` is the builder (`Builder`): a step at a time (lifepath, you, look, a last
-  look), Next only once the step is filled in, the name drawn again with the lifepath or the
-  pronouns until the player types one, **Start** saying when it replaces a save.
+  `youCorpo` and the look (`yourHair` only when it's bold, `yourEyes`, `yourMark`; empty behind a
+  mask), for the greetings that notice them and the player's own story in a conversation.
+- `src/ui/builder.ts` is the builder (`Builder`): a step at a time (lifepath, you, look, body, a
+  last look), Next only once the step is filled in, the name drawn again with the lifepath or the
+  pronouns until the player types one, and the body suggested by the pronouns until the player
+  sets a part of it (`BODIES`); no style for a styleless length, no size for genitals without one;
+  **Start** saying when it replaces a save.
 
 ## Checks before a PR
 

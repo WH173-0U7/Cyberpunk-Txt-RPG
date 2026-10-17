@@ -129,7 +129,8 @@ export interface Threat {
 export type KnownHow = 'seen' | 'told' | 'asked';
 
 /** Something about a person that takes asking (or watching, or being told) to know; `dead`, that they are, takes being told. */
-export type Fact = 'name' | 'job' | 'age' | 'home' | 'likes' | 'drinks' | 'hates' | 'type' | 'nature' | 'dream' | 'dead';
+/** What the player can know of someone; `body` is what's under their clothes, known once together. */
+export type Fact = 'name' | 'job' | 'age' | 'home' | 'likes' | 'drinks' | 'hates' | 'type' | 'nature' | 'dream' | 'dead' | 'body';
 
 /** One line of what passed between the player and a person; a `note` is how it went down (rapport, charisma, their stance, and why), `tone` whether that was good for the player. */
 export interface LogEntry {

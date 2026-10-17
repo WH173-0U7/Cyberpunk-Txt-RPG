@@ -5,7 +5,7 @@ import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, po
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
 import { accountOf, holderOf as ownerNow, homeKind as blockKind, leftOf, ledgerOf, ownersOf, priceFactor, rentLevelOf, staffCostOf, stockOf, tillOf, tradeAt, turfFrom, wageOf, weekdayOf, type BusinessView, type Health, type MarketNews, type PriceLevel, type Vice } from './economy';
-import { lookWords, type Character, type CharacterRules } from './character';
+import { lookOf, lookWords, type Character, type CharacterRules, type Look, type LookPart } from './character';
 import { interestAfter, interestOf, movesFor, replyRapport, samePenalty, type Chat, type ChatMove } from './chat';
 import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, runnerShort, settle, writeOff, type Runner, type RunnerView } from './crew';
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
@@ -250,6 +250,11 @@ export interface Description {
   /** How they strike the player as a fighter, plain to see ("Harmless", "Dangerous"); as a talker once they've talked a few times, else null. */
   fight: string;
   talk: string | null;
+  /** How they look, plain to see: the hair, the eyes, a mark ("Long black hair in a ponytail · brown eyes · scar"), the build and, for an adult, the chest; the genitals once the player is together with them. Empty without the rules for looks. */
+  looks: string;
+  build: string;
+  chest: string;
+  genitals: string;
 }
 
 const HOUR = 3_600_000;
@@ -626,7 +631,7 @@ export class Game {
     const masked = Boolean(this.masked());
     return {
       ...(lifepath ? { [`you${lifepath === 'streetkid' ? 'Streetkid' : lifepath === 'nomad' ? 'Nomad' : 'Corpo'}`]: 'yes' } : {}),
-      yourHair: masked ? '' : words.hair,
+      yourHair: masked || !words.bold ? '' : words.hair,
       yourEyes: masked ? '' : words.eyes,
       yourMark: masked ? '' : words.mark,
     };
@@ -6386,6 +6391,7 @@ export class Game {
     const yes = romance.dates >= rules.official.dates && (standing.spark ?? 0) >= rules.official.spark && rules.ask.stances.includes(stance);
     this.speech(person, compose(yes ? lines.romance.official.yes : lines.romance.official.notYet, speaker, lines, rng, { opener: false }), now);
     if (yes) {
+      learnFact(this.society, id, 'body');
       romance.stage = 'together';
       changeStanding(this.society, id, { rapport: rules.official.rapport }, society, timeScale, now);
     }
@@ -6828,7 +6834,23 @@ export class Game {
     const fight = reads ? readOf(Math.round((skills.brawler + skills.toughness + skills.arms) / 3), reads.fight) : '';
     const talks = standingOf(this.society, id, this.rules.society, this.rules.timeScale, now).talks;
     const talk = reads && talks >= reads.talks ? readOf(skills.charisma, reads.talk) : null;
-    return { name: named ? name : describeStranger(person, people), named, facts, lines: [heart, ...order.map((f) => facts[f])].filter((line): line is string => Boolean(line)), sex, fight, talk };
+    // How they look: plain to see, but for what's under the clothes, which the player knows once together with them.
+    const looks = this.rules.character ? this.looksOf(lookOf(person, this.rules.character), k.facts.includes('body')) : { looks: '', build: '', chest: '', genitals: '' };
+    return { name: named ? name : describeStranger(person, people), named, facts, lines: [heart, ...order.map((f) => facts[f])].filter((line): line is string => Boolean(line)), sex, fight, talk, ...looks };
+  }
+
+  /** A look as a profile shows it: the hair, eyes and mark in words, the build and the chest by their labels, and the genitals ("Large penis") only when `body` is known. */
+  looksOf(look: Look, body: boolean): { looks: string; build: string; chest: string; genitals: string } {
+    const rules = this.rules.character;
+    if (!rules) return { looks: '', build: '', chest: '', genitals: '' };
+    const words = lookWords(look, rules);
+    const label = (part: LookPart) => rules.looks[part].options.find((o) => o.id === look[part])?.label ?? '';
+    return {
+      looks: capitalize([words.hair, words.eyes, words.mark].filter(Boolean).join(' · ')),
+      build: label('build'),
+      chest: label('chest'),
+      genitals: body ? capitalize(words.genitals) : '',
+    };
   }
 
   /** Someone's type, as the card says it: whom they're drawn to, what wins them over, the look they like. */

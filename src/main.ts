@@ -791,10 +791,13 @@ function savedLine(): string {
   return [c?.name, c ? CHARACTER.lifepaths[c.lifepath].name : '', place].filter(Boolean).join(' · ');
 }
 
-/** Who the player made themselves, for the status drop-down. */
+/** Who the player made themselves, for the status drop-down: their name, lifepath and looks, and their body. */
 function youLine(c: Character): string {
-  const look = lookWords(c.look, CHARACTER);
-  return [c.name, CHARACTER.lifepaths[c.lifepath].name, [look.hair, look.eyes, look.mark].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+  return [c.name, CHARACTER.lifepaths[c.lifepath].name, game.looksOf(c.look, true).looks].filter(Boolean).join(' · ');
+}
+function bodyLine(c: Character): string {
+  const body = lookWords(c.look, CHARACTER);
+  return [body.build, body.chest, body.genitals].filter(Boolean).join(' · ').replace(/^\p{Ll}/u, (m) => m.toUpperCase());
 }
 /** What the player has picked to go to, if anything. */
 let target: Target | null = null;
@@ -1810,7 +1813,7 @@ function showStatus(now: number): void {
   const pad = (n: number) => String(n).padStart(2, '0');
   const you = game.character;
   const rows: StatusRow[] = [
-    ...(you ? [{ label: 'You', value: youLine(you) }] : []),
+    ...(you ? [{ label: 'You', value: youLine(you) }, { label: 'Body', value: bodyLine(you) }] : []),
     { label: 'Energy', value: `Lv ${energy.level} · ${energy.xp}/${energy.xpToNext} XP · ${refill}` },
     { label: 'Health', value: `${health.current}/${health.max}${health.fullAt ? ` · full in ${formatCountdown(health.fullAt - now)}` : ''}`, ...(health.current < health.max / 2 ? { tone: 'warn' as const } : {}) },
     ...(hunger ? [{ label: 'Hunger', value: hungerLine(hunger, now), ...(hunger.stage && hunger.stage.energy * hunger.stage.health < 1 ? { tone: hunger.stage.health < 1 ? ('bad' as const) : ('warn' as const) } : {}) }] : []),
@@ -2103,6 +2106,10 @@ function profileOf(standing: PersonStanding, described: Description): Array<{ la
     // Plain to see, from the first look: their sex, and how they'd be in a fight; how they talk once they have.
     if (fact === 'age') {
       rows.push({ label: 'Sex', value: described.sex });
+      if (described.looks) rows.push({ label: 'Looks', value: described.looks });
+      if (described.build) rows.push({ label: 'Build', value: described.build });
+      if (described.chest) rows.push({ label: 'Chest', value: described.chest });
+      if (described.genitals) rows.push({ label: 'Genitals', value: described.genitals });
       if (described.fight) rows.push({ label: 'Fighting', value: described.fight });
       if (described.talk) rows.push({ label: 'Talking', value: described.talk });
     }

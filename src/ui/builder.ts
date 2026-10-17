@@ -1,4 +1,4 @@
-import { LIFEPATHS, LOOK_PARTS, lookWords, validCharacter, type Character, type CharacterRules, type Lifepath, type LookPart } from '../engine/character';
+import { BODY_PARTS, FACE_PARTS, LIFEPATHS, lookWords, validCharacter, type Character, type CharacterRules, type Lifepath, type Look, type LookPart } from '../engine/character';
 import type { Pronouns } from '../engine/people';
 
 export interface BuilderElements {
@@ -24,8 +24,14 @@ export interface BuilderContent {
   startsAt(lifepath: Lifepath): string;
 }
 
-type Step = 'path' | 'you' | 'look' | 'ready';
-const STEPS: Step[] = ['path', 'you', 'look', 'ready'];
+type Step = 'path' | 'you' | 'look' | 'body' | 'ready';
+const STEPS: Step[] = ['path', 'you', 'look', 'body', 'ready'];
+/** The body the pronouns suggest, until the player sets one themselves. */
+const BODIES: Record<Pronouns, Pick<Look, 'chest' | 'genitals'>> = {
+  she: { chest: 'medium', genitals: 'vulva' },
+  he: { chest: 'flat', genitals: 'penis' },
+  they: { chest: 'small', genitals: 'vulva' },
+};
 const PRONOUNS: Array<{ id: Pronouns; label: string }> = [
   { id: 'she', label: 'She' },
   { id: 'he', label: 'He' },
@@ -33,15 +39,17 @@ const PRONOUNS: Array<{ id: Pronouns; label: string }> = [
 ];
 
 /**
- * The character builder, after the 2077 one: a lifepath, a name and pronouns, and a look, then
- * a last look before the city. A step at a time, phone-sized; Next only once the step is filled
- * in.
+ * The character builder, after the 2077 one: a lifepath, a name and pronouns, a look (the hair,
+ * its color, length and style, the eyes, a mark) and a body (build, chest, genitals and their
+ * size), then a last look before the city. A step at a time, phone-sized; Next only once the
+ * step is filled in.
  */
 export class Builder {
   private step: Step = 'path';
   private character: Character;
-  /** Whether the player has typed a name of their own (else changing lifepath or pronouns draws another). */
+  /** Whether the player has typed a name of their own (else changing lifepath or pronouns draws another), and set the body (else the pronouns suggest one). */
   private named = false;
+  private shaped = false;
   private replaces = false;
 
   constructor(
@@ -63,7 +71,11 @@ export class Builder {
       } else if (pronouns) {
         c.pronouns = pronouns as Pronouns;
         if (!this.named) c.name = this.content.name(c.lifepath, c.pronouns);
-      } else if (part && option) c.look = { ...c.look, [part]: option };
+        if (!this.shaped) c.look = { ...c.look, ...BODIES[c.pronouns] };
+      } else if (part && option) {
+        c.look = { ...c.look, [part]: option };
+        if (BODY_PARTS.includes(part as LookPart)) this.shaped = true;
+      }
       else if (random !== undefined) {
         c.name = this.content.name(c.lifepath, c.pronouns);
         this.named = false;
@@ -88,6 +100,7 @@ export class Builder {
     this.step = 'path';
     this.character = this.blank();
     this.named = false;
+    this.shaped = false;
     this.els.root.hidden = false;
     for (const el of this.els.behind) el.inert = true;
     this.render();
@@ -99,9 +112,8 @@ export class Builder {
   }
 
   private blank(): Character {
-    const { rules } = this.content;
-    const look = Object.fromEntries(LOOK_PARTS.map((part) => [part, rules.looks[part].options[0]?.id ?? ''])) as Character['look'];
-    return { name: this.content.name('streetkid', 'they'), pronouns: 'they', lifepath: 'streetkid', look: { ...look, hair: 'undercut' } };
+    const look: Look = { color: 'black', length: 'short', style: 'undercut', eyes: 'brown', mark: 'none', build: 'average', size: 'average', ...BODIES.they };
+    return { name: this.content.name('streetkid', 'they'), pronouns: 'they', lifepath: 'streetkid', look };
   }
 
   /** Whether the step is filled in: a name; the rest always. */
@@ -169,9 +181,13 @@ export class Builder {
       const choices = el('div', 'builder-chips');
       for (const p of PRONOUNS) choices.append(choice(p.label, { pronouns: p.id }, c.pronouns === p.id));
       body.push(choices);
-    } else if (this.step === 'look') {
-      body.push(el('h2', 'builder-title', 'Look'), el('p', 'builder-note', 'What people see, and what they remark on, unless you have a mask on.'));
-      for (const part of LOOK_PARTS as LookPart[]) {
+    } else if (this.step === 'look' || this.step === 'body') {
+      const face = this.step === 'look';
+      body.push(el('h2', 'builder-title', face ? 'Look' : 'Body'), el('p', 'builder-note', face ? 'What people see, and what they remark on, unless you have a mask on.' : 'Your build is plain to see; what is under your clothes, only to the one you are with.'));
+      for (const part of face ? FACE_PARTS : BODY_PARTS) {
+        // No style for hair too short to have one; a size only for genitals that have one.
+        if (part === 'style' && rules.styleless.includes(c.look.length)) continue;
+        if (part === 'size' && !rules.sized.includes(c.look.genitals)) continue;
         const look = rules.looks[part];
         body.push(el('p', 'builder-label', look.label));
         const chips = el('div', 'builder-chips');
@@ -188,6 +204,7 @@ export class Builder {
         ['Starts', this.content.startsAt(c.lifepath)],
         ['Pronouns', PRONOUNS.find((p) => p.id === c.pronouns)?.label ?? ''],
         ['Look', [look.hair, look.eyes, look.mark].filter(Boolean).join(' · ').replace(/^\p{Ll}/u, (m) => m.toUpperCase())],
+        ['Body', [look.build, look.chest, look.genitals].filter(Boolean).join(' · ').replace(/^\p{Ll}/u, (m) => m.toUpperCase())],
       ];
       for (const [label, value] of rows) list.append(el('dt', 'builder-label', label), el('dd', 'builder-value', value));
       body.push(list);

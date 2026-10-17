@@ -15,7 +15,7 @@ import { PHONE } from '../src/data/phone';
 import { CHARISMA } from '../src/data/skills';
 import { SOCIETY } from '../src/data/society';
 import { TRAVEL } from '../src/data/travel';
-import { LIFEPATHS, lookWords, nameFor, validCharacter, type Character, type Lifepath } from '../src/engine/character';
+import { LIFEPATHS, LOOK_PARTS, lookOf, lookWords, nameFor, validCharacter, type Character, type Lifepath, type Look } from '../src/engine/character';
 import { Game, type GameRules } from '../src/engine/game';
 import { generateWorld } from '../src/engine/generate';
 import { createRng } from '../src/engine/rng';
@@ -24,7 +24,8 @@ import { createSave, readSave, resume } from '../src/engine/save';
 const NOON = Date.UTC(2077, 9, 13, 12, 0);
 const RULES: GameRules = { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, phone: PHONE, character: CHARACTER };
 const world = generateWorld('7f3a29c1', CITY);
-const made = (lifepath: Lifepath, extra: Partial<Character> = {}): Character => ({ name: 'Ana Reyes', pronouns: 'she', lifepath, look: { hair: 'mohawk', color: 'cyan', eyes: 'optics', mark: 'scar' }, ...extra });
+const LOOK: Look = { color: 'cyan', length: 'short', style: 'mohawk', eyes: 'optics', mark: 'scar', build: 'lean', chest: 'small', genitals: 'vulva', size: 'average' };
+const made = (lifepath: Lifepath, extra: Partial<Character> = {}): Character => ({ name: 'Ana Reyes', pronouns: 'she', lifepath, look: LOOK, ...extra });
 const newGame = (character: Character, rules: GameRules = RULES) => {
   const g = new Game(world, rules, undefined, character);
   g.start(NOON);
@@ -37,14 +38,19 @@ describe('the character builder', () => {
     expect(validCharacter(made('streetkid', { name: '   ' }), CHARACTER)).toBe(false);
     expect(validCharacter(made('streetkid', { name: 'x'.repeat(41) }), CHARACTER)).toBe(false);
     expect(validCharacter(made('drifter' as Lifepath), CHARACTER)).toBe(false);
-    expect(validCharacter(made('corpo', { look: { hair: 'mohawk', color: 'plaid', eyes: 'optics', mark: 'none' } }), CHARACTER)).toBe(false);
+    expect(validCharacter(made('corpo', { look: { ...LOOK, color: 'plaid' } }), CHARACTER)).toBe(false);
+    expect(validCharacter(made('corpo', { look: { ...LOOK, genitals: '' } }), CHARACTER)).toBe(false);
   });
 
   it('puts a look into words a line can use', () => {
-    expect(lookWords(made('nomad').look, CHARACTER)).toEqual({ hair: 'cyan mohawk', eyes: 'chrome optics', mark: 'scar' });
-    expect(lookWords({ hair: 'long', color: 'platinum', eyes: 'brown', mark: 'none' }, CHARACTER)).toEqual({ hair: 'long platinum hair', eyes: 'brown eyes', mark: '' });
-    expect(lookWords({ hair: 'shaved', color: 'red', eyes: 'grey', mark: 'none' }, CHARACTER).hair).toBe('shaved head');
-    expect(lookWords(undefined, CHARACTER)).toEqual({ hair: '', eyes: '', mark: '' });
+    expect(lookWords(made('nomad').look, CHARACTER)).toEqual({ hair: 'short cyan mohawk', eyes: 'chrome optics', mark: 'scar', build: 'lean build', chest: 'small breasts', genitals: 'vulva', bold: true });
+    const plain: Look = { ...LOOK, color: 'brown', length: 'long', style: 'ponytail', eyes: 'hazel', mark: 'none', chest: 'flat', genitals: 'penis', size: 'large' };
+    expect(lookWords(plain, CHARACTER)).toEqual({ hair: 'long brown hair in a ponytail', eyes: 'hazel eyes', mark: '', build: 'lean build', chest: 'flat chest', genitals: 'large penis', bold: false });
+    // Too short for a style, whatever style was set before.
+    expect(lookWords({ ...plain, length: 'shaved' }, CHARACTER)).toMatchObject({ hair: 'shaved head', bold: true });
+    expect(lookWords({ ...plain, length: 'buzzed', color: 'red', style: 'mohawk' }, CHARACTER)).toMatchObject({ hair: 'red buzz cut', bold: false });
+    expect(lookWords({ ...plain, color: 'platinum' }, CHARACTER).bold).toBe(true);
+    expect(lookWords(undefined, CHARACTER)).toEqual({ hair: '', eyes: '', mark: '', build: '', chest: '', genitals: '', bold: false });
   });
 
   it('names a new player from the people where their lifepath starts', () => {
@@ -116,5 +122,82 @@ describe('a lifepath', () => {
     const save = JSON.parse(JSON.stringify(createSave(world.seed, g, 0, NOON)));
     save.you.lifepath = 'astronaut';
     expect(readSave(save)?.you).toEqual({ pronouns: 'they' });
+  });
+});
+
+describe('looks', () => {
+  const g = newGame(made('streetkid'));
+  const people = g.population.people;
+
+  it('draws everyone a look of their own, the same every time, from what the builder offers', () => {
+    for (const person of people.slice(0, 400)) {
+      const look = lookOf(person, CHARACTER);
+      expect(lookOf(person, CHARACTER)).toEqual(look);
+      for (const part of LOOK_PARTS) {
+        if (look[part] === '') continue;
+        expect(CHARACTER.looks[part].options.some((o) => o.id === look[part]), `${person.id} ${part} ${look[part]}`).toBe(true);
+      }
+      if (CHARACTER.styleless.includes(look.length)) expect(look.style).toBe(CHARACTER.looks.style.options[0]!.id);
+    }
+    // Not everyone alike.
+    const hair = new Set(people.slice(0, 400).map((p) => lookWords(lookOf(p, CHARACTER), CHARACTER).hair));
+    expect(hair.size).toBeGreaterThan(20);
+  });
+
+  it('gives a body only to an adult, and a size only to what has one', () => {
+    for (const person of people) {
+      const look = lookOf(person, CHARACTER);
+      expect(look.chest, person.id).not.toBe('');
+      expect(look.genitals, person.id).not.toBe('');
+      expect(look.size !== '', person.id).toBe(CHARACTER.sized.includes(look.genitals));
+      // Anyone under age (the city has nobody yet) has no body drawn at all.
+      const young = lookOf({ ...person, age: CHARACTER.adultAt - 1 }, CHARACTER);
+      expect([young.chest, young.genitals, young.size], person.id).toEqual(['', '', '']);
+    }
+  });
+
+  it('draws them as their people go: grey with age, the Animals built, Maelstrom chromed', () => {
+    const share = (of: typeof people, test: (look: Look) => boolean) => of.filter((p) => test(lookOf(p, CHARACTER))).length / Math.max(1, of.length);
+    const old = people.filter((p) => p.age >= 60);
+    const young = people.filter((p) => p.age >= 18 && p.age < 30);
+    expect(share(old, (l) => l.color === 'grey')).toBeGreaterThan(0.3);
+    expect(share(young, (l) => l.color === 'grey')).toBe(0);
+    const animals = people.filter((p) => p.gang === 'animals');
+    const maelstrom = people.filter((p) => p.gang === 'maelstrom');
+    expect(animals.length).toBeGreaterThan(0);
+    expect(maelstrom.length).toBeGreaterThan(0);
+    expect(share(animals, (l) => l.build === 'muscular')).toBeGreaterThan(0.5);
+    expect(share(maelstrom, (l) => l.mark === 'chrome' || l.eyes === 'optics' || l.eyes === 'red')).toBeGreaterThan(0.6);
+    const she = people.filter((p) => p.age >= 18 && p.pronouns === 'she');
+    expect(share(she, (l) => l.genitals === 'vulva')).toBeGreaterThan(0.9);
+  });
+
+  it('shows on a profile from the first look, but for what is under the clothes until they are together', () => {
+    const adult = people.find((p) => p.age >= 30 && p.diedOn === undefined)!;
+    const seen = g.describe(adult.id, NOON)!;
+    const words = lookWords(lookOf(adult, CHARACTER), CHARACTER);
+    expect(seen.looks.toLowerCase()).toContain(words.hair);
+    expect(seen.looks.toLowerCase()).toContain(words.eyes);
+    expect(seen.build).not.toBe('');
+    expect(seen.chest).not.toBe('');
+    expect(seen.genitals).toBe('');
+    // Together with them, the player knows: through a save, where what's known is written.
+    const save = JSON.parse(JSON.stringify(createSave(world.seed, g, 0, NOON)));
+    save.society.known[adult.id] = { ...(save.society.known[adult.id] ?? { how: 'met', at: NOON, facts: [], log: [] }), facts: ['body'] };
+    const back = new Game(world, RULES, resume(world, readSave(save)!)!);
+    expect(back.describe(adult.id, NOON)!.genitals.toLowerCase()).toBe(words.genitals);
+    // Under age, no body to show, whatever's known.
+    expect(back.looksOf(lookOf({ ...adult, age: CHARACTER.adultAt - 1 }, CHARACTER), true)).toMatchObject({ chest: '', genitals: '' });
+  });
+
+  it('remarks on the player\'s hair only when it stands out, and on nothing behind a mask', () => {
+    expect(g.looksOf(LOOK, true)).toEqual({ looks: 'Short cyan mohawk · chrome optics · scar', build: 'Lean', chest: 'Small breasts', genitals: 'Vulva' });
+    expect(g.looksOf(LOOK, false).genitals).toBe('');
+  });
+
+  it('needs no rules for looks: without them, nobody has one', () => {
+    const { character: _, ...bare } = RULES;
+    const plain = newGame(made('streetkid'), bare);
+    expect(plain.describe(people[0]!.id, NOON)).toMatchObject({ looks: '', build: '', chest: '', genitals: '' });
   });
 });
