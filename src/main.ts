@@ -25,6 +25,7 @@ import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu, Quality } from './engine/food';
 import { kinWord, type Approach, type Question } from './engine/dialogue';
 import type { InebriationStatus } from './engine/inebriation';
+import type { HungerStatus } from './engine/needs';
 import { randomSeed } from './engine/rng';
 import { createSave, progressFor, readSave, savedSeed, type Progress } from './engine/save';
 import { snapToStreet } from './engine/streets';
@@ -45,6 +46,7 @@ import { ROOMS } from './data/rooms';
 import { HOME } from './data/home';
 import { CREDIT } from './data/credit';
 import { TRADE } from './data/trade';
+import { NEEDS } from './data/needs';
 import { POLICE } from './data/police';
 import { DEALING } from './data/dealing';
 import type { PoliceView } from './engine/police';
@@ -1614,6 +1616,7 @@ function showStatus(now: number): void {
   const cutter = game.cuttingSkill();
   const crew = game.crew(now);
   const habit = game.habit(now);
+  const hunger = game.hunger(now);
   // What's working, else the worst of a craving or withdrawal, on the line.
   const high = habit?.active[0] ? `On ${habit.active[0].name}` : habit?.stage ? (habit.stage.stage === 'craving' ? `Craving ${habit.stage.name}` : 'Withdrawal') : '';
   // The corner the player deals from, on the map.
@@ -1631,12 +1634,13 @@ function showStatus(now: number): void {
   const pass = wallet.passUntil > now;
   const refill = energy.nextPointAt === null ? 'Full' : `+1 in ${formatCountdown(energy.nextPointAt - now)}`;
   const condition = drunk.stage ? `${drunk.stage.label} · sober in ${formatCountdown((drunk.soberAt ?? now) - now)}` : '';
-  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', ncpd, deal?.debt ? `Debt ${deal.debt} €$` : '', high, drunk.stage?.label, mask ? 'Masked' : '', due ? `Shift on · ${formatMinutes(away)}` : job ? job.rung.title : ''].filter(Boolean).join(' · ');
+  const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', ncpd, deal?.debt ? `Debt ${deal.debt} €$` : '', high, hunger?.stage?.label, game.resting(now) ? 'Resting' : '', drunk.stage?.label, mask ? 'Masked' : '', due ? `Shift on · ${formatMinutes(away)}` : job ? job.rung.title : ''].filter(Boolean).join(' · ');
   const today = new Date(now);
   const pad = (n: number) => String(n).padStart(2, '0');
   const rows: StatusRow[] = [
     { label: 'Energy', value: `Lv ${energy.level} · ${energy.xp}/${energy.xpToNext} XP · ${refill}` },
     { label: 'Health', value: `${health.current}/${health.max}${health.fullAt ? ` · full in ${formatCountdown(health.fullAt - now)}` : ''}`, ...(health.current < health.max / 2 ? { tone: 'warn' as const } : {}) },
+    ...(hunger ? [{ label: 'Hunger', value: hungerLine(hunger, now), ...(hunger.stage && hunger.stage.energy * hunger.stage.health < 1 ? { tone: hunger.stage.health < 1 ? ('bad' as const) : ('warn' as const) } : {}) }] : []),
     { label: 'Trauma Team', value: cover ? `${cover.plan.name} · until ${formatDay(cover.until)}` : 'Not covered' },
     { label: 'NCPD', value: ncpdLine(police, now), ...(police.held || police.dispatch || police.warrants.length ? { tone: 'bad' as const } : {}) },
     { label: 'Charisma', value: `Lv ${charisma.level} · ${charisma.xp}/${charisma.xpToNext} XP` },
@@ -1669,6 +1673,14 @@ function showStatus(now: number): void {
     { label: 'Date', value: `2077.${pad(today.getMonth() + 1)}.${pad(today.getDate())}` },
   ];
   statusPanel.render(summary, rows);
+}
+
+/** How full the player is, for the status drop-down: the stage, what it takes off, and when the next sets in. */
+function hungerLine(hunger: HungerStatus, now: number): string {
+  const full = `${Math.round(hunger.value)}% full`;
+  const off = [hunger.energy < 1 ? `energy −${Math.round((1 - hunger.energy) * 100)}%` : '', hunger.health < 1 ? `health −${Math.round((1 - hunger.health) * 100)}%` : ''].filter(Boolean).join(', ');
+  const next = hunger.next && hunger.nextAt ? `${hunger.next.label.toLowerCase()} in ${formatCountdown(hunger.nextAt - now)}` : '';
+  return [hunger.stage ? hunger.stage.label : 'Fed', full, off, next].filter(Boolean).join(' · ');
 }
 
 /** The market where the player is, for the status drop-down: what's dear or cheap in the district against usual. */
@@ -2199,7 +2211,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, police: POLICE, join: JOIN, dealing: DEALING }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, needs: NEEDS, police: POLICE, join: JOIN, dealing: DEALING }, progress);
   wire(game);
   map.setWorld(world);
   try {

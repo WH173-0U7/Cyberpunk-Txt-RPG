@@ -6,6 +6,7 @@ import type { Runner, RunnerNews } from './crew';
 import type { HabitState } from './habit';
 import type { HomeState } from './home';
 import type { CreditState } from './credit';
+import type { HungerState } from './needs';
 import type { Owned } from './economy';
 import type { Arms, Meter } from './combat';
 import type { Lodging } from './rooms';
@@ -93,6 +94,8 @@ export interface Progress {
   stash?: Item[] | null;
   /** What the player owes and is owed (missing or null: a save from before; nothing either way). */
   credit?: CreditState | null;
+  /** How full the player is (missing or null: a save from before hunger; fed). */
+  hunger?: HungerState | null;
 }
 
 /** What a save takes from a game in progress (a `Game` has all of it). */
@@ -131,6 +134,7 @@ export interface SaveSource {
   readonly homeSaved: HomeState | null;
   readonly stashSaved: readonly Item[];
   readonly creditSaved: CreditState;
+  readonly hungerSaved: HungerState;
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -188,6 +192,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     home: game.homeSaved ? { ...game.homeSaved } : null,
     stash: game.stashSaved.map((item) => ({ ...item })),
     credit: game.creditSaved,
+    hunger: { ...game.hungerSaved },
     savedAt: now,
   };
 }
@@ -274,6 +279,8 @@ export function readSave(raw: unknown): SaveData | null {
     stash: Array.isArray(save.stash) ? save.stash.filter(isItem) : null,
     // And before borrowing and lending, nobody owed anybody.
     credit: creditOf(save.credit),
+    // And before hunger, the player had just eaten.
+    hunger: isHunger(save.hunger) ? save.hunger : null,
     savedAt: save.savedAt,
   };
 }
@@ -295,13 +302,13 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, trading, dealer, cutter, toughness, arms, room, lodging, job, jobs, career, life, you, chrome, health, police, lethal, coverage, dealing, habit, home, stash, credit } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, trading, dealer, cutter, toughness, arms, room, lodging, job, jobs, career, life, you, chrome, health, police, lethal, coverage, dealing, habit, home, stash, credit, hunger } = save;
   const exists = (j: JobState) => world.buildings.some((b) => b.id === j.building);
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, trading: trading ?? null, dealer: dealer ?? null, cutter: cutter ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, police: police ?? null, lethal: lethal ?? null, coverage: coverage ?? null, dealing: dealing ?? null, habit: habit ?? null, home: home && world.buildings.some((b) => b.id === home.building) ? home : null, stash: stash ?? null, credit: credit ? { ...credit, bank: credit.bank && world.buildings.some((b) => b.id === credit.bank?.bank) ? credit.bank : null } : null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, trading: trading ?? null, dealer: dealer ?? null, cutter: cutter ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, police: police ?? null, lethal: lethal ?? null, coverage: coverage ?? null, dealing: dealing ?? null, habit: habit ?? null, home: home && world.buildings.some((b) => b.id === home.building) ? home : null, stash: stash ?? null, credit: credit ? { ...credit, bank: credit.bank && world.buildings.some((b) => b.id === credit.bank?.bank) ? credit.bank : null } : null, hunger: hunger ?? null };
 }
 
 const CRIMES: ReadonlySet<string> = new Set<Crime>(['assault', 'robbery', 'murder', 'possession', 'dealing']);
@@ -443,8 +450,14 @@ function isEnergy(value: unknown): value is EnergyState {
     (e.level as number) >= 1 &&
     isNumber(e.xp) &&
     e.xp >= 0 &&
-    isNumber(e.updatedAt)
+    isNumber(e.updatedAt) &&
+    (e.rate === undefined || (isNumber(e.rate) && e.rate > 0))
   );
+}
+
+function isHunger(value: unknown): value is HungerState {
+  const h = value as Record<string, unknown> | null;
+  return typeof h === 'object' && h !== null && isNumber(h.value) && h.value >= 0 && h.value <= 100 && isNumber(h.updatedAt) && h.updatedAt >= 0;
 }
 
 /** What's known of each person, with the facts and the log that older saves don't have. */

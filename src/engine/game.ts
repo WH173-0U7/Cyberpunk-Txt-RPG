@@ -1,5 +1,5 @@
 import { blockAt, canEnter } from './buildings';
-import { energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
+import { energyAt, energyStatus, freshEnergy, spendEnergy, type EnergyRules, type EnergyState, type EnergyStatus } from './energy';
 import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
@@ -65,6 +65,7 @@ import {
   unpinnedIncidents,
 } from './society';
 import { districtAt, subdistrictAt, WORLD } from './geography';
+import { eat, fillOf, freshHunger, hungerStatus, type HungerStage, type HungerState, type HungerStatus, type NeedsRules } from './needs';
 import type { Progress } from './save';
 import { pointAlong, snapToStreet } from './streets';
 import { planTrip, startTrip, tripProgress, walkedSoFar, type TravelRules } from './travel';
@@ -156,6 +157,8 @@ export interface GameRules extends TravelRules {
   credit?: CreditRules;
   /** Selling to the stores and fencing valuables (missing: nobody buys off the player). */
   trade?: TradeRules;
+  /** Eating and resting: hunger on the clock, and energy back faster in a bed (missing: the player never goes hungry, and rests anywhere alike). */
+  needs?: NeedsRules;
   /** The NCPD: who calls it in, how fast it comes, warrants. Without it (the tests' rules leave it out), nobody ever calls. */
   police?: PoliceContent;
   /** Who throws in on a fight. Without it (the tests' rules leave it out), every fight is the player and one other. */
@@ -319,6 +322,9 @@ export class Game {
   private drunkState: InebriationState;
   /** The stage the player was last told about, so sobering up gets a line as it eases. */
   private drunkStage: InebriationStage | null = null;
+  /** How full the player was when it was last written down, and the stage they were last told of. */
+  private hungerState: HungerState;
+  private hungerTold: HungerStage | null = null;
   /** Everyone who lives here, made up for this city. */
   readonly population: Population;
   private society: SocietyState;
@@ -403,6 +409,7 @@ export class Game {
     this.passUntil = progress?.passUntil ?? 0;
     this.energyState = progress?.energy ? { ...progress.energy } : freshEnergy(rules.energy);
     this.drunkState = progress?.inebriation ? { ...progress.inebriation } : freshInebriation();
+    this.hungerState = progress?.hunger ? { ...progress.hunger } : rules.needs ? freshHunger(rules.needs.hunger) : { value: 100, updatedAt: 0 };
     this.population = generatePeople(world, rules.people, rules.food.dishes);
     this.baseEddies = new Map(this.population.people.map((p) => [p.id, p.eddies]));
     // The days the people have had since the city was made are put back onto them. Copied the
@@ -599,9 +606,9 @@ export class Game {
     return (menu.kind === 'gear' && transfers.gear) || (menu.venue.chain && transfers.chain) || (menu.venue.quality === 'luxury' && transfers.luxury);
   }
 
-  /** The player's energy at `now`: refilled on the clock since it was last spent. */
+  /** The player's energy at `now`: refilled on the clock since it was last spent, and capped by hunger. */
   energy(now: number): EnergyStatus {
-    return energyStatus(this.energyState, this.rules.energy, this.rules.timeScale, this.hasBed, now);
+    return energyStatus(this.energyState, this.rules.energy, this.rules.timeScale, this.hasBed, now, this.hunger(now)?.energy ?? 1);
   }
 
   /** Energy as it was last written down, for saving. */
@@ -614,7 +621,7 @@ export class Game {
    * Nothing spends it yet: jobs, training and the rest will.
    */
   spendEnergy(amount: number, now: number): boolean {
-    const spent = spendEnergy(this.energyState, amount, this.rules.energy, this.rules.timeScale, this.hasBed, now);
+    const spent = spendEnergy(this.energyState, amount, this.rules.energy, this.rules.timeScale, this.hasBed, now, this.hunger(now)?.energy ?? 1);
     if (!spent) {
       this.say(`Not enough energy: that takes ${amount}, you've got ${this.energy(now).current}.`, 'error');
       return false;
@@ -628,6 +635,64 @@ export class Game {
 
   private get hasBed(): boolean {
     return Boolean(this.homeState && !this.homeState.squat);
+  }
+
+  // ───────────── Needs ─────────────
+
+  /** How hungry the player is at `now` (null in a city without hunger). */
+  hunger(now: number): HungerStatus | null {
+    const rules = this.rules.needs?.hunger;
+    return rules ? hungerStatus(this.hungerState, rules, this.rules.timeScale, now) : null;
+  }
+
+  get hungerSaved(): HungerState {
+    return { ...this.hungerState };
+  }
+
+  /** Whether the player is resting where they are: energy comes back faster here. */
+  resting(now: number): boolean {
+    return this.restRate(now) > 1;
+  }
+
+  /** How many times as fast as usual energy comes back where the player is: in a bed (their own, or a room rented for the night), in a squat, or anywhere else. */
+  private restRate(now: number): number {
+    const rest = this.rules.needs?.rest;
+    if (!rest || !this.inside) return 1;
+    if (this.atHome()) return this.hasBed ? rest.bed : rest.squat;
+    const room = this.rented(now);
+    return room && room.building === this.inside.id && (!this.rules.rooms || this.roomState === room.room) ? rest.bed : 1;
+  }
+
+  /**
+   * Writes energy and health down as they are at `now`, before anything that would let them
+   * come back faster or hold more (eating, lying down): what came back before then came back
+   * as it did.
+   */
+  private settleMeters(now: number): void {
+    const cap = this.hunger(now)?.energy ?? 1;
+    this.energyState = { ...this.energyState, current: energyAt(this.energyState, this.rules.energy, this.rules.timeScale, this.hasBed, now, cap), updatedAt: now };
+    this.healthState = { value: this.healthAt(now), at: now };
+  }
+
+  /** Resting or not: when where the player is changes how fast energy comes back, it's written down at the old rate first. */
+  private rest(now: number): void {
+    const rate = this.restRate(now);
+    if (rate === (this.energyState.rate ?? 1)) return;
+    this.settleMeters(now);
+    const { rate: _was, ...state } = this.energyState;
+    this.energyState = rate === 1 ? state : { ...state, rate };
+    this.events.emit('energyChanged', this.energy(now));
+  }
+
+  /** Getting hungrier on the clock: a line as each stage sets in (and none for one the player was already in when they came back). */
+  private getHungry(now: number): void {
+    const status = this.hunger(now);
+    if (!status || status.stage === this.hungerTold) return;
+    const worse = status.stage && (!this.hungerTold || status.stage.below < this.hungerTold.below);
+    this.hungerTold = status.stage;
+    if (worse && status.stage) this.say(status.stage.down, 'system');
+    this.events.emit('energyChanged', this.energy(now));
+    this.events.emit('healthChanged', this.health(now));
   }
 
   /** How drunk the player is at `now`: what's left of their drinks, clearing on the clock. */
@@ -1375,9 +1440,15 @@ export class Game {
   health(now: number): HealthStatus {
     const max = this.maxHealth(now);
     const { regenPerHour } = this.rules.combat.health;
-    const value = Math.min(max, this.healthState.value + (Math.max(0, now - this.healthState.at) / HOUR) * this.rules.timeScale * regenPerHour);
+    const value = this.healthAt(now);
     const fullAt = value >= max ? null : now + ((max - value) / regenPerHour) * (HOUR / this.rules.timeScale);
     return { current: Math.floor(value), max, fullAt };
+  }
+
+  /** Health at `now`, fractions included: back on the clock since it was last written down, never over the most. */
+  private healthAt(now: number): number {
+    const { regenPerHour } = this.rules.combat.health;
+    return Math.min(this.maxHealth(now), this.healthState.value + (Math.max(0, now - this.healthState.at) / HOUR) * this.rules.timeScale * regenPerHour);
   }
 
   /** Health as it was last written down, for saving. */
@@ -1388,7 +1459,7 @@ export class Game {
   /** The most health the player has: the base, and more for chrome that gives it. */
   private maxHealth(now = Date.now()): number {
     const bonus = this.fitted.reduce((sum, f) => sum + (this.rules.combat.chrome[f.id]?.health ?? 0), 0);
-    return Math.round(this.rules.combat.health.base * (1 + bonus) * this.habitNow(now).maxHealth);
+    return Math.round(this.rules.combat.health.base * (1 + bonus) * this.habitNow(now).maxHealth * (this.hunger(now)?.health ?? 1));
   }
 
   /** Whether the player fights to kill (true) or to wound; kept between fights. */
@@ -2615,10 +2686,28 @@ export class Game {
     if (item && this.rules.gear.drugs[id]) return this.useDrug(item, now);
     const dish = item ? this.rules.food.dishes.find((d) => d.id === id) : undefined;
     if (!item || !dish) return false;
+    const hunger = this.rules.needs?.hunger;
+    const was = this.hunger(now);
+    // Full, there's no eating more; a drink still goes down.
+    if (hunger && was && dish.kind === 'food' && was.value >= hunger.full) {
+      this.say(this.narration(hunger.lines.full, {}, createRng(`${this.world.seed}:full:${now}`)), 'system');
+      return false;
+    }
     this.takeOne(item);
+    if (hunger) {
+      this.settleMeters(now);
+      this.hungerState = eat(this.hungerState, fillOf(dish, hunger), hunger, this.rules.timeScale, now);
+    }
     if (dish.kind === 'alcohol') this.drink(dish.name, dish.alcohol ?? 0, now);
     else this.say(`You ${dish.kind === 'food' ? 'eat' : 'drink'} the ${dish.name}.`);
+    const fed = this.hunger(now);
+    if (hunger && was?.stage && fed && fed.stage !== was.stage && (!fed.stage || fed.stage.below > was.stage.below) && was.stage.energy * was.stage.health < 1) this.say(this.narration(hunger.lines.better, {}, createRng(`${this.world.seed}:fed:${now}`)), 'system');
+    this.hungerTold = fed?.stage ?? null;
     this.events.emit('inventoryChanged', this.inventory);
+    if (hunger) {
+      this.events.emit('energyChanged', this.energy(now));
+      this.events.emit('healthChanged', this.health(now));
+    }
     return true;
   }
 
@@ -7683,6 +7772,12 @@ export class Game {
     this.emitArrived(null);
     if (this.inside) this.events.emit('interiorChanged', this.inside);
     this.events.emit('walletChanged', this.wallet);
+    // A new player's stomach starts emptying now; one coming back is as hungry as the time away has made them, told once.
+    if (this.rules.needs && !this.hungerState.updatedAt) this.hungerState = { ...this.hungerState, updatedAt: now };
+    const hungry = this.hunger(now);
+    if (hungry?.stage && hungry.stage.energy * hungry.stage.health < 1) this.say(hungry.stage.down, 'system');
+    this.hungerTold = hungry?.stage ?? null;
+    this.rest(now);
     // Whatever was drunk before has been clearing since; pick up from where it stands now, without a word.
     const drunk = this.inebriation(now);
     this.drunkStage = drunk.stage;
@@ -7758,6 +7853,8 @@ export class Game {
     this.homeTick(now);
     this.creditTick(now);
     this.soberUp(now);
+    this.getHungry(now);
+    this.rest(now);
     this.settleThreats(now);
     this.policeTick(now);
     this.dealTick(now);

@@ -1344,7 +1344,7 @@ Drinking alcohol makes the player drunk; nothing else happens yet:
 
 ## Energy
 
-Energy is in place, with nothing spending it yet:
+Energy is what shifts, the corner and the rest cost:
 
 - The rules are in `src/engine/energy.ts` (refilling on the clock, spending, experience,
   levels); the numbers are in `src/data/energy.ts`. It starts very low and levels very slowly
@@ -1353,18 +1353,47 @@ Energy is in place, with nothing spending it yet:
   tells the player) when there isn't enough, and does the training: experience, the bonus
   for running down to empty, level-ups. `Game.energy(now)` is where it stands. It's saved.
 - A home with a bed adds `ENERGY.bed` to the max: a rented one (see The player's home), never a
-  squat (`Game`'s private `hasBed`).
+  squat (`Game`'s private `hasBed`). How fast it comes back is `EnergyState.rate` (resting,
+  below) and hunger takes a share off the max (`cap`, below): `energyAt` and the rest take both.
+
+## Eating and resting
+
+The player gets hungry and rests (`rules.needs`, `NEEDS` in `src/data/needs.ts`; the tests'
+`RULES` leave it out, so nobody there is ever hungry and energy comes back alike everywhere):
+
+- `src/engine/needs.ts` is the engine, pure: `HungerState` (how full, 0 to 100, at `updatedAt`;
+  0 there for a player whose clock hasn't started, so it holds), `fullnessAt` (emptying over
+  `hunger.hours` on the clock, the streets' test speed, while the game is closed too),
+  `hungerStage` and `hungerStatus` (the worst of `stages` it's under, what's left of the most
+  energy and health, the next stage and when), `fillOf` (a dish's own `fill`, else by its kind:
+  `Dish.fill` in `src/data/food.ts` on what fills more or less than the usual) and `eat`.
+- `Game.hunger(now)` is where it stands, saved as `hunger` (older saves: fed, the clock started
+  in `start`). `Game.consume` fills it with what's eaten or drunk (no food past `full`, a drink
+  still goes down: `lines.full`), writing energy and health down first (`settleMeters`) so a
+  cap lifted gives back nothing that never came, and says `lines.better` out of a stage that
+  bit. `energy(now)` and `spendEnergy` take the stage's `energy` as the cap, `maxHealth` its
+  `health`; while nothing's done the cap only falls, so `min(cap, refilled)` is exact. `tick`'s
+  `getHungry` says each stage's `down` as it sets in, and `start` says it once for a stage that
+  bites. Nobody starves to death.
+- Resting (`rest`: `bed` and `squat`): `Game`'s private `restRate` is how many times as fast as
+  usual energy comes back where the player is (their own unit with a bed, or the room they've
+  rented for the night, `rented`: `bed`; a squat: `squat`; anywhere else, 1), and `rest` (from
+  `tick` and `start`) writes energy down at the old rate before a new one, kept on
+  `EnergyState.rate` (saved with it; `isEnergy` checks it). `Game.resting(now)` says so.
+- The UI: the line under the energy bar says the stage (Peckish, Hungry, Starving) and
+  **Resting**; the status drop-down has a **Hunger** row (`hungerLine` in `main.ts`). The staff
+  meal a kitchen hands over (see Work) is lunch. People's own meals are the economy's.
 
 ## Food
 
-Eateries sell food, into the inventory (eating it comes later):
+Eateries sell food, into the inventory (eating it is under Eating and resting):
 
 - `src/engine/food.ts` builds a `Menu` for a building or place (`menuFor`); `Game.menu()` is
   the one where the player is (inside a food storefront, or at a place whose kind has a
   kitchen) and `Game.buy(id)` buys off it. A venue's `quality` (luxury, everyday, poverty) is
   drawn from its district's `dining` weights, fixed for chains and named eateries, and sets
   the prices and what's on; the draws use their own RNG streams, so menus never change the
-  city. New things to do with food (eating, energy) go in `Game`. A storefront's menu carries
+  city. New things to do with food go in `Game`. A storefront's menu carries
   its stock and prices by supply and demand (see the economy, under People).
 - `src/data/food.ts` is the content: every dish is a real 2077 product or dish from the wiki
   (its "Cyberpunk 2077 Food", "Drinks" and "Alcohol" lists and the vendor store pages), with
@@ -1385,7 +1414,7 @@ here · Restaurant", "Inside · Block G1"), never the district, and has no title
 building or at a place (the target view keeps its own, with the district, since it's
 elsewhere). The energy bar has no words: one line under it (`src/ui/status.ts`, filled by
 `showStatus` in `main.ts` on every tick) says the figure, the level, when the next point
-comes, and anything the matter (drunk, masked, a shift on elsewhere and the walk there, else the job's rung); tapping it unfolds
+comes, and anything the matter (hungry, resting, drunk, masked, a shift on elsewhere and the walk there, else the job's rung); tapping it unfolds
 everything else about the player: experience, charisma, the fighting skills and the weapon levels, eddies and the bank, the pass, the
 job, the condition, the mask, every reputation, the map count, the weather, the date, and
 last the **Settings** link (the drop-down's `foot`, which `StatusPanel.render` keeps at the

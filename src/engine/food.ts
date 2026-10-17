@@ -40,6 +40,8 @@ export interface Dish {
   alcohol?: number;
   /** What one weighs, in grams, when it isn't the usual for its kind (src/data/gear.ts). */
   grams?: number;
+  /** How much of an empty stomach one fills, out of 100, when it isn't the usual for its kind (src/data/needs.ts). */
+  fill?: number;
 }
 
 /** What a kind of eatery serves, and how big its menu is. */
