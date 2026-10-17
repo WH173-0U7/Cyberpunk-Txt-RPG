@@ -15,6 +15,8 @@ export const MONEY: MoneyRules = {
   withdrawals: [20, 50, 100, 200],
   transfers: { chain: true, luxury: true, gear: true, ncart: true },
   chopCut: 0.25,
+  // A mugging is work: about what a shift's hardest hour takes. Pockets of someone out cold, less.
+  rob: { awake: 3, cold: 1 },
   // A shopkeeper twice as sharp as the player gets about two fifths more off them, and the other way round.
   haggle: 0.5,
   // A shopkeeper who remembers nothing but good of the player knocks up to a seventh off; nothing but bad, puts it on.

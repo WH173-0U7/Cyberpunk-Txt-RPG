@@ -7447,6 +7447,9 @@ export class Game {
     const cold = this.outCold(id, now) ? this.peopleHere(now).find((p) => p.person.id === id) : undefined;
     const here = this.isHere(id, now) ?? cold;
     if (!here) return false;
+    // It takes it out of the player, like any work.
+    const effort = this.rules.money.rob ? (cold ? this.rules.money.rob.cold : this.rules.money.rob.awake) : 0;
+    if (effort && !this.spendEnergy(effort, now)) return false;
     const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);

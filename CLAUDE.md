@@ -191,7 +191,7 @@ off people, for a fence: see Selling and fencing) are the items so far:
   (`newChipId`) with a `balance` and, taken off someone, `locked`. The wallet's `chips` card
   slots take them first (`placeFor`), a pocket slot each after that. Where transfers are
   taken, `pay` spends a clean chip before the account; `Game.bankChips()` banks the clean
-  ones; `rob` hands over the victim's `Person.chip` (drawn on its own RNG stream in
+  ones; `rob` (which takes `MONEY.rob` energy: `awake`, or `cold` for someone out cold) hands over the victim's `Person.chip` (drawn on its own RNG stream in
   `generatePeople`, odds and ranges in `PEOPLE.chips`), and collectors take the chips on the
   player when cash runs short. A locked chip is cleared by `Game.chop(personId, chipId, now)`:
   the person must be a netrunner (`isNetrunner` in `src/engine/people.ts`: by role, or
@@ -1344,6 +1344,19 @@ nobody there buys off the player and nobody carries anything worth taking):
 - The UI: the shop overlay has **Buy** and **Sell** tabs where the counter does both (`ShopView`
   `mode`, `sells`, `SellItemView`), and a fence, with no shelves for the player, is the panel's
   **Sell** (`ActionId` `sell`), the overlay in its sell mode. The narration is `TRADE.lines`.
+
+## Balance
+
+What the player earns is held against what it takes and what living costs
+(`tests/balance.test.ts`): work by the energy a shift takes (a few eddies an energy at the bottom
+of a ladder, a few dozen at the top, the middle ladder's top between 20 and 45); the corner, at a
+gang's top rung with its dearest drug, no more an energy than the top of work at a luxury place;
+an awake robbery's average haul (a share of the cash, the chip once chopped, a valuable fenced) no
+more an energy than the top of an everyday ladder; and a week at the bottom of work enough for
+cheap food and a cheap unit, but not for eating out and living up the hill. Work is gated by the
+day (a shift a job), the corner and robbery only by energy and their risks, which is why they're
+held to work's figures an energy. A change to pay, prices, drugs, rents, robbery or hunger keeps
+inside these, or moves them on purpose.
 
 ## Inebriation
 

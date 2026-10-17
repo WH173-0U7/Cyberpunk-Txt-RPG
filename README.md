@@ -326,7 +326,7 @@ own.
   while it's open. While the card is open, what they say stays off the map's feed; it's on
   the card.
 - **Crossing people**: **Insult** someone and they hold it against you (a temper shoves you
-  into the wall, which costs energy); **Rob** them and you take a share of their eddies, and
+  into the wall, which costs energy); **Rob** them (3 energy; 1 to go through the pockets of someone out cold) and you take a share of their eddies, and
   their credchip if they carry one (locked to them: see **Eddies**); a weapon on you makes
   them likelier to hand it over (see **Weapons and ammo**). Every
   such thing spreads: the victim holds a grudge, so do their spouse, parents, children,
