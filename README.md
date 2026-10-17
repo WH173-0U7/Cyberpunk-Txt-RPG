@@ -107,8 +107,8 @@ You start with 50 €$ and the clothes you're wearing.
 - **Health** comes back on the clock. Hospitals, street clinics and ripperdocs treat what's
   missing for a fee; pharmacies sell the MaxDoc and the Bounce Back.
 - **Trauma Team.** A hospital signs you up for 30 days: Silver (500 €$), Gold (1,500 €$) or
-  Platinum (6,000 €$). Go down in a fight on a plan and an AV picks you up instead of anyone
-  robbing you.
+  Platinum (6,000 €$). Go down in a fight on a plan and an AV picks you up before anyone can rob
+  you or finish you (not if you're only knocked out cold).
 - **Drink** goes to your head: Tipsy, Drunk, Wasted, Blackout drunk. The screen blurs and sways,
   your aim goes, and people notice. It clears a unit an hour.
 - **Drugs** you carry can be taken (**Use**). Each does something real for a while (Black Lace
@@ -196,7 +196,8 @@ You start with 50 €$ and the clothes you're wearing.
 
 - **Crossing people.** **Insult**, **Rob** or **Attack** someone (under **⋯** on their card) and
   it spreads: the victim holds a grudge, so do their family, friends, crew and gang, and anyone
-  who saw it talks. Whoever has the grudge and the nerve comes to collect, hours or a day later.
+  who saw it talks. Whoever has the grudge and the nerve comes for you, hours or a day later, in
+  person: it's a fight (the first beat waits for you to see it coming). Run, and they'll be back.
 - **Robbery runs on fear.** Their card shows how afraid of you they look (Unafraid up to
   Terrified). A gun scares more than a blade, a blade more than a club, and chrome, a mask, being
   good with what you hold and a name for violence all add to it; their own nerve, a weapon of
@@ -214,8 +215,18 @@ You start with 50 €$ and the clothes you're wearing.
   take cover, quickhack, heal, talk them down, or run, against a seven-second clock (longer with a
   Kerenzikov or a Sandevistan). Range matters, chrome counts, and people fight with what they
   carry. You fight to wound unless you say otherwise. Others may throw in, on either side.
-- **Knockouts.** A punch or a club can knock someone out cold: then you can rob them, or kill
-  them, if nobody stops you first.
+- **Knockouts.** A punch or a club can knock someone out cold: then you can rob them of
+  everything they carry, or kill them, if nobody stops you first.
+- **Losing a fight.** Put down or knocked out, you're at their mercy. They take everything you
+  carry (cash, chips, gear; your clothes stay on), unless they were only fighting back and have
+  no greed in them. Then they may finish you. That depends on why they came: revenge for a
+  killing most of all, then a gang's hunt, a beating, a turf war, a robbery, and least a debt or
+  someone you picked a fight with. It also depends on who they are: the hot-tempered, the brave
+  and the cold, more; the calm, the timid and the warm, hardly ever. The grudge they hold adds to
+  it, and people watching take from it, except on their own turf. An officer never finishes you,
+  and nobody does with one around or a friend of yours still standing. If they do, you're dead,
+  and Night City starts over. Keep what matters in the bank or your stash, and a Trauma Team plan
+  gets you out before anyone can touch you.
 - **The NCPD.** No wanted stars: nothing's on record unless someone calls it in. Downtown and
   Westbrook most do, gangers never on their own turf, and nobody in Pacifica or the Badlands,
   where the NCPD doesn't come. A unit counts down on the status line. When it arrives you can

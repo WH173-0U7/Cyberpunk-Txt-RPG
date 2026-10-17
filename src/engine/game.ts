@@ -27,6 +27,7 @@ import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You }
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
 import { fearBand, fearOf as fearLevel, respond, searchOdds, type Drawn, type FearContext, type RobberyRules } from './robbery';
+import { killOdds, robsOdds, type DownedRules, type Motive, type RevengeFor } from './downed';
 import { freshSkill, gainXp, skillBonus, skillEdge, skillStatus, xpToNext, type SkillRules, type SkillState, type SkillStatus } from './skills';
 import {
   applyIncident,
@@ -63,6 +64,7 @@ import {
   type SocietyState,
   type Stance,
   type Standing,
+  type Threat,
   unpinnedIncidents,
 } from './society';
 import { districtAt, subdistrictAt, WORLD } from './geography';
@@ -171,6 +173,8 @@ export interface GameRules extends TravelRules {
   dealing?: DealingRules;
   /** Robbery by fear: what someone hands over is what they fear the player into, and the rest can be gone after. Without it (the tests' rules leave it out), a robbery takes a share of what they carry, as it always did. */
   robbery?: RobberyRules;
+  /** The player at someone's mercy: robbed of everything, maybe finished, by why they fought and who they are; and revenge come as a fight. Without it (the tests' rules leave it out), the player put down loses a share of the cash, and revenge is a beating. */
+  downed?: DownedRules;
 }
 
 /** Whether counters keep the hours of whoever works them, and how many hours ahead to look for when one opens. */
@@ -256,6 +260,10 @@ interface Fight {
   /** Who it was with first, and whether the player went for them (an assault on them) or they for the player. */
   started: string;
   byYou: boolean;
+  /** Why they're fighting the player (what decides what they do with the player put down), what a revenge is for, and the threat it settles. */
+  motive: Motive;
+  why: RevengeFor | null;
+  threat: number | null;
   /** Whoever's been dealt with (down, out, gone), and what was said of those the player went for along the way. */
   settled: Set<string>;
   notes: string[];
@@ -1525,7 +1533,7 @@ export class Game {
    * here, known by the face unless there's a mask over it. Then it goes a beat at a time
    * (`fightMove`), both moves at once, the player against the clock.
    */
-  attack(id: string, now: number): boolean {
+  attack(id: string, now: number, motive: Motive = 'defense'): boolean {
     if (this.fighting || this.trip || this.heldAt(now)) return false;
     // With officers on the player, the only one to go for is an officer.
     const confront = this.policeState.confront;
@@ -1534,16 +1542,18 @@ export class Game {
     if (this.collectState && this.collectState.by !== id) return false;
     const here = this.isHere(id, now);
     if (!here || here.person.diedOn !== undefined) return false;
-    this.openFight(here, now, null);
+    this.openFight(here, now, null, motive);
     return true;
   }
 
   /**
    * A fight with someone here: one the player starts (`lead` null: an assault, the way an
    * incident goes, and whoever saw it may call it in), or one they do, told by `lead` (someone
-   * stepping in to stop the player: no incident of the player's, they started it).
+   * stepping in to stop the player: no incident of the player's, they started it). `motive` is
+   * why they're fighting (fighting back, unless said); a revenge says what for and which threat
+   * it settles, and its first beat waits on the player.
    */
-  private openFight(here: Presence, now: number, lead: string | null): void {
+  private openFight(here: Presence, now: number, lead: string | null, motive: Motive = 'defense', revenge?: { why: RevengeFor; threat: number }): void {
     const { person, stance, doing } = here;
     const id = person.id;
     const { society, timeScale } = this.rules;
@@ -1560,13 +1570,15 @@ export class Game {
     const fallout = lead === null ? this.incident('assault', person, 0, now) : [id];
     learnOf(this.society, id, 'met');
     changeStanding(this.society, id, this.masked() ? {} : { met: true }, society, timeScale, now);
-    this.fightState = { with: id, state, indoors, startedAt: now, deadline: now, next: 'attack', tell: null, log: [], beatLines: [], revived: false, over: null, result: '', launched: false, nerve: { courage: person.traits.courage, temper: person.traits.temper }, knew, others: [], started: id, byYou: lead === null, settled: new Set(), notes: [] };
+    this.fightState = { with: id, state, indoors, startedAt: now, deadline: now, next: 'attack', tell: null, log: [], beatLines: [], revived: false, over: null, result: '', launched: false, nerve: { courage: person.traits.courage, temper: person.traits.temper }, knew, others: [], started: id, byYou: lead === null, motive, why: revenge?.why ?? null, threat: revenge?.threat ?? null, settled: new Set(), notes: [] };
     if (lead === null) this.fightLine('start', person, { ...speaker.vars, ...this.fightVars(person, state.you, state.them) });
     else this.fightState.beatLines.push(lead);
     // Whoever here throws in, on one side or the other.
     this.joinFight(now, true);
     this.closeBeat();
     this.nextBeat(person, now);
+    // Come for the player out of nowhere, the first beat waits for them to see it.
+    if (revenge) this.fightState.deadline = Infinity;
     if (lead === null) {
       // Whoever saw it go for a phone, or don't; the one it's done to, once it's over.
       this.crime('assault', person, now, knew, 'witnesses');
@@ -2099,6 +2111,9 @@ export class Game {
     let outcome: FightOutcome = how ?? 'won';
     let result = '';
     let report = () => {};
+    // At their mercy: what they took off the player, and whether they finished it.
+    let taken = 0;
+    let killed: string | null = null;
     // Put down by the NCPD, the player comes to in cuffs, their pockets their own.
     const cuffed = (how === 'lost' || how === 'knocked') && Boolean(this.rules.police) && NCPD.test(person.job.role);
     if (!how || how === 'won' || how === 'out' || how === 'escaped' || how === 'talked') {
@@ -2111,6 +2126,8 @@ export class Game {
     } else if (how === 'lost' && this.covered(now)) {
       this.fightLine('youDown', person, vars);
       result = this.pickedUp(this.covered(now)!, person, vars);
+    } else if ((how === 'lost' || how === 'knocked') && this.rules.downed) {
+      ({ result, taken, killed } = this.atMercy(person, how, vars, rng, now));
     } else if (how === 'lost' || how === 'knocked') {
       // Put down, or knocked out cold: either way they go through the player's pockets.
       this.fightLine(how === 'knocked' ? 'youOut' : 'youDown', person, vars);
@@ -2130,6 +2147,15 @@ export class Game {
     }
     f.over = outcome;
     f.result = [...f.notes, result].join(' ');
+    // A revenge the fight was: settled, whichever way it went, but for the player running from it.
+    if (f.threat !== null) this.endRevenge(f, person, outcome, taken, now);
+    // Finished off: the city goes on without the player.
+    if (killed) {
+      this.closeBeat();
+      this.events.emit('fightChanged', this.fightView());
+      this.events.emit('flatlined', { text: killed });
+      return;
+    }
     // Everyone who was in it has learned from it.
     for (const id of new Set([f.started, f.with, ...f.others.map((c) => c.id), ...f.settled])) learned(this.life, id);
     // Walking away from it on their own feet toughens the player up.
@@ -2149,6 +2175,99 @@ export class Game {
     // ...and is taken in for it, held the longer for having fought.
     if (cuffed) this.arrest({ officers: [person.id], crime: 'assault', why: 'scene', at: now }, now, this.rules.police!.run.resisting);
     this.events.emit('healthChanged', this.health(now));
+  }
+
+  /**
+   * The player put down or knocked out cold, at the mercy of whoever did it: they go through
+   * the player's pockets (anyone, but someone who only fought back by their greed) and take
+   * everything, then finish the player or leave them, by why they were fighting, who they are,
+   * the grudge they hold and who's watching (nobody, with an officer in it or here, or anyone
+   * still standing at the player's side).
+   */
+  private atMercy(person: Person, how: 'lost' | 'knocked', vars: Record<string, string>, rng: Rng, now: number): { result: string; taken: number; killed: string | null } {
+    const rules = this.rules.downed!;
+    const f = this.fightState!;
+    const { society, timeScale } = this.rules;
+    const name = this.fightName(person, false);
+    const who = this.whoVars(person);
+    this.fightLine(how === 'knocked' ? 'youOut' : 'youDown', person, vars);
+    if (how === 'lost') f.state.you.hp = 1;
+    // A loan shark's money goes in the gang's chest; anyone else's in their pocket.
+    const chest = f.motive === 'debt' && person.gang ? person.gang : null;
+    let taken = 0;
+    let stripped = false;
+    if (rng.chance(robsOdds(f.motive, person.traits.greed, rules))) {
+      const off = this.strip(person, chest);
+      taken = off.cash;
+      // A dealing debt to that gang comes down by what went in its chest.
+      const d = this.dealState.current;
+      if (chest && d?.gang === chest && d.debt) d.debt = Math.max(0, d.debt - taken);
+      stripped = Boolean(off.haul);
+      f.beatLines.push(finish(rng.pick(off.haul ? rules.lines.stripped : rules.lines.bare)!, { ...who, haul: off.haul }));
+    }
+    const inIt = new Set([f.with, ...f.others.map((c) => c.id)]);
+    const watching = this.peopleHere(now).filter((p) => !inIt.has(p.person.id) && p.doing !== 'out cold' && p.person.diedOn === undefined);
+    const foes = f.others.filter((c) => !c.ally).map((c) => this.person(c.id));
+    const officer = [...foes, ...watching.map((p) => p.person)].some((p) => p && NCPD.test(p.job.role));
+    const ally = f.others.some((c) => c.ally);
+    const district = this.districtOf(this.where);
+    const turf = Boolean(person.gang && district && (this.rules.people.turf[district.id] ?? []).some(([g]) => g === person.gang));
+    const grudge = standingOf(this.society, person.id, society, timeScale, now).grudge;
+    const odds = officer || ally ? 0 : killOdds(f.motive, f.why, person.traits, grudge, watching.length, turf, rules);
+    if (rng.chance(odds)) {
+      return { result: '', taken, killed: finish(rng.pick(rules.lines.killed)!, { ...who, place: this.hereName() }) };
+    }
+    f.beatLines.push(finish(rng.pick(rules.lines.spared)!, who));
+    const lot = stripped ? ' and took everything you had' : '';
+    const result = how === 'knocked' ? `${capitalize(name)} knocked you out cold${lot}. You come to on the floor.` : `${capitalize(name)} put you down${lot}.`;
+    return { result, taken, killed: null };
+  }
+
+  /**
+   * Everything the player carries, off them and onto whoever took it: the cash (into their
+   * pocket, or a gang's chest), the credchips (onto theirs), and every item in every pocket,
+   * the clothes on the player's back and the bags left empty. What it came to, in words.
+   */
+  private strip(person: Person, chest: string | null): { cash: number; haul: string } {
+    const { money, taken } = grabCash(this.money, cash(this.money), this.rules.money);
+    this.money = money;
+    if (chest) this.life.treasuries[chest] = (this.life.treasuries[chest] ?? 0) + taken;
+    else person.eddies += taken;
+    this.life.eddies[person.id] = person.eddies;
+    const items = this.items.splice(0);
+    const chips = items.filter((i) => i.kind === 'credchip');
+    const things = items.filter((i) => i.kind !== 'credchip');
+    const onChips = chips.reduce((n, c) => n + (c.balance ?? 0), 0);
+    if (onChips) {
+      person.chip += onChips;
+      this.life.chips[person.id] = person.chip;
+    }
+    const parts = [taken ? `${taken} €$` : '', chips.length === 1 ? 'your credchip' : chips.length ? `${chips.length} credchips` : '', things.length === 1 ? `your ${things[0]!.name}` : things.length ? 'everything else you carried' : ''].filter(Boolean);
+    const haul = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : (parts[0] ?? '');
+    this.events.emit('walletChanged', this.wallet);
+    if (items.length) this.events.emit('inventoryChanged', this.inventory);
+    return { cash: taken, haul };
+  }
+
+  /**
+   * A revenge fight over: settled whichever way it went (they had their go), the grudge eased,
+   * and what was taken off a loan shark's loan; run from, they come again (`again`, set when
+   * they came).
+   */
+  private endRevenge(f: Fight, person: Person, outcome: FightOutcome, taken: number, now: number): void {
+    const threat = this.society.threats.find((t) => t.id === f.threat);
+    if (!threat || outcome === 'fled') return;
+    const { society, timeScale } = this.rules;
+    const shark = this.creditState.shark;
+    if (threat.why === 'debt' && shark?.gang === threat.gang && taken) {
+      shark.owed = Math.max(0, shark.owed - taken);
+      shark.paid = this.clockAt(now).day;
+      delete shark.sent;
+      if (!shark.owed) this.creditState.shark = null;
+    }
+    settleThreat(this.society, threat, society, timeScale, now);
+    if (threat.by && (outcome === 'lost' || outcome === 'knocked')) this.remember(threat.by, { kind: 'settled', at: now, amount: taken }, now);
+    this.events.emit('societyChanged', { people: [person.id] });
   }
 
   /**
@@ -4116,7 +4235,7 @@ export class Game {
       changeStanding(this.society, person.id, { met: true, asks: standing.asks + 1, rapport: -dealing.pitch.rapport * 2, grudge: 15 }, society, timeScale, now);
       this.setOnPlayer(person.gang, now, rng);
       this.noteFeedback(person, before, now, '', speaker.vars);
-      if (rng.chance(person.traits.temper)) this.openFight({ person, doing, stance: this.stanceOf(person, now), scene: null }, now, `${person.given} takes it as war, and swings.`);
+      if (rng.chance(person.traits.temper)) this.openFight({ person, doing, stance: this.stanceOf(person, now), scene: null }, now, `${person.given} takes it as war, and swings.`, 'turf');
       this.events.emit('societyChanged', { people: [person.id] });
       return true;
     } else if (habit?.drug === drug) {
@@ -4409,7 +4528,7 @@ export class Game {
       if (choice === 'fight') {
         d.yielded = 0;
         d.trust += dealing.war.rivals.trust;
-        this.openFight({ person: buyer, doing: 'taking your corner', stance: this.stanceOf(buyer, now), scene: null }, now, this.narration(dealing.lines.stoodUp, this.dealVars(buyer, now, vars), rng));
+        this.openFight({ person: buyer, doing: 'taking your corner', stance: this.stanceOf(buyer, now), scene: null }, now, this.narration(dealing.lines.stoodUp, this.dealVars(buyer, now, vars), rng), 'turf');
         this.events.emit('dealChanged', this.dealing(now));
         return true;
       }
@@ -4438,7 +4557,7 @@ export class Game {
     if (m.kind === 'robber') {
       const weapon = this.armOf(buyer).short;
       if (choice === 'fight') {
-        this.openFight({ person: buyer, doing: 'holding you up', stance: this.stanceOf(buyer, now), scene: null }, now, this.narration(dealing.lines.robber, this.dealVars(buyer, now, { drug: name, weapon }), rng));
+        this.openFight({ person: buyer, doing: 'holding you up', stance: this.stanceOf(buyer, now), scene: null }, now, this.narration(dealing.lines.robber, this.dealVars(buyer, now, { drug: name, weapon }), rng), 'robbery');
         return true;
       }
       const talked = choice === 'talk' && rng.chance(Math.max(0.05, Math.min(dealing.bad.talk.most, dealing.bad.talk.base + dealing.bad.talk.perLevel * (this.charismaState.level - this.skillsFor(buyer, now).charisma))));
@@ -4677,7 +4796,7 @@ export class Game {
     };
     if (choice === 'fight') {
       // The fight first, with them here to fight; then they're no longer waiting on an answer.
-      if (!this.attack(by.id, now)) return false;
+      if (!this.attack(by.id, now, 'debt')) return false;
       this.collectState = null;
       d.trust -= dealing.trust.fought;
       d.collectAt = again;
@@ -5774,7 +5893,7 @@ export class Game {
       if (!officer) return false;
       this.say(this.policeLine(lines.fight, `fight:${c.at}`), 'error');
       // The other one sees it, and calls it in: that's the backup.
-      if (!this.attack(officer.id, now)) return false;
+      if (!this.attack(officer.id, now, 'police')) return false;
       p.confront = null;
       // What they came for is on a warrant now, if they saw the face (a stop and search came for nothing in particular).
       if (!this.masked() && c.why !== 'search') issueWarrant(p, c.crime, this.districtOf(this.where)?.id ?? '', now, police, this.rules.timeScale);
@@ -7489,7 +7608,7 @@ export class Game {
     const standing = standingOf(this.society, id, society, timeScale, now);
     const rng = createRng(`${this.world.seed}:${id}:rob:${now}`);
     const emptied = standing.robbedAt && now - standing.robbedAt < (7 * 24 * HOUR) / timeScale;
-    // What the player pulls on them: fewer fight back against a gun (loaded or not; they can't tell), more against a blade, most against bare hands. Out cold, nobody fights, and the pockets come out near enough empty.
+    // What the player pulls on them: fewer fight back against a gun (loaded or not; they can't tell), more against a blade, most against bare hands. Out cold, nobody fights, and everything on them comes out of their pockets.
     const arms = this.rules.gear.arms;
     const drawn = drawWeapon(this.items, arms);
     // By fear, awake and not already cleaned out: what they make of the player decides what they hand over, if anything.
@@ -7501,7 +7620,7 @@ export class Game {
     const speaker = this.speakerFor(person, stance, doing, now);
     speaker.vars = { ...speaker.vars, ...this.robVars() };
     if (answer?.kind === 'fight') return this.foughtBack(here, speaker, rng, now);
-    const wanted = emptied || answer?.kind === 'refuse' ? 0 : Math.round(person.eddies * (answer ? answer.share : (cold ? rng.range(0.8, 1) : rng.range(0.4, 0.8)) * (fought ? 0.5 : 1)));
+    const wanted = emptied || answer?.kind === 'refuse' ? 0 : Math.round(person.eddies * (answer ? answer.share : (cold ? 1 : rng.range(0.4, 0.8)) * (fought ? 0.5 : 1)));
     // What's in their pocket, note by note: awake, they hand over the small ones first and keep the big ones back (by fear, not a note past what they mean to give); out cold, the big ones come first.
     const handed = takeFrom(this.purseOn(person), wanted, !cold, Boolean(answer)).taken;
     // Their credchip too, if they carry one (and, by fear, are afraid enough to give it up) and there's a slot for it: it comes locked, and wants chopping before any of it is yours.
@@ -7925,6 +8044,8 @@ export class Game {
         this.society.threats = this.society.threats.filter((t) => t.id !== threat.id);
         continue;
       }
+      // With the rules for it, they come for the player in person: a fight, not a beating.
+      if (this.rules.downed && this.comeForYou(threat, by, now)) continue;
       const gang = threat.gang ? people.gangs[threat.gang] : undefined;
       const grab = grabCash(this.money, threat.amount, this.rules.money);
       let take = grab.taken;
@@ -7938,7 +8059,7 @@ export class Game {
       // Whoever it is, the player has met them now; named as far as the player knows them, else by their look.
       if (by) learnOf(this.society, by.id, 'met');
       const known = by ? this.describe(by.id, now)?.name : undefined;
-      const vars = { ...(by ? this.speakerFor(by, this.stanceOf(by, now), 'killing time', now).vars : {}), ...(known ? { name: known } : {}), gang: gang?.name ?? '', take: String(take), where: this.nameOf(this.where) };
+      const vars = { ...(by ? this.speakerFor(by, this.stanceOf(by, now), 'killing time', now).vars : {}), ...(known ? { name: known } : {}), gang: gang?.name ?? '', take: String(take), where: this.hereName() };
       const rng = createRng(`${this.world.seed}:threat:${threat.id}`);
       this.events.emit('fx', { effect: 'shake' });
       const hit = finish(textOf(rng.pick(by ? lines.revenge.person : threat.why === 'debt' ? lines.revenge.debt : lines.revenge.gang)), vars);
@@ -7963,6 +8084,55 @@ export class Game {
       if (lost.length) this.events.emit('inventoryChanged', this.inventory);
       this.events.emit('societyChanged', { people: by ? [by.id] : [] });
     }
+  }
+
+  /**
+   * Revenge come for the player in person (`rules.downed`): the one with the grudge, or one of
+   * the gang's (a loan shark's collector, else anyone of theirs, from round here first), finds
+   * them and goes for them, the first beat waiting on the player to see it coming. Busy with
+   * something else (a fight, officers, a collector, a moment), it waits; the one coming laid up,
+   * it waits for them; nobody to send, it goes as a beating (false). Until the fight's over it
+   * stands, set to come again (`again`) if the player runs.
+   */
+  private comeForYou(threat: Threat, by: Person | undefined, now: number): boolean {
+    const rules = this.rules.downed!;
+    const { timeScale } = this.rules;
+    const later = (minutes: number) => {
+      threat.due = now + (minutes * 60_000) / timeScale;
+      return true;
+    };
+    if (this.fightState || this.detained(now) || this.dealMomentState || this.shiftEventState) return later(10);
+    const day = this.clockAt(now).day;
+    const able = (p: Person) => p.diedOn === undefined && !(p.hurtUntil !== undefined && day <= p.hurtUntil) && !this.outCold(p.id, now);
+    if (by && !able(by)) return later(60);
+    const rng = createRng(`${this.world.seed}:comes:${threat.id}:${now}`);
+    let comer = by;
+    if (!comer && threat.gang) {
+      const roles = threat.why === 'debt' ? (this.rules.dealing?.gangs[threat.gang]?.collectors ?? []) : [];
+      const members = this.population.people.filter((p) => p.gang === threat.gang && able(p));
+      const sent = roles.length ? members.filter((p) => roles.includes(p.job.role)) : [];
+      const pool = sent.length ? sent : members;
+      const district = this.districtOf(this.where)?.id;
+      const local = pool.filter((p) => p.district === district);
+      const from = local.length ? local : pool;
+      comer = from.length ? rng.pick(from) : undefined;
+    }
+    if (!comer) return false;
+    if (this.trip) this.stop(now);
+    const kind = this.society.incidents.find((i) => i.id === threat.incident)?.kind;
+    const why: RevengeFor = by && kind ? kind : 'gang';
+    const gang = threat.gang ? (this.rules.people.gangs[threat.gang]?.name ?? threat.gang) : '';
+    learnOf(this.society, comer.id, 'met');
+    const text = finish(rng.pick(by ? rules.lines.arrive : threat.why === 'debt' ? rules.lines.arriveDebt : rules.lines.arriveGang)!, { ...this.whoVars(comer), gang, where: this.hereName() });
+    this.events.emit('fx', { effect: 'shake' });
+    this.say(text, 'error');
+    this.logged(comer.id, 'them', text, now);
+    // Run from, they come again; else the fight's end settles it.
+    const [least, most] = rules.again;
+    threat.due = now + (rng.range(least, most) * HOUR) / timeScale;
+    this.openFight({ person: comer, doing: 'come for you', stance: this.stanceOf(comer, now), scene: null }, now, text, threat.why === 'debt' ? 'debt' : 'revenge', { why, threat: threat.id });
+    this.events.emit('societyChanged', { people: [comer.id] });
+    return true;
   }
 
   /** Takes energy away without the training that spending it gives: a shove, a beating. */
@@ -9385,6 +9555,15 @@ export class Game {
   }
 
   /** What to call a spot: a place's or station's name, the building outside, or the block. */
+  /** Where the player is, to say "at {where}": the building they're in or at the door of, the place, the station, the block. */
+  private hereName(): string {
+    if (this.inside) return this.inside.name;
+    const building = this.where.building ? this.world.buildings.find((b) => b.id === this.where.building) : undefined;
+    if (building) return building.name;
+    const name = this.nameOf(this.where);
+    return name === 'The streets' ? 'a street corner' : name;
+  }
+
   nameOf(where: Whereabouts): string {
     if (where.place) return this.world.locations[where.place]?.name ?? 'Somewhere';
     if (where.station) return this.world.transit.stations[where.station]?.name ?? 'NCART';

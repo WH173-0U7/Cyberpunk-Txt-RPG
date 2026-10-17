@@ -12,6 +12,7 @@ import { CHARISMA, TRADING } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
 import { LIFE } from '../src/data/life';
 import { COMBAT } from '../src/data/combat';
+import { DOWNED } from '../src/data/downed';
 import { MEDICAL } from '../src/data/medical';
 import { HOURS } from '../src/data/hours';
 import { priceFor } from '../src/engine/food';
@@ -2670,11 +2671,11 @@ describe('Game', () => {
       /** Someone at work at the noodle bar, on a weekday morning, and the game there. */
       /** A player who shoots a pistol, and the Lexington, as well as anyone (an ordinary level: no better, no worse). */
       const ordinary = { types: { pistol: { level: 4, xp: 0 } }, models: { lexington: { level: 4, xp: 0 } } };
-      const atTheBar = (progress: Partial<Progress> = {}, combat = COMBAT, city = world) => {
+      const atTheBar = (progress: Partial<Progress> = {}, combat = COMBAT, city = world, extra: Partial<GameRules> = {}) => {
         for (let day = 0; day < 14; day++) {
           const now = Date.UTC(2077, 9, 12, 11, 0) + day * 24 * HOUR;
           if (new Date(now).getUTCDay() % 6 === 0) continue;
-          const game = new Game(city, { ...RULES, combat }, { ...progressInside('b-noodle', 38, 20, [lexington]), money: { bills: 100, coins: 0, account: 0 }, arms: ordinary, ...progress });
+          const game = new Game(city, { ...RULES, combat, ...extra }, { ...progressInside('b-noodle', 38, 20, [lexington]), money: { bills: 100, coins: 0, account: 0 }, arms: ordinary, ...progress });
           game.start(now);
           const worker = game.peopleHere(now).find((p) => p.person.job.building === 'b-noodle');
           if (worker) return { game, now, worker: worker.person, ...record(game) };
@@ -2741,6 +2742,96 @@ describe('Game', () => {
         expect(hearty.game.fightView()?.you.hp).toBe(hearty.game.fightView()?.you.max);
       });
 
+      describe('at their mercy', () => {
+        const zero = { turf: 0, robbery: 0, debt: 0, defense: 0, police: 0 };
+        const none = { murder: 0, assault: 0, robbery: 0, insult: 0, gang: 0 };
+        /** Nobody ever finishes the player; and everybody does, whoever's watching. */
+        const never = { ...DOWNED, kill: { ...DOWNED.kill, motive: zero, revenge: none } };
+        const always = { ...DOWNED, kill: { ...DOWNED.kill, motive: { ...zero, turf: 1, robbery: 1, debt: 1, defense: 1 }, revenge: { murder: 1, assault: 1, robbery: 1, insult: 1, gang: 1 }, watching: 1, most: 1 } };
+        const chip: Item = { id: 'chip-1', kind: 'credchip', name: 'CredChip', count: 1, in: 'wallet', balance: 50 };
+        const weak = { items: [lexington, chip], health: { value: 5, at: Date.UTC(2077, 9, 12, 11, 0) } };
+        const society = (g: Game) => (g as unknown as { society: SocietyState }).society;
+
+        it('takes everything the player carries when they go down, and leaves them breathing when it is not in them', () => {
+          const { game, now, worker } = atTheBar(weak, brutal(10, 0), world, { downed: never });
+          worker.traits.greed = 1;
+          const [had, chipHad] = [worker.eddies, worker.chip];
+          game.attack(worker.id, now);
+          const t = fightOut(game, now, 'cover');
+          expect(game.fightView()?.over).toBe('lost');
+          expect(game.fightView()?.result).toContain('took everything you had');
+          expect(game.wallet.eddies).toBe(0);
+          expect(game.inventory).toEqual([]);
+          // It's theirs now: the cash in their pocket, what was on the chip on theirs.
+          expect(worker.eddies).toBe(had + 100);
+          expect(worker.chip).toBe(chipHad + 50);
+          expect(game.health(t).current).toBe(1);
+          expect(game.fightView()?.log.join(' ')).not.toMatch(/[{}]|undefined/);
+        });
+
+        it('leaves the pockets alone of someone who only fought back and has no greed in them', () => {
+          const { game, now, worker } = atTheBar(weak, brutal(10, 0), world, { downed: never });
+          worker.traits.greed = 0;
+          game.attack(worker.id, now);
+          fightOut(game, now, 'cover');
+          expect(game.fightView()?.over).toBe('lost');
+          expect(game.wallet.eddies).toBe(100);
+          expect(game.inventory).toHaveLength(2);
+        });
+
+        it('finishes the player when it is in them, and the city goes on without them', () => {
+          const { game, now, worker } = atTheBar(weak, brutal(10, 0), world, { downed: always });
+          let died = '';
+          game.events.on('flatlined', ({ text }) => (died = text));
+          game.attack(worker.id, now);
+          fightOut(game, now, 'cover');
+          expect(game.fightView()?.over).toBe('lost');
+          expect(died).not.toBe('');
+          expect(died).not.toMatch(/[{}]|undefined/);
+          expect(game.fighting).toBe(false);
+        });
+
+        it('comes for the player in person for revenge: a fight that waits for them, settled when it is over', () => {
+          const { game, now, worker } = atTheBar({ ...weak }, brutal(10, 0), world, { downed: never });
+          worker.traits.greed = 1;
+          society(game).threats.push({ id: 50, due: now + 1000, by: worker.id, gang: null, incident: 0, amount: 30 });
+          game.tick(now + 2000);
+          expect(game.fighting).toBe(true);
+          expect(game.fightWith).toBe(worker.id);
+          // The first beat waits for the player to see it coming.
+          expect(game.fightView()?.deadline).toBe(Infinity);
+          game.tick(now + 10 * 60_000);
+          expect(game.fightView()?.beat).toBe(0);
+          fightOut(game, now + 10 * 60_000, 'cover');
+          expect(game.fightView()?.over).toBe('lost');
+          expect(game.wallet.eddies).toBe(0);
+          expect(game.societySaved.threats).toEqual([]);
+        });
+
+        it('sends one of the gang for a gang, and comes again when the player runs', () => {
+          const { game, now } = atTheBar({ items: [] }, brutal(1, 0, { escape: { reach: 1, close: 1, far: 1 } }), world, { downed: never });
+          // The little test city has no gangs: one of its people is a Tyger Claw for this.
+          const gang = 'tyger_claws';
+          game.population.people.find((p) => p.diedOn === undefined)!.gang = gang;
+          society(game).threats.push({ id: 51, due: now + 1000, by: null, gang, incident: 0, amount: 30 });
+          game.tick(now + 2000);
+          expect(game.fighting).toBe(true);
+          expect(game.population.people.find((p) => p.id === game.fightWith)?.gang).toBe(gang);
+          fightOut(game, now + 2000, 'run');
+          expect(game.fightView()?.over).toBe('fled');
+          // Still owed: they come again, later.
+          expect(game.societySaved.threats.find((t) => t.id === 51)?.due).toBeGreaterThan(now + 2000);
+        });
+
+        it('stays a beating without the rules for it', () => {
+          const { game, now, worker } = atTheBar({ items: [] }, brutal(10, 0));
+          society(game).threats.push({ id: 52, due: now + 1000, by: worker.id, gang: null, incident: 0, amount: 30 });
+          game.tick(now + 2000);
+          expect(game.fighting).toBe(false);
+          expect(game.societySaved.threats).toEqual([]);
+        });
+      });
+
       describe('bare-handed', () => {
         /** Everyone fights with their fists, every blow lands, and a blow that lands knocks someone out cold. */
         const knockouts = brutal(5, 0, { carry: { ...COMBAT.carry, chance: { gang: 0, guard: 0, corpo: 0, street: 0, elder: 0 } }, knockout: { ...COMBAT.knockout, kinds: { fists: 100, blunt: 100 }, least: 0, most: 1, minutes: [10, 10] } });
@@ -2801,7 +2892,7 @@ describe('Game', () => {
           expect(green.game.toughness().bonus).toBeLessThan(1);
         });
 
-        it('lets the player go through the pockets of someone out cold: no fight, near enough everything, and once a week', () => {
+        it('lets the player go through the pockets of someone out cold: no fight, everything, and once a week', () => {
           const { game, now, worker } = atTheBar({ items: [] }, knockouts);
           worker.eddies = 200;
           game.attack(worker.id, now);
@@ -2810,9 +2901,9 @@ describe('Game', () => {
           game.leaveFight();
           const before = game.wallet.eddies;
           expect(game.rob(worker.id, t)).toBe(true);
-          // Four fifths of what they carry at the least, which is as much as anyone gives up face to face.
+          // Everything they carry, which is more than anyone gives up face to face.
           const took = game.wallet.eddies - before;
-          expect(took).toBeGreaterThanOrEqual(160);
+          expect(took).toBe(200);
           expect(worker.eddies).toBe(200 - took);
           const said = spoken(game, worker.id).slice(-2).map((l) => l.text);
           expect(LINES.you.robCold.map((l) => (typeof l === 'string' ? l : l.text)).some((l) => said[0]?.startsWith(l.slice(0, 8)))).toBe(true);

@@ -823,9 +823,30 @@ move at once and both land together, the player against the clock:
   written to `LifeState.dead` and `diedOn` with a `murder` incident and crime; `trauma` for a
   corpo, whose Trauma Team gets them out alive; else `won`, laid up for
   `hurtDays` in `LifeState.hurt`, in the hospital nearest home, which the result names), the
-  player down (`lost`: robbed of some cash, left at 1; on a Trauma Team plan, picked up
+  player down (`lost`: left at 1 and at their mercy, below; on a Trauma Team plan, picked up
   instead, see Medicine), someone knocked out cold (`out`, `knocked`; below),
   `fled` (out of the building), `escaped`, or `talked`. A Second Heart gets the player up once.
+- At their mercy (`rules.downed`, `DOWNED` in `src/data/downed.ts`; the tests' `RULES` leave it
+  out, so there the player put down loses a share of the cash, `COMBAT.robbed`, and revenge is a
+  beating): `src/engine/downed.ts` is the engine, pure. Every fight has a `Motive` (`Fight.motive`,
+  passed to `openFight`/`attack`: `defense` for someone the player went for or who fought back,
+  `turf` for a rival gang's, `robbery` for a corner robber's, `debt` for a collector's, `police`,
+  and `revenge` with what it was for, `RevengeFor`). The player put down or knocked out cold
+  (`Game`'s private `atMercy`, from `endFight`): whoever did it goes through their pockets by
+  `robsOdds` (anyone, but someone fighting back by their greed, the NCPD never) and takes the lot
+  (`strip`: the cash into their pocket or, for a debt, the gang's chest, which brings a dealing
+  debt down; the credchips onto their chip; every item; the clothes and bags stay on), then
+  finishes the player by `killOdds` (the motive's odds, a revenge's by what for, times their
+  nature, their grudge, `watching` a person here, but not on their own turf; none with an officer
+  in it or here, or an ally of the player's still in it), and the game emits `flatlined` with
+  `lines.killed` (`main.ts` starts the city over); else they leave the player (`lines.spared`).
+  Revenge comes in person (`comeForYou`, from `settleThreats`): the one with the grudge, or one of
+  the gang (a loan shark's collector first), from round here first, goes for the player, the first
+  beat's clock waiting on the player's move (`deadline` Infinity: the overlay shows a dash), never
+  while a fight, officers, a collector or a moment is on, nor while the one coming is laid up.
+  The fight's end settles it (`endRevenge`: `settleThreat`, what was taken off a shark's loan, a
+  `settled` memory if they won), but for the player running from it, when it comes again in
+  `again` hours; with nobody to send, it's the beating it always was.
 - Knockouts: a blow from fists or anything blunt (`COMBAT.knockout.kinds`, the wiki's blunt
   weapons being its non-lethal ones) that leaves someone standing can knock them out cold,
   by `knockoutOdds`: its share of their health past `least`, more the more worn down they
@@ -835,10 +856,10 @@ move at once and both land together, the player against the clock:
   saved), listed by `peopleHere` as "out cold" wherever their day would have them, past
   talking to (`Game.outCold`; `isHere` refuses them, the card shows only `⋯` with Rob and
   the ways to kill them, below:
-  `Game.rob` goes through their pockets, no fight, four fifths and more of what they carry,
-  `LINES.you.robCold` and `LINES.rob.cold`/`coldNothing`, and once a week like any robbery). The player
-  out (`knocked`): robbed like `lost`, but their health is what it was, and no Trauma Team
-  comes for it. How steady someone is is `COMBAT.steady` (the brave and gangers steadier).
+  `Game.rob` goes through their pockets, no fight, everything they carry (cash, chip and
+  valuable, as far as there's room), `LINES.you.robCold` and `LINES.rob.cold`/`coldNothing`, and
+  once a week like any robbery). The player out (`knocked`): at their mercy like `lost`, but their
+  health is what it was, and no Trauma Team comes for it. How steady someone is is `COMBAT.steady` (the brave and gangers steadier).
 - Fights of more than two (`GameRules.join`, `JOIN` in `src/data/combat.ts`; the tests' `RULES`
   leave it out, so their fights stay the player and one other): when a fight starts, and a
   `perBeat` share of it every beat after, whoever's here may throw in (`joinFight`): against
