@@ -545,5 +545,6 @@ describe('dialogue', () => {
     }
     expect(problems.slice(0, 10)).toEqual([]);
     expect(lines).toBeGreaterThan(5000);
-  }, 120_000);
+    // Every pool for thousands of speakers: well over a minute, and half as long again on a slow CI runner.
+  }, 240_000);
 });

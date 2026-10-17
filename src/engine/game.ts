@@ -708,6 +708,11 @@ export class Game {
   }
 
   /** The people who work at a storefront, kept until a day is lived (when hires, layoffs and deaths change them). */
+  /** Who works at a building, the living of them, from the same cache. */
+  private readonly livingStaff = (id: string): Person[] => {
+    const building = buildingById(this.world, id);
+    return building ? this.staffOf(building).filter((p) => p.diedOn === undefined) : [];
+  };
   private readonly staffCache = new Map<string, Person[]>();
   private staffOf(building: Building): Person[] {
     let staff = this.staffCache.get(building.id);
@@ -6838,7 +6843,7 @@ export class Game {
    */
   private meansVars(person: Person): Record<string, string> {
     const economy = this.rules.life.economy;
-    const ledger = ledgerOf(person, this.world, this.population, economy, this.tierFn, this.world.seed);
+    const ledger = ledgerOf(person, this.world, this.population, economy, this.tierFn, this.world.seed, this.livingStaff);
     const money = person.eddies + accountOf(person, this.life, ledger, economy);
     const work = person.job.building ? buildingById(this.world, person.job.building) : undefined;
     const health = work?.business ? this.trade(work).health : 'steady';
@@ -6846,7 +6851,7 @@ export class Game {
     const holds = owners.holdings.get(person.id) ?? [];
     const landlord = ledger.landlord ? this.person(ledger.landlord) : undefined;
     const home = person.home ? buildingById(this.world, person.home) : undefined;
-    const boss = work?.business ? bossOf(work, this.population, this.staffOf(work).filter((p) => p.diedOn === undefined)) : null;
+    const boss = work?.business ? bossOf(work, this.population, this.livingStaff(work.id)) : null;
     return {
       broke: money < ledger.essentials ? 'yes' : '',
       flush: money > ledger.essentials * 10 ? 'yes' : '',
