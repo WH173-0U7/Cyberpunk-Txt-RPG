@@ -25,10 +25,11 @@ import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu, Quality } from './engine/food';
 import type { ChatMove } from './engine/chat';
 import type { TextKind } from './engine/phone';
+import { lookWords, nameFor, type Character } from './engine/character';
 import { kinWord, type Approach, type Question } from './engine/dialogue';
 import type { InebriationStatus } from './engine/inebriation';
 import type { HungerStatus } from './engine/needs';
-import { randomSeed } from './engine/rng';
+import { createRng, randomSeed } from './engine/rng';
 import { createSave, progressFor, readSave, savedSeed, type Progress } from './engine/save';
 import { snapToStreet } from './engine/streets';
 import { tripProgress } from './engine/travel';
@@ -54,6 +55,7 @@ import { DEALING } from './data/dealing';
 import { ROBBERY } from './data/robbery';
 import { DOWNED } from './data/downed';
 import { PHONE } from './data/phone';
+import { CHARACTER } from './data/character';
 import type { PoliceView } from './engine/police';
 import type { RunnerView } from './engine/crew';
 import type { DealView } from './engine/dealing';
@@ -76,6 +78,8 @@ import { stripMarkup } from './ui/markup';
 import { CityMap, type Target } from './ui/map';
 import { People, STANCE_LABEL, type CardTab, type PeopleTab, type PersonAction, type Picker } from './ui/people';
 import { Phone } from './ui/phone';
+import { MainMenu } from './ui/menu';
+import { Builder } from './ui/builder';
 import { PlacePanel, type ActionId, type PanelAction, type PanelView } from './ui/place';
 import { saveSlot } from './ui/save-slot';
 import { Settings } from './ui/settings';
@@ -250,6 +254,7 @@ const settings = new Settings(
     confirmYes: $<HTMLButtonElement>('#settings-confirm-yes'),
     confirmNo: $<HTMLButtonElement>('#settings-confirm-no'),
     pronouns: $('#settings-pronouns'),
+    menu: $<HTMLButtonElement>('#settings-menu'),
   },
   () => showSettings(),
   {
@@ -257,7 +262,11 @@ const settings = new Settings(
     onRestart: () => startOver(game.world.seed, 'Progress reset. This city starts over from the beginning.'),
     onErase: () => {
       saveSlot.clear();
-      startOver(randomSeed(), 'Save erased. A new Night City boots up.');
+      gameOver('Save erased. Make someone new for a new Night City.');
+    },
+    onMenu: () => {
+      settings.overlay.close();
+      showMenu();
     },
   },
   reducedMotion,
@@ -705,6 +714,88 @@ $('#settings-toggle').addEventListener('click', () => {
 });
 
 let game: Game;
+/** Whether the game in hand is over (the player dead, or the save erased): nothing to continue, and nothing to save. */
+let over = false;
+/** The city the next new game starts in, when there's a reason for it (a shared link, the city of a save that can't go on); else a brand new one. */
+let freshSeed: string | null = null;
+
+// The title screen and the builder put the whole game out of reach while they're up.
+const APP = [$('#app')];
+const menu = new MainMenu(
+  {
+    root: $('#menu'),
+    behind: APP,
+    notice: $('#menu-notice'),
+    continueButton: $<HTMLButtonElement>('#menu-continue'),
+    continueSub: $('#menu-continue-sub'),
+    newButton: $<HTMLButtonElement>('#menu-new'),
+    newSub: $('#menu-new-sub'),
+    build: $('#menu-build'),
+  },
+  {
+    onContinue: () => {
+      menu.hide();
+      if (!game) return;
+      lastActivity = performance.now();
+      refresh();
+      showStatus(Date.now());
+    },
+    onNew: () => {
+      menu.hide();
+      builder.show(Boolean(game) && !over);
+    },
+  },
+);
+const districtName = (id: string) => CITY.districts.find((d) => d.id === id)?.name ?? 'Night City';
+const builder = new Builder(
+  { root: $('#builder'), behind: APP, step: $('#builder-step'), body: $('#builder-body'), back: $<HTMLButtonElement>('#builder-back'), next: $<HTMLButtonElement>('#builder-next') },
+  {
+    rules: CHARACTER,
+    name: (path, pronouns) => nameFor(path, pronouns, CHARACTER, PEOPLE, createRng(`${Math.random()}`)),
+    startsAt: (path) => {
+      const p = CHARACTER.lifepaths[path];
+      return `${p.place}, ${districtName(p.district)} · €$ ${p.cash}${p.account ? ` and €$ ${p.account} banked` : ''} · knows ${p.known.count}`;
+    },
+  },
+  {
+    onCancel: () => {
+      builder.hide();
+      showMenu();
+    },
+    onDone: (character) => {
+      builder.hide();
+      const seed = freshSeed ?? randomSeed();
+      freshSeed = null;
+      startOver(seed, '', character);
+    },
+  },
+);
+
+/** The title screen: the game behind it to go back to, if there's one, and what a new game would be. */
+function showMenu(notice = ''): void {
+  MapOverlay.open?.close();
+  const live = Boolean(game) && !over;
+  menu.show({
+    saved: live ? savedLine() : null,
+    fresh: live ? 'A new city and a new you. Replaces your save.' : freshSeed ? `A new you, in Night City ${freshSeed.toUpperCase()}.` : 'A new Night City, and a new you in it.',
+    notice,
+    build: `${__CHANNEL__ === 'beta' ? 'Beta' : 'Stable'} build ${__BUILD__}`,
+  });
+}
+
+/** The saved game, as the menu puts it: who, where from, and where they are now. */
+function savedLine(): string {
+  const c = game.character;
+  const where = game.whereabouts;
+  const place = [game.neighborhoodOf(where), game.districtOf(where)?.name].filter(Boolean).join(', ');
+  return [c?.name, c ? CHARACTER.lifepaths[c.lifepath].name : '', place].filter(Boolean).join(' · ');
+}
+
+/** Who the player made themselves, for the status drop-down. */
+function youLine(c: Character): string {
+  const look = lookWords(c.look, CHARACTER);
+  return [c.name, CHARACTER.lifepaths[c.lifepath].name, [look.hair, look.eyes, look.mark].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+}
 /** What the player has picked to go to, if anything. */
 let target: Target | null = null;
 let lastActivity = performance.now();
@@ -1717,7 +1808,9 @@ function showStatus(now: number): void {
   const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', ncpd, deal?.debt ? `Debt ${deal.debt} €$` : '', high, hunger?.stage?.label, game.resting(now) ? 'Resting' : '', drunk.stage?.label, mask ? 'Masked' : '', due ? `Shift on · ${formatMinutes(away)}` : job ? job.rung.title : ''].filter(Boolean).join(' · ');
   const today = new Date(now);
   const pad = (n: number) => String(n).padStart(2, '0');
+  const you = game.character;
   const rows: StatusRow[] = [
+    ...(you ? [{ label: 'You', value: youLine(you) }] : []),
     { label: 'Energy', value: `Lv ${energy.level} · ${energy.xp}/${energy.xpToNext} XP · ${refill}` },
     { label: 'Health', value: `${health.current}/${health.max}${health.fullAt ? ` · full in ${formatCountdown(health.fullAt - now)}` : ''}`, ...(health.current < health.max / 2 ? { tone: 'warn' as const } : {}) },
     ...(hunger ? [{ label: 'Hunger', value: hungerLine(hunger, now), ...(hunger.stage && hunger.stage.energy * hunger.stage.health < 1 ? { tone: hunger.stage.health < 1 ? ('bad' as const) : ('warn' as const) } : {}) }] : []),
@@ -2098,12 +2191,21 @@ function showSettings(): void {
   });
 }
 
-/** Throws away the game in progress and starts a city from the beginning. The new game saves over the old one. */
-function startOver(seed: string, notice: string): void {
+/** Throws away the game in progress and starts a city from the beginning, as the same person. The new game saves over the old one. */
+function startOver(seed: string, notice: string, character = game?.character ?? undefined): void {
   MapOverlay.open?.close();
   target = null;
   transmissions.clear();
-  begin(generateWorld(seed, CITY), undefined, notice);
+  begin(generateWorld(seed, CITY), undefined, notice, character);
+}
+
+/** The game is over (the player is dead, or the save erased): nothing to go back to, and the menu says why. */
+function gameOver(notice: string): void {
+  over = true;
+  MapOverlay.open?.close();
+  saveSlot.clear();
+  freshSeed = null;
+  showMenu(notice);
 }
 
 // ───────────── Saving ─────────────
@@ -2112,10 +2214,11 @@ let savePending = false;
 let lastFlash = 0;
 /** Saves once after whatever just changed, and lets the player see that it did (now and then: walking saves constantly). */
 function queueSave(): void {
-  if (savePending) return;
+  if (savePending || over || !game) return;
   savePending = true;
   queueMicrotask(() => {
     savePending = false;
+    if (over) return;
     const saved = saveSlot.write(createSave(game.world.seed, game, GENERATOR_VERSION));
     saveStatus.textContent = saved ? '' : 'Not saved';
     saveStatus.classList.toggle('is-failed', !saved);
@@ -2277,7 +2380,7 @@ function wire(g: Game): void {
   // An overdose with nobody to help, or someone finishing the player off: the end, and the city starts over without them.
   g.events.on('flatlined', ({ text }) => {
     if (g !== game) return;
-    setTimeout(() => startOver(g.world.seed, `${text} Night City starts over.`), 0);
+    setTimeout(() => gameOver(`${text} You're gone; Night City goes on without you.`), 0);
   });
 
   g.events.on('chromeChanged', () => {
@@ -2344,9 +2447,10 @@ function wire(g: Game): void {
   });
 }
 
-/** Drops the player into a city: a new game, or a saved one picking up where it left off. */
-function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, needs: NEEDS, police: POLICE, join: JOIN, dealing: DEALING, robbery: ROBBERY, downed: DOWNED, phone: PHONE }, progress);
+/** Drops the player into a city: a new game (as who they made themselves), or a saved one picking up where it left off. */
+function begin(world: World, progress?: Progress, notice?: string, character?: Character): void {
+  over = false;
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, needs: NEEDS, police: POLICE, join: JOIN, dealing: DEALING, robbery: ROBBERY, downed: DOWNED, phone: PHONE, character: CHARACTER }, progress, character);
   wire(game);
   map.setWorld(world);
   try {
@@ -2362,8 +2466,10 @@ function begin(world: World, progress?: Progress, notice?: string): void {
 }
 
 /**
- * Picks up the saved game on this device if there is one. Otherwise starts the city in the
- * address (a shared link) or a brand new one.
+ * The title screen first. Behind it, the saved game on this device if there is one (Continue
+ * goes back to it); without one, a new game starts from the builder, in the city of a shared
+ * link if the address has one, or a brand new one. A save that won't play, or one from before
+ * the city changed, leaves its city for the next new game.
  */
 function boot(): void {
   const raw = saveSlot.load();
@@ -2373,27 +2479,32 @@ function boot(): void {
     const progress = saved && world ? progressFor(world, saved, GENERATOR_VERSION) : null;
     if (world && progress) {
       begin(world, progress);
+      showMenu();
       return;
     }
   } catch (error) {
     // A save that reads but won't play is no reason never to start again: the same city, from the top.
     console.error('The save would not load:', error);
-    begin(generateWorld(savedSeed(raw) ?? randomSeed(), CITY), undefined, "Your save wouldn't load. Night City starts over for you.");
+    freshSeed = savedSeed(raw);
+    showMenu("Your save wouldn't load. Start again, in the same city.");
     return;
   }
-  // A save from before the game changed how cities (or saves) work: keep the city, start the map over.
+  // A save from before the game changed how cities (or saves) work: keep the city for the new game.
   const oldSeed = savedSeed(raw);
   if (oldSeed) {
-    begin(generateWorld(oldSeed, CITY), undefined, 'Night City has changed since you were last here. You start over in it.');
+    freshSeed = oldSeed;
+    showMenu('Night City has changed since you were last here. Start again, in the same city.');
     return;
   }
   const seedInAddress = location.hash.slice(1).toLowerCase();
-  begin(generateWorld(/^[0-9a-f]{8}$/.test(seedInAddress) ? seedInAddress : randomSeed(), CITY));
+  freshSeed = /^[0-9a-f]{8}$/.test(seedInAddress) ? seedInAddress : null;
+  showMenu();
 }
 
 let lastHour = -1;
 /** The clock: lands trips that are due, moves the trip panel on, and lets people come and go on the hour. */
 function tick(): void {
+  if (!game || over) return;
   const now = Date.now();
   game.tick(now);
   if (fight.overlay.isOpen) fight.clock(now);
@@ -2420,6 +2531,8 @@ function tick(): void {
 // Escape drops the current pick; + and - zoom.
 document.addEventListener('keydown', (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
+  // The title screen and the builder take their own keys; the city's rest till there is one.
+  if (!game || over || menu.isOpen || builder.isOpen) return;
   // In a fight there's no looking away: the keys rest until it's over.
   if (game.fighting) return;
   if (event.key === 'i' || event.key === 'I') inventory.overlay.toggle();
@@ -2457,7 +2570,7 @@ function scheduleAmbient(): void {
   setTimeout(
     () => {
       const idleFor = performance.now() - lastActivity;
-      if (idleFor > 12_000 && transmissions.idle && game.currentTrip?.mode !== 'ncart' && !document.hidden) game.ambient();
+      if (game && !over && !menu.isOpen && idleFor > 12_000 && transmissions.idle && game.currentTrip?.mode !== 'ncart' && !document.hidden) game.ambient();
       scheduleAmbient();
     },
     18_000 + Math.random() * 22_000,

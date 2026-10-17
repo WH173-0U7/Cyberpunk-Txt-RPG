@@ -5,6 +5,7 @@ import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, po
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
 import { accountOf, holderOf as ownerNow, homeKind as blockKind, leftOf, ledgerOf, ownersOf, priceFactor, rentLevelOf, staffCostOf, stockOf, tillOf, tradeAt, turfFrom, wageOf, weekdayOf, type BusinessView, type Health, type MarketNews, type PriceLevel, type Vice } from './economy';
+import { lookWords, type Character, type CharacterRules } from './character';
 import { interestAfter, interestOf, movesFor, replyRapport, samePenalty, type Chat, type ChatMove } from './chat';
 import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, runnerShort, settle, writeOff, type Runner, type RunnerView } from './crew';
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
@@ -179,6 +180,8 @@ export interface GameRules extends TravelRules {
   downed?: DownedRules;
   /** The holophone: holos to ask for, calls, texts. Without it (the tests' rules leave it out), nobody gives a holo and nothing comes in. */
   phone?: PhoneRules;
+  /** Who the player can make themselves at the start: lifepaths and looks. Without it, a character does nothing (and a new game starts as it always did). */
+  character?: CharacterRules;
 }
 
 /** Someone in the player's holo, as the phone lists them: the last word between them, what's unread, whether the player knows they're dead. */
@@ -419,6 +422,8 @@ export class Game {
   private userIndex: Map<string, Person[]> | null = null;
   /** The fight the player is in, or has just finished. */
   private fightState: Fight | null = null;
+  /** A new player's lifepath, still to be written down when the game starts: who knows them, and their reputation. */
+  private newcomer: { known: string[]; rep: Record<string, number> } | null = null;
   /** The conversation going on, face to face or over the holo (not saved: one left when the game closes is over). */
   private chatState: Chat | null = null;
   /** The holophone: whose holo the player has, the texts with each, what's on its way. */
@@ -444,6 +449,8 @@ export class Game {
     readonly world: World,
     readonly rules: GameRules,
     progress?: Progress,
+    /** Who the player made themselves, for a new game: where they start, what they have, who they know. */
+    character?: Character,
   ) {
     const start = this.locationById(world.start);
     this.where = progress ? { ...progress.where } : { ...streetSpot(start), place: start.id };
@@ -544,6 +551,85 @@ export class Game {
       for (const cell of progress.explored) this.explored.add(cell);
     }
     this.fullyMapped = this.visited.size === Object.keys(world.locations).length;
+    if (!progress && character) this.becomes(character);
+  }
+
+  /**
+   * A new player as they made themselves: their name, pronouns and look; where
+   * their lifepath starts them (its own place, else somewhere out in the open of its district),
+   * what they wear and carry, the reputation they start with, and the people round there who
+   * know them already, whose holos they have.
+   */
+  private becomes(character: Character): void {
+    const { name, pronouns, lifepath, look } = character;
+    this.you = { pronouns, name: name.trim(), lifepath, look: { ...look } };
+    const path = this.rules.character?.lifepaths[lifepath];
+    if (!path) return;
+    const { world, rules } = this;
+    const places = Object.values(world.locations).filter((l) => l.district === path.district);
+    const start = places.find((l) => l.name === path.place) ?? places[0];
+    if (start) this.where = { ...streetSpot(start), place: start.id };
+    this.money = withNotes(freshMoney(path.cash), makeNotes(path.cash, rules.money, rules.money.most.street));
+    this.money = { ...this.money, account: path.account };
+    // The clothes of the lifepath, in place of the usual: the same pockets, so the wallet stays where it is.
+    for (const [slot, kind] of Object.entries(path.outfit)) {
+      const worn = this.pockets.find((p) => p.in === null && rules.gear.kinds[p.kind]?.slot === slot);
+      if (worn && kind && rules.gear.kinds[kind]) worn.kind = kind;
+    }
+    // Who knows them already: people of the district, by the seed, in the lifepath's way.
+    const rng = createRng(`${world.seed}:known:${lifepath}`);
+    const pool = this.population.people.filter(
+      (p) => p.district === path.known.district && p.diedOn === undefined && p.age >= 20 && p.age <= 60 && !NCPD.test(p.job.role) && (!path.known.corpo || voiceOf(p, world) === 'corpo'),
+    );
+    const gangers = path.known.gang ? pool.filter((p) => p.gang === path.known.gang) : [];
+    const plain = pool.filter((p) => !p.gang);
+    const picks: Person[] = [];
+    if (gangers.length) picks.push(rng.pick(gangers));
+    // Not all of one family: the people who know them are from round there, not one household.
+    for (let tries = 0; picks.length < path.known.count && tries < 50 && plain.length; tries++) {
+      const p = rng.pick(plain);
+      if (!picks.some((q) => q === p || q.family === p.family)) picks.push(p);
+    }
+    for (const p of picks) {
+      this.society.standings[p.id] = { met: true, rapport: path.known.rapport, grudge: 0, at: 0, talks: 3, lastTalkAt: 0, gifts: 0, lastGiftAt: 0, robbedAt: 0, asks: 0, refused: {} };
+      learnOf(this.society, p.id, 'met');
+      learnFact(this.society, p.id, 'name');
+      learnFact(this.society, p.id, 'job');
+    }
+    this.newcomer = { known: picks.map((p) => p.id), rep: path.rep };
+    this.healthState = { value: this.maxHealth(), at: 0 };
+  }
+
+  /** What a new player's lifepath starts them with that's written down at a time: the reputation, and the holos of the people who know them. */
+  private arrive(now: number): void {
+    const fresh = this.newcomer;
+    if (!fresh) return;
+    this.newcomer = null;
+    for (const [key, value] of Object.entries(fresh.rep)) this.society.rep[key] = { value, at: now };
+    if (this.rules.phone) for (const id of fresh.known) this.phoneState.contacts[id] = { since: now };
+  }
+
+  /** Who the player made themselves at the start, if they did (a save from before the builder didn't). */
+  get character(): Character | null {
+    const { name, pronouns, lifepath, look } = this.you;
+    return name && lifepath && look ? { name, pronouns, lifepath, look: { ...look } } : null;
+  }
+
+  /**
+   * The player as a line sees them: where they come from (`youStreetkid`, `youNomad`,
+   * `youCorpo`) and their look (`yourHair`, `yourEyes`, `yourMark`; the mark and the hair's
+   * not plain to see behind a mask, nor the eyes).
+   */
+  private youVars(): Record<string, string> {
+    const { lifepath, look } = this.you;
+    const words = lookWords(look, this.rules.character);
+    const masked = Boolean(this.masked());
+    return {
+      ...(lifepath ? { [`you${lifepath === 'streetkid' ? 'Streetkid' : lifepath === 'nomad' ? 'Nomad' : 'Corpo'}`]: 'yes' } : {}),
+      yourHair: masked ? '' : words.hair,
+      yourEyes: masked ? '' : words.eyes,
+      yourMark: masked ? '' : words.mark,
+    };
   }
 
   /** Where the player is, or set off from while on the move. */
@@ -6598,7 +6684,11 @@ export class Game {
 
   /** How much readier (or less) someone is to answer, or do what's asked, for what they remember of the player. */
   private leaning(id: string, now: number): number {
-    return this.regardOf(id, now) * (this.rules.society.openness.memory ?? 0);
+    // Where the player comes from counts with some people: a streetkid with the gangs, a nomad with the nomads, a corpo with the corpos.
+    const path = this.you.lifepath ? this.rules.character?.lifepaths[this.you.lifepath] : undefined;
+    const person = path ? this.person(id) : undefined;
+    const kin = person && path ? (path.voices[voiceOf(person, this.world)] ?? 0) : 0;
+    return this.regardOf(id, now) * (this.rules.society.openness.memory ?? 0) + kin;
   }
 
   /** Where the player stands with someone right now, for telling them after an exchange what it did. */
@@ -7201,6 +7291,7 @@ export class Game {
       districtGood: districtRep >= 10 ? 'yes' : '',
       districtBad: districtRep <= -10 ? 'yes' : '',
       mask: this.masked()?.word ?? '',
+      ...this.youVars(),
       ...this.meansVars(person),
       ...this.momentVars(person, now),
       ...this.heartVars(person, standing),
@@ -8672,6 +8763,7 @@ export class Game {
 
   /** Greets the player (or welcomes them back) and puts them where they are. A trip that ended while they were away lands now. */
   start(now: number): void {
+    this.arrive(now);
     this.live(now);
     this.punchClock(now);
     this.homeTick(now);

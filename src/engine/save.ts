@@ -267,7 +267,7 @@ export function readSave(raw: unknown): SaveData | null {
     // And before the people had days of their own, none had passed.
     life: isLife(save.life) ? { ...save.life, events: save.life.events.filter((e) => isObject(e) && Array.isArray(e.who)), ...(save.life.owned !== undefined ? { owned: ownedOf(save.life.owned) } : {}), ...(save.life.lets !== undefined ? { lets: letsOf(save.life.lets) } : {}) } : null,
     // And before the player said who they are, they went by they.
-    you: isYou(save.you) ? save.you : null,
+    you: youOf(save.you),
     // And before there was chrome, the player had none; an implant that isn't one is dropped.
     chrome: Array.isArray(save.chrome) ? save.chrome.filter(isFitted) : null,
     // And before there was fighting, the player was well; before the NCPD, nobody was looking for them.
@@ -422,9 +422,17 @@ function isFitted(value: unknown): value is Fitted {
   return typeof fitted === 'object' && fitted !== null && typeof fitted.id === 'string' && isNumber(fitted.since);
 }
 
-function isYou(value: unknown): value is You {
-  const you = value as Record<string, unknown> | null;
-  return typeof you === 'object' && you !== null && (you.pronouns === 'she' || you.pronouns === 'he' || you.pronouns === 'they');
+/** Who the player is in a save: the pronouns, and the character they made, kept only if all of it reads right. */
+function youOf(value: unknown): You | null {
+  if (!isObject(value) || !(value.pronouns === 'she' || value.pronouns === 'he' || value.pronouns === 'they')) return null;
+  const { name, lifepath, look } = value;
+  const made =
+    typeof name === 'string' &&
+    name.trim() !== '' &&
+    (lifepath === 'streetkid' || lifepath === 'nomad' || lifepath === 'corpo') &&
+    isObject(look) &&
+    ['hair', 'color', 'eyes', 'mark'].every((k) => typeof look[k] === 'string');
+  return made ? ({ pronouns: value.pronouns, name, lifepath, look } as You) : { pronouns: value.pronouns };
 }
 
 /** Who the player is seeing, if it makes sense; else no one. */

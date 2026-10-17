@@ -151,6 +151,14 @@ export const LINES: DialogueLines = {
     loud("Not a great time. We lost my {griefWord} {grief}.", grieving, 3),
     loud("Hey. Sorry. It's been a bad week. My {griefWord}...", both(grieving, kind), 3),
     loud("What. Make it quick. I'm not in the mood.", both(grieving, hard), 3),
+    // A first look at the player: their look, and where they come from.
+    only('{hey}. Love the {yourHair}.', both(first, chatty, { needs: ['yourHair'] })),
+    only('Nice {yourHair}. Takes nerve.', both(first, young, { needs: ['yourHair'] })),
+    only('Interesting look. The {yourHair} is a choice.', both(first, corpo, { needs: ['yourHair'] })),
+    only("Where'd you get the {yourMark}? Looks like a story.", both(first, chatty, { needs: ['yourMark'] })),
+    only("{hey}. You're not from around here. Badlands?", both(first, { needs: ['youNomad'], voice: ['street', 'gang', 'young', 'elder'] })),
+    only('Corpo, right? It\'s in the walk.', both(first, ganger, { needs: ['youCorpo'] })),
+    only("{hey}. I've seen you around these blocks, haven't I?", both(first, { needs: ['youStreetkid', 'inHeywood'], voice: ['street', 'gang', 'young'] })),
     // A stranger.
     only("{hey}. Help you with something?", both(first, neutral)),
     only('Yeah? You need something, or just looking?', both(first, neutral)),

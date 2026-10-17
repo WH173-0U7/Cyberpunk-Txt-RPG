@@ -123,13 +123,17 @@
               <p class="settings-note">Your progress saves on this device as you play. <span id="settings-progress"></span></p>
               <p id="settings-build" class="settings-build"></p>
               <div class="settings-actions">
+                <button id="settings-menu" class="menu-button" type="button">
+                  <span class="menu-label">Main menu</span>
+                  <span class="menu-sub">Your game is kept, right where it is</span>
+                </button>
                 <button id="settings-restart" class="danger-button" type="button" aria-controls="settings-confirm" aria-expanded="false">
                   <span class="danger-label">Restart this city</span>
                   <span class="danger-sub">Same city, all progress back to the start</span>
                 </button>
                 <button id="settings-erase" class="danger-button" type="button" aria-controls="settings-confirm" aria-expanded="false">
                   <span class="danger-label">Erase save</span>
-                  <span class="danger-sub">Delete it from this device and start a new city</span>
+                  <span class="danger-sub">Delete it from this device and make someone new</span>
                 </button>
               </div>
               <div id="settings-confirm" class="settings-confirm" role="group" aria-labelledby="settings-confirm-text" hidden>
@@ -301,6 +305,37 @@
       <div id="announcer" class="sr-only" aria-live="polite"></div>
     </div>
 
+    <!-- The title screen, before the city: the saved game, or a new one. -->
+    <div id="menu" class="menu" role="dialog" aria-modal="true" aria-labelledby="menu-title" hidden>
+      <div class="menu-frame">
+        <p class="menu-kicker">NCNET://NIGHT-CITY</p>
+        <h1 id="menu-title" class="sign menu-sign">Night City Terminal</h1>
+        <p class="menu-tag">A city of millions, and you somewhere in it.</p>
+        <p id="menu-notice" class="menu-notice" hidden></p>
+        <div class="menu-actions">
+          <button id="menu-continue" class="menu-button" type="button"><span class="menu-label">Continue</span><span id="menu-continue-sub" class="menu-sub"></span></button>
+          <button id="menu-new" class="menu-button is-new" type="button"><span class="menu-label">New game</span><span id="menu-new-sub" class="menu-sub"></span></button>
+        </div>
+        <span class="menu-barcode" aria-hidden="true"></span>
+        <p id="menu-build" class="menu-build"></p>
+      </div>
+    </div>
+
+    <!-- The character builder: lifepath, you, look, attributes, and a last look. -->
+    <div id="builder" class="menu builder" role="dialog" aria-modal="true" aria-labelledby="builder-head" hidden>
+      <div class="menu-frame builder-frame">
+        <div class="overlay-strip">
+          <span class="overlay-barcode" aria-hidden="true"></span>
+          <span id="builder-head" class="overlay-label">NCNET//NEW-ID</span>
+          <span id="builder-step" class="overlay-detail"></span>
+        </div>
+        <div id="builder-body" class="builder-body"></div>
+        <div class="builder-nav">
+          <button id="builder-back" class="menu-button is-back" type="button"></button>
+          <button id="builder-next" class="menu-button is-new" type="button"></button>
+        </div>
+      </div>
+    </div>
 
     <div id="flash" aria-hidden="true"></div>
     <div class="crt" aria-hidden="true"></div>
