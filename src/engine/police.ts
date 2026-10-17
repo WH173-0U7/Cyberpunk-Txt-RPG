@@ -24,8 +24,9 @@ export interface PoliceRules {
    * and workmates, a guard, a corpo; nerve either way of the middle (`courage`, at most that much
    * more or less); a ganger hardly ever. In a crowd everyone leaves it to someone else: each
    * witness's odds over the number of them to the power of `crowd`. Never more than `most`.
+   * What a caller remembers of the player moves it by `regard` times their regard of them.
    */
-  caller: { victim: number; kin: number; friend: number; guard: number; corpo: number; courage: number; ganger: number; crowd: number; most: number };
+  caller: { victim: number; kin: number; friend: number; guard: number; corpo: number; courage: number; ganger: number; crowd: number; most: number; regard?: number };
   /** Each crime: what it's called, the fine, the minutes held for it (0: a fine only), the days a warrant for it lasts (null: for good), how bad it is, how much likelier a witness is to call it in, and for a drug found on the player, more of both a dose. */
   crimes: Record<Crime, { label: string; fine: number; hold: number; lapseDays: number | null; rank: number; alarm: number; perDose?: { fine: number; hold: number } }>;
   /**

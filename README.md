@@ -255,7 +255,7 @@ own.
   their neighborhood cools. Whoever has the grudge and the nerve comes to collect, hours or a
   day later, wherever you are: they take eddies back with interest and leave you with no
   energy; a gang that's had enough of you comes hunting the same way. Grudges fade a point a
-  day and reputations recover two, on the game's clock. The status drop-down under the
+  day and reputations recover two, on the calendar (people remember by it, whatever the test speed). The status drop-down under the
   energy bar lists every reputation that stands at anything. (Violence, once there is combat, goes through the same
   machinery: assault and murder are already kinds of incident, with heavier consequences.)
 - **Hours, and the city out and about**: every storefront keeps its kind's hours, on its door
@@ -303,11 +303,25 @@ own.
   anyone who saw it remembers that. Give someone a gift and they remember it, and tell their
   people: the ones closest to them warm to you a little and say so ("My cousin says you're
   alright"); the same gift again, they notice. A boss remembers taking you on, moving you up,
-  and the day you walked out, and won't take you back while they remember it (three weeks;
-  being let go, a month). A netrunner remembers the chip, someone you asked about a relative
-  wonders why, and whoever came to collect tells you you're square. Each memory fades on its
-  own clock (a gift in a week, a robbery in a month), and when someone talks to you they bring
-  up whatever's most on their mind, three times in four, each thing only so often.
+  and the day you walked out, and won't take you back while they remember it (a month). A
+  netrunner remembers the chip, someone you asked about a relative wonders why, and whoever
+  came to collect tells you you're square. They remember how your chats went too (the joke
+  that landed, the line that didn't), the shift you covered for them, and the fight they
+  threw in on at your side. Memories fade on the calendar, whatever the test speed: a gift in
+  a fortnight, a robbery in a month and a half, a beating in two, and someone whose brother
+  you killed remembers it for the best part of a year; whatever happened twice is remembered
+  longer. When someone talks to you they bring up whatever's most on their mind, three times
+  in four, each thing only so often. And what they remember changes what they do: someone
+  who remembers you well opens up more, gives you a better price behind their counter (up to
+  15% off), is slower to call the NCPD on you and may throw in on your side in a fight; held
+  against you, all of it the other way. A friend of whoever's coming to collect from you, who
+  thinks well of you, sends word a couple of hours ahead ("Heads up: Raul's coming for you").
+  And they remember each other: whoever robbed them, shook them down, beat them, left them,
+  fell out with them, let them go, or killed one of their own. They won't make a friend or a
+  partner of that person, they glare across the room when they're both somewhere ("glaring at
+  Raul" · "avoiding the eyes of Ana"), they bring it up when they talk ("Still haven't forgiven
+  Raul. Took my eddies last week and walked off laughing"), and now and then someone with the
+  nerve goes and settles it. A killing is held for a year, being left for three months.
 - **Work**: every storefront has a boss, the one who runs it (the cook at a one-cook noodle
   bar, whoever runs the counter or the shop otherwise), and every kind of storefront hires,
   each on a ladder of its own: the dish pit, prep, the counter and the line at an eatery;

@@ -17,7 +17,8 @@ export const POLICE: PoliceContent = {
     badlands: null,
   },
   areas: { Northside: { call: 0.012, minutes: [25, 45] } },
-  caller: { victim: 2.5, kin: 2.5, friend: 1.7, guard: 2.5, corpo: 1.5, courage: 0.5, ganger: 0.15, crowd: 0.5, most: 0.9 },
+  // What a caller remembers of the player moves it too: owing them nothing but good, two thirds less likely to call; holding nothing but bad, two thirds likelier.
+  caller: { victim: 2.5, kin: 2.5, friend: 1.7, guard: 2.5, corpo: 1.5, courage: 0.5, ganger: 0.15, crowd: 0.5, most: 0.9, regard: 0.65 },
   crimes: {
     assault: { label: 'assault', fine: 250, hold: 0, lapseDays: 7, rank: 1, alarm: 1 },
     robbery: { label: 'robbery', fine: 600, hold: 10, lapseDays: 14, rank: 2, alarm: 1 },

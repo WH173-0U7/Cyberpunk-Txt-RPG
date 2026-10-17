@@ -39,6 +39,82 @@ function lived(seed: string, days: number, from = T, spokenFor: ReadonlySet<stri
 }
 
 describe("the people's own days", () => {
+  it('leave people holding what was done to them against whoever did it, never befriending or falling for them, till it is made up or settled', () => {
+    const rules = LIFE.held!;
+    for (const seed of seeds.slice(0, 3)) {
+      const { population, state, events } = lived(seed, 60);
+      const end = T + 59;
+      const holds = (holder: string, by: string, kind: string, before = Infinity) => (state.held?.[holder] ?? []).some((h) => h.by === by && h.kind === kind && h.day < before);
+      const alive = (id: string) => population.people.find((p) => p.id === id)?.diedOn === undefined;
+      const later = (e: LifeEvent, kinds: string[]) => events.some((f) => f.day >= e.day && f.id !== e.id && kinds.includes(f.kind) && f.who.includes(e.who[0]) && f.who.includes(e.who[1]));
+      let checked = 0;
+      for (const e of events) {
+        if (end - e.day > 10 || !alive(e.who[1]) || !alive(e.who[0])) continue;
+        const [a, b] = e.who;
+        // Robbed, shaken down, beaten, left, let go: held against whoever did it, unless they've had it out since.
+        const kind = { robbery: 'robbed', shakedown: 'shook', fight: 'beaten', breakup: 'dumped', laidOff: 'laidOff' }[e.kind as string];
+        if (kind && !later(e, ['fight', 'death'])) {
+          expect(holds(b, a, kind), `${seed} ${e.kind} day ${e.day}: ${b} holds it against ${a}`).toBe(true);
+          checked++;
+        }
+        // A falling out is held both ways, till they make up.
+        if (e.kind === 'fallout' && !later(e, ['makeup'])) expect(holds(a, b, 'fallout') && holds(b, a, 'fallout'), `${seed} fallout day ${e.day}`).toBe(true);
+        if (e.kind === 'makeup') expect(holds(a, b, 'fallout', e.day + 1) || holds(b, a, 'fallout', e.day + 1), `${seed} makeup day ${e.day}`).toBe(false);
+      }
+      expect(checked, seed).toBeGreaterThan(0);
+      // Nobody makes a friend of, or falls for, someone either of them holds something against.
+      for (const e of events.filter((e) => e.kind === 'friends' || e.kind === 'romance')) {
+        const [a, b] = e.who;
+        const before = (x: string, y: string) => (state.held?.[x] ?? []).some((h) => h.by === y && h.day < e.day && e.day - h.day < rules.days[h.kind]);
+        expect(before(a, b) || before(b, a), `${seed} ${e.kind} day ${e.day} between a feud`).toBe(false);
+      }
+      // Nobody holds more than the cap, or anything past its days at the end.
+      for (const list of Object.values(state.held ?? {})) expect(list.length).toBeLessThanOrEqual(rules.cap);
+    }
+  });
+
+  it('have someone with the nerve go for whoever robbed them, and let it go once they win', () => {
+    const seed = seeds[3] as string;
+    const world = generateWorld(seed, CITY);
+    const population = generatePeople(world, PEOPLE, FOOD.dishes);
+    const base = new Map(population.people.map((p) => [p.id, p.eddies]));
+    // Two civilians of one district: one robbed the other a week ago.
+    const district = Object.keys(world.districts)[0] as string;
+    const [victim, robber] = population.people.filter((p) => p.district === district && !p.gang && p.diedOn === undefined) as [Person, Person];
+    victim.traits.courage = 0.95;
+    const state = freshLife();
+    state.day = T - 1;
+    state.held = { [victim.id]: [{ kind: 'robbed', by: robber.id, day: T - 7 }] };
+    const only = { ...LIFE, chances: Object.fromEntries(Object.keys(LIFE.chances).map((k) => [k, 0])) as typeof LIFE.chances, held: { ...LIFE.held!, revenge: 1 } };
+    const events = liveUntil(world, population, state, only, base, T, seed, tierIn(world), turf, PEOPLE);
+    const fight = events.find((e) => e.kind === 'fight' && e.who.includes(victim.id) && e.who.includes(robber.id));
+    expect(fight, 'they go for the robber').toBeDefined();
+    const won = fight!.who[0] === victim.id;
+    expect((state.held?.[victim.id] ?? []).some((h) => h.by === robber.id && h.kind === 'robbed')).toBe(!won);
+    // Lost, they hold the beating too; won, the robber does.
+    if (won) expect((state.held?.[robber.id] ?? []).some((h) => h.by === victim.id && h.kind === 'beaten')).toBe(true);
+    else expect((state.held?.[victim.id] ?? []).some((h) => h.by === robber.id && h.kind === 'beaten')).toBe(true);
+    // Brought back onto a fresh population, what's held is kept for the people the city has, and anyone else's goes.
+    const fresh = generatePeople(world, PEOPLE, FOOD.dishes);
+    const again = structuredClone(state);
+    again.held!['nobody-at-all'] = [{ kind: 'robbed', by: robber.id, day: T }];
+    applyLife(fresh, again);
+    expect(again.held!['nobody-at-all']).toBeUndefined();
+    expect(again.held![victim.id] ?? again.held![robber.id]).toBeDefined();
+  });
+
+  it('show it when someone is in a room with whoever they hold something against, from both sides', () => {
+    const world = generateWorld(seeds[0] as string, CITY);
+    const population = generatePeople(world, PEOPLE, FOOD.dishes);
+    const [a, b] = population.people.slice(0, 2) as [Person, Person];
+    const held = (id: string) => (id === a.id ? [{ kind: 'robbed' as const, by: b.id, day: T }] : []);
+    const spot = { kind: 'building' as const, id: world.buildings[0]!.id };
+    const scenes = scenesAt([a, b], population, spot, { day: T, hour: 20, weekday: 3 }, world, PEOPLE.turf, () => [], { ...LIFE, glaring: 1 }, 'scene', held);
+    expect(scenes.get(a.id)).toMatchObject({ with: b.id, kind: 'grudge' });
+    expect(scenes.get(b.id)).toMatchObject({ with: a.id, kind: 'grudged' });
+    expect(LIFE.scenes.grudge).toHaveLength(LIFE.scenes.grudged.length);
+  });
+
   it('fill a place short of the hands its shifts want, never lay one off below them, and keep the new hands on its rota', () => {
     const seed = seeds[1] as string;
     const world = generateWorld(seed, CITY);

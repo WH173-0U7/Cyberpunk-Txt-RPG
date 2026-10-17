@@ -15,8 +15,8 @@ import { medDetail, medTotal, TREATMENT, type Coverage, type CoverageStatus, typ
 import { answer, compose, deflect, describeStranger, drawnWord, eloquenceOf, FAMILY, fill, finish, historyOf, saidIn, kinWord, line, momentOf, moodOf, openness, openTopics, reactionTo, repeat, replyTo, smallTalk, textOf, varsFor, voiceOf, type Approach, type DialogueLines, type Line, type Question, type Speaker, type Topic } from './dialogue';
 import { drink, freshInebriation, inebriationStatus, type InebriationRules, type InebriationStage, type InebriationState, type InebriationStatus } from './inebriation';
 import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobRules, type JobState, type JobStatus, type Ladder, type Rung, type ShiftChoice, type ShiftEventKind } from './jobs';
-import { applyLife, freshLife, learned, liveUntil, newsFor, scenesAt, type LifeEvent, type LifeRules, type LifeState, type Scene } from './life';
-import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
+import { applyLife, freshLife, heldBy, learned, liveUntil, newsFor, scenesAt, type Held, type LifeEvent, type LifeRules, type LifeState, type Scene } from './life';
+import { forgetMemories, GRIEVANCES, memoriesOf, memoryAge, memoryOf, recall, recalled, regard, remember, type Memory } from './memory';
 import { chargesFor, freshPolice, issueWarrant, policing, warrantsAt, worstCrime, type Confrontation, type Crime, type Dispatch, type PoliceChoice, type PoliceContent, type PoliceState, type PoliceView } from './police';
 import { mainRoom, roomById, roomOf, roomsOn, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
 import { buildingById, GUARD_ROLE, openingHours, rotaStaff, readOf, skillsOf, walkOf, type PersonSkills, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
@@ -254,6 +254,8 @@ const FISTS: Arm = { id: 'fists', name: 'Fists', short: 'fists', cls: 'fists', m
 const GUARD = GUARD_ROLE;
 /** The NCPD's own. */
 const NCPD = /^NCPD /;
+/** A way of starting a chat as someone remembering it says it: "liked your joke". */
+const WAY_WORDS: Record<string, string> = { joke: 'joke', compliment: 'compliment', gossip: 'gossip', care: 'concern', flirt: 'flirting' };
 /** What an attack is called, by what it's made with. */
 const VERB: Record<ClassRules['kind'], string> = { gun: 'Shoot', blade: 'Slash', blunt: 'Strike', fists: 'Punch', wire: 'Lash', launcher: 'Fire' };
 /** Which lines tell a hit, by what it's made with. */
@@ -687,7 +689,12 @@ export class Game {
     if (!rules || !power || (building?.business && this.rules.food.fixed[building.business]) || building?.business === 'hospital') return menu;
     const staff = building ? this.staffOf(building) : [];
     const seller = staff.reduce((best, p) => Math.max(best, this.skillsFor(p, now).trading), staff.length ? 1 : rules.average);
-    const factor = Math.pow(skillBonus(rules, seller) / skillBonus(rules, this.tradingState.level), power);
+    // And what the hands in remember of the player: a friend's price from the fondest, a sore one's from the sorest.
+    const clock = this.clockAt(now);
+    const ins = staff.filter((p) => whereIs(p, this.world, clock, this.rules.food.dishes, this.rules.people.out)?.spot.id === building?.id);
+    const regards = ins.map((p) => this.regardOf(p.id, now));
+    const lean = (this.rules.money.regard ?? 0) * (Math.max(0, ...regards) - Math.max(0, ...regards.map((r) => -r)));
+    const factor = Math.pow(skillBonus(rules, seller) / skillBonus(rules, this.tradingState.level), power) * (1 - lean);
     if (Math.abs(factor - 1) < 0.005) return menu;
     const fixed = new Set(['plan', 'treatment', 'room']);
     return { ...menu, haggle: factor - 1, items: menu.items.map((i) => (fixed.has(i.kind) ? i : { ...i, price: Math.max(1, Math.round(i.price * factor)) })) };
@@ -1858,9 +1865,12 @@ export class Game {
         if (tie) against = Math.max(against, (FAMILY.includes(tie.kind) ? join.kin : join.friend) * nerve);
         if (person.gang && person.gang === foe.gang) against = Math.max(against, join.gang * nerve);
       }
-      // For the player: the one they're seeing, or a friend.
+      // For the player: the one they're seeing, a friend, or someone who owes them; against, someone who holds a lot against them.
       const standing = standingOf(this.society, person.id, society, timeScale, now);
-      const forYou = this.society.romance?.with === person.id ? join.partner * nerve : standing.rapport >= join.friendly ? join.ally * nerve : 0;
+      const owed = join.owed ?? Infinity;
+      const regard = owed < Infinity ? this.regardOf(person.id, now) : 0;
+      if (regard <= -owed) against = Math.max(against, join.friend * nerve);
+      const forYou = this.society.romance?.with === person.id ? join.partner * nerve : standing.rapport >= join.friendly || regard >= owed ? join.ally * nerve : 0;
       const foeCount = f.others.filter((c) => !c.ally).length;
       const allyCount = f.others.filter((c) => c.ally).length;
       const side = forYou > against ? 'ally' : 'foe';
@@ -1875,6 +1885,8 @@ export class Game {
         if (foe && !foe.ally) foe.mark = person.id;
       }
       learnOf(this.society, person.id, 'seen');
+      // Throwing in with the player is something they remember.
+      if (ally) this.remember(person.id, { kind: 'backed', at: now, what: (this.inside ?? this.location)?.name ?? 'the street' }, now);
       this.groupLine(ally ? 'joinYou' : 'joinThem', `${person.id}:join`, { ...this.whoVars(person), target: target ? this.fightName(target, false) : 'them' });
     }
   }
@@ -2711,7 +2723,7 @@ export class Game {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      const reply = replyTo(openness('hire', stance, this.charismaEdge, person.traits, society.openness), society.openness, rng);
+      const reply = replyTo(openness('hire', stance, this.charismaEdge, person.traits, society.openness) + this.leaning(person.id, now), society.openness, rng);
       if (reply === 'answer') {
         hired = true;
         // The new job takes the place of the one handed in: a day job for a day job.
@@ -3177,6 +3189,7 @@ export class Game {
       const extra = Math.round(state.pay * events.cover.pay);
       job.owed = (job.owed ?? 0) + extra;
       to(person, { rapport: events.cover.rapport });
+      if (person) this.remember(person.id, { kind: 'covered', at: now, what: building.name }, now);
       tell('coverYes', { pay: String(extra) });
       says(person, lines.work.coverThanks);
     } else if (choice === 'decline') {
@@ -3555,7 +3568,7 @@ export class Game {
       const voucher = vouched ? this.person(vouched) : undefined;
       const stances = voucher && voucher.diedOn === undefined ? dealing.join.vouched : dealing.join.stances;
       const rep = repOf(this.society, `gang:${gang}`, society, timeScale, now);
-      const reply = stances.includes(stance) && rep > dealing.join.rep ? replyTo(openness('deal', stance, this.charismaEdge, person.traits, society.openness), society.openness, rng) : 'refuse';
+      const reply = stances.includes(stance) && rep > dealing.join.rep ? replyTo(openness('deal', stance, this.charismaEdge, person.traits, society.openness) + this.leaning(person.id, now), society.openness, rng) : 'refuse';
       if (reply === 'answer') {
         joined = true;
         const past = this.dealState.past[gang];
@@ -3876,7 +3889,7 @@ export class Game {
       return true;
     } else if (habit?.drug === drug) {
       const regular = (this.dealState.current?.customers[person.id]?.bought ?? 0) >= dealing.corner.regularAt;
-      const reply = regular ? 'answer' : replyTo(openness('pitch', stance, this.charismaEdge, person.traits, society.openness, Boolean(this.masked())) + habit.need, society.openness, rng);
+      const reply = regular ? 'answer' : replyTo(openness('pitch', stance, this.charismaEdge, person.traits, society.openness, Boolean(this.masked())) + habit.need + this.leaning(person.id, now), society.openness, rng);
       if (reply === 'answer' && person.eddies >= price) {
         this.speech(person, line(lines.deal.buy, speaker, rng), now);
         if (this.sale(person, drug, price, now)) {
@@ -4614,7 +4627,7 @@ export class Game {
       const habit = this.habitFor(person);
       const user = Boolean(habit && dealing.gangs[d.gang]?.drugs.includes(habit.drug));
       const keen = (person.gang === d.gang ? rules.keen.gang : 0) + (user ? rules.keen.user : 0) + (!person.gang && !habit ? rules.keen.straight : 0);
-      const reply = rules.stances.includes(stance) ? replyTo(openness('recruit', stance, this.charismaEdge, person.traits, society.openness) + keen, society.openness, rng) : 'refuse';
+      const reply = rules.stances.includes(stance) ? replyTo(openness('recruit', stance, this.charismaEdge, person.traits, society.openness) + keen + this.leaning(person.id, now), society.openness, rng) : 'refuse';
       if (reply === 'answer') {
         joined = true;
         this.dealState.crew[person.id] = freshRunner(now, this.clockAt(now).day, rules);
@@ -5303,11 +5316,13 @@ export class Game {
    * a corpo's, nerve either way; a ganger hardly ever, and never on their gang's own turf. An
    * officer always does.
    */
-  private callOdds(caller: Person, victim: Person, base: number, turf: Set<string>): number {
+  private callOdds(caller: Person, victim: Person, base: number, turf: Set<string>, now: number): number {
     const odds = this.rules.police!.caller;
     if (NCPD.test(caller.job.role)) return 1;
     if (caller.gang && turf.has(caller.gang)) return 0;
     let chance = base * (1 + odds.courage * (caller.traits.courage - 0.5) * 2);
+    // What they remember of the player: someone they owe looks the other way; someone they hold a lot against reaches for the phone.
+    chance *= 1 - (odds.regard ?? 0) * this.regardOf(caller.id, now);
     if (caller.id === victim.id) chance *= odds.victim;
     else {
       const tie = tiesOf(this.population, caller.id).find((t) => t.to === victim.id);
@@ -5348,14 +5363,14 @@ export class Game {
     const turf = new Set((this.rules.people.turf[where.district.id] ?? []).map(([g]) => g));
     // Out cold, they'll make up their mind when they come to (on the street, nobody's out cold for long).
     if (who !== 'witnesses' && cold && spot) {
-      p.pending.push({ person: victim.id, crime: kind, at: now, named: named(victim.id), seen, odds: this.callOdds(victim, victim, where.call, turf), district: where.district.id, minutes: where.minutes, spot, x: at.x, y: at.y });
+      p.pending.push({ person: victim.id, crime: kind, at: now, named: named(victim.id), seen, odds: this.callOdds(victim, victim, where.call, turf, now), district: where.district.id, minutes: where.minutes, spot, x: at.x, y: at.y });
     }
     // A witness leaves it to someone else the more of them there are; the one it was done to doesn't.
     const crowd = Math.max(1, witnesses.length) ** police.caller.crowd;
     const alarm = police.crimes[kind].alarm;
-    const called = callers.filter((c) => NCPD.test(c.job.role) || rng.chance(c.id === victim.id ? this.callOdds(c, victim, where.call, turf) : Math.min(1, (this.callOdds(c, victim, where.call, turf) * alarm) / crowd)));
+    const called = callers.filter((c) => NCPD.test(c.job.role) || rng.chance(c.id === victim.id ? this.callOdds(c, victim, where.call, turf, now) : Math.min(1, (this.callOdds(c, victim, where.call, turf, now) * alarm) / crowd)));
     // Whoever only heard it, through the walls, calls less, and can't say whose face it was.
-    const ears = heard ? heard.people.filter((c) => rng.chance(Math.min(1, (this.callOdds(c, victim, where.call, turf) * alarm * heard.share) / Math.max(1, heard.people.length) ** police.caller.crowd))) : [];
+    const ears = heard ? heard.people.filter((c) => rng.chance(Math.min(1, (this.callOdds(c, victim, where.call, turf, now) * alarm * heard.share) / Math.max(1, heard.people.length) ** police.caller.crowd))) : [];
     if (!called.length && ears.length) {
       this.report(kind, ears[0]!, false, 'nothing', spot, at, where.district.id, where.minutes, now, rng, null);
       return;
@@ -5658,7 +5673,7 @@ export class Game {
       const person = this.person(id);
       if (person && person.diedOn === undefined && !present.some((p) => p.person.id === id)) present.push({ person, doing: 'out cold' });
     }
-    const scenes = scenesAt(present.map((p) => p.person).filter((p) => !cold.includes(p.id)), this.population, spot, clock, this.world, this.rules.people.turf, (gang) => this.rules.people.gangs[gang]?.rivals ?? [], this.rules.life, this.world.seed);
+    const scenes = scenesAt(present.map((p) => p.person).filter((p) => !cold.includes(p.id)), this.population, spot, clock, this.world, this.rules.people.turf, (gang) => this.rules.people.gangs[gang]?.rivals ?? [], this.rules.life, this.world.seed, (id) => heldBy(this.life, id, this.rules.life.held, clock.day));
     return [
       ...present.map(({ person, doing }) => ({
         person,
@@ -6047,7 +6062,8 @@ export class Game {
     if (days < 7) return 'a few days back';
     if (days < 14) return 'last week';
     if (days < 28) return 'a few weeks back';
-    return 'a while back';
+    if (days < 60) return 'last month';
+    return 'months back';
   }
 
   /** What someone would bring up about what happened between people lately, as the variables their lines are filled by; nothing when there's no news. */
@@ -6087,8 +6103,8 @@ export class Game {
   private memoryVars(person: Person, memory: Memory, now: number): Record<string, string> {
     const about = memory.about ? this.person(memory.about) : undefined;
     const tie = about ? tiesOf(this.population, person.id).find((t) => t.to === about.id) : undefined;
-    const days = daysSince(memory.at, this.rules.timeScale, now);
-    const ago = days < 0.5 ? 'earlier' : days < 1.5 ? 'yesterday' : days < 2.5 ? 'two days back' : days < 7 ? 'a few days back' : days < 14 ? 'last week' : 'a while back';
+    const days = memoryAge(memory.at, this.rules.society.memory, this.rules.timeScale, now);
+    const ago = days < 0.5 ? 'earlier' : days < 1.5 ? 'yesterday' : days < 2.5 ? 'two days back' : days < 7 ? 'a few days back' : days < 14 ? 'last week' : days < 28 ? 'a few weeks back' : days < 60 ? 'last month' : 'months back';
     const dish = memory.kind === 'gift' ? this.rules.food.dishes.find((d) => d.id === memory.what) : undefined;
     const pronouns = about ? pronounsOf(about) : null;
     return {
@@ -6105,17 +6121,31 @@ export class Game {
       memAgain: memory.said > 0 ? 'yes' : '',
       memRobbery: memory.what === 'robbery' ? 'yes' : '',
       memInsult: memory.what === 'insult' ? 'yes' : '',
+      memAssault: memory.what === 'assault' ? 'yes' : '',
+      memMurder: memory.what === 'murder' ? 'yes' : '',
       memTook: memory.amount ? String(memory.amount) : '',
       memItem: dish?.name ?? '',
       memFavorite: dish && (dish.id === person.likes.dish || dish.id === person.likes.drink) ? 'yes' : '',
       memTitle: memory.kind === 'promoted' || memory.kind === 'quit' ? (memory.what ?? '') : '',
-      memPlace: memory.kind === 'date' ? (memory.what ?? '') : '',
+      memPlace: memory.kind === 'date' || memory.kind === 'covered' || memory.kind === 'backed' ? (memory.what ?? '') : '',
+      // A chat they remember, by the way it started.
+      ...(memory.kind === 'chat' || memory.kind === 'rebuffed' ? { [`mem${(memory.what ?? 'chat').charAt(0).toUpperCase()}${(memory.what ?? 'chat').slice(1)}`]: 'yes' } : {}),
     };
   }
 
   /** Writes something down in someone's memory of the player. */
   private remember(id: string, memory: Omit<Memory, 'said' | 'times'>, now: number): void {
     remember(this.society, id, memory, this.rules.society.memory, this.rules.timeScale, now);
+  }
+
+  /** Where someone's memories of the player leave them, -1 to 1 (memory.ts's `regard`). */
+  private regardOf(id: string, now: number): number {
+    return regard(this.society, id, this.rules.society.memory, this.rules.timeScale, now);
+  }
+
+  /** How much readier (or less) someone is to answer, or do what's asked, for what they remember of the player. */
+  private leaning(id: string, now: number): number {
+    return this.regardOf(id, now) * (this.rules.society.openness.memory ?? 0);
   }
 
   /** Where the player stands with someone right now, for telling them after an exchange what it did. */
@@ -6296,8 +6326,12 @@ export class Game {
           date: `A date${m.what ? ` at ${m.what}` : ''}`,
           dumped: 'You ended it',
           cheated: `Caught you with ${nameOf(m.about)}`,
+          chat: `Liked your ${WAY_WORDS[m.what ?? ''] ?? 'way'}`,
+          rebuffed: `Didn't like your ${WAY_WORDS[m.what ?? ''] ?? 'way'}`,
+          covered: `You covered a shift${m.what ? ` at ${m.what}` : ''}`,
+          backed: `Fought at your side${m.what ? ` at ${m.what}` : ''}`,
         };
-        return `${said[m.kind]}${m.times > 1 ? ` ×${m.times}` : ''} · ${this.agoWord(daysSince(m.at, timeScale, now))}`;
+        return `${said[m.kind]}${m.times > 1 ? ` ×${m.times}` : ''} · ${this.agoWord(memoryAge(m.at, society.memory, timeScale, now))}`;
       });
   }
 
@@ -6717,6 +6751,7 @@ export class Game {
       ...this.meansVars(person),
       ...this.momentVars(person, now),
       ...this.heartVars(person, standing),
+      ...this.grudgeVars(person, now),
     };
     // What they said to the player lately, and what the player's been saying, which their lines steer clear of.
     const recent = [...knowledgeOf(this.society, person.id).log.filter((e) => e.who !== 'note').slice(-8).map((e) => e.text), ...this.saidLately];
@@ -6741,6 +6776,35 @@ export class Game {
       grief: lost?.p?.given ?? '',
       griefWord: lost?.p ? kinWord(person, lost.t.kind, lost.p) : '',
       enemyHere: enemy && person.hates ? (this.rules.people.gangs[person.hates]?.name ?? '') : '',
+    };
+  }
+
+  /** The grudge on someone's mind, of what they hold against others from their own days: the worst, then the freshest, against someone still breathing. */
+  private grudgeOf(person: Person, now: number): Held | null {
+    const order: Held['kind'][] = ['killed', 'dumped', 'robbed', 'beaten', 'shook', 'fallout', 'laidOff'];
+    const held = heldBy(this.life, person.id, this.rules.life.held, this.clockAt(now).day).filter((h) => this.person(h.by)?.diedOn === undefined);
+    return held.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || b.day - a.day)[0] ?? null;
+  }
+
+  /**
+   * What someone holds against someone else, as line variables: the one (`grudgeWho`, named in
+   * full when they share the speaker's given name), what they did (`grudgeRobbed`, `grudgeShook`,
+   * `grudgeBeaten`, `grudgeDumped`, `grudgeFallout`, `grudgeLaidOff`, `grudgeKilled`), when
+   * (`grudgeAgo`), and for a killing, whose (`grudgeKin`, `grudgeWord`).
+   */
+  private grudgeVars(person: Person, now: number): Record<string, string> {
+    const grudge = this.grudgeOf(person, now);
+    const by = grudge ? this.person(grudge.by) : undefined;
+    if (!grudge || !by) return {};
+    const about = grudge.about ? this.person(grudge.about) : undefined;
+    const tie = about ? tiesOf(this.population, person.id).find((t) => t.to === about.id) : undefined;
+    const days = this.clockAt(now).day - grudge.day;
+    return {
+      grudgeWho: by.given === person.given ? by.name : by.given,
+      [`grudge${grudge.kind.charAt(0).toUpperCase()}${grudge.kind.slice(1)}`]: 'yes',
+      grudgeAgo: days < 1 ? 'earlier today' : days < 2 ? 'yesterday' : days < 7 ? 'a few days back' : days < 14 ? 'last week' : days < 28 ? 'a few weeks back' : days < 60 ? 'last month' : 'months back',
+      grudgeKin: about?.given ?? '',
+      grudgeWord: about && tie ? kinWord(person, tie.kind, about) : '',
     };
   }
 
@@ -6855,6 +6919,10 @@ export class Game {
     }
     if (topic === 'hates') heardFrom(this.society, id, 'hates');
     if (topic === 'dream') heardFrom(this.society, id, 'dream');
+    // Told of a grudge, the player has a name for whoever it's against.
+    const grudge = topic === 'life' ? this.grudgeOf(person, now) : null;
+    const against = grudge ? this.person(grudge.by) : undefined;
+    if (against && knowledgeOf(this.society, id).log.at(-1)?.text.includes(speaker.vars.grudgeWho ?? '\u0000') && learnOf(this.society, against.id, 'told')) learned.push(against.id);
     if (standing.talks + 1 >= 3) learnFact(this.society, id, 'nature');
     if (topic === 'kin' && kin) {
       learnLink(this.society, id, kin.to, kin.kind, 'told', now);
@@ -6886,6 +6954,8 @@ export class Game {
     const romance = society.romance;
     const spark = !drawn ? 0 : approach === 'flirt' ? (reaction.score > 0 ? reaction.score * romance.flirt : -romance.miss) : approach === this.heartOf(person).wants && reaction.score > 0 ? romance.wants : 0;
     changeStanding(this.society, id, { met: true, rapport: gain, spark, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
+    // A way in they liked, or didn't, they remember (a plain chat, they don't).
+    if (approach !== 'chat' && reaction.score) this.remember(id, { kind: reaction.score > 0 ? 'chat' : 'rebuffed', at: now, what: approach }, now);
     // Flirting in front of the one the player is seeing.
     if (approach === 'flirt') this.jealous(person, now);
     // Getting on with someone counts for a little with their people.
@@ -6936,7 +7006,7 @@ export class Game {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      const score = openness(fact, stance, this.charismaEdge, person.traits, society.openness, Boolean(this.masked()), momentOf(speaker, grilled)) + reaction.score * society.reactions.openness;
+      const score = openness(fact, stance, this.charismaEdge, person.traits, society.openness, Boolean(this.masked()), momentOf(speaker, grilled)) + reaction.score * society.reactions.openness + this.leaning(person.id, now);
       const reply = replyTo(score, society.openness, rng);
       if (reply === 'answer') {
         answered = true;
@@ -7166,7 +7236,7 @@ export class Game {
       pressed = true;
       this.speech(person, line(lines.pressed, speaker, rng), now);
     } else {
-      const reply = replyTo(openness('chop', stance, this.charismaEdge, person.traits, society.openness, Boolean(this.masked())), society.openness, rng);
+      const reply = replyTo(openness('chop', stance, this.charismaEdge, person.traits, society.openness, Boolean(this.masked())) + this.leaning(person.id, now), society.openness, rng);
       if (reply === 'answer') {
         done = true;
         chip.locked = false;
@@ -7266,7 +7336,39 @@ export class Game {
   }
 
   /** Whoever has come to collect does, if the player isn't on a train: eddies, and the wind out of them. */
+  /**
+   * A heads-up before someone comes to collect (`SOCIETY.warning`): the one who thinks best of
+   * the player among those who know whoever's coming (or are of the gang that is), have met the
+   * player and are still breathing, sends word. Each threat is looked at once.
+   */
+  private warnings(now: number): void {
+    const rules = this.rules.society.warning;
+    if (!rules) return;
+    for (const threat of this.society.threats) {
+      if (threat.warned || threat.due - now > (rules.hours * HOUR) / this.rules.timeScale) continue;
+      threat.warned = true;
+      const by = threat.by ? this.person(threat.by) : undefined;
+      const knows = by ? tiesOf(this.population, by.id).map((t) => this.person(t.to)) : threat.gang ? this.population.people.filter((p) => p.gang === threat.gang) : [];
+      let warner: Person | undefined;
+      let best = rules.regard;
+      for (const p of knows) {
+        if (!p || p.diedOn !== undefined || p.id === by?.id || !this.society.standings[p.id]?.met) continue;
+        const r = this.regardOf(p.id, now);
+        if (r >= best) [warner, best] = [p, r];
+      }
+      if (!warner) continue;
+      const rng = createRng(`${this.world.seed}:warning:${threat.id}`);
+      const name = (id: string) => this.describe(id, now)?.name ?? 'someone';
+      const text = finish(rng.pick(by ? rules.lines.person : rules.lines.gang) ?? '', { who: name(warner.id), name: by ? name(by.id).replace(/^\p{Lu}/u, (c) => (this.describe(by.id, now)?.named ? c : c.toLowerCase())) : '', gang: threat.gang ? (this.rules.people.gangs[threat.gang]?.name ?? '') : '' });
+      this.say(text, 'system');
+      // On their card, what they said: the message itself.
+      this.logged(warner.id, 'them', text.match(/"(.+)"/)?.[1] ?? text, now);
+      this.events.emit('societyChanged', { people: [warner.id] });
+    }
+  }
+
   private settleThreats(now: number): void {
+    this.warnings(now);
     const { society, timeScale, lines, people } = this.rules;
     for (const threat of dueThreats(this.society, now)) {
       if (this.trip?.mode === 'ncart') {

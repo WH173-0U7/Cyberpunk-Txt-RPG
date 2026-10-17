@@ -117,7 +117,7 @@ export interface DialogueLines {
    * one of a rival gang, pitched the player's gang's product (`{ours}`), taking it as war.
    */
   deal: { join: Line[]; notYet: Line[]; refer: Line[]; front: Line[]; owing: Line[]; paid: Line[]; some: Line[]; promote: Line[]; masked: Line[]; burned: Line[]; leave: Line[]; buy: Line[]; wary: Line[]; pass: Line[]; offended: Line[]; rival: Line[]; recruit: Line[]; recruitNo: Line[]; runnerFront: Line[]; runnerPaid: Line[]; runnerKept: Line[]; runnerSome: Line[]; runnerNothing: Line[]; runnerShort: Line[]; leanPaid: Line[]; leanFailed: Line[]; slide: Line[]; runnerQuit: Line[]; letGo: Line[] };
-  /** What someone brings up of what the player did, as they remember it (memory.ts): `mem` and `mem<Kind>` say which, with `{memWho}`, `{memWord}`, `{memAgo}`, `{memItem}`, `{memTook}`, `{memTitle}` and `memTwice`, `memAgain` (brought up before), `memRobbery`, `memInsult`, `memFavorite`. */
+  /** What someone brings up of what the player did, as they remember it (memory.ts): `mem` and `mem<Kind>` say which, with `{memWho}`, `{memWord}`, `{memAgo}`, `{memItem}`, `{memTook}`, `{memTitle}` and `memTwice`, `memAgain` (brought up before), `memRobbery`, `memInsult`, `memAssault`, `memMurder`, `memFavorite`. */
   memory: Line[];
   /** A storefront that won't serve the player. */
   barred: Line[];

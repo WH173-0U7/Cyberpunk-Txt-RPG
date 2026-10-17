@@ -47,7 +47,7 @@ export interface LifeEvent {
   where: Spot | null;
 }
 
-export type SceneKind = 'couple' | 'family' | 'friends' | 'crew' | 'coworkers' | 'shakedown' | 'leanedOn' | 'rivals';
+export type SceneKind = 'couple' | 'family' | 'friends' | 'crew' | 'coworkers' | 'shakedown' | 'leanedOn' | 'rivals' | 'grudge' | 'grudged';
 
 /** What a pair of people here are seen doing: the phrase, and the other one's id ("arguing with" them). */
 export interface Scene {
@@ -96,6 +96,10 @@ export interface LifeRules {
   eyeing: number;
   /** What pairs are seen doing, by what they are to each other; the other's name follows the phrase. */
   scenes: Record<SceneKind, string[]>;
+  /** What people hold against each other (missing: nothing, as before). */
+  held?: HeldRules;
+  /** The chance someone at a spot with whoever they hold something against is seen at it. */
+  glaring?: number;
 }
 
 export interface LifeState {
@@ -129,6 +133,44 @@ export interface LifeState {
   start?: number;
   /** How many fights each person has been in: what their fighting has learned from. */
   fights?: Record<string, number>;
+  /** What each person holds against others from their own days (`hold`), freshest first. */
+  held?: Record<string, Held[]>;
+}
+
+/**
+ * What someone holds against someone else, from their own days: robbed by them, shaken down,
+ * beaten in a fight, left, fallen out with, let go by them as their boss, or their kin killed
+ * (`about`, the one who died). It lasts its kind's days (`LifeRules.held`), comes up when they
+ * talk, keeps the two from making friends or a couple, shows when they're in a room together,
+ * and now and then has them settle it.
+ */
+export type HeldKind = 'robbed' | 'shook' | 'beaten' | 'dumped' | 'fallout' | 'laidOff' | 'killed';
+export interface Held {
+  kind: HeldKind;
+  by: string;
+  day: number;
+  about?: string;
+}
+
+export interface HeldRules {
+  /** Days each kind is held. */
+  days: Record<HeldKind, number>;
+  /** The most anyone holds at once: the oldest gives way. */
+  cap: number;
+  /** The chance a day, a district, that someone with a beating, a robbery, a shakedown or a killing to settle and the nerve (`nerve` courage and up) goes for whoever did it. */
+  revenge: number;
+  nerve: number;
+}
+
+/** What someone holds against others on a day, freshest first: what's had its days is gone. */
+export function heldBy(state: LifeState, id: string, rules: HeldRules | undefined, day: number): Held[] {
+  if (!rules) return [];
+  return (state.held?.[id] ?? []).filter((h) => day - h.day < (rules.days[h.kind] ?? 0));
+}
+
+/** Whether either of two holds something against the other. */
+function feuding(state: LifeState, a: string, b: string, rules: HeldRules | undefined, day: number): boolean {
+  return heldBy(state, a, rules, day).some((h) => h.by === b) || heldBy(state, b, rules, day).some((h) => h.by === a);
 }
 
 export function freshLife(): LifeState {
@@ -154,6 +196,14 @@ export function applyLife(population: Population, state: LifeState): void {
   state.broken = state.broken.filter((key) => key.split('|').every((id) => ids.has(id)));
   for (const key of ['eddies', 'chips', 'hurt', 'hates', 'jobs', 'gangs', 'dead'] as const) for (const id of Object.keys(state[key])) if (!ids.has(id)) delete state[key][id];
   for (const key of Object.keys(state.since)) if (!key.split('|').every((id) => ids.has(id))) delete state.since[key];
+  // What anyone holds against someone the city no longer has goes with them; so does anything not shaped like a grudge.
+  if (state.held) {
+    for (const [id, list] of Object.entries(state.held)) {
+      const kept = ids.has(id) && Array.isArray(list) ? list.filter((h) => h && typeof h.kind === 'string' && ids.has(h.by) && Number.isFinite(h.day) && (h.about === undefined || ids.has(h.about))) : [];
+      if (kept.length) state.held[id] = kept;
+      else delete state.held[id];
+    }
+  }
   state.events = state.events.filter((e) => e.who.every((id) => ids.has(id)));
   // Only the ties of people with a broken or a made tie are looked at: tens of thousands of keys cost more than the few that matter.
   if (state.broken.length) {
@@ -384,6 +434,41 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
     const event: LifeEvent = { id: state.nextId++, day, kind, who: [who[0].id, who[1].id], gang, district, took, where };
     state.events.push(event);
     events.push(event);
+    // What it leaves one of them holding against the other.
+    const [a, b] = who;
+    if (kind === 'shakedown') hold(b, 'shook', a);
+    else if (kind === 'robbery') hold(b, 'robbed', a);
+    else if (kind === 'fight') hold(b, 'beaten', a);
+    else if (kind === 'breakup') hold(b, 'dumped', a);
+    else if (kind === 'laidOff') hold(b, 'laidOff', a);
+    else if (kind === 'fallout') {
+      hold(a, 'fallout', b);
+      hold(b, 'fallout', a);
+    } else if (kind === 'makeup') {
+      forgive(a, b);
+      forgive(b, a);
+    } else if (kind === 'death' && a !== b) {
+      for (const t of tiesFrom(b.id)) {
+        const kin = byId.get(t.to);
+        if (FAMILY.includes(t.kind) && alive(kin) && kin !== a) hold(kin, 'killed', a, b);
+      }
+    }
+  };
+  /** Writes down what someone holds against someone else: the same again is fresh again; past the cap the oldest goes. */
+  const hold = (holder: Person, kind: HeldKind, by: Person, about?: Person): void => {
+    const held = rules.held;
+    if (!held || holder === by) return;
+    const all = (state.held ??= {});
+    const kept = heldBy(state, holder.id, held, day).filter((h) => !(h.kind === kind && h.by === by.id));
+    all[holder.id] = [{ kind, by: by.id, day, ...(about ? { about: about.id } : {}) }, ...kept].slice(0, held.cap);
+  };
+  /** Lets go of a falling out with someone. */
+  const forgive = (holder: Person, by: Person): void => {
+    const list = state.held?.[holder.id];
+    if (!list) return;
+    const kept = list.filter((h) => !(h.by === by.id && h.kind === 'fallout'));
+    if (kept.length) (state.held as Record<string, Held[]>)[holder.id] = kept;
+    else delete (state.held as Record<string, Held[]>)[holder.id];
   };
   const pay = (from: Person, to: Person, share: [number, number]): number => {
     const took = Math.min(from.eddies, Math.round(from.eddies * rng.range(share[0], share[1])));
@@ -565,7 +650,8 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
         }
       }
     });
-    if (pair) {
+    // Nobody falls for someone they hold something against, or who holds something against them.
+    if (pair && !feuding(state, pair[0].id, pair[1].id, rules.held, day)) {
       setTie(state, book, pair[0], pair[1], 'partner');
       state.since[tieKey(pair[0].id, pair[1].id)] = day;
       write('romance', pair, null, 0, pair[0].likes.hangout ?? pair[1].likes.hangout);
@@ -632,7 +718,8 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
         break;
       }
     }
-    if (pair) {
+    // ...nor makes a friend of them.
+    if (pair && !feuding(state, pair[0].id, pair[1].id, rules.held, day)) {
       setTie(state, book, pair[0], pair[1], 'friend');
       write('friends', pair, null, 0, pair[0].likes.hangout);
     }
@@ -739,6 +826,37 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
       write('death', [gone, gone], null, 0, gone.home ? { kind: 'building', id: gone.home } : null);
     }
   }
+  // Someone settles a score: whoever here holds a beating, a robbery, a shakedown or a killing
+  // against someone in the district, with the nerve for it, goes for them. Won, it's settled.
+  const held = rules.held;
+  if (held && state.held && room() && rng.chance(held.revenge)) {
+    const scores: Array<[Person, Person, Held]> = [];
+    for (const [id, list] of Object.entries(state.held)) {
+      const p = byId.get(id);
+      if (!alive(p) || p.district !== district || p.traits.courage < held.nerve || (state.hurt[p.id] ?? -1) >= day) continue;
+      for (const h of list) {
+        if (day - h.day >= held.days[h.kind] || (h.kind !== 'robbed' && h.kind !== 'beaten' && h.kind !== 'shook' && h.kind !== 'killed')) continue;
+        const foe = byId.get(h.by);
+        if (alive(foe) && foe.district === district && (state.hurt[foe.id] ?? -1) < day) scores.push([p, foe, h]);
+      }
+    }
+    const score = scores.length ? rng.pick(scores) : null;
+    if (score) {
+      const [avenger, foe] = score;
+      const nerve = (p: Person) => p.traits.courage * 0.6 + p.traits.temper * 0.4 + rng.range(0, 0.5);
+      const [winner, loser] = nerve(avenger) >= nerve(foe) ? [avenger, foe] : [foe, avenger];
+      const until = day + rng.int(rules.hurtDays[0], rules.hurtDays[1]);
+      state.hurt[loser.id] = until;
+      loser.hurtUntil = until;
+      // Settled, the one who went for it lets it go; beaten again, they hold that too.
+      if (winner === avenger) {
+        const kept = (state.held[avenger.id] ?? []).filter((h) => h.by !== foe.id);
+        if (kept.length) state.held[avenger.id] = kept;
+        else delete state.held[avenger.id];
+      }
+      write('fight', [winner, loser], winner.gang, 0, spot(loser) ?? spot(winner));
+    }
+  }
   return events;
 }
 
@@ -794,7 +912,7 @@ export function newsFor(person: Person, population: Population, state: LifeState
 }
 
 /** Who among the people here is with whom, and doing what: pairs who know each other, a ganger on their turf leaning on the help, rivals eyeing each other. Drawn for the place, the day and the hour. */
-export function scenesAt(present: Person[], population: Population, spot: Spot, clock: Clock, world: World, turf: Record<string, Array<[string, number]>>, rivalsOf: (gang: string) => string[], rules: LifeRules, seed: string): Map<string, Scene> {
+export function scenesAt(present: Person[], population: Population, spot: Spot, clock: Clock, world: World, turf: Record<string, Array<[string, number]>>, rivalsOf: (gang: string) => string[], rules: LifeRules, seed: string, held: (id: string) => Held[] = () => []): Map<string, Scene> {
   const rng = createRng(`${seed}:scene:${spot.kind}:${spot.id}:${clock.day}:${Math.floor(clock.hour / 3)}`);
   const scenes = new Map<string, Scene>();
   const taken = new Set<string>();
@@ -807,6 +925,18 @@ export function scenesAt(present: Person[], population: Population, spot: Spot, 
     taken.add(a.id);
     taken.add(b.id);
   };
+  // Someone in the same room as whoever they hold something against: it shows, from both sides.
+  for (const a of present) {
+    if (taken.has(a.id)) continue;
+    const grudge = held(a.id).find((h) => !taken.has(h.by) && present.some((p) => p.id === h.by));
+    const b = grudge ? present.find((p) => p.id === grudge.by) : undefined;
+    if (!b || !rng.chance(rules.glaring ?? 0)) continue;
+    const at = rng.int(0, rules.scenes.grudge.length - 1);
+    scenes.set(a.id, { with: b.id, phrase: rules.scenes.grudge[at] ?? '', kind: 'grudge' });
+    scenes.set(b.id, { with: a.id, phrase: rules.scenes.grudged[at] ?? rules.scenes.grudged[0] ?? '', kind: 'grudged' });
+    taken.add(a.id);
+    taken.add(b.id);
+  }
   // Pairs who know each other, the closest first.
   for (const a of present) {
     if (taken.has(a.id)) continue;

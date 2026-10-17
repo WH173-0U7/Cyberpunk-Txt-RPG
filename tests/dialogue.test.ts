@@ -329,7 +329,7 @@ describe('dialogue', () => {
       expect(needs(l).filter((n) => kinds.some((k) => n === `news${k}`)), text(l)).toHaveLength(1);
       expect(needs(l).filter((n) => roles.some((r) => n === `news${r}`)), text(l)).toHaveLength(1);
     }
-    const memories = ['Wronged', 'Heard', 'Saw', 'Settled', 'Gift', 'GoodWord', 'Hired', 'Promoted', 'Quit', 'Notice', 'Fired', 'Chopped', 'Asked', 'Date', 'Dumped', 'Cheated'];
+    const memories = ['Wronged', 'Heard', 'Saw', 'Settled', 'Gift', 'GoodWord', 'Hired', 'Promoted', 'Quit', 'Notice', 'Fired', 'Chopped', 'Asked', 'Date', 'Dumped', 'Cheated', 'Chat', 'Rebuffed', 'Covered', 'Backed'];
     for (const l of LINES.memory) expect(needs(l).filter((n) => memories.some((k) => n === `mem${k}`)), text(l)).toHaveLength(1);
   });
 
@@ -469,6 +469,14 @@ describe('dialogue', () => {
           }
         }
         lines += 32;
+        // What they hold against someone else, every kind of it.
+        for (const kind of ['Robbed', 'Shook', 'Beaten', 'Dumped', 'Fallout', 'LaidOff', 'Killed']) {
+          for (const word of ['cousin', '']) {
+            const holding: Speaker = { ...speaker, vars: { ...vars, grudgeWho: 'Raul', [`grudge${kind}`]: 'yes', grudgeAgo: 'last week', grudgeKin: kind === 'Killed' ? 'Ana' : '', grudgeWord: kind === 'Killed' ? word : '' } };
+            check(compose(LINES.topics.life, holding, LINES, rng, { opener: false }), `${about} grudge ${kind} ${word}`);
+          }
+        }
+        lines += 14;
         // The news of people's hearts, work and deaths, and what they remember of the player: every other speaker is plenty of voices.
         const deep = population.people.indexOf(p) % 2 === 0;
         const told = (kind: string, role: string, extra: Record<string, string>) => {
@@ -491,7 +499,7 @@ describe('dialogue', () => {
         told('Death', 'Heard', { newsGang: '' });
         // What they remember of the player, every kind of it, in every shape it comes in.
         const recalls: Array<Record<string, string>> = [];
-        for (const what of ['memRobbery', 'memInsult', '']) {
+        for (const what of ['memRobbery', 'memInsult', 'memAssault', 'memMurder', '']) {
           for (const took of ['40', '']) for (const twice of ['yes', '']) recalls.push({ memWronged: 'yes', ...(what ? { [what]: 'yes' } : {}), memTook: took, memTwice: twice });
           for (const word of ['cousin', '']) recalls.push({ memHeard: 'yes', ...(what ? { [what]: 'yes' } : {}), memWord: word });
           recalls.push({ memSaw: 'yes', ...(what ? { [what]: 'yes' } : {}) });
@@ -501,6 +509,8 @@ describe('dialogue', () => {
         for (const word of ['sister', '']) recalls.push({ memGoodWord: 'yes', memWord: word });
         for (const title of ['prep', '']) recalls.push({ memPromoted: 'yes', memTitle: title }, { memQuit: 'yes', memTitle: title });
         recalls.push({ memHired: 'yes' }, { memFired: 'yes' });
+        for (const way of ['memJoke', 'memCompliment', 'memGossip', 'memCare', 'memFlirt']) for (const twice of ['yes', '']) recalls.push({ memChat: 'yes', [way]: 'yes', memTwice: twice }, { memRebuffed: 'yes', [way]: 'yes' });
+        for (const place of ['the bar', '']) for (const twice of ['yes', '']) recalls.push({ memCovered: 'yes', memPlace: place, memTwice: twice }, { memBacked: 'yes', memPlace: place, memTwice: twice });
         for (const memory of deep ? recalls : []) {
           const remembering: Speaker = { ...speaker, vars: { ...vars, mem: 'yes', memWho: 'Ana', memHe: 'she', memHim: 'her', memHis: 'her', memAgo: 'yesterday', memAgain: rng.chance(0.5) ? 'yes' : '', ...memory } };
           check(compose(LINES.memory, remembering, LINES, rng, { opener: false }), `${about} memory ${JSON.stringify(memory)}`);

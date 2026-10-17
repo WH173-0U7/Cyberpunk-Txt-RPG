@@ -8,7 +8,7 @@ import { ARMS } from '../src/data/weapons';
 import { MONEY } from '../src/data/money';
 import { LINES } from '../src/data/dialogue';
 import { PEOPLE } from '../src/data/people';
-import { CHARISMA } from '../src/data/skills';
+import { CHARISMA, TRADING } from '../src/data/skills';
 import { JOBS } from '../src/data/jobs';
 import { LIFE } from '../src/data/life';
 import { COMBAT } from '../src/data/combat';
@@ -1381,6 +1381,67 @@ describe('Game', () => {
       standings: { [id]: { met: true, rapport: 80, grudge: 0, at: now, talks: 0, lastTalkAt: 0, gifts: 0, lastGiftAt: 0, robbedAt: 0, asks: 0, refused: {} } },
     });
 
+    describe('memory', () => {
+      it('remembers a way into a chat that landed, and one that fell flat, but not a plain chat', () => {
+        const { game, now } = atWork('b-noodle', 38, 20);
+        const kinds = new Set<string>();
+        let t = now;
+        for (const { person } of game.peopleHere(now)) {
+          for (const way of ['joke', 'compliment', 'chat'] as const) {
+            t += (SOCIETY.talk.cooldownMinutes * MINUTE) / RULES.timeScale + 1000;
+            if (!game.talk(person.id, t, way)) continue;
+            for (const m of memoriesOf(game.societySaved, person.id, SOCIETY.memory, RULES.timeScale, t)) {
+              if (m.kind !== 'chat' && m.kind !== 'rebuffed') continue;
+              kinds.add(m.kind);
+              expect(m.what, person.name).not.toBe('chat');
+            }
+          }
+        }
+        expect(kinds.size).toBeGreaterThan(0);
+      });
+
+      it("gives a friend's price where the one behind the counter remembers the player well, and a sore one's where they hold a lot against them", () => {
+        const trading = { trading: TRADING };
+        const plain = atWork('b-noodle', 38, 20, {}, trading);
+        // What the shop's strip says of its prices ("prices -8%"): the dishes here are too cheap for a few percent to show in them.
+        const lean = (g: Game) => g.menu(plain.now)?.haggle ?? 0;
+        const hands = plain.game.peopleHere(plain.now).filter((p) => p.person.job.building === 'b-noodle').map((p) => p.person.id);
+        const remembering = (kind: 'gift' | 'wronged') => {
+          const good = [{ kind: 'gift' as const, at: plain.now, what: 'taco', times: 3, said: 0 }, { kind: 'backed' as const, at: plain.now, what: 'Test Noodles', times: 2, said: 0 }];
+          const bad = [{ kind: 'wronged' as const, at: plain.now, what: 'robbery', times: 3, said: 0 }];
+          const memories = Object.fromEntries(hands.map((id) => [id, kind === 'gift' ? good : bad]));
+          const g = new Game(world, { ...RULES, startingEddies: 100, ...trading }, { ...progressInside('b-noodle', 38, 20), society: { ...freshSociety(), memories } });
+          g.start(plain.now);
+          return g;
+        };
+        expect(lean(remembering('gift'))).toBeLessThan(lean(plain.game));
+        expect(lean(remembering('wronged'))).toBeGreaterThan(lean(plain.game));
+      });
+
+      it('has someone who thinks well of the player warn them before someone they crossed comes to collect, once', () => {
+        const probe = atWork('b-noodle', 38, 20);
+        const by = probe.worker;
+        const friend = tiesOf(probe.game.population, by.id).map((t) => probe.game.person(t.to)).find((p) => p && p.diedOn === undefined);
+        if (!friend) throw new Error(`${by.name} knows nobody`);
+        const now = probe.now;
+        const threat = { id: 1, due: now + HOUR / RULES.timeScale, by: by.id, gang: null, incident: 0, amount: 10 };
+        const society = (memories: SocietyState['memories']) => ({ ...friendOf(friend.id, now), memories, threats: [threat], nextId: 2 });
+        const warned = (memories: SocietyState['memories']) => {
+          const game = new Game(world, { ...RULES, startingEddies: 100 }, { ...progressInside('b-noodle', 38, 20), society: society(memories) });
+          game.start(now);
+          const { take, outputs } = record(game);
+          game.tick(now + 1000);
+          game.tick(now + 2000);
+          return outputs(take()).filter((o) => /^(A message from|Word from|.+ pings you)/.test(o.text));
+        };
+        const fond = warned({ [friend.id]: [{ kind: 'backed', at: now, what: 'Test Noodles', times: 2, said: 0 }] });
+        expect(fond).toHaveLength(1);
+        expect(fond[0]?.text).not.toMatch(/[{}]/);
+        // Nobody who thinks well enough of them: no word.
+        expect(warned({})).toEqual([]);
+      });
+    });
+
     it('robs a credchip too, which comes locked, into the wallet', () => {
       const { game, now, worker, take, outputs } = atWork('b-noodle', 38, 20);
       worker.chip = 120;
@@ -2299,8 +2360,9 @@ describe('Game', () => {
           expect(game.jobStatus(now + 2 * MINUTE)).toBeNull();
           expect(spoken(game, boss.id).at(-1)?.text).toMatch(/last time|quit on me|walked out|do not rehire/i);
           expect(game.standingWith(boss.id, now + 2 * MINUTE)?.standing.refused.hire).toBe(now + 2 * MINUTE);
-          // Three weeks on, it's forgotten.
-          expect(memoriesOf(game.societySaved, boss.id, SOCIETY.memory, 1, now + 22 * DAY).some((m) => m.kind === 'quit')).toBe(false);
+          // A month on, it's forgotten.
+          expect(memoriesOf(game.societySaved, boss.id, SOCIETY.memory, 1, now + 22 * DAY).some((m) => m.kind === 'quit')).toBe(true);
+          expect(memoriesOf(game.societySaved, boss.id, SOCIETY.memory, 1, now + 31 * DAY).some((m) => m.kind === 'quit')).toBe(false);
         });
 
         it('keeps the dead out of everywhere', () => {

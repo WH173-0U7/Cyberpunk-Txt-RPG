@@ -77,6 +77,8 @@ export interface OpennessRules {
   moment: { drinking: number; busy: number; eating: number; grilled: number; enemy: number; grieving: number; late: number; drunk: number };
   /** Questions in a row: the first `free` are fine; within `minutes` (on the game's clock) of the last, each one past that costs `rapport` and openness. */
   grill: { free: number; minutes: number; rapport: number };
+  /** Openness someone's memories of the player are worth, all good (and cost, all bad): their `regard` times this. */
+  memory?: number;
 }
 
 /** A reputation, as last written down; it recovers toward nothing since. */
@@ -116,6 +118,8 @@ export interface Threat {
   incident: number;
   /** Eddies they mean to take. */
   amount: number;
+  /** Whether anyone who thinks well of the player has had the chance to warn them yet. */
+  warned?: boolean;
 }
 
 /** How the player came to know of someone, or of a tie between two people (`asked`: in an older save, from asking someone about them). */
@@ -223,6 +227,13 @@ export interface SocietyRules {
   openness: OpennessRules;
   /** What people remember of the player, how long, and what they bring up (memory.ts). */
   memory: MemoryRules;
+  /**
+   * A heads-up before someone comes to collect: `hours` before (on the streets' clock), whoever
+   * thinks well enough of the player (their regard `regard` and up), has met them, and knows the
+   * one coming (or is of the gang that is) sends word. The lines take `{who}` (the one warning),
+   * `{name}` (the one coming, as the player knows them) and `{gang}`.
+   */
+  warning?: { hours: number; regard: number; lines: { person: string[]; gang: string[] } };
   /** Romance with the player (romance.ts). */
   romance: RomanceRules;
   /**
@@ -373,7 +384,9 @@ function drift(value: number, at: number, perDay: number, timeScale: number, now
 export function standingOf(state: SocietyState, id: string, rules: SocietyRules, timeScale: number, now: number): Standing {
   const s = state.standings[id] ?? blank(now);
   // Saves from before questions were counted have neither.
-  return { ...s, asks: s.asks ?? 0, refused: s.refused ?? {}, grudge: drift(s.grudge, s.at, rules.forgivePerDay, timeScale, now), spark: drift(s.spark ?? 0, s.at, rules.romance.fadePerDay, timeScale, now) };
+  // Grudges and spark fade on the clock people remember by (the calendar), not the streets' test speed.
+  const clock = rules.memory.clock ?? timeScale;
+  return { ...s, asks: s.asks ?? 0, refused: s.refused ?? {}, grudge: drift(s.grudge, s.at, rules.forgivePerDay, clock, now), spark: drift(s.spark ?? 0, s.at, rules.romance.fadePerDay, clock, now) };
 }
 
 /** Writes a standing down at `now`, grudge faded first, then changed by `by`. */
@@ -393,7 +406,7 @@ export function changeStanding(state: SocietyState, id: string, by: Partial<Stan
 
 export function repOf(state: SocietyState, key: string, rules: SocietyRules, timeScale: number, now: number): number {
   const r = state.rep[key];
-  return r ? drift(r.value, r.at, rules.rep.recoverPerDay, timeScale, now) : 0;
+  return r ? drift(r.value, r.at, rules.rep.recoverPerDay, rules.memory.clock ?? timeScale, now) : 0;
 }
 
 export function changeRep(state: SocietyState, key: string, by: number, rules: SocietyRules, timeScale: number, now: number): number {
