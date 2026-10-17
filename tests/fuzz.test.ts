@@ -13,6 +13,7 @@ import { LINES } from '../src/data/dialogue';
 import { MONEY } from '../src/data/money';
 import { PEOPLE } from '../src/data/people';
 import { ROBBERY } from '../src/data/robbery';
+import { DOWNED } from '../src/data/downed';
 import { SOCIETY } from '../src/data/society';
 import { TRAVEL } from '../src/data/travel';
 import { outfit } from '../src/engine/carry';
@@ -59,6 +60,7 @@ const RULES: GameRules = {
   trade: TRADE,
   needs: NEEDS,
   robbery: ROBBERY,
+  downed: DOWNED,
   // Anyone will run for the player, so the crew gets put through its paces.
   dealing: { ...DEALING, crew: { ...DEALING.crew, stances: ['cold', 'wary', 'neutral', 'warm', 'friend'], keen: { gang: 3, user: 3, straight: 3 } } },
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
@@ -251,7 +253,8 @@ describe('playing badly', () => {
             if (rest.length && rng.chance(0.2)) game.fightTarget(rng.pick(rest)!.id, now);
             const moves = view.moves.filter((m) => m.enabled);
             const move = rng.chance(0.1) || !moves.length ? null : rng.pick(moves)!;
-            if (!move) game.tick(view.deadline + 1);
+            // A first beat that waits on the player (revenge come for them) has no clock to run out.
+            if (!move) game.tick(Number.isFinite(view.deadline) ? view.deadline + 1 : now);
             else if (move.id === 'hack') game.fightMove('hack', now, rng.pick(view.hacks.filter((h) => h.enabled))?.id);
             else game.fightMove(move.id, now);
             for (const line of game.fightView()?.log ?? []) expect(line, `${about}: a fight's line`).not.toMatch(/[{}]|undefined|NaN/);
@@ -260,6 +263,8 @@ describe('playing badly', () => {
           game.leaveFight();
         };
         for (let act = 0; act < 4; act++) {
+          // Someone come for the player (revenge, in person): it's a fight, played out like any.
+          if (game.fighting) playOut();
           // Officers on the player: they go quietly, run or fight, and nothing else till it's settled.
           const cops = game.police(now).confront;
           if (cops) {

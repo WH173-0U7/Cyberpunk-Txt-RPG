@@ -162,7 +162,9 @@ export class FightPanel {
       this.window = Math.max(1, view.window);
       const fill = el('span', 'fight-clock-fill');
       fill.style.setProperty('--from', String(Math.max(0, Math.min(1, (view.deadline - now) / this.window))));
-      fill.style.animationDuration = `${Math.max(0, view.deadline - now)}ms`;
+      // A first beat that waits on the player (someone come for them out of nowhere): a full clock, standing still.
+      if (Number.isFinite(view.deadline)) fill.style.animationDuration = `${Math.max(0, view.deadline - now)}ms`;
+      else fill.style.animationName = 'none';
       els.clock.querySelector('.fight-clock-fill')?.replaceWith(fill);
       const first = els.moves.querySelector<HTMLButtonElement>('button:not([disabled])');
       if (view.over) els.done.focus({ preventScroll: true });
@@ -179,7 +181,7 @@ export class FightPanel {
 
   /** The seconds left to choose, as the clock runs. */
   clock(now: number): void {
-    this.els.seconds.textContent = `${Math.max(0, Math.ceil((this.deadline - now) / 1000))}s`;
+    this.els.seconds.textContent = Number.isFinite(this.deadline) ? `${Math.max(0, Math.ceil((this.deadline - now) / 1000))}s` : '—';
   }
 
   /** Back to how it was before any fight, for the next one. */

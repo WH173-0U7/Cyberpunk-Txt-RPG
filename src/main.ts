@@ -50,6 +50,7 @@ import { NEEDS } from './data/needs';
 import { POLICE } from './data/police';
 import { DEALING } from './data/dealing';
 import { ROBBERY } from './data/robbery';
+import { DOWNED } from './data/downed';
 import type { PoliceView } from './engine/police';
 import type { RunnerView } from './engine/crew';
 import type { DealView } from './engine/dealing';
@@ -2152,7 +2153,7 @@ function wire(g: Game): void {
     queueSave();
   });
 
-  // An overdose with nobody to help: the end, and the city starts over without the player.
+  // An overdose with nobody to help, or someone finishing the player off: the end, and the city starts over without them.
   g.events.on('flatlined', ({ text }) => {
     if (g !== game) return;
     setTimeout(() => startOver(g.world.seed, `${text} Night City starts over.`), 0);
@@ -2218,7 +2219,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, needs: NEEDS, police: POLICE, join: JOIN, dealing: DEALING, robbery: ROBBERY }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, needs: NEEDS, police: POLICE, join: JOIN, dealing: DEALING, robbery: ROBBERY, downed: DOWNED }, progress);
   wire(game);
   map.setWorld(world);
   try {
