@@ -108,3 +108,34 @@ export const TRADING: SkillRules = {
   levelLine: 'Trading level {level}. You get a better price, buying and selling. {standing}',
 };
 
+
+/**
+ * Dealing (ours): knowing the trade, every dose sold, every package paid off and every rung
+ * climbed. It's what the gangs go by when they decide what to front: each gang's line of drugs
+ * opens a step at a time (`DEALING.gangs`' `at`), the better product at the higher levels, and
+ * it goes with the player from one gang to the next. Past an ordinary level it also gives an
+ * eye for an undercover officer.
+ */
+export const DEALER: SkillRules = {
+  xpFirstLevel: 30,
+  xpGrowth: 1.6,
+  average: AVERAGE,
+  floor: 0.8,
+  perLevel: 0.05,
+  levelLine: 'Dealing level {level}. You know the trade better, and the gang knows it too. {standing}',
+};
+
+/**
+ * Cutting (ours): stretching a package with a cutting agent, every dose cut experience. At
+ * level 1 the cut is crude: a bad batch is likelier to hurt whoever takes it, and the gang
+ * likelier to taste the difference; from level 4 each level makes a cut cleaner and harder to
+ * spot.
+ */
+export const CUTTER: SkillRules = {
+  xpFirstLevel: 20,
+  xpGrowth: 1.6,
+  average: AVERAGE,
+  floor: 0.5,
+  perLevel: 0.15,
+  levelLine: 'Cutting level {level}. Your cuts are cleaner, and harder to taste. {standing}',
+};

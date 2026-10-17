@@ -61,7 +61,7 @@ const play = (progress: Progress, rules = rulesWith(), now = NOON) => {
 };
 const day = clockOf(NOON).day;
 const onPackage = (stock: number, over: Partial<Runner> = {}): Runner => ({ ...frontRunner(freshRunner(NOON, day, C), 'glitter', stock, 18, NOON, T, C), ...over });
-const ctx = (over: Partial<RunnerDay> = {}): RunnerDay => ({ day: day + 1, users: 24, trading: 4, priceFactor: 1, street: 18, call: 0, rough: 1, greed: 0.3, hooked: false, rapport: 20, ...over });
+const ctx = (over: Partial<RunnerDay> = {}): RunnerDay => ({ day: day + 1, users: 24, dealing: 4, priceFactor: 1, street: 18, call: 0, rough: 1, greed: 0.3, hooked: false, rapport: 20, ...over });
 
 describe('a crew', () => {
   it('opens at a high enough rung, and grows with the next', () => {
@@ -82,13 +82,13 @@ describe('a crew', () => {
 
 describe('a runner\'s day', () => {
   const quiet = calm().crew;
-  it('sells by the users round there and their Trading, never more than they hold', () => {
+  it('sells by the users round there and their Dealing, never more than they hold', () => {
     const many = runnerDay(onPackage(50), ctx({ users: 80 }), quiet, createRng('a'));
     const few = runnerDay(onPackage(50), ctx({ users: 0 }), quiet, createRng('a'));
     expect(many.sold).toBeGreaterThan(few.sold);
     expect(many.runner.cash).toBe(many.sold * 18);
-    const sharp = runnerDay(onPackage(50), ctx({ users: 24, trading: 9 }), quiet, createRng('b'));
-    const dull = runnerDay(onPackage(50), ctx({ users: 24, trading: 1 }), quiet, createRng('b'));
+    const sharp = runnerDay(onPackage(50), ctx({ users: 24, dealing: 9 }), quiet, createRng('b'));
+    const dull = runnerDay(onPackage(50), ctx({ users: 24, dealing: 1 }), quiet, createRng('b'));
     expect(sharp.sold).toBeGreaterThanOrEqual(dull.sold);
     const two = runnerDay(onPackage(2), ctx({ users: 200 }), quiet, createRng('c'));
     expect(two.sold).toBeLessThanOrEqual(2);

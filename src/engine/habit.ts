@@ -126,17 +126,17 @@ export function overdoseOdds(state: HabitState, drug: string, now: number, rules
   return Math.min(rules.overdose.most, (rules.overdose.base[drug] ?? 0) * (1 + rules.overdose.stack * lately));
 }
 
-/** A dose taken: its strength by tolerance, the dependence it adds, any nerve damage and the edge; whether it's an overdose is the caller's roll on `overdoseOdds`. */
-export function takeDose(state: HabitState, drug: string, hook: number, now: number, rules: HabitRules, timeScale: number, rng: Rng): { state: HabitState; strength: number; nerve: boolean } {
+/** A dose taken: its strength by tolerance (and by how pure it is, cut), the dependence it adds, any nerve damage and the edge; whether it's an overdose is the caller's roll on `overdoseOdds`. */
+export function takeDose(state: HabitState, drug: string, hook: number, now: number, rules: HabitRules, timeScale: number, rng: Rng, purity = 1): { state: HabitState; strength: number; nerve: boolean } {
   const effect = rules.effects[drug];
   const use = state.drugs[drug];
   const dependence = dependenceAt(use, now, rules, timeScale);
-  const strength = Math.max(0.2, 1 - (rules.tolerance * dependence) / 100);
+  const strength = Math.max(0.2, 1 - (rules.tolerance * dependence) / 100) * purity;
   const window = rules.overdose.stackHours * hour(timeScale);
   const nerve = Boolean(effect?.nerve && state.nerve < rules.nerve.most && rng.chance(effect.nerve));
   const next: HabitState = {
     ...state,
-    drugs: { ...state.drugs, [drug]: { dependence: Math.min(rules.dependence.most, dependence + rules.dependence.perDose * hook), last: now, recent: [...(use?.recent ?? []).filter((t) => now - t < window), now] } },
+    drugs: { ...state.drugs, [drug]: { dependence: Math.min(rules.dependence.most, dependence + rules.dependence.perDose * hook * purity), last: now, recent: [...(use?.recent ?? []).filter((t) => now - t < window), now] } },
     active: [...state.active.filter((a) => a.until > now && a.drug !== drug), ...(effect ? [{ drug, until: now + (effect.minutes * 60_000) / timeScale, strength }] : [])],
     nerve: state.nerve + (nerve ? 1 : 0),
     edge: Math.min(100, edgeAt(state, now, rules, timeScale) + (effect?.edge ?? 0) * strength),

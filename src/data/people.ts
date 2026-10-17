@@ -264,11 +264,11 @@ export const PEOPLE: PeopleContent = {
   // else anywhere. Nerve and temper make a fighter, warmth and chattiness a talker.
   skills: {
     walks: {
-      gang: { brawler: [4, 7], toughness: [4, 7], arms: [4, 7], charisma: [1, 4], trading: [2, 5] },
-      guard: { brawler: [4, 6], toughness: [4, 7], arms: [5, 7], charisma: [2, 5], trading: [2, 4] },
-      corpo: { brawler: [1, 3], toughness: [1, 3], arms: [2, 4], charisma: [5, 8], trading: [4, 7] },
-      elder: { brawler: [1, 3], toughness: [1, 2], arms: [1, 3], charisma: [4, 8], trading: [3, 6] },
-      street: { brawler: [2, 5], toughness: [2, 5], arms: [2, 5], charisma: [2, 6], trading: [2, 5] },
+      gang: { brawler: [4, 7], toughness: [4, 7], arms: [4, 7], charisma: [1, 4], trading: [2, 5], dealing: [3, 7], cutting: [2, 6] },
+      guard: { brawler: [4, 6], toughness: [4, 7], arms: [5, 7], charisma: [2, 5], trading: [2, 4], dealing: [1, 3], cutting: [1, 3] },
+      corpo: { brawler: [1, 3], toughness: [1, 3], arms: [2, 4], charisma: [5, 8], trading: [4, 7], dealing: [1, 3], cutting: [1, 2] },
+      elder: { brawler: [1, 3], toughness: [1, 2], arms: [1, 3], charisma: [4, 8], trading: [3, 6], dealing: [1, 4], cutting: [1, 3] },
+      street: { brawler: [2, 5], toughness: [2, 5], arms: [2, 5], charisma: [2, 6], trading: [2, 5], dealing: [1, 5], cutting: [1, 4] },
     },
     traits: 1.5,
     most: 10,
@@ -281,7 +281,7 @@ export const PEOPLE: PeopleContent = {
     // meetings, a counter's customers), and what a fight teaches. On the player's curves, so a
     // counter hand goes up a level of trading in a few weeks at first, and in months later on.
     practice: {
-      walks: { gang: { brawler: 3, toughness: 3, arms: 3, trading: 1 }, guard: { arms: 3, brawler: 2, toughness: 2 }, corpo: { charisma: 3, trading: 2 }, elder: {}, street: {} },
+      walks: { gang: { brawler: 3, toughness: 3, arms: 3, trading: 1, dealing: 2, cutting: 1 }, guard: { arms: 3, brawler: 2, toughness: 2 }, corpo: { charisma: 3, trading: 2 }, elder: {}, street: {} },
       staff: { trading: 4, charisma: 2 },
       fight: { brawler: 12, toughness: 12, arms: 8 },
     },

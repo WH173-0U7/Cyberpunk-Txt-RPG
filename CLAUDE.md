@@ -129,7 +129,7 @@ Everything the player owns is in a pocket of something worn, but the chrome in t
 drink, meds, credchips, clothing, weapons, ammo, cyberware and quickhacks are the items so far:
 
 - An `Item` has a `kind` (`ItemKind`: weapon, ammo, attachment, cyberware, quickhack, clothing,
-  consumable, shard, credchip, junk, component, after the wiki's 2077 item types plus the
+  consumable, shard, credchip, junk, component (the cutting agent, `GEAR.components`, by its id), after the wiki's 2077 item types plus the
   2020 credchip), a name, a count and the pocket it's `in`. `Game.inventory` is what the player carries, saved as `items`;
   `Game.gearSaved` is their pockets, saved as `gear`. Giving and taking items goes in
   `Game`: `Game.buy(id)` (off a menu or a rack; what's bought goes in its pocket before it's
@@ -375,11 +375,14 @@ it needs no generator bump. The pieces:
   prices are their Trading against the seller's (`Game`'s private `haggled`: the sharpest of
   its staff, to `MONEY.haggle`'s power; a chain's, a hospital's, Trauma Team's and a room's
   prices are set; the shop's strip says "prices +8%"), every purchase `MONEY.tradeXp` of it,
-  saved as `trading`, a Trading row in the status drop-down. A new skill is another `SkillRules` in `src/data/skills.ts`
+  saved as `trading`, a Trading row in the status drop-down. Dealing and Cutting (`DEALER` and
+  `CUTTER`, on `DEALING.skill` and `DEALING.cut.skill`; saved as `dealer` and `cutter`) are under
+  Dealing below. A new skill is another `SkillRules` in `src/data/skills.ts`
   with its own `average` and `floor`, a state on `Game`, a save field and an event.
 - Everyone has their own levels in what the player has levels in (`skillsOf` in people.ts,
-  `PersonSkills`: Street Brawler, Toughness, `arms` for the kind of weapon they carry, and
-  Charisma), on their own stream from `PEOPLE.skills`: a range for each by walk of life
+  `PersonSkills`: Street Brawler, Toughness, `arms` for the kind of weapon they carry,
+  Charisma, Trading, and Dealing and Cutting, drawn last so nobody's others move), on their own
+  stream from `PEOPLE.skills`: a range for each by walk of life
   (`walkOf`: a ganger, a guard or an officer, a corpo, someone old, anyone else), moved up to
   `traits` levels by their nature (nerve and temper for their fists, warmth and chattiness for
   words; greed and chattiness for Trading). So a ganger fights well and talks badly, an old
@@ -885,17 +888,46 @@ nobody there has a habit or deals):
 - `src/engine/dealing.ts` is the engine, pure: the shapes (`DrugKind`, `Habit`, `DealRung`,
   `DealGang`, `Front`, `DealState`, `DealingState`, the views) and the arithmetic (`habitOf`,
   `dealRungOf`, `canMoveUp`, `streetPrice`, `owedFor`, `askOf`, `pushOdds`, `buyersIn`,
-  `blockOf`, `withInterest`). The drugs are `DRUGS` in `src/data/drugs.ts` (on `GEAR.drugs`
-  too, for their weight and how many share a slot): the wiki's 2077 drugs a gang makes or
-  moves (Glitter, Black Lace, Juice, Deep Dive, Phant) and two older street drugs (2020, RED:
-  SynthCoke, 'Dorph) for the Valentinos, whom the wiki has trafficking drugs with none of
-  their own; each its canon type and whether carrying it at all is illegal (the wiki's
-  combat-rated drugs, Glitter, the Animals' "illegal supplement"), with our price, weight and
-  `hook`. A dose is an `Item` of kind `consumable` named by the drug's id.
+  `blockOf`, `withInterest`, `drugLevel`). The drugs are `DRUGS` in `src/data/drugs.ts` (on
+  `GEAR.drugs` too, for their weight and how many share a slot): the wiki's 2077 drugs a gang
+  makes or moves (Glitter, Black Lace, Juice, Deep Dive, Phant) and older ones from its 2020
+  and RED pages (`from`) that fill out each gang's line (SynthCoke, 'Dorph and Timewarp for the
+  Valentinos, whom the wiki has trafficking drugs with none of their own; Boost, Prime Time,
+  Berserker, Red Lace, Stim, Speedheal, Blue Glass); each by the wiki's name, what it does and
+  whether carrying it at all is illegal (the wiki's combat-rated drugs, Black Lace, Berserker,
+  Prime Time and Red Lace, Black Lace's offensive counterpart; Glitter; the Animals' "illegal
+  supplement"), with how the older ones are taken, our price, weight, users and `hook`. A
+  dose is an `Item` of kind `consumable` named by the drug's id. A new drug wants its habit
+  effects, use lines and overdose odds too (the habit test checks every one).
 - Who deals what is canon (`DEALING.gangs`: the Tyger Claws, Maelstrom, the Animals, the
   Scavengers, the Valentinos; nobody else fronts anything), with the roles that front
   (`connects`) and collect (`collectors`) from the gang's own, a title a rung in its words,
-  and the canon places it works first (`spots`, checked to be on its turf).
+  and the canon places it works first (`spots`, checked to be on its turf). A gang's `drugs`
+  are its line, its own canon product first (the Scavengers' Phant, the wiki's four or five
+  times Deep Dive, at the top of theirs), each after it dearer and opened at a higher Dealing
+  level (`at`, `drugLevel`); which gang moves the older drugs is ours, and no drug is two
+  gangs'.
+- The Dealing skill (`DEALING.skill`, `DEALER`; `Game`'s private `trainDealing`): `xp.sale` a
+  dose sold (the corner or a pitch, through `sale`), `xp.front` a package paid off, `xp.rung` a
+  rung, `xp.runner` a dose a runner sells. It goes with the player from gang to gang. The
+  connect's card offers a package of what the player's level opens and, shut, the next of the
+  line ("At Dealing Lv 4"), and `takeFront` refuses the rest; a level that opens one says so.
+  It's in the undercover read with Trading and charisma. `Game.dealingSkill()`, saved as
+  `dealer`; `DealView.line` is the line for the status.
+- Cutting (`src/engine/cutting.ts`, the numbers and lines `DEALING.cut`): a cutting agent (a
+  component, `GEAR.components`, ours; racked at pharmacies, general stores and bodegas, only
+  where there's dealing) stretches a stack of a drug a dose a dose of agent, mixed through
+  (`Item.cut`, the stack's filler share; `cutShare`; clean doses stowed into it thin it,
+  `mixedShare` in `stowDoses`), up to `most`, and only with room in its pocket (`Game.canCut`,
+  `cut`, the inventory's **Cut**; `cutItems`). The Cutting skill (`DEALING.cut.skill`,
+  `CUTTER`, a dose cut `xp`, saved as `cutter`) makes a cut cleaner: its bonus divides every
+  risk. A cut dose sold (`soldCut`) may hurt the buyer (`harmOdds`: the share squared; queued
+  in `DealingState.harms`, and `badBatches` from `live` lays them up or, by `harm.deadly`,
+  kills them the next day, told, the NCPD on record by `onRecord` and the player named if the
+  buyer knew them; never a customer again) and, of the gang's own product, may get back to the
+  connect (`foundOdds`, `found.trust`). A cut dose the player takes is weaker by its share
+  (`takeDose`'s `purity`) and can make them sick (`sickOdds`, `sick.health`). Runners take cut
+  doses as any; what's cut in them goes no further yet.
 - A habit is `habitOf` (on its own stream, `seed:habit:<id>`: never moves anything else): a
   share of each walk of life, adults only, the drug weighed by who takes it and whether a
   gang deals it where they live. `Game`'s private `habitFor` keeps it, `usersOf` finds the
@@ -994,8 +1026,8 @@ nobody there has a habit or deals):
   people's (`crewDays`, from `live`, each runner on `seed:crew:<id>:<day>`): `runnerDay` has
   them picked up (`bust`, times the district's call: the product gone, held, and maybe the
   player's name on a `dealing` warrant, `namedBy`), robbed (`robbed`, times `bad.rough`, maybe
-  laid up), or out selling (by `usersOf` round there and their Trading, which every dose sold
-  trains, `DealingState.dealt` in `practiced`), a greedy one skimming and a hooked one using
+  laid up), or out selling (by `usersOf` round there and their Dealing, at a price by their
+  Trading, both of which every dose sold trains, `DealingState.dealt` in `practiced`), a greedy one skimming and a hooked one using
   (`hidden`, unseen); their `mood` goes down for what goes wrong, and under `mood.quit` they
   walk (`quit`, holding what they held) or run off with it (`ran`). Word of what anyone would
   hear reaches the player (`crew.lines`). Settling up is in person (`collectFrom`, `settle`):
@@ -1006,10 +1038,12 @@ nobody there has a habit or deals):
   else a grudge) or let it slide (`letSlide`, `writeOff`). `Game.crew(now)` is the UI's
   (`RunnerView`; the status drop-down's Crew row). The lines are `LINES.deal.recruit`…`letGo`
   and `LINES.you.recruit`/`frontRunner`/`collect`/`lean`/`slide`/`letGo`.
-- The lines: the narration is `DEALING.lines`, `DEALING.habit.lines` and `DEALING.crew.lines`;
-  what people say is `LINES.deal` and `LINES.you.deal`/`pitch`/`payUp`/`walkAway`. The status
-  drop-down has a Dealing row, a Crew row and a Habit row, and the line under the energy bar
-  says a debt, a drug working, a craving or withdrawal.
+- The lines: the narration is `DEALING.lines`, `DEALING.habit.lines`, `DEALING.crew.lines` and
+  `DEALING.cut.lines`; what people say is `LINES.deal` and `LINES.you.deal`/`pitch`/`payUp`/
+  `walkAway`. The status drop-down has a Dealing row and a Cutting row (the skills, once
+  there's anything to them), a Gang row (the rung, what's owed, the corner, the next drug of
+  the line), a Crew row and a Habit row, and the line under the energy bar says a debt, a drug
+  working, a craving or withdrawal.
 
 ## Inebriation
 

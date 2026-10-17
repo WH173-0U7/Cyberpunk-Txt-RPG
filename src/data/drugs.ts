@@ -1,12 +1,14 @@
 import type { DrugKind } from '../engine/dealing';
 
 /**
- * Street drugs, by item id: the wiki's 2077 drugs that a gang makes or moves, and two older
- * street drugs (2020, RED) for the Valentinos, whom the wiki has trafficking drugs with no
- * product of their own. Canon: what each is, how it's taken, who makes it, and whether it's
- * illegal to carry at all (the wiki: combat-rated drugs like Black Lace are, Glitter is, Juice
- * is an illegal supplement; most others are legal to hold, and selling any without a license is
- * not). Who takes each, the weights, prices and pull are ours.
+ * Street drugs, by item id: the wiki's 2077 drugs that a gang makes or moves, and the older
+ * street and medical drugs of 2020 and RED that fill out each gang's line (the Valentinos', whom
+ * the wiki has trafficking drugs with no product of their own, and the better product every
+ * gang fronts a dealer who knows the trade). Canon: what each is and does, and whether it's
+ * illegal to carry at all (the wiki: combat-rated drugs like Black Lace, Berserker and Prime
+ * Time are, Glitter is, Juice is an illegal supplement; most others are legal to hold, and
+ * selling any without a license is not). How the older ones are taken, who takes each, which
+ * gang moves the older ones, the weights, prices and pull are ours.
  */
 export const DRUGS: Record<string, DrugKind> = {
   glitter: {
@@ -64,7 +66,7 @@ export const DRUGS: Record<string, DrugKind> = {
     illegal: false,
     grams: 6,
     perSlot: 10,
-    price: 25,
+    price: 40,
     hook: 0.9,
     users: { walks: { street: 2, gang: 1, elder: 0.5, guard: 0.3, corpo: 0.3 }, age: [18, 60], traits: { chatty: -0.4, warmth: -0.4 } },
     note: "Deep Dive's stronger cousin, from the Scavengers: delusions you can touch, and changes to the brain that don't go back.",
@@ -92,5 +94,101 @@ export const DRUGS: Record<string, DrugKind> = {
     hook: 0.45,
     users: { walks: { street: 2, elder: 2, guard: 1.5, gang: 1, corpo: 0.3 }, age: [25, 90], traits: { courage: -0.2 } },
     note: 'Synthetic endorphin: a painkiller that feels like a second wind. Every dose has a chance of nerve damage that slows you for good.',
+  },
+  boost: {
+    name: 'Boost',
+    type: 'Pill',
+    from: '2020',
+    illegal: false,
+    grams: 2,
+    perSlot: 25,
+    price: 32,
+    hook: 0.55,
+    users: { walks: { corpo: 2, street: 0.4, gang: 0.2, guard: 0.1, elder: 0.1 }, age: [20, 60], traits: { greed: 0.5 } },
+    note: 'A drug for the mind: sharper thinking for hours. Hooked, it stops working, and without it the user cannot think straight at all.',
+  },
+  'prime-time': {
+    name: 'Prime Time',
+    type: 'Inhaler',
+    from: 'RED',
+    illegal: true,
+    grams: 5,
+    perSlot: 10,
+    price: 55,
+    hook: 0.65,
+    users: { walks: { corpo: 1.5, gang: 0.3, street: 0.15, guard: 0.1 }, age: [22, 55], traits: { warmth: -0.7, greed: 0.4 } },
+    note: 'Made for corpos by the street chemist Hornet: empathy switched off, and sometimes cruelty switched on. It eats at your humanity. Illegal to carry.',
+  },
+  berserker: {
+    name: 'Berserker',
+    type: 'Injector',
+    from: '2020',
+    illegal: true,
+    grams: 8,
+    perSlot: 8,
+    price: 45,
+    hook: 0.6,
+    users: { walks: { gang: 1.5, guard: 0.4, street: 0.3, corpo: 0.1 }, age: [18, 45], traits: { temper: 0.8, courage: 0.4 } },
+    note: 'Aggression in a dose, and no pain to hold it back. What it takes of your humanity does not come back. Combat-rated, so illegal to carry.',
+  },
+  'red-lace': {
+    name: 'Red Lace',
+    type: 'Inhaler',
+    from: 'RED',
+    illegal: true,
+    grams: 6,
+    perSlot: 10,
+    price: 70,
+    hook: 0.75,
+    users: { walks: { gang: 1, guard: 0.15, street: 0.1 }, age: [18, 45], traits: { temper: 1, courage: 0.5 } },
+    note: "Black Lace's offensive counterpart: savagery where Black Lace is numbness. Its ingredients are scarce, so there is never much of it. Illegal to carry.",
+  },
+  stim: {
+    name: 'Stim',
+    type: 'Injector',
+    from: '2020',
+    illegal: false,
+    grams: 8,
+    perSlot: 8,
+    price: 35,
+    hook: 0.45,
+    users: { walks: { gang: 1, guard: 0.8, street: 0.6, corpo: 0.4, elder: 0.1 }, age: [18, 60] },
+    note: 'A medical stimulant: endurance, and awake for longer than you should be. Lean on it and the delusions start.',
+  },
+  speedheal: {
+    name: 'Speedheal',
+    type: 'Injector',
+    from: '2020',
+    illegal: false,
+    grams: 8,
+    perSlot: 8,
+    price: 60,
+    hook: 0.3,
+    users: { walks: { gang: 0.6, guard: 0.6, street: 0.3, elder: 0.3, corpo: 0.2 }, age: [18, 80], traits: { courage: 0.3 } },
+    note: "Medicine that speeds the body's own healing, and dulls the senses for a week after. Hard to come by, so what's on the street was stolen.",
+  },
+  'blue-glass': {
+    name: 'Blue Glass',
+    type: 'Pill',
+    from: '2020',
+    illegal: false,
+    grams: 2,
+    perSlot: 25,
+    price: 20,
+    hook: 0.55,
+    users: { walks: { street: 1.5, gang: 0.5, elder: 0.2, guard: 0.1, corpo: 0.1 }, age: [18, 55], traits: { chatty: -0.3 } },
+    note: 'A hallucinogen first made as a chemical weapon: color floods the eyes, and under stress a user can flash out and just stare.',
+  },
+  timewarp: {
+    name: 'Timewarp',
+    type: 'Inhaler',
+    from: '2020',
+    illegal: false,
+    grams: 5,
+    perSlot: 10,
+    price: 60,
+    hook: 0.6,
+    users: { walks: { gang: 1, guard: 0.3, street: 0.3, corpo: 0.2 }, age: [18, 45], traits: { courage: 0.5 } },
+    note: 'Time slows for whoever takes it: blows are easy to dodge, and their own land where they mean them to.',
   },
 };

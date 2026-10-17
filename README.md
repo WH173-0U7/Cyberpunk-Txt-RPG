@@ -459,8 +459,8 @@ own.
   out paying over the odds and a sharp shopkeeper takes more off you. Every purchase is
   practice. Chains, hospitals and Trauma Team have their prices and stick to them.
 - **Dealing for a gang**: the gangs that deal push their own canon product: the Tyger Claws
-  Glitter, Maelstrom Black Lace, the Animals their Juice, the Scavengers Deep Dive and Phant,
-  the Valentinos SynthCoke and 'Dorph. Ask any of them about it (**Deal** on their card) and
+  Glitter, Maelstrom Black Lace, the Animals their Juice, the Scavengers Deep Dive, the
+  Valentinos 'Dorph. Ask any of them about it (**Deal** on their card) and
   they'll point you to their connect, and put in a word if they like you. The connect takes
   you on only once they know you well enough, then fronts you a package to sell at a corner
   on their turf (marked on the map), owed back by a day. At the corner, **Deal** brings the
@@ -488,6 +488,18 @@ own.
   gang's rivals come to your corner, the more the more you've sold lately and the nearer
   their turf: clear off (often enough and it's theirs), pay them, or fight them for it.
   Pitch one of a rival gang, or sell on their turf, and they'll come for you.
+- **Better product**: Dealing is a skill of its own, from every sale, every package paid off
+  and every rung climbed, slower to come each level, and it goes with you from gang to gang.
+  Each gang fronts a line of three, dearer the further up: the Tyger Claws Glitter, then Boost,
+  then Prime Time; Maelstrom Black Lace, Berserker, Red Lace; the Animals Juice, Stim,
+  Speedheal; the Scavengers Deep Dive, Blue Glass, Phant; the Valentinos 'Dorph, SynthCoke,
+  Timewarp. Your connect's card shows the next one and the level it opens at.
+- **Cutting**: buy a cutting agent at a pharmacy, a general store or a bodega, and **Cut** a
+  stack of what you carry: each dose of agent is another dose to sell, and every dose in the
+  stack that much weaker. Cutting is its own skill too, and the cleaner your cuts the less can
+  go wrong: a heavy cut can put whoever takes it in a hospital, or kill them (the NCPD hears of
+  that, and of you if they knew whose it was); the gang may taste it in its own product and
+  trust you less; and if you take a cut dose yourself, it works less and can make you sick.
 - **Your own crew**: once you're a supplier, anyone who trusts you can run for you (one of
   your gang, or someone who uses what it deals, is keener; someone straight mostly says no).
   Front them a package out of what you carry: they owe you a share of what it fetches by a

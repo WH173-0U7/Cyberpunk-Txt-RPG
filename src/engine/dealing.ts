@@ -1,8 +1,10 @@
 import { createRng } from './rng';
 import type { Quality } from './food';
 import type { CrewRules, Runner } from './crew';
+import type { CutRules } from './cutting';
 import type { HabitRules as YourHabitRules } from './habit';
 import type { Person, SkillWalk, Traits } from './people';
+import type { SkillRules } from './skills';
 import type { Stance } from './society';
 
 /**
@@ -21,8 +23,8 @@ export interface DrugKind {
   name: string;
   /** How it's taken: the wiki's for the 2077 drugs (an inhaler; the Animals drink their Juice), ours for the older ones. */
   type: string;
-  /** The edition it's from: the 2077 drugs, or the older street drugs (2020, RED) a gang without a 2077 product deals. */
-  from: '2077' | '2020';
+  /** The edition it's from: the 2077 drugs, or the older ones (2020, or RED only) that fill out a gang's line. */
+  from: '2077' | '2020' | 'RED';
   /** Canon: illegal to carry at all (combat-rated, or illegal outright), not only to sell without a license. */
   illegal: boolean;
   grams: number;
@@ -68,7 +70,9 @@ export interface DealRung {
 
 /** A gang that deals: what it pushes, who of theirs fronts it (by role) and who comes to collect, its rungs' titles, and the canon places it works. */
 export interface DealGang {
+  /** Its line, from what it fronts anyone to its best: each past the first takes the Dealing level in `at`. */
   drugs: string[];
+  at?: Record<string, number>;
   connects: string[];
   collectors: string[];
   /** One title a rung, in the gang's own words. */
@@ -189,6 +193,11 @@ export interface DealingRules {
   habit: YourHabitRules;
   /** The player's own runners, from a high enough rung (crew.ts). */
   crew: CrewRules;
+  /** The Dealing skill, and its experience: a dose sold, a package paid off, a rung climbed, a dose a runner sells. */
+  skill: SkillRules;
+  xp: { sale: number; front: number; rung: number; runner: number };
+  /** Cutting product, and the Cutting skill (cutting.ts). */
+  cut: CutRules;
   lines: DealLines;
 }
 
@@ -245,10 +254,17 @@ export interface DealingState {
   /** The player's runners, by person id, and every dose anyone has sold for the player (their practice at it). */
   crew: Record<string, Runner>;
   dealt: Record<string, number>;
+  /** Buyers a bad cut has got to, to be told of the next day lived: who, of what, and whether it killed them, and whether they knew the player's face. */
+  harms: Array<{ id: string; drug: string; day: number; deadly: boolean; knew: boolean }>;
 }
 
 export function freshDealing(): DealingState {
-  return { current: null, vouched: {}, past: {}, burned: {}, corners: {}, crew: {}, dealt: {} };
+  return { current: null, vouched: {}, past: {}, burned: {}, corners: {}, crew: {}, dealt: {}, harms: [] };
+}
+
+/** The Dealing level a gang fronts a drug at: its first for anyone, the rest by `at`. */
+export function drugLevel(gang: DealGang, drug: string): number {
+  return gang.drugs[0] === drug ? 1 : (gang.at?.[drug] ?? 1);
 }
 
 /** The player's heat at `now`: what it was, halved for every day since. */
@@ -357,6 +373,8 @@ export interface DealView {
   take: number;
   /** How many runners the player could have at their rung. */
   crewMost: number;
+  /** The gang's line: each drug, the Dealing level it takes, and whether the player has it. */
+  line: Array<{ drug: string; name: string; at: number; open: boolean }>;
 }
 
 /** Something to do about dealing with a person, as their card offers it: `ask`, `front`, `pay`, `walk`, or `sell:<drug>`. */
