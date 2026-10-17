@@ -117,11 +117,18 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 - Opening hours (`rules.hours`, `HOURS` in `src/data/hours.ts`): a storefront's counter (its
   menu, rack, bank or ripperdoc's chair) is open only while someone who works there is in
   (`Game`'s private `counterOpen`, by `whereIs` of its staff, kept per building until a day is
-  lived); a hospital and anywhere whose sign says 24/7 (`allHours`) never close, and a place
-  of its own (a market, a stall) never does. Shut, `menu`, `bank` and `clinic` are null,
-  `canBuy` says when it opens, and `Game.closed(now)` gives the panel what it would be and
-  when someone's in again (its Closed action). The tests' `RULES` leave `hours` out, so their
-  counters are always open; a test about hours passes `HOURS`.
+  lived), which its rota makes its opening hours (see People: `PEOPLE.shifts`), a 24/7's
+  (`allHours`) round the clock; a hospital never closes, and a place of its own (a market, a
+  stall) never does. Shut, `menu`, `bank` and `clinic` are null, `canBuy` says when it opens,
+  and `Game.closed(now)` gives the panel what it would be and when someone's in again (its
+  Closed action). A storefront is the whole building, so shut, it's locked:
+  `Game.locked(building, now)` (and when someone's next in, `opensAgain`), `enter` refuses it,
+  and `closingTime` (from `tick`) sees the player out when the last hand leaves (not mid-fight,
+  detained or mid-moment); the player's own workplace isn't locked to them in their shift's
+  hours or with its keys. `Game.hoursOf` is what the door says ("Open 11:00–23:00", "Open
+  24/7"), on the street panel (Closed · Opens 11:00 instead of Go inside) and the target view.
+  The tests' `RULES` leave `hours` out, so their counters are always open and nothing's
+  locked; a test about hours passes `HOURS`.
 
 ## The inventory
 
@@ -273,21 +280,25 @@ Every city has a population, made up for its seed in `Game`'s constructor (`gene
 in `src/engine/people.ts`, from `src/data/people.ts`): it never touches the city itself, so
 it needs no generator bump. The pieces:
 
-- The people come in four draws, each on its own RNG stream, so the first (`seed:people`: the
+- The people come in five draws, each on its own RNG stream, so the first (`seed:people`: the
   staff by `rolesFor`, `residents` per home, the gangs by their district weights) never
   changes and every save keeps the people it knows; the second (`seed:people:more`) fills
   the city out by `PEOPLE.more` (the chance of one more pair of hands per storefront, with a
   role from `roles.extra` by the building's category; residents `perHome`, more in a `tall`
   block and a `megabuilding`; the gangs again, by `gangs`); the third (`seed:people:crowd`,
   `PEOPLE.crowd`, the same shape) is the crowd that fills the homes, most of a city now
-  (about four thousand people in all, from three and a half to five thousand); the fourth
-  (`seed:people:ncpd`, `PEOPLE.ncpd`) is the NCPD's officers, `perDistrict` in the districts
-  it still polices, living there with no workplace (off duty, they keep a resident's day).
+  (about four and a half thousand people in all, from four to five and a half thousand); the
+  fourth (`seed:people:ncpd`, `PEOPLE.ncpd`) is the NCPD's officers, `perDistrict` in the
+  districts it still polices, living there with no workplace (off duty, they keep a resident's
+  day); the fifth (`seed:people:shifts`, `PEOPLE.shifts`) takes on the hands every
+  storefront's shifts want (`leastStaff`: `perShift` a shift), living in its district.
   Make a city bigger or smaller with the crowd's numbers, or another draw on a new stream,
   never by changing an earlier one (`tests/people.test.ts` checks the first two come out the
-  same with the crowd as without it, and the first three with the officers as without them). Families, ties and hangouts are made within a
-  draw; coworkers, crews and bios over everyone at the end, except that the crowd knows only
-  `crowdKnows` of the people they work with (on a stream of its own), not a whole tower.
+  same with the crowd as without it, the first three with the officers as without them, and
+  the first four with the hands as without them). Families, ties and hangouts are made within a
+  draw; coworkers, crews and bios over everyone at the end, except that the crowd and the hands
+  each know only `crowdKnows` of the people they work with (each on a stream of its own), not a
+  whole tower.
 - A city that size has to stay quick on a phone, about four times slower than a desktop.
   `npm run bench` (`tests/budget.test.ts`, skipped by `npm test`) times the slow things on
   the biggest cities against `BUDGET` (a new game, a reload, a month away, a day, the people
@@ -312,9 +323,21 @@ it needs no generator bump. The pieces:
   `traits`, `likes` (a dish, a drink, a `hangout` spot), `hates` (a gang) and `eddies`.
   `Tie`s link people both ways: `to` is `from`'s `kind` (spouse, partner, parent, uncle,
   friend, crew, coworker…; `INVERSE` gives the other side), one tie a pair. `whereIs` puts a person somewhere by the clock
-  (`Clock`: hour, weekday, day; the phone's local time, or `rules.clock` in tests; night work,
-  `worksNights`, at a bar, a club or the night desk, and for half the hands of a place that
-  never closes, `allHours`, runs from six till three); nobody is placed on the streets, only
+  (`Clock`: hour, weekday, day; the phone's local time, or `rules.clock` in tests). A
+  storefront's hands keep its rota (`PEOPLE.shifts`, `ShiftContent`): its opening hours by
+  category, a business's own over them (`shiftsOf`: split in two past `split` hours, a place
+  that never closes in the three of `round`), each hand on a shift of their own (a night
+  hand on the last, a day hand on the first, the rest as even as they go), off `daysOff` days
+  a week in turn with the others on it (one alone on a shift takes one), the laid up and the
+  dead skipped day by day and a shift left empty covered by someone off; a shift that runs
+  into the small hours is slept off for eight hours after, and the rest of their time is as on
+  anyone's day off. A rota (`seatRota`, `rotaStaff`; kept by person, off the `Person`) is made
+  at the end of `generatePeople`, by `Game` after `applyLife`, and by `liveDay` after a hire or
+  a layoff (everyone who works there, the dead too, as a save's are); a place short of its
+  hands hires first, and none lays one off below them. Night work off a rota (a warehouse's
+  watch; in a city made without shifts, a bar, a club, the night desk and half a 24/7's hands)
+  is `worksNights`, six till three. A storefront someone hangs out at is somewhere to be only
+  while it's open (`openAt`), so its regulars aren't in a shut place. Nobody is placed on the streets, only
   in buildings and at places, so `Game.peopleHere(now)` works inside a building or at a
   location. Out and about (not at home, work or their hangout), people are now and then at an
   open place near home (`hauntOf`: one of the three nearest of `PEOPLE.out.kinds` in their
@@ -815,7 +838,8 @@ night one), and climbs a ladder of rungs at each:
   pay, energy, hours, the `roster` a new job starts with, tiers, trust and rapport per shift,
   `quit` and `notice`, `noShow`, `raise`, `moonlight`) are in `src/data/jobs.ts`; a new kind
   of place that hires is another ladder there, keyed by business id or category (the jobs
-  test wants one for every category with a business).
+  test wants one for every category with a business, with hours inside the opening hours of
+  every storefront it's for: a kitchen's eleven to six, within an eatery's eleven to eleven).
 - `Game` keeps the jobs (`JobState`: building, rung, trust, shifts, the shift day of the
   last shift, and its `days`, `owed`, `raise`, `missed`, `checked`, `paidOn`, `heard`; saved
   as `jobs`, the main one also as `job` for older builds, dropped when the building is gone

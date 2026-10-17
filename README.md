@@ -112,7 +112,7 @@ own.
   Au Cabanon, El Pinche Pollo, Kabuki Market…) have their own menus. **Buy** puts the dish in
   your inventory under consumables.
 - **People**: every city has its own people, made up for its seed and the same every time
-  you come back: around four thousand of them (three and a half to five thousand), with names from their district's communities
+  you come back: around four and a half thousand of them (four to five and a half thousand), with names from their district's communities
   (Watson's Asian neighborhoods, Heywood's barrios, the Haitian diaspora of Pacifica, corpos
   in City Center), homes in its apartment blocks and megabuildings, jobs in its storefronts,
   towers and factories (or none to speak of), families who share a name (couples, children,
@@ -258,9 +258,15 @@ own.
   day and reputations recover two, on the game's clock. The status drop-down under the
   energy bar lists every reputation that stands at anything. (Violence, once there is combat, goes through the same
   machinery: assault and murder are already kinds of incident, with heavier consequences.)
-- **Hours, and the city out and about**: a shop's counter is open while someone who works
-  there is in, so most close at night (the panel says when they open again); hospitals and
-  anywhere signed 24/7 never close, with a night shift. Out and about, people turn up at the
+- **Hours, and the city out and about**: every storefront keeps its kind's hours, on its door
+  ("Open 11:00–23:00"): shops and services by day, eateries from eleven till eleven, arcades
+  and BD parlors from two in the afternoon into the small hours, bars and clubs six till
+  three. Its people work them on a rota, two to a shift, each with days off in turn, so it's
+  open every day it keeps hours and someone's always behind the counter; anywhere signed 24/7,
+  a motel's or a capsule hotel's desk and a hospital work three shifts round the clock. Shut,
+  the shutters are down and the door's locked (the panel says when someone's next in), and
+  at closing time you're seen out; your own workplace lets you in for your shift, and with its
+  keys any time. Its regulars are only there while it's open. Out and about, people turn up at the
   open places near home: browsing a market, smoking on a rooftop, fishing off the docks,
   lighting incense at a shrine, waiting for a megabuilding's elevator.
 - **Their own lives**: the people have days without you. Every day on the clock, in every
@@ -311,8 +317,9 @@ own.
   card gets a **Work** command: **Ask for work**, and whether they take you on is their
   openness to it, like any ask (how they feel about you, your charisma; never with a mask
   on, and a boss you've crossed says no). Each ladder keeps its own hours: shops and
-  eateries by day (nine to five, ten to six, a clinic eight to four), Monday to Friday; bars,
-  clubs and arcades six till two, Thursday to Saturday. **As many jobs as fit the day**, a main job
+  eateries by day (nine to five, ten to six, a kitchen eleven to six, a clinic eight to four),
+  Monday to Friday; bars, clubs and arcades six till two, Thursday to Saturday, always within
+  the place's opening hours. **As many jobs as fit the day**, a main job
   and side gigs, as long as no two have hours that clash (today that's a day job and a night
   one); asking for work whose hours clash with one you have means handing that one in (the
   card says "Means notice at…"), which costs less with that boss than walking out, and a boss
@@ -742,7 +749,8 @@ Cities are built from the pools in [`src/data/city.ts`](src/data/city.ts):
 - **People** are in [`src/data/people.ts`](src/data/people.ts): name pools by community and
   which communities each district draws from, the gangs (their members' look, roles and
   rivals) and each district's turf, job roles by business, category and building kind,
-  freelance work and the kinds of place people hang out at. Everything they say is in
+  freelance work, the kinds of place people hang out at, and the storefronts' opening hours
+  and shifts (`shifts`: hours by category and business, two hands a shift, days off). Everything they say is in
   [`src/data/dialogue.ts`](src/data/dialogue.ts): pools of fragments (openers, asides,
   greetings, topics, answers, non-answers, refusals…) with `{given}`, `{work}`, `{gang}`,
   `{dish}`, `{kinName}`, `{here}`… filled in and the slang (`{choom}`, `{gonk}`, `{eddies}`…)

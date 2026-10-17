@@ -207,10 +207,20 @@ describe('getting in with a gang', () => {
 
 describe('the corner', () => {
   it('has buyers come by, a sale moving a dose and the cash, and quiet once the block has had its buyers', () => {
-    const dealing = dealingFor('tyger_claws');
-    const g = game(at(cornerOf(dealing), { dealing, items: [glitter(30)] }), NIGHT);
-    expect(g.cornerAction(NIGHT)).toMatchObject({ id: 'deal', disabled: false });
-    let t = NIGHT;
+    // A night with buyers about (on some, nobody who'd buy is out on the street at ten).
+    const night = (day: number) => {
+      const dealing = dealingFor('tyger_claws');
+      const start = NIGHT + day * 86_400_000;
+      const g = game(at(cornerOf(dealing), { dealing, items: [glitter(30)] }), start);
+      expect(g.cornerAction(start)).toMatchObject({ id: 'deal', disabled: false });
+      return { dealing, g, start };
+    };
+    const busy = [0, 1, 2, 3, 4, 5, 6].find((day) => {
+      const { g, start } = night(day);
+      return g.walkUp(start) && g.dealMoment(start) !== null;
+    });
+    const { dealing, g, start } = night(busy ?? 0);
+    let t = start;
     let sold = 0;
     for (let n = 0; n < 12; n++) {
       t += 60_000 / TRAVEL.timeScale;

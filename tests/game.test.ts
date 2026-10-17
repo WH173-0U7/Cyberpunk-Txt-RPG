@@ -1704,10 +1704,10 @@ describe('Game', () => {
         take();
         expect(game.askForWork(boss.id, now)).toBe(true);
         const said = outputs(take());
-        expect(said.some((o) => /^You've got work at Test Noodles: dish pit, 24 €\$ a shift, 9am to 5pm, Mon–Fri\. Pay comes on payday\.$/.test(o.text))).toBe(true);
+        expect(said.some((o) => /^You've got work at Test Noodles: dish pit, 24 €\$ a shift, 11am to 6pm, Mon–Fri\. Pay comes on payday\.$/.test(o.text))).toBe(true);
         expect(spoken(game, boss.id).at(-1)?.who).toBe('them');
         const status = game.jobStatus(now);
-        expect(status).toMatchObject({ rung: { id: 'dishes' }, next: { id: 'prep' }, trust: 0, shifts: 0, pay: 24, side: false, hours: [9, 17], days: [1, 2, 3, 4, 5], owed: 0, here: true, open: true, blocked: null });
+        expect(status).toMatchObject({ rung: { id: 'dishes' }, next: { id: 'prep' }, trust: 0, shifts: 0, pay: 24, side: false, hours: [11, 18], days: [1, 2, 3, 4, 5], owed: 0, here: true, open: true, blocked: null });
         expect(status?.boss?.id).toBe(boss.id);
         expect(game.workWith(boss.id)).toBe('quit');
         expect(game.standingWith(boss.id, now)?.knowledge.facts).toEqual(expect.arrayContaining(['name', 'job']));
@@ -1846,7 +1846,7 @@ describe('Game', () => {
         take();
         expect(game.askForWork(boss.id, now)).toBe(true);
         expect(outputs(take()).some((o) => /^You've got a side gig at Test Bar: barback, \d+ €\$ a shift, 6pm to 2am, Thu, Fri, Sat\./.test(o.text))).toBe(true);
-        expect(game.jobsStatus(now).map((j) => [j.building.id, j.side, j.hours])).toEqual([['b-noodle', false, [9, 17]], ['b-bar', true, [18, 2]]]);
+        expect(game.jobsStatus(now).map((j) => [j.building.id, j.side, j.hours])).toEqual([['b-noodle', false, [11, 18]], ['b-bar', true, [18, 2]]]);
         // Inside the bar, its job is the one the panel works.
         expect(game.jobStatus(now)?.building.id).toBe('b-bar');
         expect(game.jobsSaved[0]?.heard).toBe(false);
@@ -2916,6 +2916,52 @@ describe('Game', () => {
         expect(atWork('b-noodle', 38, 20).game.menu(late)).not.toBeNull();
       });
 
+      it('locks a storefront while it is shut: no getting in till someone who works there is, and the door says when', () => {
+        // Three in the morning outside the noodle bar: its hands are home asleep.
+        const late = T0 + 7 * HOUR;
+        const game = new Game(world, { ...RULES, ...HOURLY }, { ...progressInside('b-noodle', 38, 20), inside: null });
+        game.start(late);
+        const { take, outputs } = record(game);
+        const door = game.door as Building;
+        expect(door.id).toBe('b-noodle');
+        expect(game.hoursOf(door)).toEqual(PEOPLE.shifts!.hours.food);
+        const shut = game.locked(door, late);
+        expect(shut?.opensAt).toBeGreaterThan(late);
+        expect(game.enter(late)).toBe(false);
+        expect(game.interior).toBeNull();
+        expect(outputs(take()).at(-1)?.text).toMatch(/^Locked\. The shutters are down and nobody's in: someone's back \w{3} \d\d:\d\d\.$/);
+        // When someone's in, it opens; and a 24/7's hours are all of them.
+        expect(game.locked(door, shut!.opensAt!)).toBeNull();
+        expect(game.enter(shut!.opensAt!)).toBe(true);
+        const allNight: World = { ...world, buildings: world.buildings.map((b) => (b.id === 'b-noodle' ? { ...b, name: '24/7 Noodles' } : b)) };
+        const open = new Game(allNight, { ...RULES, ...HOURLY }, { ...progressInside('b-noodle', 38, 20), inside: null });
+        open.start(late);
+        expect(open.hoursOf(open.door as Building)).toBe('always');
+        expect(open.locked(open.door as Building, late)).toBeNull();
+        expect(open.enter(late)).toBe(true);
+        // Without opening hours, nothing's ever locked.
+        const always = new Game(world, RULES, { ...progressInside('b-noodle', 38, 20), inside: null });
+        always.start(late);
+        expect(always.hoursOf(always.door as Building)).toBeNull();
+        expect(always.enter(late)).toBe(true);
+      });
+
+      it('sees the player out at closing time, but not one of its own with the keys', () => {
+        const midnight = T0 + 4 * HOUR;
+        const game = new Game(world, { ...RULES, ...HOURLY }, progressInside('b-noodle', 38, 20));
+        game.start(T0);
+        expect(game.interior?.id).toBe('b-noodle');
+        const { take, outputs } = record(game);
+        game.tick(midnight);
+        expect(game.interior).toBeNull();
+        expect(outputs(take()).some((o) => o.text.startsWith('Closing time at Test Noodles'))).toBe(true);
+        const keys: JobState = { building: 'b-noodle', rung: JOBS.perks.keys, trust: 14, shifts: 14, lastShiftDay: -1 };
+        const keyed = new Game(world, { ...RULES, ...HOURLY }, { ...progressInside('b-noodle', 38, 20), jobs: [keys] });
+        keyed.start(T0);
+        keyed.tick(midnight);
+        expect(keyed.interior?.id).toBe('b-noodle');
+      });
+
       it('shuts a bank the same way, and keeps a hospital and anywhere whose sign says 24/7 open all hours', () => {
         const night = T0 + 7 * HOUR;
         const bank = new Game(world, { ...RULES, ...HOURLY }, progressInside('b-bank', 44, 20));
@@ -3148,14 +3194,15 @@ describe('Game', () => {
       });
 
       it('dates once a night by the clock, small hours included, and never where the counter is barred', () => {
-        // Out at 23:30 the evening before: half past midnight is still that night.
+        // Out at 23:30 the evening before: half past midnight is still that night (at a noodle bar open all night).
         const late = Date.UTC(2077, 9, 13, 0, 30);
+        const allNight: World = { ...world, buildings: world.buildings.map((b) => (b.id === 'b-noodle' ? { ...b, name: '24/7 Noodles' } : b)) };
         const night = (id: string) => ({ society: sweetOn(id, late, 40, { with: id, stage: 'dating', since: late - 24 * HOUR, dates: 1, lastDateAt: late - HOUR }) });
-        const probe = new Game(world, { ...RULES, people: everyone }, progressInside('b-noodle', 38, 20));
+        const probe = new Game(allNight, { ...RULES, people: everyone }, progressInside('b-noodle', 38, 20));
         probe.start(late);
         const guest = probe.peopleHere(late).find((p) => p.person.job.building !== 'b-noodle' && p.person.age >= 18);
         if (!guest) throw new Error('nobody out at the noodle bar at half past midnight');
-        const game = new Game(world, { ...RULES, startingEddies: 400, people: everyone }, { ...progressInside('b-noodle', 38, 20), ...night(guest.person.id) });
+        const game = new Game(allNight, { ...RULES, startingEddies: 400, people: everyone }, { ...progressInside('b-noodle', 38, 20), ...night(guest.person.id) });
         game.start(late);
         const { take, outputs } = record(game);
         expect(game.date(guest.person.id, late)).toBe(false);

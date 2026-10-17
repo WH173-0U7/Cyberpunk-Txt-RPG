@@ -4,10 +4,10 @@ import { CITY } from '../src/data/city';
 import { FOOD } from '../src/data/food';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
-import { allHours, dreamOf, drawnTo, generatePeople, handleOf, hauntOf, heartOf, INVERSE, isCorpo, isNetrunner, peopleAt, readOf, skillsOf, tiesOf, walkOf, whereIs, worksNights, type PersonSkills, type Population, type TieKind } from '../src/engine/people';
+import { allHours, openAt, shiftsOf, dreamOf, drawnTo, generatePeople, handleOf, hauntOf, heartOf, INVERSE, isCorpo, isNetrunner, peopleAt, readOf, skillsOf, tiesOf, walkOf, whereIs, worksNights, type PersonSkills, type Population, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 import { moodOf } from '../src/engine/dialogue';
-import type { World } from '../src/engine/types';
+import type { Building, World } from '../src/engine/types';
 
 const seeds = Array.from({ length: 60 }, (_, i) => createRng(`people-${i}`).next().toString(16).slice(2, 10));
 const cities = seeds.map((seed) => {
@@ -31,9 +31,9 @@ describe('the people', () => {
         if (hospitals.has(b.id)) expect({ ...b, name: was.name, business: was.business, category: was.category, kindLabel: was.kindLabel }).toEqual(was);
         else expect(b).toEqual(was);
       }
-      // Everyone is who they were, but for the job titles of the staff where a hospital opened.
-      const a = generatePeople(before, PEOPLE, FOOD.dishes);
-      const b = generatePeople(after, PEOPLE, FOOD.dishes);
+      // Everyone is who they were, but for the job titles of the staff where a hospital opened (and the hands its shifts take on after, on a draw of their own).
+      const a = generatePeople(before, { ...PEOPLE, shifts: undefined }, FOOD.dishes);
+      const b = generatePeople(after, { ...PEOPLE, shifts: undefined }, FOOD.dishes);
       const plain = (p: (typeof a.people)[number]) => ({ ...p, bio: '', job: { ...p.job, role: p.job.building && hospitals.has(p.job.building) ? '' : p.job.role } });
       expect(b.people.map(plain)).toEqual(a.people.map(plain));
       expect(b.ties).toEqual(a.ties);
@@ -46,7 +46,7 @@ describe('the people', () => {
   });
 
   it('crowd the homes on a third draw, leaving everyone the first two made (and their ties) as every save knows them', () => {
-    const none = { ...PEOPLE, crowd: { staff: 0, perHome: [0, 0] as [number, number], tall: 0, megabuilding: 0, gangs: 0 }, ncpd: undefined };
+    const none = { ...PEOPLE, crowd: { staff: 0, perHome: [0, 0] as [number, number], tall: 0, megabuilding: 0, gangs: 0 }, ncpd: undefined, shifts: undefined };
     const strip = ({ bio: _bio, ...person }: Population['people'][number]) => person;
     for (const { world, population } of cities.slice(0, 20)) {
       const before = generatePeople(world, none, FOOD.dishes);
@@ -65,13 +65,14 @@ describe('the people', () => {
   });
 
   it('adds the NCPD on a fourth draw, leaving everyone the first three made as every save knows them', () => {
-    const without = { ...PEOPLE, ncpd: undefined };
+    const without = { ...PEOPLE, ncpd: undefined, shifts: undefined };
     const strip = ({ bio: _bio, ...person }: Population['people'][number]) => person;
     for (const { world, population } of cities.slice(0, 10)) {
       const before = generatePeople(world, without, FOOD.dishes);
       expect(population.people.slice(0, before.people.length).map(strip), world.seed).toEqual(before.people.map(strip));
       // Officers where the NCPD still goes, none where it doesn't, and in pairs at the least.
-      const officers = population.people.slice(before.people.length);
+      const four = generatePeople(world, { ...PEOPLE, shifts: undefined }, FOOD.dishes);
+      const officers = four.people.slice(before.people.length);
       // (A district with no homes in this city has its officers living elsewhere: none drawn there.)
       const housed = Object.entries(PEOPLE.ncpd!.perDistrict).filter(([d]) => world.buildings.some((b) => b.district === d && b.category === 'residential'));
       expect(officers.length, world.seed).toBe(housed.reduce((n, [, k]) => n + k, 0));
@@ -80,6 +81,90 @@ describe('the people', () => {
         expect(o.job.building, o.id).toBeNull();
         expect(['pacifica', 'badlands'], o.id).not.toContain(o.district);
       }
+    }
+  });
+
+  it('takes on the hands the shifts want on a fifth draw, leaving everyone the first four made (and their ties) as every save knows them', () => {
+    const shifts = PEOPLE.shifts!;
+    const strip = ({ bio: _bio, ...person }: Population['people'][number]) => person;
+    for (const { world, population } of cities.slice(0, 10)) {
+      const before = generatePeople(world, { ...PEOPLE, shifts: undefined }, FOOD.dishes);
+      expect(population.people.slice(0, before.people.length).map(strip), world.seed).toEqual(before.people.map(strip));
+      const ties = new Set(population.ties.map((t) => `${t.from}|${t.to}|${t.kind}`));
+      for (const t of before.ties) expect(ties.has(`${t.from}|${t.to}|${t.kind}`), `${world.seed} ${t.from}|${t.to}|${t.kind}`).toBe(true);
+      // Only as many as the shifts want: every storefront has two hands a shift, and none was taken on where there were enough.
+      const hands = population.people.slice(before.people.length);
+      const staff = new Map<string, number>();
+      for (const p of population.people) if (p.job.building) staff.set(p.job.building, (staff.get(p.job.building) ?? 0) + 1);
+      const had = new Map<string, number>();
+      for (const p of before.people) if (p.job.building) had.set(p.job.building, (had.get(p.job.building) ?? 0) + 1);
+      for (const b of world.buildings.filter((b) => b.business)) {
+        const least = shiftsOf(b, shifts).length * shifts.perShift;
+        expect(staff.get(b.id), `${world.seed} ${b.name}`).toBe(Math.max(least, had.get(b.id) ?? 0));
+      }
+      const known = new Set(before.people.map((p) => p.id));
+      for (const p of hands) {
+        const work = world.buildings.find((b) => b.id === p.job.building);
+        expect(work?.business, p.id).toBeTruthy();
+        expect(p.gang, p.id).toBeNull();
+        expect(p.district, p.id).toBe(work?.district);
+        // Like the crowd, they know a few of the people they work with (of those there before them; the other hands may pick them too).
+        const mates = tiesOf(population, p.id).filter((t) => t.kind === 'coworker' && known.has(t.to));
+        expect(mates.length, p.id).toBeLessThanOrEqual(PEOPLE.crowdKnows);
+      }
+    }
+  });
+
+  it('keeps every storefront staffed through its opening hours, a 24/7 round the clock, and shut otherwise; the regulars only there while it\'s open', () => {
+    for (const { world, population } of cities.slice(0, 3)) {
+      const shops = world.buildings.filter((b) => b.business);
+      const gaps: string[] = [];
+      for (let day = 100; day < 107; day++) {
+        for (let hour = 0; hour < 24; hour++) {
+          const clock = { day, hour, weekday: (day + 4) % 7 };
+          for (const b of shops) {
+            const here = peopleAt(population, world, { kind: 'building', id: b.id }, clock, FOOD.dishes, PEOPLE.out);
+            const staffed = here.some((p) => p.person.job.building === b.id);
+            if (openAt(world, b, hour) !== staffed) gaps.push(`${world.seed} ${b.name} day ${day} at ${hour}: ${staffed ? 'staffed but shut' : 'open with nobody in'}`);
+            if (!openAt(world, b, hour) && here.some((p) => p.person.job.building !== b.id && p.person.likes.hangout?.id === b.id)) gaps.push(`${world.seed} ${b.name} at ${hour}: regulars in a shut place`);
+          }
+        }
+      }
+      expect(gaps.slice(0, 10)).toEqual([]);
+      // A place that never closes is open every hour of the day; one that keeps hours shuts some of them.
+      for (const b of shops) expect(Array.from({ length: 24 }, (_, h) => openAt(world, b, h)).every(Boolean), b.name).toBe(allHours(b));
+    }
+  });
+
+  it('covers a shift when someone on it is laid up or dead, and works nobody two shifts a day', () => {
+    const { world, population } = cities[0] as { world: World; population: Population };
+    const shop = world.buildings.find((b) => b.business && allHours(b) && b.business !== 'hospital') as Building;
+    const staff = population.people.filter((p) => p.job.building === shop.id);
+    expect(staff.length).toBe(PEOPLE.shifts!.round.length * PEOPLE.shifts!.perShift);
+    const day = 200;
+    // Two of the six out: one laid up, one dead. The rest still keep it open round the clock.
+    const [hurt, dead] = staff as [Population['people'][number], Population['people'][number]];
+    const was = { hurt: hurt.hurtUntil, dead: dead.diedOn };
+    hurt.hurtUntil = day + 10;
+    dead.diedOn = day - 1;
+    try {
+      for (let d = day; d < day + 7; d++) {
+        const worked = new Map<string, number>();
+        for (let hour = 0; hour < 24; hour++) {
+          const clock = { day: d, hour, weekday: (d + 4) % 7 };
+          const on = staff.filter((p) => whereIs(p, world, clock, FOOD.dishes)?.spot.id === shop.id);
+          expect(on.length, `day ${d} at ${hour}`).toBeGreaterThan(0);
+          expect(on).not.toContain(dead);
+          for (const p of on) if (hour >= 6) worked.set(p.id, (worked.get(p.id) ?? 0) + 1);
+        }
+        // Nobody works more than a shift of the day from six on (eight hours, and the start of a night's).
+        for (const [id, hours] of worked) expect(hours, `${id} on day ${d}`).toBeLessThanOrEqual(10);
+      }
+    } finally {
+      hurt.hurtUntil = was.hurt;
+      dead.diedOn = was.dead;
+      if (was.hurt === undefined) delete hurt.hurtUntil;
+      if (was.dead === undefined) delete dead.diedOn;
     }
   });
 
@@ -225,12 +310,13 @@ describe('the people', () => {
       const staffed = [1, 2, 3, 4, 5].some((weekday) => hours.some((hour) => peopleAt(population, world, { kind: 'building', id: shop.id }, { hour, weekday, day: 100 + weekday }, FOOD.dishes).some((p) => p.person.job.building === shop.id)));
       expect(staffed, `${shop.name} is never open`).toBe(true);
     }
-    // Night work keeps night hours: behind the bar at eleven at night, asleep at eight in the morning.
-    const nights = population.people.filter((p) => worksNights(p, world) && p.job.building && p.home);
+    // Night work keeps night hours: behind the bar at eleven at night most nights, and asleep at eight the morning after.
+    const nights = population.people.filter((p) => worksNights(p, world) && p.job.building && p.home && !allHours(world.buildings.find((b) => b.id === p.job.building)!));
     expect(nights.length).toBeGreaterThan(0);
-    for (const p of nights) expect(whereIs(p, world, { ...day, hour: 8 }, FOOD.dishes)?.doing, p.name).toBe('at home, asleep');
-    const atTheBar = nights.filter((p) => whereIs(p, world, { ...day, hour: 23 }, FOOD.dishes)?.spot.id === p.job.building).length;
-    expect(atTheBar).toBeGreaterThan(nights.length / 2);
+    const before = { weekday: 1, day: 99, hour: 23 };
+    const worked = nights.filter((p) => whereIs(p, world, before, FOOD.dishes)?.spot.id === p.job.building);
+    expect(worked.length).toBeGreaterThan(nights.length / 2);
+    for (const p of worked) expect(whereIs(p, world, { ...day, hour: 8 }, FOOD.dishes)?.doing, p.name).toBe('at home, asleep');
     // At night the homes are full and the shops are not.
     const atHome = population.people.filter((p) => p.home && whereIs(p, world, { ...day, hour: 3 }, FOOD.dishes)?.spot.id === p.home).length;
     expect(atHome).toBeGreaterThan(population.people.filter((p) => p.home).length / 2);
@@ -270,23 +356,6 @@ describe('the people', () => {
     const open = Object.values(world.locations).filter((l) => out.kinds[l.kind] && l.district !== 'badlands');
     const busy = open.filter((l) => peopleAt(population, world, { kind: 'location', id: l.id }, { hour: 12, weekday: 3, day: 100 }, FOOD.dishes, out).length > 0);
     expect(busy.length / open.length).toBeGreaterThan(0.8);
-  });
-
-  it('puts half the hands of a place that never closes on nights', () => {
-    let nights = 0;
-    let days = 0;
-    for (const { world, population } of cities.slice(0, 6)) {
-      for (const p of population.people) {
-        const work = p.job.building ? world.buildings.find((b) => b.id === p.job.building) : undefined;
-        if (!work || !allHours(work) || /\bnight\b/i.test(p.job.role)) continue;
-        if (worksNights(p, world)) nights++;
-        else days++;
-      }
-    }
-    expect(nights).toBeGreaterThan(10);
-    expect(days).toBeGreaterThan(10);
-    expect(nights / (nights + days)).toBeGreaterThan(0.35);
-    expect(nights / (nights + days)).toBeLessThan(0.65);
   });
 
   it('give everyone a heart: whom they are drawn to, what wins them over, the look they like; the same every time, and their spouse among them', () => {

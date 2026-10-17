@@ -3,8 +3,8 @@ import type { JobRules, Ladder, Rung } from '../engine/jobs';
 /**
  * Where the player can work, and how far up. Every kind of storefront hires (the ladders and
  * their titles are ours, bottom rung first), a bank and a tattoo studio on ladders of their
- * own: a shift a rostered day, in the ladder's hours (a bar's, a club's and an arcade's run from
- * six in the evening till two), for pay owed and paid on payday and a little trust with the
+ * own: a shift a rostered day, in the ladder's hours, inside the place's opening hours (a
+ * kitchen's eleven till six; a bar's, a club's and an arcade's six in the evening till two), for pay owed and paid on payday and a little trust with the
  * boss. The pay is low on purpose and climbs with the rung; a luxury place pays more than a
  * secondhand one. Six shifts of trust and a boss who's warmed to the player is the first step
  * up; the top takes the better part of a month of showing up. Two jobs at once if their hours
@@ -20,11 +20,12 @@ const rung = (id: string, title: string, doing: string, pay: number, energy: num
 const DAY: [number, number] = [9, 17];
 const SHOP: [number, number] = [10, 18];
 const NIGHT: [number, number] = [18, 2];
+const KITCHEN: [number, number] = [11, 18];
 const ladder = (hours: [number, number], ...rungs: Rung[]): Ladder => ({ hours, rungs });
 
 export const JOBS: JobRules = {
   ladders: {
-    food: ladder(DAY, rung('dishes', 'Dish pit', 'washing dishes', 24, 4, 0), rung('prep', 'Prep', 'on prep', 40, 4, 6), rung('counter', 'Counter', 'working the counter', 60, 3, 14), rung('line', 'Line cook', 'on the line', 85, 4, 24)),
+    food: ladder(KITCHEN, rung('dishes', 'Dish pit', 'washing dishes', 24, 4, 0), rung('prep', 'Prep', 'on prep', 40, 4, 6), rung('counter', 'Counter', 'working the counter', 60, 3, 14), rung('line', 'Line cook', 'on the line', 85, 4, 24)),
     clothing: ladder(SHOP, rung('stockroom', 'Stockroom', 'in the stockroom', 26, 3, 0), rung('floor', 'Shop floor', 'folding on the floor', 42, 3, 6), rung('register', 'Register', 'on the register', 62, 2, 14), rung('fitting', 'Fitting', 'fitting customers', 90, 3, 24)),
     nightlife: ladder(NIGHT, rung('barback', 'Barback', 'hauling crates behind the bar', 30, 4, 0), rung('server', 'Server', 'working the floor', 48, 3, 6), rung('bartender', 'Bartender', 'pouring behind the bar', 70, 3, 14), rung('floor-manager', 'Floor manager', 'running the floor', 100, 3, 24)),
     entertainment: ladder(NIGHT, rung('attendant', 'Attendant', 'sweeping between the machines', 26, 3, 0), rung('cashier', 'Cashier', 'on the token counter', 42, 2, 6), rung('rig-tech', 'Rig tech', 'calibrating the rigs', 64, 3, 14), rung('floor-boss', 'Floor boss', 'keeping the floor', 90, 3, 24)),

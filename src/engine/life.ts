@@ -1,7 +1,7 @@
 import { economyDay, healthOf, staffCostOf, type EconomyRules, type Till } from './economy';
 import type { Quality } from './food';
 import { bossOf } from './jobs';
-import { drawnTo, heartOf, INVERSE, personById, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { drawnTo, heartOf, INVERSE, leastStaff, personById, seatRota, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { createRng, type Rng } from './rng';
 import type { Building, World } from './types';
 
@@ -422,6 +422,9 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
     }
     return [...(staffIndex.get(id) ?? population.people.filter((p) => p.job.building === id && alive(p)))];
   };
+  // The hands a place's shifts want, and its rota made again when they change (everyone who works there, the dead too, as a save's are).
+  const least = (b: Building) => (content.shifts ? leastStaff(b, content.shifts) : 1);
+  const reseat = (b: Building) => content.shifts && seatRota(b, population.people.filter((p) => p.job.building === b.id), content.shifts);
   const healthAt = (b: Building) => {
     const tier = ctx.tier(at(b));
     const staff = staffAt(b.id);
@@ -661,10 +664,11 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
       write('makeup', pair, null, 0, pair[0].likes.hangout);
     }
   }
-  // A busy place takes on someone from the neighborhood who's looking for work.
+  // A place short of the hands its shifts want, else a busy one, takes on someone from the neighborhood who's looking for work.
   if (room() && rng.chance(rules.chances.hired)) {
     const looking = civilians.filter((p) => !p.job.building && rules.jobless.includes(p.job.role));
-    const busy = looking.length ? storefronts.filter((b) => staffAt(b.id).length < rules.maxStaff && healthAt(b) === 'thriving') : [];
+    const short = looking.length ? storefronts.filter((b) => staffAt(b.id).length < least(b)) : [];
+    const busy = short.length ? short : looking.length ? storefronts.filter((b) => staffAt(b.id).length < Math.max(rules.maxStaff, least(b) + 1) && healthAt(b) === 'thriving') : [];
     if (busy.length) {
       const b = rng.pick(busy);
       const hire = rng.pick(looking);
@@ -676,12 +680,13 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
       staffIndex = null;
       state.jobs[hire.id] = { role, building: b.id, day };
       for (const s of staff) if (tieBetween(hire.id, s.id) === null) setTie(state, book, hire, s, 'coworker');
+      reseat(b);
       if (boss) write('hired', [boss, hire], null, 0, at(b));
     }
   }
-  // A struggling place lets someone go: the last taken on first, never the boss.
+  // A struggling place lets someone go: the last taken on first, never the boss, and never below the hands its shifts want.
   if (room() && rng.chance(rules.chances.laidOff)) {
-    const failing = storefronts.filter((b) => staffAt(b.id).length >= 2 && healthAt(b) === 'struggling');
+    const failing = storefronts.filter((b) => staffAt(b.id).length >= Math.max(2, least(b) + 1) && healthAt(b) === 'struggling');
     if (failing.length) {
       const b = rng.pick(failing);
       const boss = bossOf(b, population, staffAt(b.id));
@@ -696,6 +701,7 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
         staffIndex = null;
         state.jobs[gone.id] = { role, building: null, day };
         for (const t of [...tiesFrom(gone.id)]) if (t.kind === 'coworker') setTie(state, book, gone, byId.get(t.to) as Person, null);
+        reseat(b);
         write('laidOff', [boss, gone], null, 0, at(b));
       }
     }
