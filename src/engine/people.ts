@@ -1066,7 +1066,8 @@ function hangoutsIn(world: World, district: string, content: PeopleContent): Spo
   return [...places, ...shops];
 }
 
-function rolesFor(building: Building, content: PeopleContent): string[] {
+/** The roles a building's people have, the one who runs it first. */
+export function rolesFor(building: Building, content: PeopleContent): string[] {
   return (building.business && content.roles.business[building.business]) || content.roles.category[building.category] || content.roles.kind[building.kind] || content.roles.freelance;
 }
 

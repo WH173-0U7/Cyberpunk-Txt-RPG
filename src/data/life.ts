@@ -22,9 +22,17 @@ import { ECONOMY } from './economy';
  * wedding a month, a recruit three weeks. After the game was closed a month at most is lived
  * through. The scenes are what pairs of people are seen doing at the same place, by what
  * they are to each other.
+ * In hard times, someone behind on the rent or owing a gang, bold or greedy enough, mugs a
+ * stranger one day in four in a district, for most of what's on them; a gang's collector comes
+ * for someone who's paid nothing back in two weeks, about one day in three; and a gang takes on
+ * someone young (thirty at most) with nothing left to lose, one day in seven, up to two more than
+ * it started with in a district. Being put out of a home is held against the landlord three
+ * months; it, a storefront going under and one opening again are talked of for a month. Two
+ * weeks after, and every week from then, someone put out finds a place again (one of the three
+ * cheapest blocks of their district) once they've four weeks of its rent and their food put by.
  */
 export const LIFE: LifeRules = {
-  chances: { shakedown: 0.3, robbery: 0.2, fight: 0.2, friends: 0.25, fallout: 0.08, makeup: 0.12, romance: 0.12, wedding: 0.1, breakup: 0.06, hired: 0.08, laidOff: 0.06, death: 0.01, joined: 0.25 },
+  chances: { shakedown: 0.3, robbery: 0.2, fight: 0.2, friends: 0.25, fallout: 0.08, makeup: 0.12, romance: 0.12, wedding: 0.1, breakup: 0.06, hired: 0.08, laidOff: 0.06, death: 0.01, joined: 0.25, mugging: 0.25 },
   perDistrict: 3,
   hurtDays: [2, 4],
   deadly: 0.12,
@@ -36,7 +44,7 @@ export const LIFE: LifeRules = {
   maxStaff: 4,
   jobless: ['between jobs', 'day laborer'],
   recruitAge: 25,
-  lasting: { death: 45, wedding: 30, joined: 21 },
+  lasting: { death: 45, wedding: 30, joined: 21, evicted: 30, closed: 30, reopened: 21 },
   griefDays: 14,
   shakedown: [0.2, 0.5],
   robbery: [0.4, 0.8],
@@ -64,10 +72,16 @@ export const LIFE: LifeRules = {
   // What people hold against each other, and for how long: a killing for a year, being left for three months,
   // a robbery two, a beating or a falling out a month and a half, being let go or shaken down a month.
   held: {
-    days: { robbed: 60, shook: 30, beaten: 45, dumped: 90, fallout: 45, laidOff: 30, killed: 365 },
+    days: { robbed: 60, shook: 30, beaten: 45, dumped: 90, fallout: 45, laidOff: 30, killed: 365, evicted: 90 },
     cap: 6,
     revenge: 0.15,
     nerve: 0.55,
   },
   glaring: 0.7,
+  hard: {
+    mugging: { nerve: 1.1, take: [0.4, 0.9] },
+    collect: { chance: 0.3, late: 14 },
+    recruit: { chance: 0.15, age: 30, nerve: 1, extra: 2 },
+    rehouse: { after: 14, weeks: 4, cheapest: 3 },
+  },
 };

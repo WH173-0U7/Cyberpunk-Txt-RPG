@@ -1,7 +1,7 @@
-import { economyDay, healthOf, staffCostOf, type EconomyRules, type MarketState, type Till, type Vice } from './economy';
+import { economyDay, headlineIn, healthOf, holderOf, homeKind, ledgerOf, staffCostOf, type Closure, type Debt, type EconomyRules, type Ledger, type MarketState, type Till, type Vice } from './economy';
 import type { Quality } from './food';
-import { bossOf } from './jobs';
-import { drawnTo, heartOf, INVERSE, leastStaff, personById, seatRota, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { bossOf, runsIt } from './jobs';
+import { buildingById, drawnTo, heartOf, INVERSE, leastStaff, personById, rolesFor, seatRota, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { createRng, type Rng } from './rng';
 import type { Building, World } from './types';
 
@@ -19,12 +19,17 @@ import type { Building, World } from './types';
  * with which gang, who is laid up, who is gone), so the city the player comes back to has
  * moved on; and the people talk about it.
  * Under it all the eddies go round (`economy.ts`): pay from tills, payrolls and chests, food,
- * evenings out and rent, the tills' books, the gangs' cut. On top of that, wherever the player is, the people there are seen with each other: a couple
+ * evenings out and rent, the tills' books, the gangs' cut. And when the eddies run out, hard
+ * times: the desperate mug strangers and run with the gangs, a loan shark's collector comes for
+ * what's owed, a tenant three weeks behind is put out, and a storefront that can't pay its people
+ * lets them all go, until new management takes it on. On top of that, wherever the player is, the people there are seen with each other: a couple
  * sharing a table, a crew holding court, a ganger leaning on the cook. Everything here is
  * drawn from the seed and the day, so a city's days are the same whenever they're lived
  * through; the numbers are in `src/data/life.ts`.
  */
-export type LifeKind = 'shakedown' | 'robbery' | 'fight' | 'friends' | 'fallout' | 'makeup' | 'romance' | 'wedding' | 'breakup' | 'hired' | 'laidOff' | 'death' | 'joined';
+export type LifeKind = 'shakedown' | 'robbery' | 'fight' | 'friends' | 'fallout' | 'makeup' | 'romance' | 'wedding' | 'breakup' | 'hired' | 'laidOff' | 'death' | 'joined' | 'mugging' | 'collected' | 'evicted' | 'closed' | 'reopened';
+/** The kinds of thing that happen by chance on a day; the rest follow from the money (a debt, the rent, the books). */
+export type ChanceKind = Exclude<LifeKind, 'collected' | 'evicted' | 'closed' | 'reopened'>;
 
 export interface LifeEvent {
   id: number;
@@ -35,7 +40,9 @@ export interface LifeEvent {
    * them, for friends made, lost or made up with and for a couple (the one who walked out
    * first, for a breakup); the boss and the one taken on or let go; the killer and the dead,
    * or the dead twice over for someone who died of their years; the one who brought a recruit
-   * in, and the recruit.
+   * in, and the recruit; the mugger and the mugged; a loan shark's collector and the one who owed;
+   * the landlord and the tenant put out (the tenant twice over, put out by a corp); the boss of a
+   * storefront gone under (or open again) and one of its people (the boss twice over, alone).
    */
   who: [string, string];
   /** The gang behind it, if any. */
@@ -58,7 +65,7 @@ export interface Scene {
 
 export interface LifeRules {
   /** The chance of each kind of thing in a district on a day, where the people for it exist. */
-  chances: Record<LifeKind, number>;
+  chances: Record<ChanceKind, number>;
   /** The most things that happen in a district on one day. */
   perDistrict: number;
   /** Days a fight's loser stays home, from and to. */
@@ -100,6 +107,25 @@ export interface LifeRules {
   held?: HeldRules;
   /** The chance someone at a spot with whoever they hold something against is seen at it. */
   glaring?: number;
+  /** Hard times among the people (missing: none). */
+  hard?: HardLifeRules;
+}
+
+/**
+ * Hard times among the people. Someone desperate (behind on the rent, or owing a gang) with the
+ * nerve (`mugging.nerve`, of courage and greed) mugs a stranger in their district for `mugging.take`
+ * of what's on them. A collector of the gang someone owes, `collect.chance` a day a district, comes
+ * for someone who hasn't paid a cent in `collect.late` days: a beating, and what they have on them.
+ * A gang takes on the desperate young (up to `recruit.age`, with the nerve), `recruit.chance` a day a
+ * district, while it has no more than `recruit.extra` members there beyond what it started with.
+ * Someone put out of their home finds another once they've the money put by (`rehouse`).
+ */
+export interface HardLifeRules {
+  mugging: { nerve: number; take: [number, number] };
+  collect: { chance: number; late: number };
+  recruit: { chance: number; age: number; nerve: number; extra: number };
+  /** Put out, someone squatting or sleeping rough looks again every week from `after` days on, and finds a place (one of the `cheapest` blocks of their district) once they have `weeks` of its rent and their food put by. */
+  rehouse: { after: number; weeks: number; cheapest: number };
 }
 
 export interface LifeState {
@@ -127,8 +153,13 @@ export interface LifeState {
   street?: Record<string, number>;
   /** Supply shocks, the kinds of store short where, and the headlines. */
   market?: MarketState;
-  /** The job someone has now, where it isn't what they started with (taken on somewhere, let go, a gang's), and the day it changed. */
-  jobs: Record<string, { role: string; building: string | null; day: number }>;
+  /** What people owe the gangs' loan sharks; the storefronts gone under. */
+  debts?: Record<string, Debt>;
+  closed?: Record<string, Closure>;
+  /** Where someone lives now, where it isn't where they started (null: nowhere, sleeping rough), since when, where from, and why. */
+  homes?: Record<string, Moved>;
+  /** The job someone has now, where it isn't what they started with (taken on somewhere, let go, a gang's), and the day it changed; let go when a storefront went under, which one (`was`), and whether they ran it (`ran`). */
+  jobs: Record<string, { role: string; building: string | null; day: number; was?: string; ran?: boolean }>;
   /** The gang someone has joined. */
   gangs: Record<string, string>;
   /** The day each person died. */
@@ -143,6 +174,14 @@ export interface LifeState {
   held?: Record<string, Held[]>;
 }
 
+/** A move from one home to another: someone put out for the rent, or finding a place again after. */
+export interface Moved {
+  home: string | null;
+  day: number;
+  from: string | null;
+  why: 'evicted' | 'housed';
+}
+
 /**
  * What someone holds against someone else, from their own days: robbed by them, shaken down,
  * beaten in a fight, left, fallen out with, let go by them as their boss, or their kin killed
@@ -150,7 +189,7 @@ export interface LifeState {
  * talk, keeps the two from making friends or a couple, shows when they're in a room together,
  * and now and then has them settle it.
  */
-export type HeldKind = 'robbed' | 'shook' | 'beaten' | 'dumped' | 'fallout' | 'laidOff' | 'killed';
+export type HeldKind = 'robbed' | 'shook' | 'beaten' | 'dumped' | 'fallout' | 'laidOff' | 'killed' | 'evicted';
 export interface Held {
   kind: HeldKind;
   by: string;
@@ -184,6 +223,8 @@ export function freshLife(): LifeState {
 }
 
 const FAMILY: TieKind[] = ['spouse', 'partner', 'sibling', 'cousin', 'parent', 'child', 'uncle', 'nephew', 'kin'];
+/** Who someone lives with, when they share a home: put out, they go too. */
+const HOUSEHOLD: TieKind[] = ['spouse', 'partner', 'parent', 'child', 'sibling'];
 
 /** Someone has been in one more fight. */
 export function learned(state: LifeState, id: string): void {
@@ -206,6 +247,9 @@ export function applyLife(population: Population, state: LifeState): void {
     if (record) for (const [id, amount] of Object.entries(record)) if (!ids.has(id) || !Number.isFinite(amount)) delete record[id];
   }
   for (const key of Object.keys(state.since)) if (!key.split('|').every((id) => ids.has(id))) delete state.since[key];
+  // A debt owed or a move made by someone the city no longer has goes with them, and so does anything not shaped like one.
+  if (state.debts) for (const [id, d] of Object.entries(state.debts)) if (!ids.has(id) || !d || typeof d.gang !== 'string' || !Number.isFinite(d.owed) || !Number.isFinite(d.paid)) delete state.debts[id];
+  if (state.homes) for (const [id, m] of Object.entries(state.homes)) if (!ids.has(id) || !m || (m.home !== null && typeof m.home !== 'string') || !Number.isFinite(m.day)) delete state.homes[id];
   // What anyone holds against someone the city no longer has goes with them; so does anything not shaped like a grudge.
   if (state.held) {
     for (const [id, list] of Object.entries(state.held)) {
@@ -248,6 +292,8 @@ export function applyLife(population: Population, state: LifeState): void {
     }
     const gang = state.gangs[person.id];
     if (gang !== undefined) person.gang = gang;
+    const moved = state.homes?.[person.id];
+    if (moved) person.home = moved.home;
     const died = state.dead[person.id];
     if (died !== undefined) person.diedOn = died;
   }
@@ -295,7 +341,42 @@ export function liveUntil(world: World, population: Population, state: LifeState
     if (list) list.push(b);
     else storefronts.set(b.district, [b]);
   }
-  const ctx: DayContext = { tier, content, book, byId: new Map(population.people.map((p) => [p.id, p])), residents, storefronts, heart, spokenFor };
+  // Somewhere to squat in each district: its abandoned buildings and its shacks.
+  const squats = new Map<string, Building[]>();
+  for (const b of world.buildings) {
+    if (b.kind !== 'derelict' && b.kind !== 'shack') continue;
+    const list = squats.get(b.district);
+    if (list) list.push(b);
+    else squats.set(b.district, [b]);
+  }
+  const squatFor = (p: Person): string | null => {
+    const home = p.home ? buildingById(world, p.home) : undefined;
+    const from = home ? { x: home.x + home.w / 2, y: home.y + home.h / 2 } : (world.districts[p.district] ?? { x: 0, y: 0 });
+    let best: Building | null = null;
+    let near = Infinity;
+    for (const b of squats.get(p.district) ?? []) {
+      const d = Math.hypot(b.x + b.w / 2 - from.x, b.y + b.h / 2 - from.y);
+      if (d < near) [best, near] = [b, d];
+    }
+    return best?.id ?? null;
+  };
+  const ledger = (p: Person) => ledgerOf(p, world, population, rules.economy, tier, seed);
+  // Each district's blocks someone could rent in, the cheapest first.
+  const rentals = new Map<string, Array<{ id: string; rent: number }>>();
+  const homesIn = (district: string) => {
+    let list = rentals.get(district);
+    if (!list) {
+      list = world.buildings
+        .flatMap((b) => {
+          const kind = b.district === district ? homeKind(b, rules.economy) : null;
+          return kind ? [{ id: b.id, rent: rules.economy.homes[kind][tier({ kind: 'building', id: b.id })] }] : [];
+        })
+        .sort((a, b) => a.rent - b.rent || a.id.localeCompare(b.id));
+      rentals.set(district, list);
+    }
+    return list;
+  };
+  const ctx: DayContext = { tier, content, book, byId: new Map(population.people.map((p) => [p.id, p])), residents, storefronts, heart, spokenFor, ledger, squatFor, homesIn };
   for (let day = from; day <= today; day++) {
     const rng = createRng(`${seed}:life:${day}`);
     for (const id of Object.keys(state.hurt)) if ((state.hurt[id] as number) < day) delete state.hurt[id];
@@ -414,6 +495,12 @@ interface DayContext {
   heart: (person: Person) => Heart;
   /** People the player is seeing: no one else's to fall for. */
   spokenFor: ReadonlySet<string>;
+  /** Someone's money as the economy sees it (their rent, and whose). */
+  ledger: (person: Person) => Ledger;
+  /** Where someone put out of their home goes: the nearest squat in their district, if there's one. */
+  squatFor: (person: Person) => string | null;
+  /** A district's blocks to rent in, with a head's rent, the cheapest first. */
+  homesIn: (district: string) => Array<{ id: string; rent: number }>;
 }
 
 /**
@@ -439,16 +526,17 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
   const tieBetween = (a: string, b: string) => tiesFrom(a).find((t) => t.to === b)?.kind ?? null;
   const write = (kind: LifeKind, who: [Person, Person], gang: string | null, took: number, where: Spot | null): void => {
     // A fight is practice for both in it; a shakedown or a robbery for whoever did it.
-    if (kind === 'fight' || (kind === 'death' && who[0] !== who[1])) for (const p of who) learned(state, p.id);
-    else if (kind === 'shakedown' || kind === 'robbery') learned(state, who[0].id);
+    if (kind === 'fight' || kind === 'collected' || (kind === 'death' && who[0] !== who[1])) for (const p of who) learned(state, p.id);
+    else if (kind === 'shakedown' || kind === 'robbery' || kind === 'mugging') learned(state, who[0].id);
     const event: LifeEvent = { id: state.nextId++, day, kind, who: [who[0].id, who[1].id], gang, district, took, where };
     state.events.push(event);
     events.push(event);
     // What it leaves one of them holding against the other.
     const [a, b] = who;
     if (kind === 'shakedown') hold(b, 'shook', a);
-    else if (kind === 'robbery') hold(b, 'robbed', a);
-    else if (kind === 'fight') hold(b, 'beaten', a);
+    else if (kind === 'robbery' || kind === 'mugging') hold(b, 'robbed', a);
+    else if (kind === 'fight' || kind === 'collected') hold(b, 'beaten', a);
+    else if (kind === 'evicted') hold(b, 'evicted', a);
     else if (kind === 'breakup') hold(b, 'dumped', a);
     else if (kind === 'laidOff') hold(b, 'laidOff', a);
     else if (kind === 'fallout') {
@@ -559,6 +647,88 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
       else by.set(key, [p]);
     }
     return by;
+  };
+
+  /** Someone joins a gang: its colors, a role, its rivals to hate, its people for a crew. */
+  const enlist = (gang: string, recruiter: Person, recruit: Person): void => {
+    const colors = content.gangs[gang];
+    if (!colors) return;
+    const role = rng.pick(colors.roles);
+    recruit.gang = gang;
+    recruit.job = { role, building: null };
+    state.gangs[recruit.id] = gang;
+    state.jobs[recruit.id] = { role, building: null, day };
+    const rival = colors.rivals.find((r) => Object.values(content.turf).some((t) => t.some(([g]) => g === r)));
+    if (rival && !recruit.hates) hate(recruit, rival);
+    for (const m of population.people) if (m.gang === gang && m !== recruit && alive(m) && tieBetween(recruit.id, m.id) === null) setTie(state, book, recruit, m, 'crew');
+    // Off the streets' books now: civilians no more.
+    for (const list of [civilians, workers]) {
+      const at = list.indexOf(recruit);
+      if (at >= 0) list.splice(at, 1);
+    }
+    gangers.push(recruit);
+    write('joined', [recruiter, recruit], gang, 0, recruiter.likes.hangout);
+  };
+
+  /** A storefront gone under: everyone who works there let go, and the shutters down. */
+  const shutDown = (b: Building): void => {
+    const staff = staffAt(b.id);
+    const boss = bossOf(b, population, staff);
+    const role = rules.jobless[0] ?? 'between jobs';
+    for (const p of staff) {
+      p.job = { role, building: null };
+      delete p.hiredOn;
+      state.jobs[p.id] = { role, building: null, day, was: b.id, ...(p === boss ? { ran: true } : {}) };
+      for (const t of [...tiesFrom(p.id)]) if (t.kind === 'coworker') setTie(state, book, p, byId.get(t.to) as Person, null);
+    }
+    staffIndex = null;
+    reseat(b);
+    if (boss) write('closed', [boss, staff.find((p) => p !== boss) ?? boss], null, 0, at(b));
+  };
+  /** New management for a storefront that's been shut: someone from the neighborhood looking for work runs it, a few more work it, and its books start afresh. */
+  const reopen = (b: Building, closure: Closure): void => {
+    const looking = civilians.filter((p) => !p.job.building && rules.jobless.includes(p.job.role) && p.age >= rules.adultAt);
+    if (!looking.length) {
+      // Nobody to take it on yet: it stays shut a few days more.
+      closure.until = day + 3;
+      return;
+    }
+    const take = () => looking.splice(rng.int(0, looking.length - 1), 1)[0] as Person;
+    const runs = rolesFor(b, content).find(runsIt) ?? 'manager';
+    const helps = (content.roles.extra[b.category] ?? content.roles.extra.default ?? []).filter((r) => !runsIt(r));
+    const crew: Person[] = [];
+    for (let k = 0; k < Math.max(1, least(b)) && looking.length; k++) {
+      const p = take();
+      const role = k === 0 ? runs : helps.length ? rng.pick(helps) : 'helps out';
+      p.job = { role, building: b.id };
+      p.hiredOn = day;
+      state.jobs[p.id] = { role, building: b.id, day };
+      crew.push(p);
+    }
+    for (const a of crew) for (const c of crew) if (a.id < c.id && tieBetween(a.id, c.id) === null) setTie(state, book, a, c, 'coworker');
+    staffIndex = null;
+    reseat(b);
+    delete (state.closed as Record<string, Closure>)[b.id];
+    // Fresh books: the new management's float goes in the next day the eddies move.
+    const failed = state.tills[b.id]?.failed;
+    state.tills[b.id] = { days: [], pending: 0, ...(failed ? { failed } : {}) };
+    headlineIn((state.market ??= { shocks: [], short: [], news: [] }), { day, district, category: b.category, kind: 'reopened', building: b.id }, rules.economy.market.keep);
+    write('reopened', [crew[0] as Person, crew[1] ?? (crew[0] as Person)], null, 0, at(b));
+  };
+  /** A tenant too far behind on the rent is put out, and whoever they live with goes with them: to a squat in the district, or the street. What they owed is written off. */
+  const evict = (tenant: Person): void => {
+    const from = tenant.home as string;
+    const landlord = byId.get(holderOf(ctx.ledger(tenant).landlord, (id) => byId.get(id), tiesFrom) ?? '');
+    const household = [tenant, ...tiesFrom(tenant.id).flatMap((t) => (HOUSEHOLD.includes(t.kind) ? [byId.get(t.to)] : []).filter((p): p is Person => alive(p) && p.home === from))];
+    const to = ctx.squatFor(tenant);
+    let owed = 0;
+    for (const p of household) {
+      owed += state.arrears?.[p.id] ?? 0;
+      delete state.arrears?.[p.id];
+      p.home = to;
+      (state.homes ??= {})[p.id] = { home: to, day, from, why: 'evicted' };
+    }
+    write('evicted', [alive(landlord) && landlord !== tenant ? landlord : tenant, tenant], null, owed, { kind: 'building', id: from });
   };
 
   // A gang leans on a storefront for its cut.
@@ -813,19 +983,7 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
     const recruiters = gang ? gangers.filter((p) => p.gang === gang) : [];
     const recruits = gang ? civilians.filter((p) => !p.job.building && p.age <= rules.recruitAge && p.hates !== gang && (p.traits.courage >= 0.5 || p.traits.greed >= 0.6)) : [];
     const colors = gang ? content.gangs[gang] : undefined;
-    if (gang && colors && recruiters.length && recruits.length) {
-      const recruiter = rng.pick(recruiters);
-      const recruit = rng.pick(recruits);
-      const role = rng.pick(colors.roles);
-      recruit.gang = gang;
-      recruit.job = { role, building: null };
-      state.gangs[recruit.id] = gang;
-      state.jobs[recruit.id] = { role, building: null, day };
-      const rival = colors.rivals.find((r) => Object.values(content.turf).some((t) => t.some(([g]) => g === r)));
-      if (rival && !recruit.hates) hate(recruit, rival);
-      for (const m of population.people) if (m.gang === gang && m !== recruit && alive(m) && tieBetween(recruit.id, m.id) === null) setTie(state, book, recruit, m, 'crew');
-      write('joined', [recruiter, recruit], gang, 0, recruiter.likes.hangout);
-    }
+    if (gang && colors && recruiters.length && recruits.length) enlist(gang, rng.pick(recruiters), rng.pick(recruits));
   }
   // The oldest die of their years, now and then.
   if (room() && rng.chance(rules.chances.death)) {
@@ -866,6 +1024,107 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
       }
       write('fight', [winner, loser], winner.gang, 0, spot(loser) ?? spot(winner));
     }
+  }
+
+  // Hard times. What follows from the money comes first, whatever else the day held: a storefront
+  // gone under lets its people go, new management takes on one that has been shut long enough,
+  // and a tenant too far behind on the rent is put out.
+  const broke = rules.economy.hard;
+  if (broke && state.closed) {
+    for (const b of storefronts) {
+      const closure = state.closed[b.id];
+      if (closure?.day === day) shutDown(b);
+      else if (closure && closure.until <= day) reopen(b, closure);
+    }
+  }
+  if (broke && state.arrears) {
+    for (const [id, owed] of Object.entries(state.arrears)) {
+      const tenant = byId.get(id);
+      if (!alive(tenant) || tenant.district !== district || !tenant.home || !state.arrears[id]) continue;
+      const rent = ctx.ledger(tenant).rent;
+      if (rent > 0 && owed >= broke.evict * rent) evict(tenant);
+    }
+  }
+  // Put out a while back, someone with the money put by again finds a place.
+  if (broke && rules.hard && state.homes) {
+    const { rehouse } = rules.hard;
+    for (const [id, moved] of Object.entries(state.homes)) {
+      const p = byId.get(id);
+      const since = day - moved.day;
+      if (moved.why !== 'evicted' || !alive(p) || p.district !== district || since < rehouse.after || since % 7 !== 0) continue;
+      const homes = ctx.homesIn(district);
+      const money = p.eddies + (state.savings?.[id] ?? 0);
+      const food = rules.economy.food[ctx.ledger(p).means] * 7;
+      if (!homes.length || money < rehouse.weeks * (food + (homes[0] as { rent: number }).rent)) continue;
+      const to = rng.pick(homes.slice(0, rehouse.cheapest)).id;
+      const from = p.home;
+      for (const q of [p, ...tiesFrom(p.id).flatMap((t) => (HOUSEHOLD.includes(t.kind) ? [byId.get(t.to)] : []).filter((o): o is Person => alive(o) && o.home === from && state.homes?.[o.id]?.why === 'evicted'))]) {
+        q.home = to;
+        (state.homes as Record<string, Moved>)[q.id] = { home: to, day, from, why: 'housed' };
+      }
+    }
+  }
+  const hard = rules.hard;
+  const desperate = (p: Person) => (state.arrears?.[p.id] ?? 0) > 0 || Boolean(state.debts?.[p.id]);
+  // Someone desperate, with the nerve for it, mugs a stranger.
+  if (hard && room() && rng.chance(rules.chances.mugging ?? 0)) {
+    const muggers = civilians.filter((p) => p.age >= rules.adultAt && desperate(p) && p.traits.courage + p.traits.greed >= hard.mugging.nerve);
+    const mugger = muggers.length ? rng.pick(muggers) : null;
+    let victim: Person | null = null;
+    for (let tries = 0; mugger && !victim && tries < 8; tries++) {
+      const v = rng.pick(civilians);
+      if (v !== mugger && v.eddies > 0 && tieBetween(mugger.id, v.id) === null) victim = v;
+    }
+    if (mugger && victim) {
+      const took = pay(victim, mugger, hard.mugging.take);
+      if (took > 0) write('mugging', [mugger, victim], null, took, spot(victim));
+    }
+  }
+  // A loan shark's collector comes for someone who hasn't paid back a cent in too long: a beating, and what's on them.
+  if (hard && state.debts && room() && rng.chance(hard.collect.chance)) {
+    const late: Array<[Person, Debt]> = [];
+    for (const [id, debt] of Object.entries(state.debts)) {
+      const p = byId.get(id);
+      if (alive(p) && p.district === district && day - debt.paid >= hard.collect.late && (state.hurt[id] ?? -1) < day) late.push([p, debt]);
+    }
+    const due = late.length ? rng.pick(late) : null;
+    const collectors = due ? gangers.filter((g) => g.gang === due[1].gang) : [];
+    if (due && collectors.length) {
+      const [debtor, debt] = due;
+      const collector = rng.pick(collectors);
+      const took = Math.max(0, Math.min(debtor.eddies, debt.owed));
+      debtor.eddies -= took;
+      state.eddies[debtor.id] = debtor.eddies;
+      state.treasuries[debt.gang] = (state.treasuries[debt.gang] ?? 0) + took;
+      debt.owed -= took;
+      // A warning: they'll be back if it isn't paid.
+      debt.paid = day;
+      if (debt.owed <= 0) delete state.debts[debtor.id];
+      const until = day + rng.int(rules.hurtDays[0], rules.hurtDays[1]);
+      state.hurt[debtor.id] = until;
+      debtor.hurtUntil = until;
+      write('collected', [collector, debtor], debt.gang, took, spot(debtor));
+    }
+  }
+  // A gang on its turf takes on someone young with nothing left to lose, while it isn't much bigger here than it was.
+  if (hard && room() && rng.chance(hard.recruit.chance)) {
+    const here = ctx.residents.get(district) ?? [];
+    const open = (content.turf[district] ?? [])
+      .map(([g]) => g)
+      .filter((g) => {
+        let started = 0;
+        let living = 0;
+        for (const p of here) {
+          if (p.gang !== g) continue;
+          if (state.gangs[p.id] !== g) started++;
+          if (alive(p)) living++;
+        }
+        return living < started + hard.recruit.extra;
+      });
+    const gang = open.length ? rng.pick(open) : null;
+    const recruiters = gang ? gangers.filter((p) => p.gang === gang) : [];
+    const recruits = gang ? civilians.filter((p) => !p.job.building && p.age >= rules.adultAt && p.age <= hard.recruit.age && p.hates !== gang && desperate(p) && p.traits.courage + p.traits.greed >= hard.recruit.nerve) : [];
+    if (gang && recruiters.length && recruits.length) enlist(gang, rng.pick(recruiters), rng.pick(recruits));
   }
   return events;
 }

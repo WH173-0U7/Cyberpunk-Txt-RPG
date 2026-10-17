@@ -4,7 +4,7 @@ import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
-import { accountOf, leftOf, ledgerOf, ownersOf, priceFactor, stockOf, tillOf, tradeAt, turfFrom, weekdayOf, type Health, type MarketNews, type Vice } from './economy';
+import { accountOf, holderOf as ownerNow, leftOf, ledgerOf, ownersOf, priceFactor, stockOf, tillOf, tradeAt, turfFrom, weekdayOf, type Health, type MarketNews, type Vice } from './economy';
 import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, runnerShort, settle, writeOff, type Runner, type RunnerView } from './crew';
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
 import { cutShare, foundOdds, harmOdds, mixedShare, sickOdds } from './cutting';
@@ -765,6 +765,8 @@ export class Game {
    * always, and a place of its own (a market, a stall) never closes.
    */
   private counterOpen(at: Building | Location, now: number): boolean {
+    // Gone under: nobody's behind the counter till new management takes it on.
+    if ('block' in at && this.life.closed?.[at.id]) return false;
     if (!this.rules.hours?.close || !('block' in at) || !at.business || at.business === 'hospital') return true;
     // Keys: the player's own counter, high enough up the ladder, is open to them whoever's in.
     if (this.jobs.some((j) => j.building === at.id && j.rung >= this.rules.jobs.perks.keys)) return true;
@@ -779,13 +781,13 @@ export class Game {
    * The counter in here, if it's shut for now: what it would be (a menu, a rack, a bank) and
    * when someone's next in, to the hour (null: nobody is, as far ahead as `hours.ahead` looks).
    */
-  closed(now = Date.now()): { what: 'menu' | 'shop' | 'bank'; opensAt: number | null } | null {
+  closed(now = Date.now()): { what: 'menu' | 'shop' | 'bank'; opensAt: number | null; down?: boolean } | null {
     const at = this.inside;
     if (!at || this.counterOpen(at, now)) return null;
     const menu = this.counterMenu(at, now);
     const what = menu ? (menu.kind === 'gear' ? 'shop' : 'menu') : at.business === 'bank' ? 'bank' : null;
     if (!what) return null;
-    return { what, opensAt: this.opensAgain(at, now) };
+    return this.life.closed?.[at.id] ? { what, opensAt: null, down: true } : { what, opensAt: this.opensAgain(at, now) };
   }
 
   /** When someone who works a counter is next in, to the hour (null: nobody is, as far ahead as `hours.ahead` looks). */
@@ -801,7 +803,9 @@ export class Game {
    * shutters are down, and when someone's next in. A hospital never locks, nor does the player's
    * own workplace to them, in their shift's hours or with its keys. Null: the door is open.
    */
-  locked(building: Building, now = Date.now()): { opensAt: number | null } | null {
+  locked(building: Building, now = Date.now()): { opensAt: number | null; down?: boolean } | null {
+    // Gone under: locked to everyone, the player's own job there included (it went with the place).
+    if (building.business && this.life.closed?.[building.id]) return { opensAt: null, down: true };
     if (!building.business || this.counterOpen(building, now)) return null;
     const hour = this.clockAt(now).hour;
     if (this.jobs.some((j) => j.building === building.id && shiftOpen(hour, ladderFor(building, this.rules.jobs)?.hours ?? [0, 0]))) return null;
@@ -954,7 +958,7 @@ export class Game {
     const menu = this.menu(now);
     const item = menu?.items.find((i) => i.id === id);
     const shut = this.closed(now);
-    if (shut) return shut.opensAt === null ? 'Closed. Nobody works the counter any more.' : `Closed. Nobody's behind the counter till ${clockWord(shut.opensAt, this.clockAt(shut.opensAt))}.`;
+    if (shut) return shut.down ? 'Closed down. Nobody works here any more.' : shut.opensAt === null ? 'Closed. Nobody works the counter any more.' : `Closed. Nobody's behind the counter till ${clockWord(shut.opensAt, this.clockAt(shut.opensAt))}.`;
     if (!menu || !item) return 'Not for sale here.';
     const barred = this.barred(now);
     if (barred) return barred;
@@ -2907,16 +2911,17 @@ export class Game {
 
   /**
    * The end of a job: walked out on (`quit`, the boss remembers it), handed in with notice
-   * (`notice`, for another job: less to forgive), or let go for missing days (`fired`). What's
-   * owed is paid out to the account, out of the place's till.
+   * (`notice`, for another job: less to forgive), let go for missing days (`fired`), or gone with
+   * the place (`closed`). What's owed is paid out to the account, out of the place's till.
    */
-  private leaveJob(job: JobState, now: number, how: 'quit' | 'notice' | 'fired'): void {
+  private leaveJob(job: JobState, now: number, how: 'quit' | 'notice' | 'fired' | 'closed'): void {
     const status = this.statusOf(job, now);
     const { lines, society, timeScale, jobs } = this.rules;
     this.jobs = this.jobs.filter((j) => j !== job);
     if (this.jobs[0]) delete this.jobs[0].heard;
     this.payOut(job, status?.building.name ?? 'the place');
-    if (!status) {
+    // Gone under, nobody's to blame for it but the books: nothing to say, nothing to remember.
+    if (!status || how === 'closed') {
       this.events.emit('jobChanged', this.jobStatus(now));
       return;
     }
@@ -2965,6 +2970,12 @@ export class Game {
       const building = this.buildingOf(job.building);
       const ladder = building ? ladderFor(building, jobs) : null;
       if (!building || !ladder) continue;
+      // The place went under, and the job with it.
+      if (this.life.closed?.[building.id]) {
+        this.say(`${building.name} has gone under: it couldn't pay its people, and now there's nobody to pay. Your job there is gone with it.`, 'error');
+        this.leaveJob(job, now, 'closed');
+        continue;
+      }
       const today = shiftDay(clock, ladder.hours).day;
       if (job.checked === undefined) job.checked = today - 1;
       const days = this.daysOf(job, ladder);
@@ -6120,8 +6131,13 @@ export class Game {
   private headline(news: MarketNews): string {
     const { market } = this.rules.life.economy;
     const goods = market.goods[news.category] ?? news.category;
-    const text = createRng(`${this.world.seed}:news:${news.day}:${news.district}:${news.category}:${news.kind}`).pick(market.lines[news.kind]);
-    return text.replace(/\{Goods\}/g, goods.charAt(0).toUpperCase() + goods.slice(1)).replace(/\{goods\}/g, goods).replace(/\{district\}/g, this.world.districts[news.district]?.name ?? news.district);
+    const text = createRng(`${this.world.seed}:news:${news.day}:${news.district}:${news.category}:${news.kind}${news.building ? `:${news.building}` : ''}`).pick(market.lines[news.kind]);
+    const place = news.building ? (buildingById(this.world, news.building)?.name ?? 'A shop') : '';
+    return text
+      .replace(/\{place\}/g, place)
+      .replace(/\{Goods\}/g, goods.charAt(0).toUpperCase() + goods.slice(1))
+      .replace(/\{goods\}/g, goods)
+      .replace(/\{district\}/g, this.world.districts[news.district]?.name ?? news.district);
   }
 
   /**
@@ -6137,7 +6153,7 @@ export class Game {
     if (this.marketCache?.key === key) return this.marketCache.view;
     const by = new Map<BuildingCategory, { sum: number; n: number }>();
     for (const b of this.world.buildings) {
-      if (!b.business || b.district !== district?.id || this.rules.food.fixed[b.business] || b.business === 'hospital') continue;
+      if (!b.business || b.district !== district?.id || this.rules.food.fixed[b.business] || b.business === 'hospital' || this.life.closed?.[b.id]) continue;
       const level = by.get(b.category) ?? { sum: 0, n: 0 };
       level.sum += priceFactor(stockOf(this.life.tills[b.id]), this.trade(b).health, economy);
       level.n++;
@@ -6204,6 +6220,8 @@ export class Game {
       newsWord: tie ? kinWord(person, tie.kind, other) : '',
       newsAgo: ago,
       newsTook: String(event.took),
+      // Whether anything changed hands: a collector can find nothing on someone.
+      newsPaid: event.took > 0 ? 'yes' : '',
       newsWhere: where ?? '',
       newsHe: pronouns.he,
       newsS: pronouns.s,
@@ -6932,7 +6950,10 @@ export class Game {
    * whose their home is (`landlordName`, a person's; `corpRent`, a corp's; `squat`, nobody's) and
    * what they own (`landlord` of a block or more, `ownsPlace` the walls of the storefront they
    * run); how the place they work is doing (`slow`, `brisk`) and whether it paid them short
-   * (`shortPaid`).
+   * (`shortPaid`). Hard times: what they owe a gang (`inDebt`, `debtGang`, `debtLate` when they've
+   * paid nothing back in too long), put out of their home lately (`evicted`, `evictedFrom`, by
+   * `evictedBy`, and `rough` with nowhere since), the storefront they worked lately gone under
+   * (`closedPlace`, `closedRan` if they ran it), and things walking out of their shop (`lifted`).
    */
   private meansVars(person: Person): Record<string, string> {
     const economy = this.rules.life.economy;
@@ -6947,13 +6968,23 @@ export class Game {
     const boss = work?.business ? bossOf(work, this.population, this.livingStaff(work.id)) : null;
     // What's short where they live: what they'd shop for first.
     const short = ['food', 'commodity', 'medical', 'nightlife', 'clothing'].map((c) => `${person.district}:${c}`).find((key) => this.life.market?.short.includes(key));
+    // Hard times, as fresh as a month and a half.
+    const today = this.life.day;
+    const debt = this.life.debts?.[person.id];
+    const moved = this.life.homes?.[person.id];
+    const evicted = moved?.why === 'evicted' && today - moved.day <= 45 ? moved : undefined;
+    const putOutBy = evicted?.from ? ownerNow(owners.of.get(evicted.from), (id) => this.person(id), (id) => tiesOf(this.population, id)) : null;
+    const by = putOutBy && putOutBy !== person.id ? this.person(putOutBy) : undefined;
+    const was = this.life.jobs[person.id];
+    const closedAt = was?.was && !person.job.building && today - was.day <= 45 ? buildingById(this.world, was.was) : undefined;
+    const name = (p: Person) => (p.given === person.given ? p.name : p.given);
     return {
       broke: money < ledger.essentials ? 'yes' : '',
       flush: money > ledger.essentials * 10 ? 'yes' : '',
       behind: (this.life.arrears?.[person.id] ?? 0) > 0 ? 'yes' : '',
       landlordName: landlord && landlord !== person && landlord.diedOn === undefined ? (landlord.given === person.given ? landlord.name : landlord.given) : '',
       corpRent: ledger.landlord === null && ledger.rent > 0 ? 'yes' : '',
-      squat: home?.kind === 'shack' ? 'yes' : '',
+      squat: home?.kind === 'shack' || home?.kind === 'derelict' ? 'yes' : '',
       landlord: holds.some((id) => buildingById(this.world, id)?.category === 'residential') ? 'yes' : '',
       ownsPlace: work && boss === person && holds.includes(work.id) ? 'yes' : '',
       shortPaid: work?.business && boss !== person && (this.life.tills[work.id]?.short ?? 0) > 0 ? 'yes' : '',
@@ -6961,6 +6992,16 @@ export class Game {
       lowStock: work?.business && stockOf(this.life.tills[work.id]) < economy.prices.low ? 'yes' : '',
       slow: health === 'struggling' ? 'yes' : '',
       brisk: health === 'thriving' ? 'yes' : '',
+      inDebt: debt ? 'yes' : '',
+      debtGang: debt ? (this.rules.people.gangs[debt.gang]?.name ?? '') : '',
+      debtLate: debt && today - debt.paid >= (this.rules.life.hard?.collect.late ?? Infinity) ? 'yes' : '',
+      evicted: evicted ? 'yes' : '',
+      evictedFrom: evicted?.from ? (buildingById(this.world, evicted.from)?.name ?? '') : '',
+      evictedBy: by && by.diedOn === undefined ? name(by) : '',
+      rough: evicted && !person.home ? 'yes' : '',
+      closedPlace: closedAt?.name ?? '',
+      closedRan: closedAt && was?.ran ? 'yes' : '',
+      lifted: work?.business && (this.life.tills[work.id]?.lifted ?? 0) > 0 ? 'yes' : '',
     };
   }
 
@@ -7685,8 +7726,9 @@ export class Game {
   /** The last hand out locks up: the player, still inside a storefront that's shut, is seen out the door (not mid-fight, nor with anyone on them). */
   private closingTime(now: number): void {
     const at = this.inside;
-    if (!at || this.fighting || this.detained(now) || this.shiftEventState || !this.locked(at, now)) return;
-    if (this.leave()) this.say(`Closing time at ${at.name}: the lights go down and the shutters come down behind you.`, 'system');
+    const shut = at && !this.fighting && !this.detained(now) && !this.shiftEventState ? this.locked(at, now) : null;
+    if (!at || !shut) return;
+    if (this.leave()) this.say(shut.down ? `${at.name} has gone under. Everyone's being sent home, and the shutters come down behind you for good.` : `Closing time at ${at.name}: the lights go down and the shutters come down behind you.`, 'system');
   }
 
   /** Stops walking right where the player is. (No getting off a moving train.) */
@@ -7711,7 +7753,8 @@ export class Game {
     // Shut, it's locked: a storefront is the whole building, so there's no getting in till someone who works there is.
     const shut = this.locked(building, now);
     if (shut) {
-      this.say(`Locked. The shutters are down and nobody's in${shut.opensAt ? `: someone's back ${this.whenWord(shut.opensAt)}` : ''}.`, 'error');
+      if (shut.down) this.say(`${building.name} has gone under: the shutters are chained, and there's a notice from the landlord on them.`, 'error');
+      else this.say(`Locked. The shutters are down and nobody's in${shut.opensAt ? `: someone's back ${this.whenWord(shut.opensAt)}` : ''}.`, 'error');
       return false;
     }
     this.inside = building;

@@ -163,6 +163,19 @@ own.
   drop-down has a **Market** row (what's dearer or cheaper than usual in the district) and a
   **News** row, and headlines turn up in the feed ("Food short in Watson: bare shelves, and
   prices up."); people complain about what they can't get, and the bare shelves at work.
+- **Hard times**: when the eddies run out, people do what they must. Someone who can't pay for
+  the week's food and has the nerve walks out with some of it. Whoever still can't make the week
+  on payday borrows from the **loan shark**, the gang that runs their turf, at a tenth a week,
+  and pays it back when they can; when they don't, a **collector** comes round for it, with a
+  pipe. Three weeks behind on the rent and they're **put out**, with their household, to a squat
+  or the street, until they've the money for a place again. The desperate **mug** strangers,
+  and the young with nothing to lose end up in a gang's colors. A storefront that can't pay its
+  people three paydays running **goes under**: everyone's let go (the player too, if they work
+  there), the shutters are chained (Closed down · Gone under), and a week or three later new
+  management from the neighborhood opens it again, longer for a place that keeps failing.
+  Banks, hospitals, the chains and the city's real places never close. All of it is news, in the
+  feed and in what people say: who mugged whom, who got put out and by which landlord, which
+  place shut and who lost their job, who owes which gang.
 - **Getting on with people**: **Talk** unfolds the ways in: **Chat** (safe: nobody minds,
   the chatty like it), **Compliment**, **Joke**, **Gossip** or **How are you?**, and each
   lands by who they are. A compliment pleases the warm and the young and falls flat with the

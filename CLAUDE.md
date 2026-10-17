@@ -510,7 +510,8 @@ it needs no generator bump. The pieces:
   a few `LifeEvent`s per district from the seed and the day (a `shakedown`, a `robbery`, a
   `fight`; `romance`, a `wedding`, a `breakup`; `friends` made, a `fallout`, a `makeup`;
   `hired` and `laidOff` by the storefronts' books; a `death`, in a fight between crews or of
-  old age; a gang `joined` in a dead member's place) and changing the people as it goes:
+  old age; a gang `joined` in a dead member's place; and hard times' `mugging`, `collected`,
+  `evicted`, `closed` and `reopened`, under the eddies below) and changing the people as it goes:
   eddies, `hates`, ties (one tie a pair, changed only through `setTie`: `broken` writes off
   a pair's ties from the start, `made` is what they are now), jobs (`LifeState.jobs`, with
   `Person.hiredOn`, so `bossOf` never makes a hire the boss), gangs, what's on someone's
@@ -541,7 +542,7 @@ it needs no generator bump. The pieces:
   in `liveDay`, and news lines for every side it can be told from (the dialogue sweep checks).
 - People remember each other too (`LifeState.held`, `Held`, numbers in `LIFE.held`): what a
   day's event leaves someone holding against someone else (`HeldKind`: robbed, shook, beaten,
-  dumped, fallout both ways, laidOff by their boss, killed, their kin by whoever did it, with
+  dumped, fallout both ways, laidOff by their boss, evicted by their landlord, killed, their kin by whoever did it, with
   `about` the one who died), written by `liveDay`'s `write` (`hold`, the same again fresh again,
   `cap` a person, the oldest out) and kept its kind's `days` (`heldBy`; a killing a year). It
   keeps the two from making friends or a couple (`feuding`, checked on the pair drawn, so
@@ -616,6 +617,41 @@ it needs no generator bump. The pieces:
   part of the `life` save. Anything new that moves eddies between people and places goes in
   `economyDay`; anything that reads them goes through `Game.trade`, `ledgerOf`/`accountOf` or the
   vars. Keep `npm run bench` in mind: the economy is a few milliseconds of every day.
+- Hard times (`ECONOMY.hard`, `HardRules`, in `economyDay`; `LIFE.hard`, `HardLifeRules`, in
+  `liveDay`; either missing, none of it). The money side: someone short of the week's food with
+  the nerve (`lift.nerve`, courage and greed) walks out with `lift.share` of it (`Till.lifted`
+  since payday, taking stock off the shelves and nothing into the till); on payday, after
+  family, whoever still can't make the week borrows from the gang with the most of their
+  district's turf (`lenderIn`, out of its chest) up to `loan.weeks` of their food and rent,
+  `LifeState.debts` (`Debt`: gang, owed, since, `paid`), at `loan.interest` a week up to
+  `loan.most`, paid back on their own day out of what's over `loan.keep` weeks; a till short of
+  its wages counts `Till.lean`, and `close.weeks` paydays running (never a corp's, a bank, a
+  hospital or a real place, `close.never`) it goes under at the end of the day: what's in it to
+  its boss, a `closed` headline, and `LifeState.closed` (`Closure`: day, `until`, `close.days`
+  times one more for each time it failed before, `Till.failed`, up to `close.again`). Shut, a
+  place is `bare` to shoppers and takes, pays and restocks nothing. The people's side, after
+  the day's other doings and outside its `perDistrict`: a storefront closed today lets everyone
+  go (`LifeState.jobs[id].was`, `ran` for its boss; coworker ties gone; a `closed` event, boss
+  and one of its people); one shut till `until` is taken on by someone from the district
+  looking for work (its first role that `runsIt`, else `manager`), with its shifts' hands from
+  the same, fresh books (floated the next day) and a `reopened` headline and event; a tenant
+  owing `evict` weeks of rent is put out with their household (`HOUSEHOLD`) to the district's
+  nearest squat (a derelict building or a shack) or the street (`home: null`), the arrears
+  written off (`LifeState.homes`, `Moved`, why `evicted`; an `evicted` event, the landlord's
+  holder or the tenant twice for a corp's; held `evicted` against the landlord), and from
+  `rehouse.after` days, weekly, finds one of the `rehouse.cheapest` blocks of the district once
+  they've `rehouse.weeks` of its rent and their food (why `housed`). By chance: a `mugging`
+  (`chances.mugging`: someone desperate, behind on rent or owing a gang, with `mugging.nerve`,
+  robs a stranger of the district, held `robbed`); a loan shark's `collected` (`collect.chance`,
+  a collector of the gang for a debt unpaid `collect.late` days: a beating, what's on them toward
+  it, held `beaten`, and `paid` set as a warning); and a gang's `joined` of the desperate young
+  (`recruit`, while it has under `extra` more in the district than it started with). Every one
+  is news from each side it can be told (`LINES.topics.news`), and the speaker's vars say the
+  rest: `inDebt`/`debtGang`/`debtLate`, `evicted`/`evictedFrom`/`evictedBy`/`rough`,
+  `closedPlace`/`closedRan`, `lifted`. `Game` locks a storefront gone under to everyone
+  (`locked(...).down`, `closed(now).down`, the panel's Closed down · Gone under, `enter` and
+  `closingTime` say so), its prices out of the Market row, and `punchClock` ends the player's job
+  there (`leaveJob` `closed`). Headlines fill `{place}` with the building.
 - Gangs are canon (wiki): keep their turf, looks and rivalries true to it. Names are made
   up in each community's style and must never be a real character's: `tests/people.test.ts`
   puts every given name of a community's pool with every family name of it against the

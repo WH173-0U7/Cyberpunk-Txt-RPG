@@ -40,6 +40,44 @@ export interface Till {
   stock?: number;
   /** What the player has bought off them since they were last stocked, by menu item. */
   bought?: Record<string, number>;
+  /** Paydays running it's been short of its people's wages (missing: none). */
+  lean?: number;
+  /** What's been walked out of it without paying since payday, at its prices. */
+  lifted?: number;
+  /** How many times it has gone under before. */
+  failed?: number;
+}
+
+/** What someone owes a gang's loan shark: how much (interest on it every payday), the day they first borrowed, and the day they last paid any of it back (or were made to). */
+export interface Debt {
+  gang: string;
+  owed: number;
+  since: number;
+  paid: number;
+}
+
+/** A storefront gone under: the day it closed, and the day new management takes it on. */
+export interface Closure {
+  day: number;
+  until: number;
+}
+
+/**
+ * Hard times. Someone who can't pay for the week's food with the nerve for it (`lift.nerve`, of
+ * courage and greed) walks out with `lift.share` of what they're short. Whoever still can't make
+ * the week on payday borrows from the gang with the most of their district's turf, while its chest
+ * has it, up to `loan.weeks` of their food and rent all told; what's owed grows `loan.interest` a
+ * week, up to `loan.most` weeks of it, and what they have over `loan.keep` weeks goes on paying it
+ * off. Owing `evict` weeks of rent, they're put out. A storefront short of its people's wages
+ * `close.weeks` paydays running goes under (never a corp's, nor a real place, `close.never`), and
+ * new management takes it on `close.days` later, that again for each time it went under before
+ * (up to `close.again` times over).
+ */
+export interface HardRules {
+  lift: { nerve: number; share: number };
+  loan: { weeks: number; interest: number; most: number; keep: number };
+  evict: number;
+  close: { weeks: number; days: [number, number]; again: number; never: { businesses: string[]; names: string[] } };
 }
 
 /** Where someone's pay comes from: a storefront's till, a payroll from outside the city (the corps', the NCPD's), a gang's chest, the street's trade, clients across the city, a pension, or nowhere. */
@@ -153,6 +191,8 @@ export interface EconomyRules {
   pay: Record<Health, number>;
   /** How trade reads inside, by how the place is doing. */
   trade: Record<Health, string>;
+  /** Hard times: shoplifting, loan sharks, evictions, storefronts going under (missing: none of it). */
+  hard?: HardRules;
 }
 
 /** Who collects in each district, from the people data's turf table: every gang there, by its share of the turf. */
@@ -226,7 +266,15 @@ export interface MarketNews {
   day: number;
   district: string;
   category: BuildingCategory;
-  kind: 'shock' | 'short' | 'back';
+  kind: 'shock' | 'short' | 'back' | 'closed' | 'reopened';
+  /** The storefront, for one gone under or open again. */
+  building?: string;
+}
+
+/** Writes a headline, keeping the last few. */
+export function headlineIn(market: MarketState, news: MarketNews, keep: number): void {
+  market.news.push(news);
+  if (market.news.length > keep) market.news.splice(0, market.news.length - keep);
 }
 
 /** The market's state: the shocks on, the kinds of store short where (`district:category`), and the headlines, newest last. */
@@ -246,7 +294,7 @@ export interface Owners {
 }
 
 /** Whether a home is a block small enough to be a landlord's, a corp's, or a squat. */
-function homeKind(building: Building, rules: EconomyRules): keyof EconomyRules['homes'] | null {
+export function homeKind(building: Building, rules: EconomyRules): keyof EconomyRules['homes'] | null {
   if (building.kind === 'megabuilding') return 'megabuilding';
   if (building.kind !== 'apartments') return null;
   return building.floors < rules.smallBlock ? 'small' : 'tall';
@@ -433,6 +481,10 @@ export interface EconomyState {
   street?: Record<string, number>;
   /** Supply shocks, shortages and the headlines about them. */
   market?: MarketState;
+  /** What people owe the gangs' loan sharks. */
+  debts?: Record<string, Debt>;
+  /** The storefronts gone under, till new management takes them on. */
+  closed?: Record<string, Closure>;
   tills: Record<string, Till>;
   treasuries: Record<string, number>;
   hurt: Record<string, number>;
@@ -550,6 +602,11 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
   const savings = (state.savings ??= {});
   const arrears = (state.arrears ??= {});
   const street = (state.street ??= {});
+  const hard = rules.hard;
+  const debts = hard ? (state.debts ??= {}) : undefined;
+  // A storefront gone under takes nothing and pays nothing till new management takes it on.
+  const closed = state.closed ?? {};
+  const market = (state.market ??= { shocks: [], short: [], news: [] });
   const people = population.people;
   const n = people.length;
   const index = indexOf(population);
@@ -655,8 +712,9 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
   const repairs = new Map<string, Building[]>();
   const collect = (landlord: number, rent: number, district: string) => {
     const upkeep = Math.round(rent * rules.upkeep.share);
-    let shops = repairs.get(district);
-    if (!shops) repairs.set(district, (shops = rules.upkeep.categories.flatMap((c) => shopsIn(world, `${district}:${c}`))));
+    let all = repairs.get(district);
+    if (!all) repairs.set(district, (all = rules.upkeep.categories.flatMap((c) => shopsIn(world, `${district}:${c}`))));
+    const shops = unsold(all);
     if (shops.length && upkeep > 0) {
       spendAt({ kind: 'building', id: rng.pick(shops).id }, upkeep, district);
       give(landlord, rent - upkeep);
@@ -672,8 +730,19 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
     }
   }
 
-  // What's spent at each storefront today: the player's, trade from outside, and everyone's below.
+  // What's spent at each storefront today: the player's, trade from outside, and everyone's below; and what's walked out of one unpaid for.
   const takings = new Map<string, number>();
+  const lifted = new Map<string, number>();
+  // The loan shark in a district: the gang with the most of its turf.
+  const lenders = new Map<string, string | null>();
+  const lenderIn = (district: string): string | null => {
+    let gang = lenders.get(district);
+    if (gang === undefined) {
+      const top = [...turf(district)].sort((a, b) => b[1] - a[1])[0];
+      lenders.set(district, (gang = top ? top[0] : null));
+    }
+    return gang;
+  };
   const spendAt = (spot: Spot | null, amount: number, district: string) => {
     if (amount <= 0) return;
     if (spot?.kind === 'building' && takings.has(spot.id)) takings.set(spot.id, (takings.get(spot.id) as number) + amount);
@@ -682,8 +751,8 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
       street[where] = (street[where] ?? 0) + amount;
     }
   };
-  // A storefront with nothing on its shelves sells nothing: its customers go to another of its kind in the district, if one has any.
-  const bare = new Set(storefronts.filter((b) => stockOf(state.tills[b.id]) < rules.stock.soldOut).map((b) => b.id));
+  // A storefront with nothing on its shelves sells nothing (nor does one gone under): its customers go to another of its kind in the district, if one has any.
+  const bare = new Set(storefronts.filter((b) => closed[b.id] || stockOf(state.tills[b.id]) < rules.stock.soldOut).map((b) => b.id));
   const soldOut = (b: Building) => bare.has(b.id);
   const unsold = (shops: Building[]) => (bare.size ? shops.filter((b) => !bare.has(b.id)) : shops);
   const stocked = (spot: Spot | null): Spot | null => {
@@ -695,6 +764,11 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
   };
   for (const b of storefronts) {
     const till = tillOf(state.tills, b.id);
+    // Gone under, nothing comes in: the player can't have bought anything there, and owed pay paid out of it is the old management's.
+    if (closed[b.id]) {
+      till.pending = 0;
+      continue;
+    }
     const [lo, hi] = rules.walkIn[tierAt(b)];
     const swing = rng.range(1 - rules.daySwing, 1 + rules.daySwing);
     const outside = soldOut(b) ? 0 : Math.round((lo + usualOf(world, seed, b.id) * (hi - lo)) * (rules.visitors[b.district] ?? 0) * (rules.outsiders[b.category] ?? 1) * swing);
@@ -710,7 +784,7 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
     // A storefront's people, out of its till: all of it when it can, else the same share each; a corp makes up its own places' short.
     for (const b of storefronts) {
       const staff = staffAt(b.id);
-      if (!staff.length) continue;
+      if (!staff.length || closed[b.id]) continue;
       const till = tillOf(state.tills, b.id);
       const owed = staff.map((p) => (book(at(p)) as Ledger).pay);
       const total = owed.reduce((x, w) => x + w, 0);
@@ -737,8 +811,14 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
         paid += wage;
       }
       till.cash = (till.cash as number) - paid;
-      if (paid < total) till.short = total - paid;
-      else delete till.short;
+      // Short, and short again: a place that can't pay its people is on its way under.
+      if (paid < total) {
+        till.short = total - paid;
+        till.lean = (till.lean ?? 0) + 1;
+      } else {
+        delete till.short;
+        delete till.lean;
+      }
     }
     const working: number[] = [];
     for (let i = 0; i < n; i++) {
@@ -793,6 +873,33 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
         if (money(i) >= l.essentials) break;
       }
     }
+    // Owed to a loan shark grows by the week, up to what they could ever hope to get back.
+    if (hard && debts) {
+      for (const [id, debt] of Object.entries(debts)) {
+        const i = index.get(id);
+        const l = i === undefined ? null : book(i);
+        if (!l) continue;
+        const most = Math.ceil(hard.loan.most * l.essentials);
+        if (debt.owed < most) debt.owed = Math.min(most, Math.ceil(debt.owed * (1 + hard.loan.interest)));
+      }
+      // Whoever still can't make the week borrows from the gang with the most of their district's turf, while its chest has it.
+      for (let i = 0; i < n; i++) {
+        const l = book(i);
+        const p = people[i] as Person;
+        if (!l || p.gang) continue;
+        const short = Math.ceil(l.essentials - money(i));
+        if (short <= 0) continue;
+        const owing = debts[p.id];
+        const gang = owing?.gang ?? lenderIn(p.district);
+        if (!gang) continue;
+        const lend = Math.min(short, Math.round(hard.loan.weeks * l.essentials) - (owing?.owed ?? 0), Math.floor(state.treasuries[gang] ?? 0));
+        if (lend <= 0) continue;
+        state.treasuries[gang] = (state.treasuries[gang] ?? 0) - lend;
+        give(i, lend);
+        if (owing) owing.owed += lend;
+        else debts[p.id] = { gang, owed: lend, since: day, paid: day };
+      }
+    }
   }
 
   // The laid up: a bed at the hospital, which feeds them too.
@@ -817,10 +924,14 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
     if (!l) continue;
     const p = people[i] as Person;
     if ((state.hurt[p.id] ?? -1) < day) {
-      const food = take(i, rules.food[l.means] * 7);
+      const week = rules.food[l.means] * 7;
+      const food = take(i, week);
       const lunch = l.lunch ? Math.round(food * rules.lunch) : 0;
       spendAt(stocked(l.lunch), lunch, p.district);
-      spendAt(stocked(l.grocer), food - lunch, p.district);
+      const grocer = stocked(l.grocer);
+      spendAt(grocer, food - lunch, p.district);
+      // Short of the week's food, someone with the nerve walks out with some of the rest.
+      if (hard && food < week && grocer?.kind === 'building' && takings.has(grocer.id) && p.traits.courage + p.traits.greed >= hard.lift.nerve) lifted.set(grocer.id, (lifted.get(grocer.id) ?? 0) + Math.round((week - food) * hard.lift.share));
       const hangout = p.likes.hangout;
       const nights = hangout ? timesIn(7, rules.outing[0] + p.traits.chatty * (rules.outing[1] - rules.outing[0]), rng.next()) : 0;
       const out = hangout && nights ? stocked(hangout) : null;
@@ -862,6 +973,18 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
       if (paid < due) arrears[p.id] = due - paid;
       else delete arrears[p.id];
     }
+    // What's over a week or so of food and rent goes on paying the loan shark back.
+    const debt = debts?.[p.id];
+    if (hard && debts && debt) {
+      const over = Math.floor(money(i) - hard.loan.keep * l.essentials);
+      if (over > 0) {
+        const back = take(i, Math.min(debt.owed, over));
+        state.treasuries[debt.gang] = (state.treasuries[debt.gang] ?? 0) + back;
+        debt.owed -= back;
+        debt.paid = day;
+        if (debt.owed <= 0) delete debts[p.id];
+      }
+    }
     keepOn(i);
   }
 
@@ -869,7 +992,7 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
   if (rentDay) {
     for (const b of storefronts) {
       const owner = holder(owners.of.get(b.id));
-      if (owner && owner === bosses.get(b.id)?.id) continue;
+      if ((owner && owner === bosses.get(b.id)?.id) || closed[b.id]) continue;
       const till = tillOf(state.tills, b.id);
       const rent = Math.max(0, Math.min(rules.rent[tierAt(b)] * 7, till.cash as number));
       till.cash = (till.cash as number) - rent;
@@ -880,12 +1003,12 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
   }
 
   // The supply shocks on today.
-  const market = (state.market ??= { shocks: [], short: [], news: [] });
   market.shocks = market.shocks.filter((s) => s.until >= day);
   const shocked = new Set(market.shocks.map((s) => `${s.district}:${s.category}`));
 
   // The books.
   for (const b of storefronts) {
+    if (closed[b.id]) continue;
     const t = tierAt(b);
     const staff = staffAt(b.id);
     const took = takings.get(b.id) ?? 0;
@@ -896,13 +1019,18 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
     const stock = stockOf(till);
     // Dear, the money buys fewer things; a slow place's price cut is for the player's haggling, since nobody else here buys more for it.
     const factor = Math.max(1, priceFactor(stock, 'steady', rules));
-    const left = Math.max(0, stock - Math.max(0, took) / (shelves * factor));
+    const walked = lifted.get(b.id) ?? 0;
+    const left = Math.max(0, stock - (Math.max(0, took) + walked) / (shelves * factor));
     const cut = shocked.has(`${b.district}:${b.category}`) ? rules.stock.shock.cut : 1;
     const want = Math.round((1 - left) * shelves * share * cut);
     const supplies = Math.max(0, Math.min(want, Math.floor(Math.max(0, (till.cash as number) + took) * rules.stock.restock)));
     flows.out += supplies;
     till.stock = Math.min(1, left + (share > 0 ? supplies / (shelves * share) : 1 - left));
     delete till.bought;
+    // What's walked out since payday.
+    const since = (payday ? 0 : (till.lifted ?? 0)) + walked;
+    if (since > 0) till.lifted = since;
+    else delete till.lifted;
     const gangs = turf(b.district);
     let protection = 0;
     for (const [gang, part] of gangs) {
@@ -937,10 +1065,7 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
     }
   }
   // The market: a new shock now and then, and the kinds of store gone short across a district, or back.
-  const headline = (district: string, category: BuildingCategory, kind: MarketNews['kind']) => {
-    market.news.push({ day, district, category, kind });
-    if (market.news.length > rules.market.keep) market.news.splice(0, market.news.length - rules.market.keep);
-  };
+  const headline = (district: string, category: BuildingCategory, kind: MarketNews['kind'], building?: string) => headlineIn(market, { day, district, category, kind, ...(building ? { building } : {}) }, rules.market.keep);
   const { shock } = rules.stock;
   const kinds = Object.entries(shock.weights) as Array<[BuildingCategory, number]>;
   const weight = kinds.reduce((n, [, w]) => n + w, 0);
@@ -955,6 +1080,7 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
   }
   const levels = new Map<string, { sum: number; n: number }>();
   for (const b of storefronts) {
+    if (closed[b.id]) continue;
     const key = `${b.district}:${b.category}`;
     const level = levels.get(key) ?? { sum: 0, n: 0 };
     level.sum += stockOf(state.tills[b.id]);
@@ -974,6 +1100,32 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
     }
   }
   market.short = [...short];
+
+  // Paid out, a place that has been short of its people's wages too many paydays running goes
+  // under: what's left in the till to its boss, and the shutters down till new management comes.
+  if (hard && payday) {
+    const never = new Set(hard.close.never.businesses);
+    const named = new Set(hard.close.never.names);
+    for (const b of storefronts) {
+      const till = state.tills[b.id];
+      if (!till || closed[b.id] || (till.lean ?? 0) < hard.close.weeks || owners.corp.has(b.business as string) || never.has(b.business as string) || named.has(b.name)) continue;
+      const cash = till.cash ?? 0;
+      if (cash > 0) {
+        const boss = bosses.get(b.id);
+        if (boss) give(at(boss), cash);
+        else flows.out += cash;
+        till.cash = 0;
+      }
+      delete till.lean;
+      delete till.short;
+      delete till.lifted;
+      // Gone under before, it stays shut the longer: nobody's in a hurry to take on a place that keeps failing.
+      const before = Math.min(hard.close.again, till.failed ?? 0);
+      till.failed = (till.failed ?? 0) + 1;
+      (state.closed ??= {})[b.id] = { day, until: day + rng.int(hard.close.days[0], hard.close.days[1]) * (1 + before) };
+      headline(b.district, b.category, 'closed', b.id);
+    }
+  }
 
   // The accounts the day touched, written back.
   for (const i of touched) savings[(people[i] as Person).id] = acct[i] as number;
