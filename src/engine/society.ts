@@ -47,7 +47,7 @@ export const STANCE_LABEL: Record<Stance, string> = {
 };
 
 /** Something the player can want from someone: a fact about them, a topic, their people, (`chop`) their hands on a stolen credchip, or (`hire`) a job at the place they run. */
-export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'type' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views' | 'chop' | 'hire';
+export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'type' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views' | 'chop' | 'hire' | 'deal' | 'pitch' | 'recruit';
 
 /**
  * How ready people are to tell the player things: a base by how they feel, a step per level
@@ -56,6 +56,7 @@ export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'type'
  */
 export interface OpennessRules {
   stance: Record<Stance, number>;
+  /** Openness a level of charisma past an ordinary person's is worth (and a level short of it costs). */
   perLevel: number;
   /** How much each trait moves it: chatty and warmth on everything, loyalty on their people (against), courage on who they hate (for), greed on chopping a chip (for). */
   traits: { chatty: number; warmth: number; loyalty: number; courage: number; greed: number };
@@ -76,6 +77,8 @@ export interface OpennessRules {
   moment: { drinking: number; busy: number; eating: number; grilled: number; enemy: number; grieving: number; late: number; drunk: number };
   /** Questions in a row: the first `free` are fine; within `minutes` (on the game's clock) of the last, each one past that costs `rapport` and openness. */
   grill: { free: number; minutes: number; rapport: number };
+  /** Openness someone's memories of the player are worth, all good (and cost, all bad): their `regard` times this. */
+  memory?: number;
 }
 
 /** A reputation, as last written down; it recovers toward nothing since. */
@@ -115,9 +118,13 @@ export interface Threat {
   incident: number;
   /** Eddies they mean to take. */
   amount: number;
+  /** Whether anyone who thinks well of the player has had the chance to warn them yet. */
+  warned?: boolean;
+  /** Why they're coming: a debt to a loan shark (missing: what the player did). */
+  why?: 'debt';
 }
 
-/** How the player came to know of someone, or of a tie between two people. */
+/** How the player came to know of someone, or of a tie between two people (`asked`: in an older save, from asking someone about them). */
 export type KnownHow = 'seen' | 'told' | 'asked';
 
 /** Something about a person that takes asking (or watching, or being told) to know; `dead`, that they are, takes being told. */
@@ -134,12 +141,14 @@ export interface LogEntry {
 /** Lines kept per person. */
 export const LOG_CAP = 40;
 
-/** What the player knows of a person: met them, seen them about, or heard of them; which of their facts; and what's been said. */
+/** What the player knows of a person: met them, seen them about, or heard of them; which of their facts, and which of those they said themselves (`said`); and what's been said. */
 export interface Knowledge {
   met: boolean;
   seen: boolean;
   told: boolean;
   facts: Fact[];
+  /** The facts they told the player themselves: asked one of these again, they've said it already. */
+  said?: Fact[];
   log: LogEntry[];
 }
 
@@ -220,6 +229,13 @@ export interface SocietyRules {
   openness: OpennessRules;
   /** What people remember of the player, how long, and what they bring up (memory.ts). */
   memory: MemoryRules;
+  /**
+   * A heads-up before someone comes to collect: `hours` before (on the streets' clock), whoever
+   * thinks well enough of the player (their regard `regard` and up), has met them, and knows the
+   * one coming (or is of the gang that is) sends word. The lines take `{who}` (the one warning),
+   * `{name}` (the one coming, as the player knows them) and `{gang}`.
+   */
+  warning?: { hours: number; regard: number; lines: { person: string[]; gang: string[] } };
   /** Romance with the player (romance.ts). */
   romance: RomanceRules;
   /**
@@ -265,6 +281,19 @@ export function learnFact(state: SocietyState, id: string, fact: Fact): boolean 
   if (k.facts.includes(fact)) return false;
   state.known[id] = { ...k, facts: [...k.facts, fact] };
   return true;
+}
+
+/** Writes down a fact the player heard from the person themselves, so asking it again is asking twice. True if that's news. */
+export function heardFrom(state: SocietyState, id: string, fact: Fact): boolean {
+  const news = learnFact(state, id, fact);
+  const k = knowledgeOf(state, id);
+  if (!(k.said ?? []).includes(fact)) state.known[id] = { ...k, said: [...(k.said ?? []), fact] };
+  return news;
+}
+
+/** Whether they told the player this themselves (known some other way, they haven't). */
+export function saidBy(state: SocietyState, id: string, fact: Fact): boolean {
+  return (state.known[id]?.said ?? []).includes(fact);
 }
 
 /** Keeps a line of what was said, the last `LOG_CAP` per person. */
@@ -357,7 +386,9 @@ function drift(value: number, at: number, perDay: number, timeScale: number, now
 export function standingOf(state: SocietyState, id: string, rules: SocietyRules, timeScale: number, now: number): Standing {
   const s = state.standings[id] ?? blank(now);
   // Saves from before questions were counted have neither.
-  return { ...s, asks: s.asks ?? 0, refused: s.refused ?? {}, grudge: drift(s.grudge, s.at, rules.forgivePerDay, timeScale, now), spark: drift(s.spark ?? 0, s.at, rules.romance.fadePerDay, timeScale, now) };
+  // Grudges and spark fade on the clock people remember by (the calendar), not the streets' test speed.
+  const clock = rules.memory.clock ?? timeScale;
+  return { ...s, asks: s.asks ?? 0, refused: s.refused ?? {}, grudge: drift(s.grudge, s.at, rules.forgivePerDay, clock, now), spark: drift(s.spark ?? 0, s.at, rules.romance.fadePerDay, clock, now) };
 }
 
 /** Writes a standing down at `now`, grudge faded first, then changed by `by`. */
@@ -377,7 +408,7 @@ export function changeStanding(state: SocietyState, id: string, by: Partial<Stan
 
 export function repOf(state: SocietyState, key: string, rules: SocietyRules, timeScale: number, now: number): number {
   const r = state.rep[key];
-  return r ? drift(r.value, r.at, rules.rep.recoverPerDay, timeScale, now) : 0;
+  return r ? drift(r.value, r.at, rules.rep.recoverPerDay, rules.memory.clock ?? timeScale, now) : 0;
 }
 
 export function changeRep(state: SocietyState, key: string, by: number, rules: SocietyRules, timeScale: number, now: number): number {

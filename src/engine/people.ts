@@ -29,6 +29,17 @@ export interface GangContent {
   rivals: string[];
 }
 
+/**
+ * Where people are to be seen when they're out and about, not at home, work or their
+ * hangout: the kinds of open place (a plaza, a rooftop, the docks, a megabuilding's lobby…)
+ * with what someone there is doing, and the share of those times they're somewhere to be seen
+ * rather than on the move.
+ */
+export interface OutContent {
+  share: number;
+  kinds: Record<string, string[]>;
+}
+
 export interface PeopleContent {
   names: Record<string, NamePool>;
   /** Weighted name pools by district: who lives there. */
@@ -55,11 +66,25 @@ export interface PeopleContent {
    * every save already knows): the chance of one more pair of hands per storefront; residents
    * per home, plus more for a tall block and a megabuilding; and the gangs again, by this much.
    */
-  more: { staff: number; perHome: [number, number]; tall: number; megabuilding: number; gangs: number };
+  more: Crowd;
+  /** The third draw, on a stream of its own, so the first two stay as every save knows them: the crowd, the same way; and how many of the people they work with each of them knows. */
+  crowd: Crowd;
+  crowdKnows: number;
+  /**
+   * The fourth draw, on a stream of its own: the NCPD's officers, by district (none where the
+   * NCPD doesn't go), living in its homes, with their ranks. Beat cops go in pairs.
+   */
+  ncpd?: { perDistrict: Record<string, number>; roles: string[] };
+  /** When the storefronts keep their doors open and how their hands cover it (missing: everyone at a counter keeps the old day, nine till six, and nights at a bar). */
+  shifts?: ShiftContent;
+  /** Everyone's own levels in what the player has levels in, by walk of life and nature (missing: everyone ordinary). */
+  skills?: SkillProfiles;
   /** Who carries a credchip, and with how much on it: the odds and the range, for corpos, gangers and the street. */
   chips: Record<'corpo' | 'gang' | 'street', { chance: number; range: [number, number] }>;
   /** Kinds of place people go to in the evening. */
   hangouts: string[];
+  /** Out and about: the open places people are seen at near home, and what they do there. */
+  out: OutContent;
   /** Street names (made up, never a canon character's), and the chance of one for a ganger, for anyone else on the street, and for a corpo. */
   handles: { pool: string[]; chance: Record<'gang' | 'street' | 'corpo', number> };
   /** What people want out of life, each weighted by the kinds of people who'd want it. */
@@ -68,6 +93,23 @@ export interface PeopleContent {
   hearts: HeartContent;
   /** One line each, picked by a person's strongest trait. */
   traitLines: Record<keyof Traits, { high: string; low: string }>;
+}
+
+/**
+ * Opening hours and the shifts that cover them. A storefront keeps its kind's hours (its
+ * business's own over them), `[open, close]`, a close at or before the open running past
+ * midnight; a day open longer than `split` hours is worked in two shifts, and a place that
+ * never closes (`allHours`) in the three of `round`. Every shift wants `perShift` hands at the
+ * least (the fifth draw takes on the rest), each off `daysOff` days a week in turn with the
+ * others on it, so a place is open every day it keeps hours: one alone on a shift takes a day.
+ */
+export interface ShiftContent {
+  hours: Record<string, [number, number]>;
+  business: Record<string, [number, number]>;
+  split: number;
+  round: Array<[number, number]>;
+  perShift: number;
+  daysOff: number;
 }
 
 /** What someone wants out of life: out of Night City, new chrome, a place of their own, a family, wheels, a Trauma Team card, fame, the corporate ladder, payback, a quiet life, to retire, to move up in their gang, or to be a legend. */
@@ -193,13 +235,18 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
   const people: Person[] = [];
   const ties: Tie[] = [];
   const names = new Set<string>();
-  const tied = new Set<string>();
+  /** Whom each person is tied to so far. */
+  const tied = new Map<string, Set<string>>();
   /** Ties `a` to `b`: `b` is `a`'s `kind`. Once per pair. */
   const tie = (a: Person, b: Person, kind: TieKind) => {
     if (a.id === b.id) return;
-    const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
-    if (tied.has(key)) return;
-    tied.add(key);
+    const mine = tied.get(a.id);
+    if (mine?.has(b.id)) return;
+    if (mine) mine.add(b.id);
+    else tied.set(a.id, new Set([b.id]));
+    const theirs = tied.get(b.id);
+    if (theirs) theirs.add(a.id);
+    else tied.set(b.id, new Set([a.id]));
     ties.push({ from: a.id, to: b.id, kind }, { from: b.id, to: a.id, kind: INVERSE[kind] });
   };
   const gangsHere = new Set(Object.keys(world.districts).flatMap((d) => (content.turf[d] ?? []).map(([g]) => g)));
@@ -253,8 +300,12 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
         for (let i = 0; i < count; i++) make({ role: how.role(rng, b, i), building: b.id }, null);
       }
       // The neighborhood: people with other jobs, or none to speak of.
-      const residents = how.residents(rng, homes);
+      const residents = how.residents(rng, homes, district.id);
       for (let i = 0; i < residents; i++) {
+        if (how.work) {
+          make({ role: how.work(rng), building: null }, null);
+          continue;
+        }
         const place = workplaces.length && rng.chance(0.55) ? rng.pick(workplaces) : null;
         const role = place ? rng.pick(content.roles.kind[place.kind] ?? content.roles.freelance) : rng.pick(content.roles.freelance);
         make({ role, building: place?.id ?? null }, null);
@@ -292,11 +343,16 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
       }
 
       // The rest of a life: friends (among everyone in the district so far), a hangout, grudges, a little money.
-      const neighbors = [...(byDistrict.get(district.id) ?? []), ...locals];
-      for (const person of locals) {
-        const others = neighbors.filter((p) => p !== person);
+      const earlier = byDistrict.get(district.id) ?? [];
+      const neighbors = [...earlier, ...locals];
+      for (const [k, person] of locals.entries()) {
+        // A friend among everyone else here: drawn as a pick from the neighbors less this one would be, without making that list.
+        const self = earlier.length + k;
         const friends = rng.int(1, 2);
-        for (let i = 0; i < friends && others.length; i++) tie(person, rng.pick(others), 'friend');
+        for (let i = 0; i < friends && neighbors.length > 1; i++) {
+          const at = Math.floor(rng.next() * (neighbors.length - 1));
+          tie(person, neighbors[at < self ? at : at + 1] as Person, 'friend');
+        }
         const gang = person.gang ? content.gangs[person.gang] : null;
         const own = gang ? hangouts.filter((h) => h.kind === 'location' && world.locations[h.id]?.description.includes(gang.name)) : [];
         const options = own.length ? own : hangouts;
@@ -306,7 +362,7 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
           const local = (content.turf[district.id] ?? []).map(([g]) => g);
           person.hates = local.length ? rng.pick(local) : null;
         }
-        const corpo = person.job.building ? world.buildings.find((b) => b.id === person.job.building)?.kind === 'tower' : false;
+        const corpo = person.job.building ? buildingById(world, person.job.building)?.kind === 'tower' : false;
         person.eddies = Math.round((corpo ? rng.int(60, 220) : gang ? rng.int(20, 90) : rng.int(8, 60)) * (0.7 + person.traits.greed * 0.6));
         // Their credchip, if they carry one: drawn on its own stream, so the city's people stay who they were.
         const purse = content.chips[corpo ? 'corpo' : gang ? 'gang' : 'street'];
@@ -337,124 +393,534 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
     residents: (rng) => rng.int(content.residents[0], content.residents[1]),
     gang: (rng, weight) => Math.max(1, weight + rng.int(-1, 1)),
   });
-  const { more } = content;
-  draw(createRng(`${world.seed}:people:more`), {
-    staff: (rng) => (rng.chance(more.staff) ? 1 : 0),
+  // Each draw after the first by its numbers: a chance of another pair of hands per storefront, residents by the size of each home, the gangs again.
+  const filling = (crowd: Crowd): Draw => ({
+    staff: (rng) => (rng.chance(crowd.staff) ? 1 : 0),
     role: (rng, b) => rng.pick(content.roles.extra[b.category] ?? content.roles.extra.default ?? ['helps out']),
-    residents: (rng, homes) => homes.reduce((n, b) => n + rng.int(more.perHome[0], more.perHome[1]) + (b.floors >= 20 ? more.megabuilding : b.floors >= 8 ? more.tall : 0), 0),
+    residents: (rng, homes) => homes.reduce((n, b) => n + rng.int(crowd.perHome[0], crowd.perHome[1]) + (b.floors >= 20 ? crowd.megabuilding : b.floors >= 8 ? crowd.tall : 0), 0),
     gang: (rng, weight) => {
-      const n = Math.round(weight * more.gangs);
+      const n = Math.round(weight * crowd.gangs);
       return n > 0 ? Math.max(0, n + rng.int(-1, 1)) : 0;
     },
   });
+  draw(createRng(`${world.seed}:people:more`), filling(content.more));
+  // The third fills the homes: the city as crowded as it is.
+  const known = people.length;
+  draw(createRng(`${world.seed}:people:crowd`), filling(content.crowd));
+  const crowd = new Set(people.slice(known));
+  // The fourth is the NCPD: officers living in the districts it still polices.
+  const ncpd = content.ncpd;
+  if (ncpd) {
+    draw(createRng(`${world.seed}:people:ncpd`), {
+      staff: () => 0,
+      role: () => '',
+      residents: (_rng, homes, district) => (homes.length ? (ncpd.perDistrict[district] ?? 0) : 0),
+      gang: () => 0,
+      work: (rng) => rng.pick(ncpd.roles),
+    });
+  }
+  // The fifth takes on the hands the storefronts' shifts want, living round where they work:
+  // two a shift, so every place is open every day it keeps hours, and one that never closes,
+  // round the clock. On its own stream, so everyone the first four made is as they were.
+  const shifts = content.shifts;
+  const hands = new Set<Person>();
+  if (shifts) {
+    openings.set(world, { content: shifts, shifts: new Map() });
+    const have = new Map<string, number>();
+    for (const p of people) if (p.job.building) have.set(p.job.building, (have.get(p.job.building) ?? 0) + 1);
+    const before = people.length;
+    draw(createRng(`${world.seed}:people:shifts`), {
+      staff: (_rng, b) => Math.max(0, leastStaff(b, shifts) - (have.get(b.id) ?? 0)),
+      role: (rng, b) => rng.pick(content.roles.extra[b.category] ?? content.roles.extra.default ?? ['helps out']),
+      residents: () => 0,
+      gang: () => 0,
+    });
+    for (const p of people.slice(before)) hands.add(p);
+  }
 
   // Coworkers and crews know each other (gangers hold no storefront job, so nobody is both).
   const byWork = new Map<string, Person[]>();
   const byGang = new Map<string, Person[]>();
+  const add = (by: Map<string, Person[]>, key: string, p: Person) => {
+    const list = by.get(key);
+    if (list) list.push(p);
+    else by.set(key, [p]);
+  };
   for (const p of people) {
-    if (p.job.building) byWork.set(p.job.building, [...(byWork.get(p.job.building) ?? []), p]);
-    if (p.gang) byGang.set(p.gang, [...(byGang.get(p.gang) ?? []), p]);
+    if (p.job.building && !hands.has(p)) add(byWork, p.job.building, p);
+    if (p.gang) add(byGang, p.gang, p);
   }
+  // Everyone at a place knows everyone else there, but for the crowd and the hands taken on for the shifts (below).
+  const knownAt = new Map<string, Person[]>();
+  for (const [building, staff] of byWork) knownAt.set(building, staff.filter((p) => !crowd.has(p)));
   for (const a of people) {
-    for (const b of (a.job.building && byWork.get(a.job.building)) || []) if (a.id < b.id) tie(a, b, 'coworker');
+    if (!crowd.has(a) && !hands.has(a)) for (const b of (a.job.building && knownAt.get(a.job.building)) || []) if (a.id < b.id) tie(a, b, 'coworker');
     for (const b of (a.gang && byGang.get(a.gang)) || []) if (a.id < b.id) tie(a, b, 'crew');
   }
+  // The crowd knows a few of the people they work with, not the whole floor of a tower (on a stream of its own).
+  const workRng = createRng(`${world.seed}:people:crowd:work`);
+  for (const a of crowd) {
+    const mates = ((a.job.building && byWork.get(a.job.building)) || []).filter((b) => b !== a);
+    for (const b of workRng.shuffle(mates).slice(0, content.crowdKnows)) tie(a, b, 'coworker');
+  }
+  // So do the hands, among everyone on the shifts with them (on a stream of their own, so the crowd's picks stay as they were).
+  const handRng = createRng(`${world.seed}:people:shifts:work`);
+  for (const a of hands) if (a.job.building) add(byWork, a.job.building, a);
+  for (const a of hands) {
+    const mates = ((a.job.building && byWork.get(a.job.building)) || []).filter((b) => b !== a);
+    for (const b of handRng.shuffle(mates).slice(0, content.crowdKnows)) tie(a, b, 'coworker');
+  }
   for (const person of people) person.bio = describe(person, world, content, dishes);
-  return { people, ties };
+  const population = { people, ties };
+  if (shifts) rotaStaff(population, world, shifts);
+  return population;
+}
+
+/** How many more people a draw after the first makes: the chance of another pair of hands per storefront; residents per home, plus more for a tall block and a megabuilding; and the gangs again, by this much. */
+export interface Crowd {
+  staff: number;
+  perHome: [number, number];
+  tall: number;
+  megabuilding: number;
+  gangs: number;
 }
 
 /** How many people one draw makes, and what the storefront staff do. */
 interface Draw {
   staff: (rng: Rng, building: Building) => number;
   role: (rng: Rng, building: Building, index: number) => string;
-  residents: (rng: Rng, homes: Building[]) => number;
+  residents: (rng: Rng, homes: Building[], district: string) => number;
   gang: (rng: Rng, weight: number) => number;
+  /** For a draw of people in one line of work (the NCPD): what each resident's job is, with no workplace. */
+  work?: (rng: Rng) => string;
 }
+
+/**
+ * Lookups by id, built once for a list and kept while it stands: a list of ties is only ever
+ * replaced (a filter) or added to (a push), never edited in place, so the same list at the
+ * same length is the same ties. Ties come back in the list's order, as a filter would give.
+ */
+const tieIndex = new WeakMap<readonly Tie[], { length: number; from: Map<string, Tie[]> }>();
+const personIndex = new WeakMap<readonly Person[], { length: number; byId: Map<string, Person> }>();
 
 /** Everyone a person is tied to. */
 export function tiesOf(population: Population, id: string): Tie[] {
-  return population.ties.filter((t) => t.from === id);
+  let index = tieIndex.get(population.ties);
+  if (!index || index.length !== population.ties.length) {
+    const from = new Map<string, Tie[]>();
+    for (const t of population.ties) {
+      const list = from.get(t.from);
+      if (list) list.push(t);
+      else from.set(t.from, [t]);
+    }
+    tieIndex.set(population.ties, (index = { length: population.ties.length, from }));
+  }
+  return [...(index.from.get(id) ?? [])];
 }
 
 export function personById(population: Population, id: string): Person | undefined {
-  return population.people.find((p) => p.id === id);
+  let index = personIndex.get(population.people);
+  if (!index || index.length !== population.people.length) personIndex.set(population.people, (index = { length: population.people.length, byId: new Map(population.people.map((p) => [p.id, p])) }));
+  return index.byId.get(id);
+}
+
+const buildingIndex = new WeakMap<World, Map<string, Building>>();
+/** A building of the city by its id, from an index made once a city (its buildings never change). */
+export function buildingById(world: World, id: string): Building | undefined {
+  let index = buildingIndex.get(world);
+  if (!index) buildingIndex.set(world, (index = new Map(world.buildings.map((b) => [b.id, b]))));
+  return index.get(id);
 }
 
 /** Whether someone can crack a stolen credchip: a netrunner by trade, or anyone behind a netrunning counter. */
 export function isNetrunner(person: Person, world: World): boolean {
   if (/netrunner|deck tech|quickhack/i.test(person.job.role)) return true;
-  const work = person.job.building ? world.buildings.find((b) => b.id === person.job.building) : undefined;
+  const work = person.job.building ? buildingById(world, person.job.building) : undefined;
   return work?.category === 'netrunning';
 }
 
 /** Where a person is at a moment, and what they're doing there. Null when they're out on the streets somewhere. */
-export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish[]): { spot: Spot; doing: string } | null {
+export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish[], out?: OutContent): { spot: Spot; doing: string } | null {
   const { hour, weekday, day } = clock;
   const rng = createRng(`${person.id}:${day}:${Math.floor(hour / 3)}`);
   const home: Spot | null = person.home ? { kind: 'building', id: person.home } : null;
   const work: Spot | null = person.job.building ? { kind: 'building', id: person.job.building } : null;
-  const hangout = person.likes.hangout;
+  // A storefront someone hangs out at is somewhere to be only while it's open.
+  const liked = person.likes.hangout;
+  const likedShop = liked?.kind === 'building' ? buildingById(world, liked.id) : undefined;
+  const hangout = liked && (!likedShop || openAt(world, likedShop, hour)) ? liked : null;
   const offOn = (d: number, wd: number) => createRng(`${person.id}:${d}:off`).chance(wd === 0 || wd === 6 ? 0.5 : 0.12);
   const dayOff = offOn(day, weekday);
   const at = (spot: Spot | null, doing: string) => (spot ? { spot, doing } : null);
   const outLate = person.gang ? 0.45 : person.traits.chatty * 0.3;
+  // Out and about: now and then somewhere to be seen, an open place near home; else on the move, and nowhere.
+  const about = () => {
+    const haunt = out ? hauntOf(person, world, out) : null;
+    return out && haunt && rng.chance(out.share) ? at(haunt, outDoing(world, haunt, out, rng)) : null;
+  };
+  const hanging = (spot: Spot) => hangingOut(person, world, spot, dishes, out, rng);
 
   // The dead are nowhere.
   if (person.diedOn !== undefined && day >= person.diedOn) return null;
-  // Laid up: home all day, nursing it.
-  if (person.hurtUntil !== undefined && day <= person.hurtUntil) return at(home, hour < 6 || hour >= 23 ? 'at home, asleep' : 'at home, laid up');
-  // Night work (a bar, a club, the night desk): from six in the evening till three, asleep till late morning, the afternoon their own.
-  if (work && worksNights(person, world)) {
+  // Laid up: in a bed at the nearest hospital the whole time (at home, in a city with none).
+  if (person.hurtUntil !== undefined && day <= person.hurtUntil) {
+    const ward = hospitalOf(person, world);
+    const asleep = hour < 6 || hour >= 23;
+    return ward ? at(ward, asleep ? 'asleep in a hospital bed' : 'in a hospital bed') : at(home, asleep ? 'at home, asleep' : 'at home, laid up');
+  }
+  // A storefront's hands keep its rota: on shift, or sleeping off one that ran into the small hours; else their time is their own, as on anyone's day off.
+  const rota = work !== null && onARota(person);
+  if (rota) {
+    const now = onRota(person, clock);
+    if (now === 'on') return at(work, atWork(person));
+    if (now === 'asleep') return at(home, 'at home, asleep');
+  }
+  const job = rota ? null : work;
+  // Night work off a rota (a warehouse's watch; a bar, a club, the night desk in a city made without shifts): from six in the evening till three, asleep till late morning, the afternoon their own.
+  if (job && worksNights(person, world)) {
     const off = hour < 3 ? offOn(day - 1, (weekday + 6) % 7) : dayOff;
-    if (!off && (hour >= 18 || hour < 3)) return at(work, atWork(person));
+    if (!off && (hour >= 18 || hour < 3)) return at(job, atWork(person));
     if (hour >= 3 && hour < 11) return at(home, 'at home, asleep');
     if (hour >= 11 && hour < 18) {
       const roll = rng.next();
-      if (roll < 0.35 && hangout) return at(hangout, hangingOut(person, world, hangout, dishes));
-      return roll < 0.75 ? at(home, 'at home') : null;
+      if (roll < 0.35 && hangout) return at(hangout, hanging(hangout));
+      return roll < 0.75 ? at(home, 'at home') : about();
     }
     // A night off is anyone's night.
   }
-  if (hour < 6) return rng.chance(outLate) && hangout ? at(hangout, hangingOut(person, world, hangout, dishes)) : at(home, 'at home, asleep');
-  if (hour < 9) return rng.chance(0.5) ? at(home, 'at home') : null;
+  if (hour < 6) return rng.chance(outLate) && hangout ? at(hangout, hanging(hangout)) : at(home, 'at home, asleep');
+  if (hour < 9) return rng.chance(0.5) ? at(home, 'at home') : about();
   if (hour < 18) {
-    if (work && !dayOff) return at(work, atWork(person));
+    if (job && !dayOff) return at(job, atWork(person));
     const roll = rng.next();
-    if (roll < 0.35 && hangout) return at(hangout, hangingOut(person, world, hangout, dishes));
+    if (roll < 0.35 && hangout) return at(hangout, hanging(hangout));
     if (roll < 0.7) return at(home, 'at home');
-    return null;
+    return about();
   }
   if (hour < 23) {
-    if (hangout && rng.chance(person.gang ? 0.8 : 0.6)) return at(hangout, hangingOut(person, world, hangout, dishes));
-    return rng.chance(0.75) ? at(home, 'at home') : null;
+    if (hangout && rng.chance(person.gang ? 0.8 : 0.6)) return at(hangout, hanging(hangout));
+    return rng.chance(0.75) ? at(home, 'at home') : about();
   }
-  return rng.chance(0.3) && hangout ? at(hangout, hangingOut(person, world, hangout, dishes)) : at(home, 'at home, asleep');
+  return rng.chance(0.3) && hangout ? at(hangout, hanging(hangout)) : at(home, 'at home, asleep');
 }
 
 const buildingsById = new WeakMap<World, Map<string, Building>>();
 
-/** Whether someone works nights: anyone at a bar, a club or a karaoke box, and the night clerks and watchmen. */
+/** Whether someone works nights, off a rota: anyone at a bar, a club or a karaoke box, the night clerks and watchmen, and half the hands at a place that never closes (a storefront's rota, when the city has shifts, says otherwise). */
 export function worksNights(person: Person, world: World): boolean {
   if (/\bnight\b/i.test(person.job.role)) return true;
   if (!person.job.building) return false;
   let byId = buildingsById.get(world);
   if (!byId) buildingsById.set(world, (byId = new Map(world.buildings.map((b) => [b.id, b]))));
-  return byId.get(person.job.building)?.category === 'nightlife';
+  const work = byId.get(person.job.building);
+  if (work && allHours(work)) return createRng(`${person.id}:nights`).chance(0.5);
+  return work?.category === 'nightlife';
+}
+
+/** A place that never closes: a hospital, a motel's or a capsule hotel's desk, and anywhere whose sign says 24/7. */
+export function allHours(building: Building): boolean {
+  return building.business === 'hospital' || building.category === 'lodging' || building.name.startsWith('24/7 ');
+}
+
+/** A shift's hours, `[from, to]`: a `to` at or before the `from` runs on past midnight into the next day. */
+export type Shift = [number, number];
+
+/** A storefront's shifts: round the clock for one that never closes, else its opening hours, in two halves when it's a long day. */
+export function shiftsOf(building: Building, content: ShiftContent): Shift[] {
+  if (allHours(building)) return content.round;
+  const [open, close] = (building.business && content.business[building.business]) || content.hours[building.category] || content.hours.default || [9, 18];
+  const span = ((close - open + 23) % 24) + 1;
+  if (span <= content.split) return [[open % 24, close % 24]];
+  const mid = (open + Math.ceil(span / 2)) % 24;
+  return [
+    [open % 24, mid],
+    [mid, close % 24],
+  ];
+}
+
+/** The hands a storefront's shifts want at the least. */
+export function leastStaff(building: Building, content: ShiftContent): number {
+  return shiftsOf(building, content).length * content.perShift;
+}
+
+/** Whether an hour is in a shift: in the day it started (`today`), or in the small hours it runs on into (`yesterday`'s). */
+function shiftAt([from, to]: Shift, hour: number): 'today' | 'yesterday' | null {
+  if (from < to) return hour >= from && hour < to ? 'today' : null;
+  if (hour >= from) return 'today';
+  return hour < to ? 'yesterday' : null;
+}
+
+/** Each city's shift content (from the people content it was made with) and its storefronts' shifts, worked out once a storefront. */
+const openings = new WeakMap<World, { content: ShiftContent; shifts: Map<string, Shift[]> }>();
+
+function shiftsAt(world: World, building: Building): Shift[] | null {
+  const known = openings.get(world);
+  if (!known || !building.business) return null;
+  let shifts = known.shifts.get(building.id);
+  if (!shifts) known.shifts.set(building.id, (shifts = shiftsOf(building, known.content)));
+  return shifts;
+}
+
+/** A storefront's opening hours, open to close (`always`: round the clock), as its shifts make them. */
+export function openingHours(building: Building, content: ShiftContent): [number, number] | 'always' {
+  const shifts = shiftsOf(building, content);
+  return allHours(building) ? 'always' : [shifts[0]?.[0] ?? 0, shifts[shifts.length - 1]?.[1] ?? 0];
+}
+
+/** Whether a storefront keeps its doors open at this hour, by its hours (who's in is `whereIs`'s business). Anywhere else, and a city made without shifts, always. */
+export function openAt(world: World, building: Building, hour: number): boolean {
+  const shifts = shiftsAt(world, building);
+  return !shifts || shifts.some((s) => shiftAt(s, hour) !== null);
+}
+
+/**
+ * A storefront's rota: its hands, each on a shift of their own (a night hand on the last, a day
+ * hand on the first, the rest in turn), off their days in turn with the others on it, from a
+ * weekday of the place's own. The laid up and the dead are skipped day by day, and a shift with
+ * nobody on it is covered by someone off that day, one of its own first.
+ */
+interface Rota {
+  building: string;
+  staff: Person[];
+  /** Each hand's shift, and their place among those on it. */
+  home: number[];
+  turn: number[];
+  /** How many are on each shift. */
+  count: number[];
+  shifts: Shift[];
+  offset: number;
+  daysOff: number;
+}
+const rotas = new WeakMap<Person, Rota>();
+
+/** Puts a storefront's hands on its rota: everyone who works there, living or not, in the order given. */
+export function seatRota(building: Building, staff: Person[], content: ShiftContent): void {
+  if (!building.business) return;
+  const shifts = shiftsOf(building, content);
+  const count = shifts.map(() => 0);
+  const home: number[] = [];
+  const turn: number[] = [];
+  // As even as the hands go: a night hand on the last shift and a day hand on the first while there's room on it, anyone else on the emptiest.
+  const most = Math.ceil(staff.length / shifts.length);
+  for (const p of staff) {
+    const wants = /\bnight\b/i.test(p.job.role) ? shifts.length - 1 : /\bday\b/i.test(p.job.role) ? 0 : -1;
+    const h = wants >= 0 && (count[wants] as number) < most ? wants : count.indexOf(Math.min(...count));
+    home.push(h);
+    turn.push(count[h]!++);
+  }
+  const rota: Rota = { building: building.id, staff, home, turn, count, shifts, offset: createRng(`${building.id}:rota`).int(0, 6), daysOff: content.daysOff };
+  for (const p of staff) rotas.set(p, rota);
+}
+
+/** Every storefront's hands on their rotas (after the people are made, and after a save's jobs are put back). */
+export function rotaStaff(population: Population, world: World, content: ShiftContent): void {
+  const byWork = new Map<string, Person[]>();
+  for (const p of population.people) {
+    if (!p.job.building) continue;
+    const list = byWork.get(p.job.building);
+    if (list) list.push(p);
+    else byWork.set(p.job.building, [p]);
+  }
+  for (const [id, staff] of byWork) {
+    const building = buildingById(world, id);
+    if (building?.business) seatRota(building, staff, content);
+  }
+}
+
+/** Who works which shift on a day (by their place on the rota; -1: not in): their own but on their days off, a shift left empty covered by someone off. */
+function rotaDay(rota: Rota, day: number, weekday: number): number[] {
+  const able = (p: Person) => p.job.building === rota.building && !(p.diedOn !== undefined && day >= p.diedOn) && !(p.hurtUntil !== undefined && day <= p.hurtUntil);
+  const working = rota.staff.map(() => -1);
+  const off: number[] = [];
+  for (const [i, p] of rota.staff.entries()) {
+    if (!able(p)) continue;
+    const h = rota.home[i] as number;
+    const days = (rota.count[h] ?? 0) > 1 ? rota.daysOff : Math.min(1, rota.daysOff);
+    const first = (rota.offset + h * 3 + (rota.turn[i] as number) * rota.daysOff) % 7;
+    if ((weekday - first + 7) % 7 < days) off.push(i);
+    else working[i] = h;
+  }
+  for (let h = 0; h < rota.shifts.length; h++) {
+    if (working.includes(h)) continue;
+    const cover = off.find((i) => rota.home[i] === h && working[i] === -1) ?? off.find((i) => working[i] === -1);
+    if (cover !== undefined) working[cover] = h;
+  }
+  return working;
+}
+
+/** Where a storefront's hand is by their rota: on shift, sleeping off one that ran into the small hours, or (null) on their own time. */
+function onRota(person: Person, clock: Clock): 'on' | 'asleep' | null {
+  const rota = rotas.get(person);
+  const i = rota ? rota.staff.indexOf(person) : -1;
+  if (!rota || i < 0) return null;
+  const { hour, day, weekday } = clock;
+  const yesterday = (weekday + 6) % 7;
+  let today: number[] | null = null;
+  let before: number[] | null = null;
+  for (const [k, shift] of rota.shifts.entries()) {
+    const when = shiftAt(shift, hour);
+    if (when === 'today' && (today ??= rotaDay(rota, day, weekday))[i] === k) return 'on';
+    if (when === 'yesterday' && (before ??= rotaDay(rota, day - 1, yesterday))[i] === k) return 'on';
+    // A shift that ended in the small hours is slept off for eight hours after.
+    const end = shift[1];
+    const late = shift[1] <= shift[0] && end <= 8;
+    if (late && hour >= end && hour < end + 8 && (before ??= rotaDay(rota, day - 1, yesterday))[i] === k) return 'asleep';
+  }
+  return null;
+}
+
+/** Whether someone keeps a storefront's rota: on one, and still working there. */
+function onARota(person: Person): boolean {
+  return rotas.get(person)?.building === person.job.building;
 }
 
 /** Everyone to be found at a spot right now. */
-export function peopleAt(population: Population, world: World, spot: Spot, clock: Clock, dishes: Dish[]): Array<{ person: Person; doing: string }> {
+export function peopleAt(population: Population, world: World, spot: Spot, clock: Clock, dishes: Dish[], out?: OutContent): Array<{ person: Person; doing: string }> {
   const found: Array<{ person: Person; doing: string }> = [];
   for (const person of population.people) {
-    const where = whereIs(person, world, clock, dishes);
+    // Nobody is ever anywhere but home, work or their hangout: anyone with none of them here isn't here.
+    const hangout = person.likes.hangout;
+    // ...or the hospital they're laid up in (few are, so the ward is only worked out for them).
+    const could =
+      (spot.kind === 'building' && (person.home === spot.id || person.job.building === spot.id)) ||
+      (hangout?.kind === spot.kind && hangout.id === spot.id) ||
+      (person.hurtUntil !== undefined && clock.day <= person.hurtUntil && sameSpot(hospitalOf(person, world), spot)) ||
+      // ...or the open place near home they're seen at when they're out.
+      (spot.kind === 'location' && out !== undefined && sameSpot(hauntOf(person, world, out), spot));
+    if (!could) continue;
+    const where = whereIs(person, world, clock, dishes, out);
     if (where && where.spot.kind === spot.kind && where.spot.id === spot.id) found.push({ person, doing: where.doing });
   }
   return found;
 }
 
+/** A hospital: a storefront that runs one, or a place that is one (the Night City Medical Center). */
+export interface Hospital {
+  spot: Spot;
+  name: string;
+  x: number;
+  y: number;
+}
+
+const hospitalLists = new WeakMap<World, Hospital[]>();
+const wards = new WeakMap<World, Map<string, Spot | null>>();
+
+/** Every hospital in the city, worked out once a city. */
+export function hospitalsOf(world: World): Hospital[] {
+  let list = hospitalLists.get(world);
+  if (!list) {
+    list = [
+      ...Object.values(world.locations).filter((l) => l.kind === 'hospital').map((l): Hospital => ({ spot: { kind: 'location', id: l.id }, name: l.name, x: l.x, y: l.y })),
+      ...world.buildings.filter((b) => b.business === 'hospital').map((b): Hospital => ({ spot: { kind: 'building', id: b.id }, name: b.name, x: b.x + b.w / 2, y: b.y + b.h / 2 })),
+    ];
+    hospitalLists.set(world, list);
+  }
+  return list;
+}
+
+function sameSpot(a: Spot | null, b: Spot): boolean {
+  return a !== null && a.kind === b.kind && a.id === b.id;
+}
+
+/** The hospital nearest a point, if the city has any. */
+export function nearestHospital(world: World, at: { x: number; y: number }): Hospital | null {
+  let best: Hospital | null = null;
+  for (const h of hospitalsOf(world)) if (!best || Math.hypot(h.x - at.x, h.y - at.y) < Math.hypot(best.x - at.x, best.y - at.y)) best = h;
+  return best;
+}
+
+/** Where someone laid up goes: the hospital nearest their home (or their district, without one). */
+export function hospitalOf(person: Person, world: World): Spot | null {
+  let known = wards.get(world);
+  if (!known) wards.set(world, (known = new Map()));
+  const had = known.get(person.id);
+  if (had !== undefined) return had;
+  const home = person.home ? buildingById(world, person.home) : undefined;
+  const district = world.districts[person.district];
+  const from = home ? { x: home.x + home.w / 2, y: home.y + home.h / 2 } : district ? { x: district.x, y: district.y } : { x: 0, y: 0 };
+  const ward = nearestHospital(world, from)?.spot ?? null;
+  known.set(person.id, ward);
+  return ward;
+}
+
+/** The jobs that come armed and armored: guards, bouncers, security, troopers, patrols, the NCPD. */
+export const GUARD_ROLE = /guard|bouncer|security|trooper|patrol|sergeant|ncpd/i;
+
+/** Someone's walk of life, as a fight and their levels see it: a ganger, a guard (or an officer), a corpo, someone old, anyone else. */
+export type SkillWalk = 'gang' | 'guard' | 'corpo' | 'elder' | 'street';
+
+export function walkOf(person: Person, world: World): SkillWalk {
+  if (person.gang) return 'gang';
+  if (GUARD_ROLE.test(person.job.role)) return 'guard';
+  if (isCorpo(person, world)) return 'corpo';
+  return person.age >= 56 ? 'elder' : 'street';
+}
+
+/** How good someone is, in the player's own levels (an ordinary person is 4): with fists and anything blunt (Street Brawler), at taking a hit (Toughness), with the kind of weapon they carry, and with words (Charisma). */
+export interface PersonSkills {
+  brawler: number;
+  toughness: number;
+  arms: number;
+  charisma: number;
+  /** Buying and selling: what they let a thing go for, and what they'll pay. */
+  trading: number;
+  /** Knowing the drug trade, and cutting product: a ganger's rackets, a runner's days. */
+  dealing: number;
+  cutting: number;
+}
+
+/**
+ * Where people's levels come from: a range for each by walk of life, drawn between, then moved
+ * up to `traits` levels either way by their nature (nerve and temper for their fists, nerve for
+ * taking a hit and for a weapon, warmth and chattiness for words), never past `most`. `reads`
+ * is how they strike the player, by the level (the first whose top it's under): as a fighter,
+ * plain to see; as a talker, once they've talked `talks` times.
+ */
+export interface SkillProfiles {
+  walks: Record<SkillWalk, Record<keyof PersonSkills, [number, number]>>;
+  traits: number;
+  most: number;
+  reads: { fight: Array<[number, string]>; talk: Array<[number, string]>; talks: number };
+  /**
+   * What people get better at, from what they spend their days doing: experience a day (on the
+   * player's own curves, every level harder than the last) by walk of life, and for working a
+   * storefront's counter (`staff`), counted from the day the city started or they took on what
+   * they do now; and experience for every fight they've been in.
+   */
+  practice: { walks: Record<SkillWalk, Partial<Record<keyof PersonSkills, number>>>; staff: Partial<Record<keyof PersonSkills, number>>; fight: Partial<Record<keyof PersonSkills, number>> };
+}
+
+/** Someone's own levels, drawn on their own stream, so they're the same every time; everyone ordinary without the profiles. */
+export function skillsOf(person: Person, world: World, content: PeopleContent): PersonSkills {
+  const profile = content.skills;
+  if (!profile) return { brawler: 4, toughness: 4, arms: 4, charisma: 4, trading: 4, dealing: 4, cutting: 4 };
+  const ranges = profile.walks[walkOf(person, world)];
+  const rng = createRng(`${person.id}:skills`);
+  const t = person.traits;
+  const draw = (skill: keyof PersonSkills, nature: number) => {
+    const [low, high] = ranges[skill];
+    return Math.max(1, Math.min(profile.most, Math.round(rng.range(low, high) + nature * profile.traits)));
+  };
+  return {
+    brawler: draw('brawler', t.courage + t.temper - 1),
+    toughness: draw('toughness', (t.courage - 0.5) * 2),
+    arms: draw('arms', t.courage - 0.5),
+    charisma: draw('charisma', t.warmth + t.chatty - 1),
+    trading: draw('trading', t.greed + t.chatty - 1),
+    // Drawn after the rest, so nobody's other levels move.
+    dealing: draw('dealing', t.greed + t.courage - 1),
+    cutting: draw('cutting', t.greed - t.warmth),
+  };
+}
+
+/** The word for a level, by a read's steps (the first whose top it's under or at, else the last). */
+export function readOf(level: number, steps: Array<[number, string]>): string {
+  return (steps.find(([top]) => level <= top) ?? steps[steps.length - 1])?.[1] ?? '';
+}
+
 /** Whether someone works for a corporation: in a tower, or with a corporate title. */
 export function isCorpo(person: Person, world: World): boolean {
-  const work = person.job.building ? world.buildings.find((b) => b.id === person.job.building) : undefined;
+  const work = person.job.building ? buildingById(world, person.job.building) : undefined;
   return work?.kind === 'tower' || /analyst|manager|executive|consultant/i.test(person.job.role);
 }
 
@@ -463,6 +929,15 @@ export function handleOf(person: Person, world: World, content: PeopleContent): 
   const rng = createRng(`${person.id}:handle`);
   const chance = person.gang ? content.handles.chance.gang : isCorpo(person, world) ? content.handles.chance.corpo : content.handles.chance.street;
   return rng.chance(chance) && content.handles.pool.length ? rng.pick(content.handles.pool) : null;
+}
+
+export type Sex = 'female' | 'male';
+
+/** Someone's sex, as plain to see as their look: a woman's female, a man's male, and someone who goes by they either, drawn on its own stream. */
+export function sexOf(person: Person): Sex {
+  if (person.pronouns === 'she') return 'female';
+  if (person.pronouns === 'he') return 'male';
+  return createRng(`${person.id}:sex`).chance(0.5) ? 'female' : 'male';
 }
 
 /** What someone wants out of life, weighed by who they are. Drawn on its own stream; a life that changes them (joining a gang) can change it. */
@@ -489,13 +964,14 @@ function walksOf(person: Person, world: World): Walk[] {
  * go for. Drawn on its own stream, so the people stay who they are; someone married is drawn
  * to whoever their spouse is, whatever the draw said.
  */
-export function heartOf(person: Person, world: World, content: PeopleContent, population?: Population): Heart {
+export function heartOf(person: Person, world: World, content: PeopleContent, population?: Population, tiesFrom?: (id: string) => readonly Tie[]): Heart {
   const rng = createRng(`${person.id}:heart`);
   const { hearts } = content;
   const drawn = hearts.drawn[person.pronouns] ?? [];
   const to = (pickWeighted(rng, drawn.map((d, i) => [String(i), d.weight])) ?? '0') as string;
   const drawnTo = [...(drawn[Number(to)]?.to ?? [])];
-  for (const tie of population ? tiesOf(population, person.id) : []) {
+  // `tiesFrom` reads them from wherever they're kept up while days are lived, when not from the population.
+  for (const tie of tiesFrom ? tiesFrom(person.id) : population ? tiesOf(population, person.id) : []) {
     const spouse = tie.kind === 'spouse' ? personById(population as Population, tie.to) : undefined;
     if (spouse && !drawnTo.includes(spouse.pronouns)) drawnTo.push(spouse.pronouns);
   }
@@ -535,16 +1011,48 @@ function atWork(person: Person): string {
   return 'on shift';
 }
 
-function hangingOut(person: Person, world: World, spot: Spot, dishes: Dish[]): string {
-  const place = spot.kind === 'location' ? world.locations[spot.id] : world.buildings.find((b) => b.id === spot.id);
+function hangingOut(person: Person, world: World, spot: Spot, dishes: Dish[], out?: OutContent, rng?: Rng): string {
+  const place = spot.kind === 'location' ? world.locations[spot.id] : buildingById(world, spot.id);
   const kind = spot.kind === 'location' ? (place as Location | undefined)?.kind : (place as Building | undefined)?.category;
   const dish = dishes.find((d) => d.id === person.likes.dish)?.name ?? 'something';
   const drink = dishes.find((d) => d.id === person.likes.drink)?.name ?? 'a drink';
   if (person.gang && (kind === 'bar' || kind === 'club' || kind === 'nightlife')) return 'holding court';
   if (kind === 'bar' || kind === 'club' || kind === 'nightlife' || kind === 'pachinko' || kind === 'entertainment') return `nursing a ${drink}`;
   if (kind === 'noodle' || kind === 'diner' || kind === 'restaurant' || kind === 'food') return `eating ${dish}`;
+  // An open place: what people do there.
+  const doings = kind && out ? out.kinds[kind] : undefined;
+  if (doings?.length && rng) return rng.pick(doings) ?? 'killing time';
   if (kind === 'market') return 'browsing the stalls';
   return 'killing time';
+}
+
+/** What someone out and about is doing at an open place. */
+function outDoing(world: World, spot: Spot, out: OutContent, rng: Rng): string {
+  const kind = spot.kind === 'location' ? world.locations[spot.id]?.kind : undefined;
+  return (kind && rng.pick(out.kinds[kind] ?? [])) || 'killing time';
+}
+
+const haunts = new WeakMap<World, { out: OutContent; spots: Map<string, Spot | null>; byDistrict: Map<string, Location[]> }>();
+
+/**
+ * The open place near home someone is seen at when they're out (one of the three nearest in
+ * their district, picked for them, or none), worked out once a person.
+ */
+export function hauntOf(person: Person, world: World, out: OutContent): Spot | null {
+  let known = haunts.get(world);
+  if (!known || known.out !== out) haunts.set(world, (known = { out, spots: new Map(), byDistrict: new Map() }));
+  const had = known.spots.get(person.id);
+  if (had !== undefined) return had;
+  let places = known.byDistrict.get(person.district);
+  if (!places) known.byDistrict.set(person.district, (places = Object.values(world.locations).filter((l) => l.district === person.district && out.kinds[l.kind])));
+  const home = person.home ? buildingById(world, person.home) : undefined;
+  const district = world.districts[person.district];
+  const from = home ? { x: home.x + home.w / 2, y: home.y + home.h / 2 } : district ? { x: district.x, y: district.y } : null;
+  const near = from ? [...places].sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y)).slice(0, 3) : [];
+  const pick = near.length ? createRng(`${person.id}:haunt`).pick(near) : undefined;
+  const spot: Spot | null = pick ? { kind: 'location', id: pick.id } : null;
+  known.spots.set(person.id, spot);
+  return spot;
 }
 
 function hangoutsIn(world: World, district: string, content: PeopleContent): Spot[] {
@@ -558,7 +1066,8 @@ function hangoutsIn(world: World, district: string, content: PeopleContent): Spo
   return [...places, ...shops];
 }
 
-function rolesFor(building: Building, content: PeopleContent): string[] {
+/** The roles a building's people have, the one who runs it first. */
+export function rolesFor(building: Building, content: PeopleContent): string[] {
   return (building.business && content.roles.business[building.business]) || content.roles.category[building.category] || content.roles.kind[building.kind] || content.roles.freelance;
 }
 
@@ -578,9 +1087,18 @@ function makeTraits(rng: Rng, gang: string | null, job: Person['job']): Traits {
   return traits;
 }
 
+/** What there is to like of a kind in a district, a district's own three times over: worked out once per list of dishes. */
+const dishPools = new WeakMap<Dish[], Map<string, Dish[]>>();
+
 function pickDish(rng: Rng, dishes: Dish[], district: string, kind: Dish['kind']): string {
-  const pool = dishes.filter((d) => d.kind === kind && d.on.length > 0);
-  const weighted = pool.flatMap((d) => (d.favored?.includes(district) ? [d, d, d] : [d]));
+  let pools = dishPools.get(dishes);
+  if (!pools) dishPools.set(dishes, (pools = new Map()));
+  const key = `${district}|${kind}`;
+  let weighted = pools.get(key);
+  if (!weighted) {
+    const pool = dishes.filter((d) => d.kind === kind && d.on.length > 0);
+    pools.set(key, (weighted = pool.flatMap((d) => (d.favored?.includes(district) ? [d, d, d] : [d]))));
+  }
   return weighted.length ? rng.pick(weighted).id : '';
 }
 
@@ -629,11 +1147,13 @@ function relate(rng: Rng, family: Person[], tie: (a: Person, b: Person, kind: Ti
 
 function describe(person: Person, world: World, content: PeopleContent, dishes: Dish[]): string {
   const gang = gangOf(person, content);
-  const place = person.job.building ? world.buildings.find((b) => b.id === person.job.building) : undefined;
+  const place = person.job.building ? buildingById(world, person.job.building) : undefined;
   const work = gang ? `${gang.name} ${person.job.role}` : place ? `${capitalize(person.job.role)} at ${place.name}` : capitalize(person.job.role);
-  const strongest = (Object.entries(person.traits) as Array<[keyof Traits, number]>).sort((a, b) => Math.abs(b[1] - 0.5) - Math.abs(a[1] - 0.5))[0];
+  // The trait furthest from the middle, the first of them on a tie.
+  let strongest: [keyof Traits, number] | undefined;
+  for (const entry of Object.entries(person.traits) as Array<[keyof Traits, number]>) if (!strongest || Math.abs(entry[1] - 0.5) > Math.abs(strongest[1] - 0.5)) strongest = entry;
   const line = strongest ? (strongest[1] >= 0.5 ? content.traitLines[strongest[0]].high : content.traitLines[strongest[0]].low) : '';
-  const dish = dishes.find((d) => d.id === person.likes.dish)?.name;
+  const dish = dishById(dishes, person.likes.dish)?.name;
   return `${work}, ${person.age}. ${line}${dish ? ` Never says no to ${dish}.` : ''}`.trim();
 }
 
@@ -641,7 +1161,17 @@ function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** A dish by its id, from an index made once a menu of dishes. */
+const dishIndex = new WeakMap<Dish[], Map<string, Dish>>();
+function dishById(dishes: Dish[], id: string): Dish | undefined {
+  let index = dishIndex.get(dishes);
+  if (!index) dishIndex.set(dishes, (index = new Map(dishes.map((d) => [d.id, d]))));
+  return index.get(id);
+}
+
 function slug(text: string): string {
+  // Plain letters need none of the accent-stripping.
+  if (/^[A-Za-z0-9 ]*$/.test(text)) return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   return text
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')

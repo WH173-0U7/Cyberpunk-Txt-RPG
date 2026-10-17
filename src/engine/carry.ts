@@ -1,3 +1,8 @@
+import type { Valuable } from './trade';
+import { implantGrams, implantOf, type ChromeContent } from './cyberware';
+import type { HackContent } from './combat';
+import type { DrugKind } from './dealing';
+import type { MedicalContent } from './medical';
 import type { Dish, Quality } from './food';
 import type { Money } from './money';
 import type { Item, ItemKind } from './types';
@@ -8,8 +13,33 @@ export type Slot = 'head' | 'face' | 'outer' | 'inner' | 'legs' | 'feet';
 /** The wiki's four styles of 2077. */
 export type Style = 'entropism' | 'kitsch' | 'neomilitarism' | 'neokitsch';
 
-/** The cash a pocket has to bear: bills in the wallet, coins loose in the change pocket. */
-export type Cash = Pick<Money, 'bills' | 'coins'>;
+/** The cash a pocket has to bear: notes in the wallet, coins loose in the change pocket. */
+export type Cash = Pick<Money, 'bills' | 'coins' | 'notes'>;
+
+/** The usual notes, to count a wallet whose notes aren't written down (an older save): what the bills come to, the biggest first. */
+const NOTES = [500, 100, 50, 20, 10, 5, 1];
+
+/** How many notes are in the wallet. */
+export function notesHeld(money: Cash): number {
+  const notes = money.notes;
+  if (notes) {
+    let sum = 0;
+    let count = 0;
+    for (const [d, n] of Object.entries(notes)) {
+      sum += Number(d) * n;
+      count += n;
+    }
+    if (sum === money.bills) return count;
+  }
+  let left = money.bills;
+  let count = 0;
+  for (const d of NOTES) {
+    const n = Math.floor(left / Math.min(d, 100));
+    count += d > 100 ? 0 : n;
+    left -= d > 100 ? 0 : n * d;
+  }
+  return count;
+}
 
 /**
  * What the player carries, and in what. Nothing floats along behind you in Night City: every
@@ -36,7 +66,7 @@ export interface PocketKind {
   maxGrams: number;
   /** What it weighs empty. */
   grams: number;
-  /** Bills it holds, in €$, for a wallet. */
+  /** Notes it holds, for a wallet. */
   holds?: number;
   /** Credchips it holds, for a wallet: its card slots. */
   chips?: number;
@@ -61,14 +91,26 @@ export interface PocketState {
 }
 
 export interface GearContent {
-  /** Grams per €$ in bills (a note weighs about a gram, and most are twenties and up). */
-  gramsPerBill: number;
+  /** Grams a note (cloth-like paper: about a gram). */
+  gramsPerNote: number;
   /** Grams per €$ in coins (a €$1 coin of nickel, tin and aluminum). */
   gramsPerCoin: number;
   /** What a thing of each kind weighs and how many share a slot, unless the thing says otherwise. */
   items: Record<ItemKind, { grams: number; perSlot: number }>;
   /** Weapons and ammo: what each weighs, how many rounds share a slot, which are too long for a pocket (src/data/weapons.ts). */
   arms: ArmsContent;
+  /** Cyberware: what an implant carried weighs, by the part of the body it's for (src/data/cyberware.ts). */
+  chrome: ChromeContent;
+  /** Quickhacks, and the stores that sell them (src/data/quickhacks.ts). */
+  hacks: HackContent;
+  /** Meds, the counters that sell them or patch the player up, and Trauma Team's plans (src/data/medical.ts). */
+  medical: MedicalContent;
+  /** Street drugs, by item id: what a dose weighs (src/data/drugs.ts). */
+  drugs: Record<string, DrugKind>;
+  /** Components, by item id: what each weighs, how many share a slot, its price and the stores (by business id) that rack it. */
+  components: Record<string, { name: string; note: string; grams: number; perSlot: number; price: number; stores: string[] }>;
+  /** Valuables people carry and a fence buys, by item id: what one weighs (src/data/valuables.ts). */
+  valuables?: Record<string, Valuable>;
   /** Grams by kind of dish, unless the dish says its own. */
   dish: Record<Dish['kind'], number>;
   kinds: Record<string, PocketKind>;
@@ -107,8 +149,10 @@ export interface PocketLoad extends PocketState {
   load: Load;
   /** What it weighs all told, itself included. */
   grams: number;
-  /** For a wallet: the bills in it and the most it holds. */
+  /** For a wallet: the bills in it (in €$, and as notes: how many and which), and the most notes it holds. */
   bills?: number;
+  notes?: number;
+  held?: Record<string, number>;
   holds?: number;
   /** For a wallet: the credchips in it, and its card slots. */
   chips?: number;
@@ -123,6 +167,10 @@ export function itemGrams(item: Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | '
   if (item.kind === 'consumable') {
     const dish = dishes.find((d) => d.id === item.id);
     if (dish) return dish.grams ?? gear.dish[dish.kind];
+    const med = gear.medical.meds[item.id];
+    if (med) return med.grams;
+    const drug = gear.drugs[item.id];
+    if (drug) return drug.grams;
   }
   if (item.kind === 'clothing') {
     const kind = gear.kinds[item.gear ?? item.id];
@@ -135,10 +183,20 @@ export function itemGrams(item: Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | '
       return weaponGrams(weapon, gear.arms) + (item.loaded ?? 0) * (ammo?.grams ?? 0);
     }
   }
+  if (item.kind === 'component') {
+    const part = gear.components[item.id];
+    if (part) return part.grams;
+  }
+  if (item.kind === 'junk') {
+    const valuable = gear.valuables?.[item.id];
+    if (valuable) return valuable.grams;
+  }
   if (item.kind === 'ammo') {
     const ammo = gear.arms.ammo[item.id];
     if (ammo) return ammo.grams;
   }
+  const implant = implantOf(item, gear.chrome);
+  if (implant) return implantGrams(implant, gear.chrome);
   return gear.items[item.kind]?.grams ?? 250;
 }
 
@@ -158,7 +216,9 @@ export function outfit(pockets: PocketState[], gear: GearContent): { worn: Parti
 /** How many slots a stack of `count` of something takes: so many rounds of ammo to a slot by their kind, anything else by its kind. */
 export function stackSlots(item: Pick<Item, 'id' | 'kind'>, count: number, gear: GearContent): number {
   const ammo = item.kind === 'ammo' ? gear.arms.ammo[item.id] : undefined;
-  const perSlot = Math.max(1, ammo?.perSlot ?? gear.items[item.kind]?.perSlot ?? 1);
+  const drug = item.kind === 'consumable' ? gear.drugs[item.id] : undefined;
+  const part = item.kind === 'component' ? gear.components[item.id] : undefined;
+  const perSlot = Math.max(1, ammo?.perSlot ?? drug?.perSlot ?? part?.perSlot ?? gear.items[item.kind]?.perSlot ?? 1);
   return Math.ceil(Math.max(0, count) / perSlot);
 }
 
@@ -180,7 +240,7 @@ export function pocketGrams(pocket: PocketState, pockets: PocketState[], items: 
 export function loadOf(pocket: PocketState, pockets: PocketState[], items: Item[], money: Cash, gear: GearContent, dishes: Dish[]): Load {
   const kind = kindOf(pocket, gear);
   let slots = kind.change && money.coins > 0 ? 1 : 0;
-  let grams = (kind.holds !== undefined ? money.bills * gear.gramsPerBill : 0) + (kind.change ? money.coins * gear.gramsPerCoin : 0);
+  let grams = (kind.holds !== undefined ? notesHeld(money) * gear.gramsPerNote : 0) + (kind.change ? money.coins * gear.gramsPerCoin : 0);
   for (const item of items) {
     if (item.in !== pocket.id) continue;
     slots += stackSlots(item, item.count, gear);
@@ -216,10 +276,10 @@ export function placeFor(pockets: PocketState[], items: Item[], money: Cash, ite
   return (wallet ?? same ?? roomy[0])?.id ?? null;
 }
 
-/** How many more €$ in bills the wallet (or wallets) will hold. None without one. */
+/** How many more notes the wallet (or wallets) will hold. None without one. */
 export function walletRoom(pockets: PocketState[], money: Cash, gear: GearContent): number {
   const holds = pockets.reduce((sum, p) => sum + (kindOf(p, gear).holds ?? 0), 0);
-  return Math.max(0, holds - money.bills);
+  return Math.max(0, holds - notesHeld(money));
 }
 
 /** How many more €$ in coins the change pocket will bear: a free slot if there are none yet, and the weight. None without one. */
@@ -259,10 +319,12 @@ export function loads(pockets: PocketState[], items: Item[], money: Cash, gear: 
       load,
       grams: kind.grams + load.grams,
       // A wallet is over when it holds more bills or chips than it should; anything else when its slots or its weight are.
-      over: kind.holds !== undefined ? money.bills > kind.holds || chipsIn(pocket, items) > (kind.chips ?? 0) : load.slots > kind.slots || load.grams > kind.maxGrams,
+      over: kind.holds !== undefined ? notesHeld(money) > kind.holds || chipsIn(pocket, items) > (kind.chips ?? 0) : load.slots > kind.slots || load.grams > kind.maxGrams,
     };
     if (kind.holds !== undefined) {
       out.bills = money.bills;
+      out.notes = notesHeld(money);
+      if (money.notes) out.held = { ...money.notes };
       out.holds = kind.holds;
       out.chips = chipsIn(pocket, items);
       out.chipSlots = kind.chips ?? 0;

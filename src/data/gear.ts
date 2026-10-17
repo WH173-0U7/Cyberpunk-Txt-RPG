@@ -1,5 +1,10 @@
+import { VALUABLES } from './valuables';
 import type { GearContent } from '../engine/carry';
 import { GARMENTS, SLOTS, STORE_QUALITY, STORES, STYLES } from './clothing';
+import { CHROME } from './cyberware';
+import { HACKS } from './quickhacks';
+import { DRUGS } from './drugs';
+import { MEDICAL } from './medical';
 import { ARMS } from './weapons';
 
 /**
@@ -16,7 +21,7 @@ import { ARMS } from './weapons';
  * (the weapons and the ammo are `src/data/weapons.ts`).
  */
 export const GEAR: GearContent = {
-  gramsPerBill: 0.05,
+  gramsPerNote: 1,
   gramsPerCoin: 6,
   items: {
     weapon: { grams: 2500, perSlot: 1 },
@@ -32,9 +37,18 @@ export const GEAR: GearContent = {
     component: { grams: 100, perSlot: 5 },
   },
   arms: ARMS,
+  chrome: CHROME,
+  hacks: HACKS,
+  medical: MEDICAL,
+  drugs: DRUGS,
+  // Something to cut product with: ours, since the wiki names no cutting agent. A pharmacy, a
+  // general store or a bodega sells it as if it were for something else.
+  components: {
+    'cutting-agent': { name: 'Cutting agent', note: 'A fine white powder that is sold for something else, and bought for this. A dose of it stretches a package by a dose.', grams: 4, perSlot: 20, price: 3, stores: ['pharmacy', 'general-store', 'bodega'] },
+  },
   dish: { food: 250, drink: 350, alcohol: 650 },
   kinds: {
-    wallet: { name: 'Wallet', slots: 0, maxGrams: 0, grams: 40, holds: 1000, chips: 4 },
+    wallet: { name: 'Wallet', slots: 0, maxGrams: 0, grams: 40, holds: 40, chips: 4 },
     'belt-pouch': { name: 'Belt pouch', slots: 2, maxGrams: 800, grams: 80, price: 12, note: 'Two pockets more, on a strap.' },
     'messenger-bag': { name: 'Messenger bag', slots: 5, maxGrams: 5000, grams: 450, price: 30, note: 'Slung across the chest. Five slots, five kilos; a rifle rides along the strap.', long: true },
     'duffel-bag': { name: 'Duffel bag', slots: 8, maxGrams: 9000, grams: 700, price: 40, note: 'Eight slots and nine kilos, over one shoulder. Long enough for a rifle.', long: true },
@@ -51,6 +65,7 @@ export const GEAR: GearContent = {
     { id: 'high-tops', kind: 'high-tops', in: null },
     { id: 'wallet', kind: 'wallet', in: 'pants' },
   ],
+  valuables: VALUABLES,
   racks: {
     'general-store': ['belt-pouch', 'duffel-bag', 'backpack'],
     'thrift-shop': [...STORES['thrift-shop'], 'belt-pouch', 'messenger-bag', 'duffel-bag'],

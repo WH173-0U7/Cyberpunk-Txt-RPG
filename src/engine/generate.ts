@@ -1,12 +1,15 @@
 import { generateBuildings, type BuildingContent, type ZoningPlan } from './buildings';
 import type { Quality } from './food';
+import { WORLD } from './geography';
 import { createRng, hashSeed, type Rng } from './rng';
 import { generateTransit, type TransitContent } from './transit';
-import type { AmbientLine, BuildingCategory, BuildingKind, CityLayout, District, Location, Point, Side, Theme, Weather, World } from './types';
+import type { AmbientLine, BuildingCategory, BuildingKind, CityLayout, District, Location, Point, Side, Subdistrict, Theme, Weather, World } from './types';
 
 /** A real place from Night City. A district uses its own before it makes any up. */
 export interface Landmark {
   name: string;
+  /** The neighborhood it's in (one of its district's `areas`). Anywhere in the district if not said. */
+  area?: string;
   /** Key of `CityContent.kinds`: what kind of place it is. */
   kind: string;
   /** Its first description sentence, in place of a generic one for its kind. */
@@ -22,8 +25,13 @@ export interface DistrictTemplate {
   anchor: Point;
   /** One is picked per city and shared by the district's outdoor locations. */
   weather: Weather[];
-  /** Neighborhood names used in place names, e.g. "{area} Market" → "Kabuki Market". */
+  /** Its neighborhoods (the wiki's sub-districts), also used in place names: "{area} Market" → "Kabuki Market". */
   areas: string[];
+  /**
+   * Where each neighborhood sits from the anchor, on the same 0–100 scale. Every neighborhood
+   * listed here gets places of its own; a district without any is one neighborhood at its anchor.
+   */
+  areaAt?: Record<string, Point>;
   /** Kinds of location this district can contain (keys of `CityContent.kinds`). */
   kinds: string[];
   /** Real places in the district, used first. Made-up ones fill in once these run out. */
@@ -34,7 +42,7 @@ export interface DistrictTemplate {
   trade?: Partial<Record<BuildingCategory, number>>;
   /** How its eateries lean: luxury, everyday or poverty, as relative weights. Everyday if not said. */
   dining?: Partial<Record<Quality, number>>;
-  /** "edge" districts sit at the border of the map as open desert, like the Badlands. */
+  /** "edge" districts are open desert around the city, like the Badlands. */
   placement?: 'edge';
   /** Second sentences for descriptions, setting the district's mood. */
   atmosphere: { outdoor: string[]; indoor: string[] };
@@ -76,29 +84,51 @@ export interface CityContent {
  * landing somewhere that no longer matches. The fingerprint test in tests/save.test.ts fails
  * as a reminder.
  */
-export const GENERATOR_VERSION = 3;
+export const GENERATOR_VERSION = 4;
 
 /** Longest description the location panel is designed for (raw text, markup included). */
 export const MAX_DESCRIPTION = 160;
 
-const MIDDLE: Point = { x: 50, y: 50 };
+/** The longest made-up place name that fits the sign on a narrow phone at a readable size. */
+export const SHORT_NAME = 24;
+
+/** Map units to one unit of the 0–100 scale the districts' anchors are on. */
+const CANON = WORLD / 100;
 
 /** Locations stay this far inside the map edge. */
 const MAP_MIN = 7;
-const MAP_MAX = 93;
+const MAP_MAX = WORLD - 7;
 
-/** Builds a whole city from a seed. Same seed and content, same city. */
+/** A neighborhood as placed on this map: where it is, and which district it belongs to. */
+interface Hood extends Point {
+  /** Null for a district with no neighborhoods of its own. */
+  name: string | null;
+  district: string;
+}
+
+/**
+ * Builds a whole city from a seed. Same seed and content, same city. Every district is in it,
+ * each neighborhood about where it is in the real Night City, with places of its own.
+ */
 export function generateWorld(seed: string, content: CityContent): World {
   const rng = createRng(seed);
-  const templates = chooseDistricts(rng, content.districts);
-  const centers = placeDistricts(rng, templates);
-  const coast = { side: content.coast, depth: Math.round(rng.range(7, 11) * 10) / 10 };
+  // City districts first (the first is where the player starts), then the desert around them.
+  const templates = [...rng.shuffle(content.districts.filter((d) => d.placement !== 'edge')), ...content.districts.filter((d) => d.placement === 'edge')];
+  const hoods = placeHoods(rng, templates);
+  // The sea comes in far enough that the waterfront districts (Watson's, Pacifica, Wellsprings) are on it.
+  const coast = { side: content.coast, depth: Math.round(rng.range(11, 14) * CANON * 10) / 10 };
   const avenues = streetLines(rng);
   const streets = streetLines(rng);
   // Places keep well back from the shoreline, which wanders a couple of units either way.
   const corners = avenues
     .flatMap((x) => streets.map((y) => ({ x, y })))
     .filter((c) => isOnMap(c) && inland(coast.side, c) >= coast.depth + 5);
+  // Each corner belongs to the neighborhood nearest it, so a place is always in its own.
+  const cornersOf = new Map<Hood, Point[]>();
+  for (const corner of corners) {
+    const hood = nearest(hoods, corner);
+    if (hood) cornersOf.set(hood, [...(cornersOf.get(hood) ?? []), corner]);
+  }
 
   const districts: Record<string, District> = {};
   const locations: Record<string, Location> = {};
@@ -107,37 +137,62 @@ export function generateWorld(seed: string, content: CityContent): World {
   const realNames = new Set(content.districts.flatMap((d) => (d.landmarks ?? []).map((l) => l.name)));
   const populated: DistrictTemplate[] = [];
 
+  // What each neighborhood will have: its real places first, made-up ones once it runs out.
+  const allotments = templates.flatMap((template) => {
+    const isEdge = template.placement === 'edge';
+    const own = hoods.filter((h) => h.district === template.id);
+    // Real places with no neighborhood can go in any of the district's.
+    const anywhere = rng.shuffle((template.landmarks ?? []).filter((l) => !l.area || !own.some((h) => h.name === l.area)));
+    const covered = new Set<string>();
+    return own.map((hood) => {
+      const count = isEdge ? rng.int(1, 2) : rng.int(2, 3);
+      const landmarks = [...rng.shuffle((template.landmarks ?? []).filter((l) => l.area !== undefined && l.area === hood.name)), ...anywhere].slice(0, count);
+      for (const landmark of landmarks) if (anywhere.includes(landmark)) anywhere.splice(anywhere.indexOf(landmark), 1);
+      // Made-up places lean toward kinds the district doesn't already have.
+      const fresh = template.kinds.filter((k) => !covered.has(k) && !landmarks.some((l) => l.kind === k));
+      const repeats = template.kinds.filter((k) => !fresh.includes(k));
+      const madeUp = [...rng.shuffle(fresh), ...rng.shuffle(repeats)].slice(0, Math.max(0, count - landmarks.length));
+      const planned = [...landmarks.map((landmark) => ({ kindId: landmark.kind, landmark })), ...madeUp.map((kindId) => ({ kindId, landmark: null }))];
+      for (const { kindId } of planned) covered.add(kindId);
+      const radius = (isEdge ? 18 : 10) * CANON;
+      return { template, hood, planned, radius, picked: [] as Array<Point & { kindId: string; landmark: Landmark | null }> };
+    });
+  });
+  // Corners are handed out a round at a time, a place per neighborhood each round, so no
+  // neighborhood is crowded out by the ones placed before it.
+  const placed: Point[] = [];
+  for (let round = 0; allotments.some((a) => a.planned.length > round); round++) {
+    for (const allotment of allotments) {
+      const next = allotment.planned[round];
+      if (!next) continue;
+      const [corner] = pickCorners(rng, cornersOf.get(allotment.hood) ?? [], allotment.hood, 1, allotment.radius, placed);
+      if (!corner) continue;
+      placed.push(corner);
+      allotment.picked.push({ ...corner, ...next });
+    }
+  }
+
   for (const template of templates) {
-    const center = centers.get(template.id) ?? { x: 50, y: 50 };
     const isEdge = template.placement === 'edge';
     const weather = rng.pick(template.weather);
-    const count = isEdge ? rng.int(2, 3) : rng.int(3, 4);
-    // Real places first; made-up ones only once the district runs out of them.
-    const landmarks = rng.shuffle(template.landmarks ?? []).slice(0, count);
-    // Made-up places lean toward kinds the real ones don't already cover.
-    const fresh = template.kinds.filter((k) => !landmarks.some((l) => l.kind === k));
-    const repeats = template.kinds.filter((k) => !fresh.includes(k));
-    const madeUp = [...rng.shuffle(fresh), ...rng.shuffle(repeats)].slice(0, Math.max(0, Math.min(count, template.kinds.length) - landmarks.length));
-    const plan = [...landmarks.map((landmark) => ({ kindId: landmark.kind, landmark })), ...madeUp.map((kindId) => ({ kindId, landmark: null }))];
-    // Out at the edge, the desert keeps to the outer side of its patch, away from the city.
-    const pool = isEdge ? corners.filter((c) => distance(c, MIDDLE) >= distance(center, MIDDLE) - 6) : corners;
-    const spots = pickCorners(rng, pool, center, plan.length, isEdge ? 14 : 15, Object.values(locations));
+    const own = allotments.filter((a) => a.template === template);
+    const spots = own.flatMap((a) => a.picked.map((spot) => ({ ...spot, area: a.hood.name })));
     // A district with no free corners for any location is left off the map entirely.
     if (spots.length === 0) continue;
     populated.push(template);
 
-    spots.forEach((spot, index) => {
-      const { kindId, landmark } = plan[index] ?? { kindId: '', landmark: null };
+    spots.forEach(({ kindId, landmark, area, ...spot }, index) => {
       const kind = content.kinds[kindId];
       if (!kind) throw new Error(`District "${template.id}" uses unknown location kind "${kindId}"`);
       const id = `${template.id}-${index + 1}`;
       if (landmark) usedNames.add(landmark.name);
       locations[id] = {
         id,
-        name: landmark ? landmark.name : makeName(rng, kind, template, usedNames, realNames),
+        name: landmark ? landmark.name : makeName(rng, kind, template, area, usedNames, realNames),
         kind: kindId,
         kindLabel: kind.label,
         district: template.id,
+        ...(area ? { area } : {}),
         weather: kind.indoor ? (kind.weather ?? 'clear') : weather,
         ...(kind.theme ? { theme: kind.theme } : {}),
         description: makeDescription(rng, landmark?.description ?? rng.pick(kind.descriptions), kind, template),
@@ -161,6 +216,7 @@ export function generateWorld(seed: string, content: CityContent): World {
       mood: createRng(`${seed}:${template.id}:streets`).pick(template.atmosphere.outdoor),
       ambient: template.ambient.outdoor,
       dining: template.dining ?? { everyday: 1 },
+      subdistricts: own.flatMap(({ hood }): Subdistrict[] => (hood.name ? [{ name: hood.name, x: hood.x, y: hood.y }] : [])),
       ...centroid(spots),
     };
   }
@@ -179,7 +235,8 @@ export function generateWorld(seed: string, content: CityContent): World {
     layout,
     districts,
     locations,
-    buildings: generateBuildings(seed, layout, Object.values(districts), plans, content.buildings),
+    // A storefront never takes a real place's name, nor one of this city's places'.
+    buildings: generateBuildings(seed, layout, Object.values(districts), plans, content.buildings, [...realNames, ...Object.values(locations).map((l) => l.name)]),
     transit: generateTransit(seed, layout, Object.values(districts), Object.values(locations), areas, content.ncart),
   };
 }
@@ -195,28 +252,40 @@ export function streetPath(a: Location, b: Location): Point[] {
   return [{ x: a.x, y: a.y }, corner, { x: b.x, y: b.y }];
 }
 
-/** Three or four city districts, plus usually one edge district. */
-function chooseDistricts(rng: Rng, pool: DistrictTemplate[]): DistrictTemplate[] {
-  const city = rng.shuffle(pool.filter((d) => d.placement !== 'edge'));
-  const edge = pool.filter((d) => d.placement === 'edge');
-  const chosen = city.slice(0, Math.min(city.length, rng.int(3, 4)));
-  if (edge.length && rng.chance(0.7)) chosen.push(rng.pick(edge));
-  return chosen;
+/**
+ * Each neighborhood sits roughly where it is in the real Night City: its district is nudged a
+ * little each game, and each neighborhood a little more within it. All stay on the map.
+ */
+function placeHoods(rng: Rng, templates: DistrictTemplate[]): Hood[] {
+  const hoods: Hood[] = [];
+  const onMap = (v: number) => Math.min(MAP_MAX, Math.max(MAP_MIN, v));
+  for (const template of templates) {
+    const anchor = { x: template.anchor.x + rng.range(-2, 2), y: template.anchor.y + rng.range(-2, 2) };
+    const offsets = template.areas.flatMap((name) => {
+      const at = template.areaAt?.[name];
+      return at ? [{ name, at }] : [];
+    });
+    if (offsets.length === 0) hoods.push({ name: null, district: template.id, x: onMap(anchor.x * CANON), y: onMap(anchor.y * CANON) });
+    for (const { name, at } of offsets) {
+      const x = (anchor.x + at.x + rng.range(-1.5, 1.5)) * CANON;
+      const y = (anchor.y + at.y + rng.range(-1.5, 1.5)) * CANON;
+      hoods.push({ name, district: template.id, x: onMap(x), y: onMap(y) });
+    }
+  }
+  return hoods;
 }
 
-/**
- * Each district sits roughly where it is in the real Night City, nudged a little each game.
- * An edge district slides further along its edge, so the desert isn't always in the same spot.
- */
-function placeDistricts(rng: Rng, templates: DistrictTemplate[]): Map<string, Point> {
-  const centers = new Map<string, Point>();
-  for (const template of templates) {
-    const edge = template.placement === 'edge';
-    const dx = edge ? rng.range(-2, 2) : rng.range(-5, 5);
-    const dy = edge ? rng.range(-18, 18) : rng.range(-5, 5);
-    centers.set(template.id, { x: template.anchor.x + dx, y: template.anchor.y + dy });
+function nearest<T extends Point>(points: T[], p: Point): T | null {
+  let best: T | null = null;
+  let bestDistance = Infinity;
+  for (const point of points) {
+    const d = distance(point, p);
+    if (d < bestDistance) {
+      best = point;
+      bestDistance = d;
+    }
   }
-  return centers;
+  return best;
 }
 
 /** How far a point is from the given edge of the map. */
@@ -225,9 +294,9 @@ function inland(side: Side, p: Point): number {
     case 'north':
       return p.y;
     case 'east':
-      return 100 - p.x;
+      return WORLD - p.x;
     case 'south':
-      return 100 - p.y;
+      return WORLD - p.y;
     case 'west':
       return p.x;
   }
@@ -236,7 +305,7 @@ function inland(side: Side, p: Point): number {
 /** Street positions across the map, a short city block apart. */
 function streetLines(rng: Rng): number[] {
   const lines: number[] = [];
-  for (let at = rng.range(3, 6); at < 97; at += rng.range(6.5, 9.5)) lines.push(Math.round(at * 10) / 10);
+  for (let at = rng.range(3, 6); at < WORLD - 3; at += rng.range(6.5, 9.5)) lines.push(Math.round(at * 10) / 10);
   return lines;
 }
 
@@ -254,7 +323,7 @@ function pickCorners(rng: Rng, corners: Point[], center: Point, count: number, r
       if (picked.length >= count) break;
       if ([...existing, ...picked].every((other) => distance(other, corner) >= minGap)) picked.push(corner);
     }
-    if (picked.length >= 2) break;
+    if (picked.length >= Math.min(2, count)) break;
   }
   return picked;
 }
@@ -266,19 +335,32 @@ function centroid(points: Point[]): Point {
   };
 }
 
-function fill(rng: Rng, template: string, district: DistrictTemplate): string {
-  return template.replace(/\{area\}/g, () => rng.pick(district.areas)).replace(/\{n\}/g, () => String(rng.int(2, 14)));
+/** A name template filled in: `{area}` is the place's own neighborhood (any of the district's without one). */
+function fill(rng: Rng, template: string, district: DistrictTemplate, area: string | null): string {
+  return template.replace(/\{area\}/g, () => area ?? rng.pick(district.areas)).replace(/\{n\}/g, () => String(rng.int(2, 14)));
 }
 
-function makeName(rng: Rng, kind: LocationKind, district: DistrictTemplate, used: Set<string>, reserved: Set<string>): string {
+/**
+ * A made-up name for a place, never one already taken or a real place's. A long neighborhood
+ * makes long names ("Arasaka Waterfront Container Yard"), so one that fits the sign on a phone
+ * (`SHORT_NAME`) is taken over a longer one when the kind has it.
+ */
+function makeName(rng: Rng, kind: LocationKind, district: DistrictTemplate, area: string | null, used: Set<string>, reserved: Set<string>): string {
+  let long: string | null = null;
   for (let attempt = 0; attempt < 16; attempt++) {
-    const name = fill(rng, rng.pick(kind.names), district);
-    if (!used.has(name) && !reserved.has(name)) {
+    const name = fill(rng, rng.pick(kind.names), district, area);
+    if (used.has(name) || reserved.has(name)) continue;
+    if (name.length <= SHORT_NAME) {
       used.add(name);
       return name;
     }
+    long ??= name;
   }
-  const base = fill(rng, kind.names[0] ?? 'Unnamed Block', district);
+  if (long) {
+    used.add(long);
+    return long;
+  }
+  const base = fill(rng, kind.names[0] ?? 'Unnamed Block', district, area);
   let n = 2;
   while (used.has(`${base} ${n}`) || reserved.has(`${base} ${n}`)) n++;
   used.add(`${base} ${n}`);
@@ -313,7 +395,8 @@ function linkLocations(
   for (const template of templates) {
     const group = members(template.id);
     for (const [a, b] of spanningTree(group)) connect(a, b);
-    if (group.length >= 3 && rng.chance(0.5)) {
+    // A loop or two, more in a bigger district, so it isn't a pure tree.
+    for (let loops = rng.int(0, Math.floor(group.length / 3)); loops > 0; loops--) {
       const extra = pairs(group, group).find(([a, b]) => !a.links.includes(b.id));
       if (extra) connect(...extra);
     }
@@ -326,10 +409,11 @@ function linkLocations(
     if (closest) connect(...closest);
   }
 
-  // One more district-to-district link, so the city isn't a pure tree.
+  // A couple more district-to-district links, so the city isn't a pure tree.
   const inTree = (a: District, b: District) => tree.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
-  const spare = pairs(districtList, districtList).find(([a, b]) => a.id < b.id && !inTree(a, b));
-  if (spare && rng.chance(0.75)) {
+  const spares = pairs(districtList, districtList).filter(([a, b]) => a.id < b.id && !inTree(a, b));
+  for (const spare of spares.slice(0, 2)) {
+    if (!rng.chance(0.75)) continue;
     const closest = pairs(members(spare[0].id), members(spare[1].id))[0];
     if (closest) connect(...closest);
   }

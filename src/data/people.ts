@@ -11,34 +11,34 @@ import type { PeopleContent } from '../engine/people';
 export const PEOPLE: PeopleContent = {
   names: {
     east_asian: {
-      masculine: ['Wei', 'Jun', 'Hao', 'Ming', 'Bao', 'Min-jun', 'Thanh', 'Hyun', 'Kai', 'Feng', 'Dao', 'Jin', 'Tae', 'Duc', 'Quang'],
-      feminine: ['Mei', 'Li', 'Jia', 'Lan', 'Xiu', 'Ji-woo', 'Seo-yeon', 'Linh', 'Quyen', 'Soo', 'Ying', 'Ha-eun', 'Yun', 'Min', 'Hana'],
-      family: ['Chen', 'Wang', 'Li', 'Zhang', 'Liu', 'Huang', 'Zhou', 'Wu', 'Kim', 'Park', 'Choi', 'Nguyen', 'Tran', 'Pham', 'Lam', 'Ng', 'Yang', 'Ho', 'Truong', 'Kwon'],
+      masculine: ['Wei', 'Jun', 'Hao', 'Ming', 'Bao', 'Min-jun', 'Thanh', 'Hyun', 'Kai', 'Feng', 'Dao', 'Jin', 'Tae', 'Duc', 'Quang', 'Lei', 'Yong', 'Zhi', 'Peng', 'Bo', 'Tao', 'Cheng', 'Shen', 'Rui', 'Kang', 'Hui', 'Ji-ho', 'Seung', 'Dong-hyun', 'Sung-min', 'Joon', 'Woo-jin', 'Jae', 'Minh', 'Huy', 'Khoa', 'Tuan', 'Phuc', 'Hieu', 'Nam'],
+      feminine: ['Mei', 'Li', 'Jia', 'Lan', 'Xiu', 'Ji-woo', 'Seo-yeon', 'Linh', 'Quyen', 'Soo', 'Ying', 'Ha-eun', 'Yun', 'Min', 'Hana', 'Xin', 'Fang', 'Hua', 'Qing', 'Ling', 'Yan', 'Lian', 'Na', 'Ting', 'Yue', 'Jing', 'Rou', 'Su-bin', 'Ye-jin', 'Da-eun', 'Eun-ji', 'Hye-jin', 'So-yeon', 'Ji-yeon', 'Mai', 'Thu', 'Trang', 'Ngoc', 'Hoa', 'Vy'],
+      family: ['Chen', 'Wang', 'Li', 'Zhang', 'Liu', 'Huang', 'Zhou', 'Wu', 'Kim', 'Park', 'Choi', 'Nguyen', 'Tran', 'Pham', 'Lam', 'Ng', 'Yang', 'Ho', 'Truong', 'Kwon', 'Zhao', 'Sun', 'Ma', 'Zhu', 'Hu', 'Guo', 'He', 'Gao', 'Lin', 'Luo', 'Zheng', 'Liang', 'Xie', 'Song', 'Tang', 'Han', 'Deng', 'Cao', 'Xu', 'Fu', 'Lee', 'Jung', 'Kang', 'Cho', 'Yoon', 'Jang', 'Lim', 'Shin', 'Seo', 'Hwang', 'Ahn', 'Oh', 'Le', 'Vu', 'Dang', 'Bui', 'Do', 'Ngo', 'Duong', 'Ly'],
     },
     japanese: {
-      masculine: ['Haruto', 'Ren', 'Riku', 'Kenji', 'Akira', 'Sho', 'Takeshi', 'Daichi', 'Hiro', 'Jiro', 'Kazuo', 'Sora', 'Yuki', 'Taro', 'Shun'],
-      feminine: ['Yui', 'Aoi', 'Hina', 'Mio', 'Emi', 'Rin', 'Yuna', 'Nao', 'Kaede', 'Saki', 'Mariko', 'Ayane', 'Tomoe', 'Hitomi', 'Sakura'],
-      family: ['Sato', 'Suzuki', 'Takahashi', 'Tanaka', 'Watanabe', 'Ito', 'Yamamoto', 'Nakamura', 'Kobayashi', 'Kato', 'Yoshida', 'Yamada', 'Sasaki', 'Matsumoto', 'Inoue', 'Kimura', 'Hayashi', 'Shimizu', 'Mori', 'Abe'],
+      masculine: ['Haruto', 'Ren', 'Riku', 'Kenji', 'Akira', 'Sho', 'Takeshi', 'Daichi', 'Hiro', 'Jiro', 'Kazuo', 'Sora', 'Yuki', 'Taro', 'Shun', 'Yuto', 'Sota', 'Minato', 'Hayato', 'Kaito', 'Yamato', 'Itsuki', 'Takumi', 'Kenta', 'Ryota', 'Shota', 'Daisuke', 'Makoto', 'Satoshi', 'Tetsuya', 'Hideo', 'Masato', 'Kazuki', 'Naoki', 'Tomoya', 'Yusuke', 'Koji', 'Isamu', 'Noboru', 'Shinji'],
+      feminine: ['Yui', 'Aoi', 'Hina', 'Mio', 'Emi', 'Rin', 'Yuna', 'Nao', 'Kaede', 'Saki', 'Mariko', 'Ayane', 'Tomoe', 'Hitomi', 'Sakura', 'Akane', 'Haruka', 'Miyu', 'Nanami', 'Misaki', 'Ayaka', 'Yuka', 'Kana', 'Asuka', 'Chihiro', 'Eri', 'Fumiko', 'Haruna', 'Izumi', 'Junko', 'Keiko', 'Kyoko', 'Makiko', 'Naomi', 'Noriko', 'Reiko', 'Sayuri', 'Tomoko', 'Yoko', 'Midori'],
+      family: ['Sato', 'Suzuki', 'Takahashi', 'Tanaka', 'Watanabe', 'Ito', 'Yamamoto', 'Nakamura', 'Kobayashi', 'Kato', 'Yoshida', 'Yamada', 'Sasaki', 'Matsumoto', 'Inoue', 'Kimura', 'Hayashi', 'Shimizu', 'Mori', 'Abe', 'Yamaguchi', 'Ikeda', 'Hashimoto', 'Yamashita', 'Ishikawa', 'Nakajima', 'Maeda', 'Fujita', 'Ogawa', 'Goto', 'Hasegawa', 'Kondo', 'Ishii', 'Sakamoto', 'Endo', 'Aoki', 'Fujii', 'Nishimura', 'Fukuda', 'Ota', 'Miura', 'Fujiwara', 'Okamoto', 'Matsuda', 'Nakano', 'Harada', 'Ono', 'Tamura', 'Takeuchi', 'Kaneko', 'Wada', 'Nakayama', 'Ishida', 'Ueda', 'Morita', 'Hara', 'Shibata', 'Sakai', 'Kudo', 'Miyazaki'],
     },
     latino: {
-      masculine: ['Mateo', 'Diego', 'Santiago', 'Andrés', 'Jorge', 'Luis', 'Rafael', 'Tomás', 'Emilio', 'Héctor', 'Cruz', 'Nico', 'Álvaro', 'Joaquín', 'Ramón'],
-      feminine: ['Rosa', 'Lucía', 'Valentina', 'Camila', 'Sofía', 'Ana', 'Carmen', 'Elena', 'Marisol', 'Paloma', 'Inés', 'Dolores', 'Yesenia', 'Ximena', 'Pilar'],
-      family: ['Delgado', 'Reyes', 'Ortega', 'Morales', 'Castillo', 'Herrera', 'Vargas', 'Mendoza', 'Romero', 'Navarro', 'Salazar', 'Fuentes', 'Cordero', 'Peña', 'Quintero', 'Serrano', 'Villanueva', 'Aguilar', 'Padilla', 'Escobedo'],
+      masculine: ['Mateo', 'Diego', 'Santiago', 'Andrés', 'Jorge', 'Luis', 'Rafael', 'Tomás', 'Emilio', 'Héctor', 'Cruz', 'Nico', 'Álvaro', 'Joaquín', 'Ramón', 'Alejandro', 'Javier', 'Miguel', 'Carlos', 'Fernando', 'Ricardo', 'Eduardo', 'Benito', 'Francisco', 'Pablo', 'Sergio', 'Raúl', 'Gabriel', 'Ernesto', 'Ignacio', 'Rodrigo', 'Esteban', 'Arturo', 'Gerardo', 'Marco', 'Rubén', 'Felipe', 'Gustavo', 'Armando', 'Lorenzo'],
+      feminine: ['Rosa', 'Lucía', 'Valentina', 'Camila', 'Sofía', 'Ana', 'Carmen', 'Elena', 'Marisol', 'Paloma', 'Inés', 'Dolores', 'Yesenia', 'Ximena', 'Pilar', 'Isabel', 'Gabriela', 'Maribel', 'Daniela', 'Adriana', 'Beatriz', 'Verónica', 'Teresa', 'Patricia', 'Luz', 'Alejandra', 'Guadalupe', 'Graciela', 'Esperanza', 'Lorena', 'Marta', 'Raquel', 'Silvia', 'Natalia', 'Renata', 'Fernanda', 'Julieta', 'Catalina', 'Araceli', 'Leticia'],
+      family: ['Delgado', 'Reyes', 'Ortega', 'Morales', 'Castillo', 'Herrera', 'Vargas', 'Mendoza', 'Romero', 'Navarro', 'Salazar', 'Fuentes', 'Cordero', 'Peña', 'Quintero', 'Serrano', 'Villanueva', 'Aguilar', 'Padilla', 'Escobedo', 'García', 'Hernández', 'López', 'González', 'Núñez', 'Sánchez', 'Ramírez', 'Torres', 'Flores', 'Rivera', 'Gómez', 'Díaz', 'Ruiz', 'Jiménez', 'Gutiérrez', 'Ortiz', 'Ramos', 'Medina', 'Castro', 'Rojas', 'Guerrero', 'Bravo', 'Soto', 'Moreno', 'Suárez', 'Rangel', 'Cabrera', 'Campos', 'Vega', 'Ríos', 'Sandoval', 'Cisneros', 'Montoya', 'Zamora', 'Beltrán', 'Espinoza', 'Acosta', 'Lozano', 'Trujillo', 'Valdez'],
     },
     haitian: {
-      masculine: ['Jean', 'Pierre', 'Jacques', 'Emmanuel', 'Wesley', 'Dieudonné', 'Reginald', 'Jovenel', 'Frantz', 'Edner', 'Stanley', 'Junior', 'Mackenson', 'Rodney', 'Wilson'],
-      feminine: ['Marie', 'Rose', 'Nadège', 'Fabienne', 'Mireille', 'Josette', 'Ketly', 'Nathalie', 'Yolette', 'Chantal', 'Widline', 'Guerline', 'Esther', 'Darline', 'Manoucheka'],
-      family: ['Baptiste', 'Jean-Louis', 'Pierre-Louis', 'Augustin', 'Delva', 'Fils-Aimé', 'Toussaint', 'Saint-Fleur', 'Joseph', 'Michel', 'Louis', 'Célestin', 'Dorsainvil', 'Etienne', 'François', 'Laguerre', 'Philippe', 'Régis', 'Sylvain', 'Désir'],
+      masculine: ['Jean', 'Pierre', 'Jacques', 'Emmanuel', 'Wesley', 'Dieudonné', 'Reginald', 'Jovenel', 'Frantz', 'Edner', 'Stanley', 'Junior', 'Mackenson', 'Rodney', 'Wilson', 'Jean-Claude', 'Jean-Baptiste', 'Wilner', 'Fritz', 'Gérard', 'Patrick', 'Ronald', 'Lesly', 'Kervens', 'Wilfrid', 'Ernst', 'Yvon', 'Michelet', 'Romain', 'Claudel', 'Lucner', 'Ronel', 'Evens', 'Stevenson', 'Jonas', 'Dimitri', 'Josué', 'Samuel', 'Gaston', 'Fresnel'],
+      feminine: ['Marie', 'Rose', 'Nadège', 'Fabienne', 'Mireille', 'Josette', 'Ketly', 'Nathalie', 'Yolette', 'Chantal', 'Widline', 'Guerline', 'Esther', 'Darline', 'Manoucheka', 'Marie-Claire', 'Magalie', 'Rose-Marie', 'Sandrine', 'Nadia', 'Roseline', 'Mirlande', 'Judith', 'Fabiola', 'Edeline', 'Jocelyne', 'Marlène', 'Yvrose', 'Clotilde', 'Gina', 'Mona', 'Nicole', 'Sabine', 'Claudette', 'Germaine', 'Lourdes', 'Viviane', 'Rachelle', 'Altagrâce', 'Lunise'],
+      family: ['Baptiste', 'Jean-Louis', 'Pierre-Louis', 'Augustin', 'Delva', 'Fils-Aimé', 'Toussaint', 'Saint-Fleur', 'Joseph', 'Michel', 'Louis', 'Célestin', 'Dorsainvil', 'Etienne', 'François', 'Laguerre', 'Philippe', 'Régis', 'Sylvain', 'Désir', 'Charles', 'Alexis', 'Antoine', 'Bazile', 'Benjamin', 'Blanc', 'Bien-Aimé', 'Cadet', 'Casimir', 'Charlot', 'Chéry', 'Clervil', 'Dorval', 'Dumas', 'Estimé', 'Fleurant', 'Georges', 'Guillaume', 'Hyppolite', 'Innocent', 'Jeune', 'Jules', 'Lafontaine', 'Lamour', 'Lindor', 'Lubin', 'Métellus', 'Moïse', 'Narcisse', 'Paul', 'Petit-Frère', 'Prophète', 'Raymond', 'Saint-Louis', 'Simon', 'Thermidor', 'Valcourt', 'Vilsaint', 'Zéphir', 'Exantus'],
     },
     american: {
-      masculine: ['Mason', 'Tyler', 'Marcus', 'Dez', 'Brock', 'Cody', 'Derek', 'Kyle', 'Troy', 'Dale', 'Clint', 'Jordan', 'Casey', 'Riley', 'Quinn'],
-      feminine: ['Dana', 'Jade', 'Nikki', 'Shawna', 'Tasha', 'Lena', 'Brianna', 'Raven', 'Monique', 'Skye', 'Riley', 'Quinn', 'Jordan', 'Casey', 'Kendra'],
-      family: ['Carter', 'Hayes', 'Brooks', 'Murphy', 'Price', 'Sullivan', 'Foster', 'Walsh', 'Cole', 'Fletcher', 'Dawson', 'Hale', 'Kane', 'Mercer', 'Novak', 'Sharp', 'Vance', 'Whitaker', 'Young', 'Garrett'],
+      masculine: ['Mason', 'Tyler', 'Marcus', 'Dez', 'Brock', 'Cody', 'Derek', 'Kyle', 'Troy', 'Dale', 'Clint', 'Jordan', 'Casey', 'Riley', 'Quinn', 'Travis', 'Wade', 'Hunter', 'Logan', 'Ethan', 'Caleb', 'Austin', 'Brandon', 'Dustin', 'Jesse', 'Shane', 'Bobby', 'Ray', 'Darnell', 'Jamal', 'Terrell', 'Andre', 'Malik', 'Curtis', 'Duane', 'Earl', 'Floyd', 'Lonnie', 'Russell', 'Wyatt'],
+      feminine: ['Dana', 'Jade', 'Nikki', 'Shawna', 'Tasha', 'Lena', 'Brianna', 'Raven', 'Monique', 'Skye', 'Riley', 'Quinn', 'Jordan', 'Casey', 'Kendra', 'Amber', 'Ashley', 'Crystal', 'Destiny', 'Erica', 'Heather', 'Kayla', 'Kelsey', 'Lacey', 'Mandy', 'Megan', 'Paige', 'Rachel', 'Shelby', 'Tiffany', 'Trina', 'Wanda', 'Aaliyah', 'Keisha', 'Latoya', 'Imani', 'Jasmine', 'Courtney', 'Darlene', 'Tammy'],
+      family: ['Carter', 'Hayes', 'Brooks', 'Murphy', 'Price', 'Sullivan', 'Foster', 'Walsh', 'Cole', 'Fletcher', 'Dawson', 'Hale', 'Kane', 'Mercer', 'Novak', 'Sharp', 'Vance', 'Whitaker', 'Young', 'Garrett', 'Bennett', 'Bishop', 'Boyd', 'Bradley', 'Burke', 'Caldwell', 'Chambers', 'Crawford', 'Holt', 'Douglas', 'Ellis', 'Fisher', 'Gibson', 'Graham', 'Grant', 'Harper', 'Hudson', 'Jenkins', 'Keller', 'Lawson', 'Lowe', 'Marsh', 'McCoy', 'Nash', 'Owens', 'Porter', 'Reid', 'Riggs', 'Sawyer', 'Shaw', 'Spencer', 'Stone', 'Tate', 'Tucker', 'Warren', 'Webb', 'Wolfe', 'Wright', 'Barnes', 'Flynn'],
     },
     corpo: {
-      masculine: ['Victor', 'Adrian', 'Sebastian', 'Laurent', 'Julian', 'Konstantin', 'Nikolai', 'Oscar', 'Sanjay', 'Theodore', 'Dominic', 'Rupert', 'Anselm', 'Matthias', 'Leopold'],
-      feminine: ['Helena', 'Ingrid', 'Claudia', 'Petra', 'Amara', 'Priya', 'Ayesha', 'Beatrix', 'Vivienne', 'Marguerite', 'Ilse', 'Celeste', 'Saskia', 'Odile', 'Ramona'],
-      family: ['Aldridge', 'Brandt', 'Castellano', 'Dubois', 'Eriksen', 'Falk', 'Grimaldi', 'Hoffmann', 'Ivanova', 'Jansen', 'Kowalski', 'Lindqvist', 'Moreau', 'Nakashima', 'Oyelaran', 'Petrov', 'Rousseau', 'Schreiber', 'Varga', 'Weller'],
+      masculine: ['Victor', 'Adrian', 'Sebastian', 'Laurent', 'Julian', 'Konstantin', 'Nikolai', 'Oscar', 'Sanjay', 'Theodore', 'Dominic', 'Rupert', 'Anselm', 'Matthias', 'Leopold', 'Alistair', 'Benedikt', 'Cassius', 'Desmond', 'Edmund', 'Felix', 'Gideon', 'Hugo', 'Ignatius', 'Jasper', 'Kristoffer', 'Lucien', 'Magnus', 'Nathaniel', 'Octavian', 'Percival', 'Quentin', 'Raphael', 'Stellan', 'Tobias', 'Ulrich', 'Vikram', 'Wolfgang', 'Xavier', 'Yaroslav'],
+      feminine: ['Helena', 'Ingrid', 'Claudia', 'Petra', 'Amara', 'Priya', 'Ayesha', 'Beatrix', 'Vivienne', 'Marguerite', 'Ilse', 'Celeste', 'Saskia', 'Odile', 'Ramona', 'Adelaide', 'Annika', 'Cordelia', 'Daphne', 'Elise', 'Fiona', 'Genevieve', 'Henrike', 'Isolde', 'Josephine', 'Katarina', 'Liesel', 'Magdalena', 'Noor', 'Ophelia', 'Penelope', 'Rosalie', 'Seraphina', 'Theodora', 'Ursula', 'Veronika', 'Wilhelmina', 'Yasmin', 'Zofia', 'Clementine'],
+      family: ['Aldridge', 'Brandt', 'Castellano', 'Dubois', 'Eriksen', 'Falk', 'Grimaldi', 'Hoffmann', 'Ivanova', 'Jansen', 'Kowalski', 'Lindqvist', 'Moreau', 'Nakashima', 'Oyelaran', 'Petrov', 'Rousseau', 'Schreiber', 'Varga', 'Weller', 'Abernathy', 'Bergström', 'Chandrasekhar', 'Delacroix', 'Engel', 'Fairbanks', 'Goldberg', 'Haverford', 'Iyer', 'Jovanović', 'Kessler', 'Lambert', 'Montague', 'Nordström', 'Okonkwo', 'Pemberton', 'Quist', 'Rasmussen', 'Sterling', 'Thorne', 'Ullmann', 'Vanderberg', 'Winthrop', 'Yamashiro', 'Zeller', 'Ashford', 'Blackwood', 'Carrington', 'Devereux', 'Ellsworth', 'Fontaine', 'Gallagher', 'Hartmann', 'Kaminski', 'Lefebvre', 'Mansfield', 'Prescott', 'Radcliffe', 'Sinclair', 'Templeton'],
     },
   },
   backgrounds: {
@@ -179,6 +179,7 @@ export const PEOPLE: PeopleContent = {
       'ded-zed': ['runs the shop'],
       pharmacy: ['pharmacist', 'counter clerk'],
       'street-clinic': ['street doc', 'nurse'],
+      hospital: ['doctor', 'nurse'],
       garage: ['mechanic', 'runs the garage'],
       'chop-shop': ['chop-shop mechanic', 'parts stripper'],
       'braindance-parlor': ['BD tech', 'runs the parlor'],
@@ -249,6 +250,72 @@ export const PEOPLE: PeopleContent = {
   residents: [6, 9],
   // The second draw: a second pair of hands at most storefronts, a resident or so per home (three more in a megabuilding, one in a tall block), and the gangs again.
   more: { staff: 0.6, perHome: [0, 1], tall: 1, megabuilding: 3, gangs: 1 },
+  // The third draw: the homes as full as Night City's are, a megabuilding most of all, a few more hands behind the counters, and the gangs a little deeper.
+  crowd: { staff: 0.3, perHome: [2, 6], tall: 8, megabuilding: 20, gangs: 0.5 },
+  crowdKnows: 3,
+  // Opening hours (ours), by category, a business's own over them: shops and services by day, eateries
+  // from lunch till late in two shifts, the arcades and BD parlors from the afternoon into the small hours,
+  // bars and clubs from six till three. A 24/7, a motel's or a capsule hotel's desk and a hospital never
+  // close: three shifts round the clock. Two hands a shift, each off two days a week in turn.
+  shifts: {
+    hours: {
+      default: [9, 18],
+      commodity: [9, 19],
+      clothing: [10, 19],
+      firearms: [10, 19],
+      melee: [10, 19],
+      cyberware: [10, 20],
+      netrunning: [10, 20],
+      medical: [8, 18],
+      services: [9, 18],
+      vehicles: [8, 18],
+      food: [11, 23],
+      entertainment: [14, 2],
+      nightlife: [18, 3],
+    },
+    business: { bank: [9, 17], laundromat: [8, 18], 'tattoo-studio': [10, 20] },
+    split: 10,
+    round: [
+      [6, 14],
+      [14, 22],
+      [22, 6],
+    ],
+    perShift: 2,
+    daysOff: 2,
+  },
+  // The NCPD, after the wiki's 2077: privatized and cut to half its officers, gone from Pacifica, rarely seen
+  // in the Badlands, thickest downtown. Officers in pairs, a sergeant over them, the odd detective.
+  ncpd: {
+    perDistrict: { city_center: 16, westbrook: 12, heywood: 10, watson: 8, santo_domingo: 6 },
+    roles: ['NCPD officer', 'NCPD officer', 'NCPD officer', 'NCPD sergeant', 'NCPD detective'],
+  },
+  // Everyone's own levels, in the player's (an ordinary person is 4): gangers and guards handy and
+  // hard to talk round, corpos smooth and soft, the old slow but with a way with words; anyone
+  // else anywhere. Nerve and temper make a fighter, warmth and chattiness a talker.
+  skills: {
+    walks: {
+      gang: { brawler: [4, 7], toughness: [4, 7], arms: [4, 7], charisma: [1, 4], trading: [2, 5], dealing: [3, 7], cutting: [2, 6] },
+      guard: { brawler: [4, 6], toughness: [4, 7], arms: [5, 7], charisma: [2, 5], trading: [2, 4], dealing: [1, 3], cutting: [1, 3] },
+      corpo: { brawler: [1, 3], toughness: [1, 3], arms: [2, 4], charisma: [5, 8], trading: [4, 7], dealing: [1, 3], cutting: [1, 2] },
+      elder: { brawler: [1, 3], toughness: [1, 2], arms: [1, 3], charisma: [4, 8], trading: [3, 6], dealing: [1, 4], cutting: [1, 3] },
+      street: { brawler: [2, 5], toughness: [2, 5], arms: [2, 5], charisma: [2, 6], trading: [2, 5], dealing: [1, 5], cutting: [1, 4] },
+    },
+    traits: 1.5,
+    most: 10,
+    reads: {
+      fight: [[2, 'Harmless'], [3, 'No fighter'], [4, 'Ordinary'], [6, 'Can handle themselves'], [10, 'Dangerous']],
+      talk: [[2, 'Tongue-tied'], [4, 'Plain-spoken'], [6, 'Smooth'], [10, 'Silver-tongued']],
+      talks: 2,
+    },
+    // Practice: a day's worth by what they do (a ganger's rackets, a guard's watch, a corpo's
+    // meetings, a counter's customers), and what a fight teaches. On the player's curves, so a
+    // counter hand goes up a level of trading in a few weeks at first, and in months later on.
+    practice: {
+      walks: { gang: { brawler: 3, toughness: 3, arms: 3, trading: 1, dealing: 2, cutting: 1 }, guard: { arms: 3, brawler: 2, toughness: 2 }, corpo: { charisma: 3, trading: 2 }, elder: {}, street: {} },
+      staff: { trading: 4, charisma: 2 },
+      fight: { brawler: 12, toughness: 12, arms: 8 },
+    },
+  },
   // Credchips (the wiki's 2020 chips of eurodollars): corpos nearly always carry one with real money on it; the street often, with less; gangers deal in cash.
   chips: { corpo: { chance: 0.8, range: [80, 500] }, gang: { chance: 0.2, range: [20, 120] }, street: { chance: 0.45, range: [15, 150] } },
   // Street names: made up, checked against the wiki so none is a canon character's (and none a canon weapon or perk). Most gangers go by one, some on the street, corpos never.
@@ -317,6 +384,39 @@ export const PEOPLE: PeopleContent = {
     },
   },
   hangouts: ['bar', 'club', 'noodle', 'diner', 'restaurant', 'market', 'pachinko', 'boardwalk', 'plaza', 'rooftop', 'street', 'dollhouse', 'docks', 'shrine', 'park', 'mall', 'hotel', 'nomad_camp', 'gas_station', 'junkyard', 'food', 'nightlife', 'entertainment'],
+  // Out and about: two times in five someone's out, they're at one of these near home (never a clinic, a curio shop, a gang's
+  // stronghold or a dollhouse, and the bars and eateries are hangouts). What they're doing never reads as busy, eating or drinking.
+  out: {
+    share: 0.4,
+    kinds: {
+      market: ['browsing the stalls', 'haggling over a secondhand jacket', 'picking through a crate of old shards'],
+      plaza: ['sitting on the steps', 'feeding the pigeons', 'waiting on someone', 'killing time'],
+      rooftop: ['taking in the skyline', 'smoking by the railing', 'killing time up top'],
+      alley: ['smoking in the alley', 'leaning on a dumpster', 'killing time'],
+      docks: ['fishing off the pier', 'looking out at the water', 'sitting on a bollard'],
+      park: ['walking the paths', 'sitting on a bench', 'jogging laps'],
+      boardwalk: ['walking the boardwalk', 'leaning on the rail', 'looking out to sea'],
+      shrine: ['lighting incense', 'praying', 'sitting quietly'],
+      columbarium: ['visiting the dead', 'leaving flowers', 'standing by a niche'],
+      megabuilding: ['waiting for the elevator', 'browsing the lobby stalls', 'hanging around the lobby'],
+      squat: ['warming up by a barrel fire', 'fixing a cot', 'trading scrap'],
+      motel: ['smoking outside a room', 'waiting by the ice machine'],
+      checkpoint: ['waiting in line', 'arguing with the guards'],
+      gas_station: ['filling up', 'buying smokes', 'leaning on a pump'],
+      nomad_camp: ['fixing an engine', 'sitting by the fire', 'trading parts'],
+      junkyard: ['picking through scrap', 'stripping a wreck'],
+      mall: ['window shopping', 'browsing the shops', 'sitting by the fountain'],
+      street: ['walking the block', 'loitering on the corner'],
+      stadium: ['in the stands', 'queuing for the gates'],
+      cityhall: ['filing a complaint', 'in line for a permit'],
+      freight: ['hanging around the yard', 'waiting on a train'],
+      warehouse: ['hanging around the loading bay', 'hauling boxes'],
+      factory: ['hanging around the gates', 'smoking by the fence'],
+      farm: ['tending a plot', 'fixing a fence'],
+      ghost_town: ['picking through ruins', 'sitting on a porch'],
+      hotel: ['in the lobby', 'waiting on someone in the lobby'],
+    },
+  },
   traitLines: {
     warmth: { high: 'Easy to like.', low: 'Keeps everyone at arm\'s length.' },
     temper: { high: 'Quick to anger.', low: 'Hard to rattle.' },

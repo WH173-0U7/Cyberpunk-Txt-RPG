@@ -121,6 +121,7 @@
           </div>
           <div class="overlay-body">
             <p id="people-rep" class="people-rep" hidden></p>
+            <div id="people-tabs" class="people-tabs" role="tablist" aria-label="Who to show"></div>
             <p id="people-empty" class="people-empty" hidden></p>
             <ul id="people-list" class="people-list"></ul>
             <div id="person" class="person-card" hidden>
@@ -131,9 +132,10 @@
                   <span id="person-stance" class="stance"></span>
                 </div>
                 <p id="person-kicker" class="person-kicker"></p>
-                <button id="person-facts" class="person-facts" type="button" aria-expanded="false" title="What you know"></button>
+                <button id="person-facts" class="person-facts" type="button" title="Their profile"></button>
               </div>
-              <div id="person-web" class="person-web-box" hidden></div>
+              <div id="person-tabs" class="people-tabs person-tabs" role="tablist" aria-label="Their card"></div>
+              <div id="person-profile" class="person-profile" hidden><div id="person-web" class="person-web-box"></div></div>
               <ol id="person-log" class="person-log" aria-label="What was said" aria-live="polite"></ol>
               <div id="person-picker" class="person-picker" hidden></div>
               <div id="person-commands" class="person-commands" role="toolbar" aria-label="What to do"></div>
@@ -150,7 +152,55 @@
           <div class="overlay-body">
             <p id="shop-blurb" class="shop-blurb"></p>
             <p id="shop-status" class="shop-status" role="status"></p>
+            <div id="shop-tabs" class="people-tabs" role="tablist" aria-label="Buy or sell" hidden></div>
             <ul id="shop-list" class="shop-list"></ul>
+          </div>
+        </div>
+        <div id="fight" class="overlay fight" role="dialog" aria-labelledby="fight-title" hidden>
+          <div class="overlay-strip">
+            <span class="overlay-barcode" aria-hidden="true"></span>
+            <span id="fight-title" class="overlay-label">NCNET//FIGHT</span>
+            <span id="fight-kicker" class="overlay-detail"></span>
+            <button id="fight-close" class="icon-btn overlay-close" type="button" aria-label="Done with the fight" title="Done (Esc)" hidden></button>
+          </div>
+          <div class="overlay-body fight-body">
+            <div class="fight-sides">
+              <div class="fight-side is-you">
+                <span class="fight-who">You</span>
+                <span id="fight-you-arm" class="fight-arm"></span>
+                <span id="fight-you-hp" class="fight-hp"></span>
+                <span class="fight-bar" aria-hidden="true"><span id="fight-you-fill" class="fight-fill"></span></span>
+                <ul id="fight-allies" class="fight-crew" aria-label="On your side" hidden></ul>
+              </div>
+              <div class="fight-side is-them">
+                <span id="fight-them-name" class="fight-who"></span>
+                <span id="fight-them-arm" class="fight-arm"></span>
+                <span id="fight-them-hp" class="fight-hp"></span>
+                <span class="fight-bar" aria-hidden="true"><span id="fight-them-fill" class="fight-fill"></span></span>
+                <ul id="fight-foes" class="fight-crew" aria-label="The rest of them: tap to go for one" hidden></ul>
+              </div>
+            </div>
+            <ol id="fight-log" class="fight-log" aria-live="polite"></ol>
+            <p id="fight-tell" class="fight-tell" hidden></p>
+            <button id="fight-lethal" class="fight-lethal" type="button" aria-pressed="false"></button>
+            <div id="fight-clock" class="fight-clock" aria-hidden="true"><span class="fight-clock-fill"></span><span id="fight-seconds" class="fight-seconds"></span></div>
+            <div id="fight-moves" class="fight-moves"></div>
+            <div id="fight-hacks" class="fight-hacks" hidden></div>
+            <p id="fight-result" class="fight-result" role="status" hidden></p>
+            <button id="fight-done" class="fight-done" type="button" hidden>Done</button>
+          </div>
+        </div>
+        <div id="rooms" class="overlay rooms" role="dialog" aria-labelledby="rooms-title" hidden>
+          <div class="overlay-strip">
+            <span class="overlay-barcode" aria-hidden="true"></span>
+            <span id="rooms-title" class="overlay-label">NCNET//ROOMS</span>
+            <span id="rooms-floor" class="overlay-detail"></span>
+            <button id="rooms-close" class="icon-btn overlay-close" type="button" aria-label="Close rooms" title="Close (Esc)"></button>
+          </div>
+          <div class="overlay-body rooms-body">
+            <ul id="rooms-list" class="rooms-list"></ul>
+            <p id="rooms-status" class="shop-status" role="status" hidden></p>
+            <div id="rooms-floors" class="rooms-floors" role="toolbar" aria-label="Stairs" hidden></div>
           </div>
         </div>
         <div id="bank" class="overlay bank" role="dialog" aria-labelledby="bank-title" hidden>
@@ -167,10 +217,27 @@
             <div id="bank-commands" class="person-commands" role="toolbar" aria-label="The counter"></div>
           </div>
         </div>
+        <div id="books" class="overlay bank books" role="dialog" aria-labelledby="books-title" hidden>
+          <div class="overlay-strip">
+            <span class="overlay-barcode" aria-hidden="true"></span>
+            <span id="books-title" class="overlay-label">NCNET//BOOKS</span>
+            <span id="books-name" class="overlay-detail"></span>
+            <button id="books-close" class="icon-btn overlay-close" type="button" aria-label="Close the books" title="Close (Esc)"></button>
+          </div>
+          <div class="overlay-body bank-body books-body">
+            <div id="books-figures" class="bank-figures"></div>
+            <p id="books-status" class="shop-status" role="status"></p>
+            <div id="books-picker" class="person-picker" hidden></div>
+            <div id="books-commands" class="person-commands" role="toolbar" aria-label="The books"></div>
+          </div>
+        </div>
         <div id="place" class="place">
           <div class="scan-clip" aria-hidden="true"><div id="scan-beam" class="scan-beam"></div></div>
           <div class="place-text">
-            <p id="place-kicker" class="place-kicker"></p>
+            <div class="place-kicker-row">
+              <p id="place-kicker" class="place-kicker"></p>
+              <button id="place-room" class="place-room" type="button" aria-controls="rooms" hidden></button>
+            </div>
             <h2 id="place-title" class="place-title" hidden></h2>
             <p id="place-meta" class="place-meta" hidden></p>
             <p id="place-desc" class="place-desc"></p>
@@ -185,6 +252,15 @@
             <button id="act-menu" class="action is-menu" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-bank" class="action is-bank" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-work" class="action is-work" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-deal" class="action is-deal" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-home" class="action is-home" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-move" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-buy" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-books" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-sell" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-pick-1" class="action is-work" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-pick-2" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-pick-3" class="action is-stop" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-enter" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-leave" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
           </div>

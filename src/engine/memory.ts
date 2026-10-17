@@ -4,8 +4,9 @@ import type { SocietyState } from './society';
  * What people remember of the player: not a number, but the things themselves. The one who
  * was robbed remembers the robbery, how much and when; their sister remembers hearing about
  * it; the boss remembers taking the player on, moving them up, and the day they walked out;
- * whoever got the Taco remembers the Taco. Memories fade on the game's clock (each kind
- * lasts its own number of days), the strongest and freshest is what someone brings up when
+ * whoever got the Taco remembers the Taco. Memories fade on the calendar (`clock`; each kind
+ * lasts its own number of days, longer for a killing or a beating, and for what happened more
+ * than once), the strongest and freshest is what someone brings up when
  * they talk, and each is brought up only so many times. Some change what people do: a boss
  * the player walked out on won't take them back while they remember it, and a gift they've
  * had before is had again. The numbers are in `src/data/society.ts`; `Game` writes the
@@ -28,17 +29,24 @@ export type MemoryKind =
   | 'hired'
   | 'promoted'
   | 'quit'
+  /** Was given notice: the player left for other work (`what` the rung). */
+  | 'notice'
   | 'fired'
   /** Chopped a hot chip for the player: `amount` was on it. */
   | 'chopped'
-  /** Was asked about `about`. */
-  | 'asked'
   /** Went out with the player: `what` is where. */
   | 'date'
   /** Was dumped by the player. */
   | 'dumped'
   /** Caught the player flirting with `about`, while they were together. */
-  | 'cheated';
+  | 'cheated'
+  /** A chat the player started a way they liked (`what` the way: a joke, a compliment…), or one they didn't. */
+  | 'chat'
+  | 'rebuffed'
+  /** The player covered a shift for them (`what` where). */
+  | 'covered'
+  /** Threw in on the player's side in a fight (`what` where). */
+  | 'backed';
 
 export interface Memory {
   kind: MemoryKind;
@@ -57,10 +65,17 @@ export interface Memory {
 }
 
 export interface MemoryRules {
+  /**
+   * The clock people remember by, their grudges, spark and the reputations too: 1 is the
+   * calendar, whatever speed the streets run at for testing (missing: the streets' own).
+   */
+  clock?: number;
   /** The most kept per person: the least of the rest is forgotten. */
   cap: number;
-  /** Days on the game's clock each kind is remembered. */
+  /** Days each kind is remembered. */
   days: Record<MemoryKind, number>;
+  /** How much longer, and how much more on their mind, a memory is for what was done: a killing heard of stays for months. */
+  deep: Record<string, number>;
   /** How much each kind is on someone's mind: the strongest, freshest is what they bring up. */
   weight: Record<MemoryKind, number>;
   /** Times each kind is brought up at most. */
@@ -71,10 +86,20 @@ export interface MemoryRules {
   heardAt: number;
   /** Rapport a good word passes on to the people closest to someone the player was good to, as a share of what it was worth to them, by closeness. */
   goodWord: number;
+  /** What it takes of memories on someone's mind, good less bad, for their regard of the player to be all the way one way (`regard`). */
+  regard: number;
 }
+
+/** Every kind there is, for reading a save: anything else (a kind the game no longer has) is forgotten. */
+export const MEMORY_KINDS: ReadonlySet<string> = new Set<MemoryKind>(['wronged', 'heard', 'saw', 'settled', 'gift', 'goodWord', 'hired', 'promoted', 'quit', 'notice', 'fired', 'chopped', 'date', 'dumped', 'cheated', 'chat', 'rebuffed', 'covered', 'backed']);
 
 /** The ones that are a grievance: brought up, they're the whole of what's said. */
 export const GRIEVANCES: ReadonlySet<MemoryKind> = new Set<MemoryKind>(['wronged', 'heard', 'saw', 'quit', 'fired', 'dumped', 'cheated']);
+
+/** The ones someone holds against the player, for their regard of them: the grievances, and a way in they didn't like. */
+const AGAINST: ReadonlySet<MemoryKind> = new Set<MemoryKind>([...GRIEVANCES, 'rebuffed']);
+/** The ones that count for the player. */
+const FOR: ReadonlySet<MemoryKind> = new Set<MemoryKind>(['gift', 'goodWord', 'hired', 'promoted', 'chopped', 'date', 'chat', 'covered', 'backed']);
 
 const DAY = 86_400_000;
 
@@ -83,16 +108,25 @@ export function daysSince(at: number, timeScale: number, now: number): number {
   return Math.max(0, now - at) / (DAY / timeScale);
 }
 
-/** How much a memory is on someone's mind now: its weight, fading to nothing over the days it lasts. */
+/** How old a memory is, in days on the clock people remember by. */
+export function memoryAge(at: number, rules: MemoryRules, timeScale: number, now: number): number {
+  return daysSince(at, rules.clock ?? timeScale, now);
+}
+
+/** How many days a memory lasts: its kind's, longer for what was done (`deep`), and half again for every time it happened again. */
+function lasts(memory: Memory, rules: MemoryRules): number {
+  return rules.days[memory.kind] * (rules.deep[memory.what ?? ''] ?? 1) * (1 + (memory.times - 1) * 0.5);
+}
+
+/** How much a memory is on someone's mind now: its weight (more for what was done), fading to nothing over the days it lasts. */
 function strength(memory: Memory, rules: MemoryRules, timeScale: number, now: number): number {
-  const days = rules.days[memory.kind];
-  return rules.weight[memory.kind] * Math.max(0, 1 - daysSince(memory.at, timeScale, now) / days) * (1 + (memory.times - 1) * 0.5);
+  return rules.weight[memory.kind] * (rules.deep[memory.what ?? ''] ?? 1) * Math.max(0, 1 - memoryAge(memory.at, rules, timeScale, now) / lasts(memory, rules)) * (1 + (memory.times - 1) * 0.5);
 }
 
 /** What someone still remembers of the player, freshest first. */
 export function memoriesOf(state: SocietyState, id: string, rules: MemoryRules, timeScale: number, now: number): Memory[] {
   return (state.memories?.[id] ?? [])
-    .filter((m) => daysSince(m.at, timeScale, now) < rules.days[m.kind])
+    .filter((m) => memoryAge(m.at, rules, timeScale, now) < lasts(m, rules))
     .sort((a, b) => b.at - a.at)
     .map((m) => ({ ...m }));
 }
@@ -136,6 +170,22 @@ export function recall(state: SocietyState, id: string, rules: MemoryRules, time
     }
   }
   return best;
+}
+
+/**
+ * Where someone's memories of the player leave them, from -1 (nothing but what they hold
+ * against them) to 1 (nothing but good): what counts for the player on their mind, less what
+ * they hold against them, each by how strongly, over `regard`. It moves how ready they are to
+ * open up, what they charge at their counter, whether they'd call the NCPD on the player, and
+ * which side they take in a fight.
+ */
+export function regard(state: SocietyState, id: string, rules: MemoryRules, timeScale: number, now: number): number {
+  let sum = 0;
+  for (const m of memoriesOf(state, id, rules, timeScale, now)) {
+    if (FOR.has(m.kind)) sum += strength(m, rules, timeScale, now);
+    else if (AGAINST.has(m.kind)) sum -= strength(m, rules, timeScale, now);
+  }
+  return Math.max(-1, Math.min(1, sum / Math.max(1, rules.regard)));
 }
 
 /** Writes down that someone brought a memory up. */

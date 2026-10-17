@@ -4,6 +4,14 @@ import type { SkillStatus } from './skills';
 import type { JobStatus } from './jobs';
 import type { Quality } from './food';
 import type { You } from './romance';
+import type { ChromeStatus } from './cyberware';
+import type { FightView, HealthStatus } from './combat';
+import type { CoverageStatus } from './medical';
+import type { Room } from './rooms';
+import type { PoliceView } from './police';
+import type { DealView } from './dealing';
+import type { HabitView } from './habit';
+import type { HomeView } from './home';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -16,13 +24,18 @@ export interface Theme {
   secondary: string;
 }
 
-/** Map coordinates. Both axes run 0–100; the map stretches them to fit the screen. */
+/** Map coordinates. Both axes run 0–`WORLD` (geography.ts); the map stretches them to fit the screen. */
 export interface Point {
   x: number;
   y: number;
 }
 
 export type Side = 'north' | 'east' | 'south' | 'west';
+
+/** One of a district's neighborhoods (the wiki's sub-districts, e.g. Kabuki in Watson), and where it is. */
+export interface Subdistrict extends Point {
+  name: string;
+}
 
 export interface District extends Point {
   id: string;
@@ -38,6 +51,8 @@ export interface District extends Point {
   ambient: AmbientLine[];
   /** How its eateries lean: luxury, everyday or poverty, as relative weights. */
   dining: Partial<Record<Quality, number>>;
+  /** Its neighborhoods on this map. A block belongs to the one nearest it (or to the nearest district with none). */
+  subdistricts: Subdistrict[];
 }
 
 /** An NCART stop. Stations sit on street corners. */
@@ -70,7 +85,7 @@ export interface Whereabouts extends Point {
   building: string | null;
 }
 
-/** The street grid every location sits on. Positions run 0–100 like map coordinates. */
+/** The street grid every location sits on. Positions run 0–`WORLD` like map coordinates. */
 export interface CityLayout {
   /** Streets running north–south, by x position. */
   avenues: number[];
@@ -169,6 +184,8 @@ export interface Item {
   weapon?: string;
   /** For a gun: the rounds in its magazine, which weigh with it. */
   loaded?: number;
+  /** For a stack of a drug: the share of it that's cutting agent, mixed all through (src/engine/cutting.ts). */
+  cut?: number;
 }
 
 /** Flavor text that plays while the player is idle, optionally firing an effect. */
@@ -182,6 +199,8 @@ export interface Location extends Point {
   /** The kind as players read it, e.g. "Night market". */
   kindLabel: string;
   district: string;
+  /** The neighborhood it's in (a `Subdistrict` name), when its district has them. */
+  area?: string;
   weather: Weather;
   /** Overrides the district colors, e.g. for an interior with its own lighting. */
   theme?: Partial<Theme>;
@@ -223,6 +242,8 @@ export interface Wallet {
   eddies: number;
   bills: number;
   coins: number;
+  /** The notes the bills are: how many of each, by denomination. */
+  notes: Record<string, number>;
   /** In the bank. */
   account: number;
   /** On credchips in your name, spendable where transfers are taken. */
@@ -294,9 +315,33 @@ export type GameEvents = {
   societyChanged: { people: string[] };
   /** Charisma earned experience or a level. */
   charismaChanged: SkillStatus;
+  /** A fighting skill gained experience or a level: Street Brawler, or Toughness. */
+  skillChanged: { skill: 'brawler' | 'toughness' | 'weapon' | 'trading' | 'dealing' | 'cutting'; status: SkillStatus };
+  /** The player walked into another room of the building they're in. */
+  roomChanged: Room;
+  /** The player took a home, paid (or couldn't pay) its rent, moved out or was put out (null: nowhere now). */
+  homeChanged: HomeView | null;
+  /** Something about a storefront the player owns changed: bought, sold, priced, paid, gone under. */
+  businessChanged: null;
   /** The player got a job, worked a shift, moved up, quit or was let go (null: no job now). */
   jobChanged: JobStatus | null;
   /** The player changed the pronouns they go by. */
   youChanged: You;
+  /** A ripperdoc fitted an implant, or took one out. */
+  chromeChanged: ChromeStatus;
+  /** A fight began, went a beat, or ended (null: none to show). */
+  fightChanged: FightView | null;
+  /** The player was hurt (a fight ended) or patched up (treatment, a med). Healing on the clock doesn't fire this; ask `Game.health(now)`. */
+  healthChanged: HealthStatus;
+  /** The player signed up with Trauma Team, or lost the plan (null: none now). Running out on the clock doesn't fire this; ask `Game.covered(now)`. */
+  coverageChanged: CoverageStatus | null;
+  /** Something with the NCPD changed: a call made, a unit sent or arrived, a warrant, officers on the player, a hold. The clock running down doesn't fire this; ask `Game.police(now)`. */
+  policeChanged: PoliceView;
+  /** The player's dealing for a gang changed: a front, a sale, a debt, a rung; null when they're out. */
+  dealChanged: DealView | null;
+  /** The player's habit changed: a dose taken or worn off, a craving, withdrawal. */
+  habitChanged: HabitView | null;
+  /** The player is dead (an overdose with nobody to help): the city goes on without them. */
+  flatlined: { text: string };
   fx: { effect: FxName };
 };

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SOCIETY } from '../src/data/society';
 import { INVERSE, type Person, type Population, type Tie, type TieKind } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
-import { forgetMemories, memoriesOf, recall, recalled, remember } from '../src/engine/memory';
+import { forgetMemories, memoriesOf, recall, recalled, regard, remember } from '../src/engine/memory';
 import { applyIncident, attitude, changeRep, changeStanding, dueThreats, freshSociety, isPinned, knowledgeOf, knownPeople, knowsOf, learnFact, learnLink, learnOf, linkOf, LOG_CAP, logLine, passGoodWord, pinIncident, relearnLink, repOf, settleThreat, standingOf, stanceOf, unpinnedIncidents, webOf, type SocietyRules } from '../src/engine/society';
 
 const HOUR = 3_600_000;
@@ -191,14 +191,19 @@ describe('society', () => {
     expect(learnLink(state, 'rosa', 'rosa', 'friend', 'told', T0)).toBe(false);
   });
 
-  it('forgives and forgets on the clock, sped up by the test speed', () => {
+  it('forgives and forgets on the calendar, whatever the streets\' test speed', () => {
     const state = freshSociety();
     changeStanding(state, 'rosa', { grudge: 30, rapport: 10 }, RULES, 1, T0);
     changeRep(state, 'gang:valentinos', -20, RULES, 1, T0);
     expect(standingOf(state, 'rosa', RULES, 1, T0 + 10 * DAY)).toMatchObject({ grudge: 20, rapport: 10 });
     expect(standingOf(state, 'rosa', RULES, 1, T0 + 100 * DAY).grudge).toBe(0);
     expect(repOf(state, 'gang:valentinos', RULES, 1, T0 + 5 * DAY)).toBe(-10);
-    expect(repOf(state, 'gang:valentinos', RULES, 60, T0 + 10 * 24 * 60_000)).toBe(0);
+    // Sped up sixty times, the streets run faster; people remember as long as ever.
+    expect(repOf(state, 'gang:valentinos', RULES, 60, T0 + 10 * 24 * 60_000)).toBeLessThan(-19);
+    expect(standingOf(state, 'rosa', RULES, 60, T0 + 10 * DAY).grudge).toBe(20);
+    // Without a clock of their own, they go by the streets'.
+    const streets = { ...RULES, memory: { ...RULES.memory, clock: undefined } };
+    expect(repOf(state, 'gang:valentinos', streets, 60, T0 + 10 * 24 * 60_000)).toBe(0);
     // Changes are written down on faded values.
     changeStanding(state, 'rosa', { grudge: 5 }, RULES, 1, T0 + 10 * DAY);
     expect(standingOf(state, 'rosa', RULES, 1, T0 + 10 * DAY).grudge).toBe(25);
@@ -265,12 +270,12 @@ describe('society', () => {
     const state = freshSociety();
     const rules = RULES.memory;
     remember(state, 'rosa', { kind: 'gift', at: T0, what: 'taco' }, rules, 1, T0);
-    remember(state, 'rosa', { kind: 'asked', at: T0, about: 'mateo' }, rules, 1, T0);
-    // A gift outweighs a question.
+    remember(state, 'rosa', { kind: 'chopped', at: T0, amount: 40 }, rules, 1, T0);
+    // A gift outweighs a favor.
     expect(recall(state, 'rosa', rules, 1, T0)?.kind).toBe('gift');
     recalled(state, 'rosa', recall(state, 'rosa', rules, 1, T0)!);
     // Brought up as often as it bears, it gives way to the next.
-    expect(recall(state, 'rosa', rules, 1, T0)?.kind).toBe('asked');
+    expect(recall(state, 'rosa', rules, 1, T0)?.kind).toBe('chopped');
     recalled(state, 'rosa', recall(state, 'rosa', rules, 1, T0)!);
     expect(recall(state, 'rosa', rules, 1, T0)).toBeNull();
     // A grievance is brought up again and again, up to its count.
@@ -281,22 +286,56 @@ describe('society', () => {
       recalled(state, 'rosa', m!);
     }
     expect(recall(state, 'rosa', rules, 1, T0)).toBeNull();
-    // A gift is gone in a week, being wronged in a month; sped up sixty times, a month is half a day.
-    expect(memoriesOf(state, 'rosa', rules, 1, T0 + 8 * DAY).map((m) => m.kind)).toEqual(['wronged']);
+    // A gift and a chop are gone in a fortnight, being wronged in a month, on the calendar whatever the test speed.
+    expect(memoriesOf(state, 'rosa', rules, 1, T0 + 15 * DAY).map((m) => m.kind)).toEqual(['wronged']);
     expect(memoriesOf(state, 'rosa', rules, 1, T0 + 31 * DAY)).toEqual([]);
-    expect(memoriesOf(state, 'rosa', rules, 60, T0 + 13 * HOUR)).toEqual([]);
+    expect(memoriesOf(state, 'rosa', rules, 60, T0 + 13 * HOUR).map((m) => m.kind)).toEqual(['wronged', 'gift', 'chopped']);
+    // What was done counts: a robbery a month and a half, a beating two months, a killing heard of the best part of a year; and again, longer.
+    const deep = freshSociety();
+    remember(deep, 'rosa', { kind: 'wronged', at: T0, what: 'robbery' }, rules, 1, T0);
+    remember(deep, 'rosa', { kind: 'wronged', at: T0, what: 'assault' }, rules, 1, T0);
+    remember(deep, 'rosa', { kind: 'heard', at: T0, about: 'ana', what: 'murder' }, rules, 1, T0);
+    expect(memoriesOf(deep, 'rosa', rules, 1, T0 + 40 * DAY).map((m) => m.what).sort()).toEqual(['assault', 'murder', 'robbery']);
+    expect(memoriesOf(deep, 'rosa', rules, 1, T0 + 50 * DAY).map((m) => m.what).sort()).toEqual(['assault', 'murder']);
+    expect(memoriesOf(deep, 'rosa', rules, 1, T0 + 100 * DAY).map((m) => m.what)).toEqual(['murder']);
+    expect(recall(deep, 'rosa', rules, 1, T0)?.what).toBe('murder');
+    remember(deep, 'rosa', { kind: 'wronged', at: T0 + DAY, what: 'robbery' }, rules, 1, T0 + DAY);
+    expect(memoriesOf(deep, 'rosa', rules, 1, T0 + 60 * DAY).some((m) => m.what === 'robbery' && m.times === 2)).toBe(true);
     // Past the cap the weakest goes, never what just happened.
     const full = freshSociety();
-    for (let i = 0; i < rules.cap; i++) remember(full, 'rosa', { kind: 'asked', at: T0 + i, about: `p${i}` }, rules, 1, T0 + i);
+    for (let i = 0; i < rules.cap; i++) remember(full, 'rosa', { kind: 'goodWord', at: T0 + i, about: `p${i}` }, rules, 1, T0 + i);
     remember(full, 'rosa', { kind: 'wronged', at: T0 + 100, what: 'robbery', amount: 5 }, rules, 1, T0 + 100);
-    remember(full, 'rosa', { kind: 'asked', at: T0 + 200, about: 'last' }, rules, 1, T0 + 200);
+    remember(full, 'rosa', { kind: 'goodWord', at: T0 + 200, about: 'last' }, rules, 1, T0 + 200);
     const kept = memoriesOf(full, 'rosa', rules, 1, T0 + 200);
     expect(kept).toHaveLength(rules.cap);
-    expect(kept[0]).toMatchObject({ kind: 'asked', about: 'last' });
+    expect(kept[0]).toMatchObject({ kind: 'goodWord', about: 'last' });
     expect(kept.some((m) => m.kind === 'wronged')).toBe(true);
     // People the city no longer has are forgotten, and so is anything about them.
     forgetMemories(full, new Set(['rosa', 'p5']));
     expect(memoriesOf(full, 'rosa', rules, 1, T0 + 200).map((m) => m.about ?? m.kind).sort()).toEqual(['p5', 'wronged']);
+  });
+
+  it('adds up what someone remembers into a regard of the player, the good less the bad, fading as they do', () => {
+    const state = freshSociety();
+    const rules = RULES.memory;
+    expect(regard(state, 'rosa', rules, 1, T0)).toBe(0);
+    remember(state, 'rosa', { kind: 'gift', at: T0, what: 'taco' }, rules, 1, T0);
+    remember(state, 'rosa', { kind: 'covered', at: T0, what: 'the grill' }, rules, 1, T0);
+    const fond = regard(state, 'rosa', rules, 1, T0);
+    expect(fond).toBeGreaterThan(0);
+    expect(fond).toBeLessThanOrEqual(1);
+    // Fading, it counts for less; robbed, it turns.
+    expect(regard(state, 'rosa', rules, 1, T0 + 10 * DAY)).toBeLessThan(fond);
+    remember(state, 'rosa', { kind: 'wronged', at: T0, what: 'robbery', amount: 20 }, rules, 1, T0);
+    expect(regard(state, 'rosa', rules, 1, T0)).toBeLessThan(0);
+    // A way in they didn't like counts against; a plain notice, for nothing either way.
+    const other = freshSociety();
+    remember(other, 'ana', { kind: 'rebuffed', at: T0, what: 'joke' }, rules, 1, T0);
+    remember(other, 'ana', { kind: 'notice', at: T0, what: 'prep' }, rules, 1, T0);
+    expect(regard(other, 'ana', rules, 1, T0)).toBeLessThan(0);
+    // A killing heard of is all of it.
+    remember(other, 'ana', { kind: 'heard', at: T0, about: 'rosa', what: 'murder' }, rules, 1, T0);
+    expect(regard(other, 'ana', rules, 1, T0)).toBe(-1);
   });
 
   it('passes a good word to the people closest to someone the player was good to', () => {

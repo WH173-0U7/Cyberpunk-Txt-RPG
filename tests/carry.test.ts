@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
-import { changeRoom, fits, itemGrams, loadOf, loads, newChipId, newPocketId, placeFor, pocketGrams, stackSlots, totalGrams, walletRoom, type GearContent, type PocketState } from '../src/engine/carry';
+import { changeRoom, fits, itemGrams, loadOf, loads, newChipId, newPocketId, notesHeld, placeFor, pocketGrams, stackSlots, totalGrams, walletRoom, type GearContent, type PocketState } from '../src/engine/carry';
 import type { Item } from '../src/engine/types';
 
 const dishes = FOOD.dishes;
@@ -29,7 +29,9 @@ describe('carrying things', () => {
 
   it('counts the wallet as a slot of the pants, the bills in it as weight, and the coins as a slot and weight of their own', () => {
     const money = { bills: 320, coins: 0 };
-    const walletGrams = GEAR.kinds.wallet!.grams + 320 * GEAR.gramsPerBill;
+    // 320 €$ in notes, worked out the biggest first: three hundreds and a twenty, a gram each.
+    const walletGrams = GEAR.kinds.wallet!.grams + notesHeld(money) * GEAR.gramsPerNote;
+    expect(notesHeld(money)).toBe(4);
     // The clothes themselves weigh something too.
     const clothes = GEAR.kinds.jacket!.grams + GEAR.kinds.pants!.grams;
     expect(loadOf(worn[1] as PocketState, worn, [], money, GEAR, dishes)).toEqual({ slots: 1, grams: Math.round(walletGrams) });
@@ -99,11 +101,13 @@ describe('carrying things', () => {
     expect(newChipId([])).toBe('credchip-1');
   });
 
-  it('knows how many more bills the wallet will hold, and none without one', () => {
+  it('knows how many more notes the wallet will hold, and none without one', () => {
     const holds = GEAR.kinds.wallet!.holds ?? 0;
     expect(walletRoom(worn, { bills: 0, coins: 0 }, GEAR)).toBe(holds);
-    expect(walletRoom(worn, { bills: holds - 10, coins: 400 }, GEAR)).toBe(10);
-    expect(walletRoom(worn, { bills: holds + 500, coins: 0 }, GEAR)).toBe(0);
+    // It holds notes, whatever they're worth: a wad of fives fills it as fast as hundreds.
+    expect(walletRoom(worn, { bills: (holds - 10) * 5, coins: 400, notes: { '5': holds - 10 } }, GEAR)).toBe(10);
+    expect(walletRoom(worn, { bills: (holds - 10) * 100, coins: 0, notes: { '100': holds - 10 } }, GEAR)).toBe(10);
+    expect(walletRoom(worn, { bills: (holds + 5) * 20, coins: 0, notes: { '20': holds + 5 } }, GEAR)).toBe(0);
     expect(walletRoom(worn.slice(0, 2), { bills: 0, coins: 0 }, GEAR)).toBe(0);
   });
 

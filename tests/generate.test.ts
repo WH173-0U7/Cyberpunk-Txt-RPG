@@ -1,10 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CITY } from '../src/data/city';
-import { blockAt, STREET_HALF_WIDTH } from '../src/engine/buildings';
-import { distance, generateWorld, MAX_DESCRIPTION, streetPath } from '../src/engine/generate';
-import { seaTest } from '../src/engine/geography';
+import { blockAt, SHOP_NAME, STREET_HALF_WIDTH } from '../src/engine/buildings';
+import { distance, generateWorld, MAX_DESCRIPTION, SHORT_NAME, streetPath } from '../src/engine/generate';
+import { seaTest, subdistrictAt, WORLD } from '../src/engine/geography';
 import { createRng } from '../src/engine/rng';
-import type { World } from '../src/engine/types';
+import type { Building, World } from '../src/engine/types';
 import { stripMarkup } from '../src/ui/markup';
 
 const seeds = Array.from({ length: 500 }, (_, i) => createRng(`batch-${i}`).next().toString(16).slice(2, 10));
@@ -28,14 +29,32 @@ describe('generateWorld', () => {
     expect(layouts.size).toBeGreaterThan(worlds.length * 0.95);
   });
 
-  it('makes cities of a playable size', () => {
+  it('builds every district and neighborhood of the real Night City, each with places of its own', () => {
     for (const world of worlds) {
-      const districtCount = Object.keys(world.districts).length;
+      expect(Object.keys(world.districts).sort(), world.seed).toEqual(CITY.districts.map((d) => d.id).sort());
       const locationCount = Object.keys(world.locations).length;
-      expect(districtCount, world.seed).toBeGreaterThanOrEqual(3);
-      expect(districtCount, world.seed).toBeLessThanOrEqual(5);
-      expect(locationCount, world.seed).toBeGreaterThanOrEqual(8);
-      expect(locationCount, world.seed).toBeLessThanOrEqual(20);
+      expect(locationCount, world.seed).toBeGreaterThanOrEqual(40);
+      expect(locationCount, world.seed).toBeLessThanOrEqual(64);
+      for (const template of CITY.districts) {
+        const district = world.districts[template.id];
+        expect(district?.subdistricts.map((s) => s.name), `${world.seed} ${template.id}`).toEqual(template.areas.filter((a) => template.areaAt?.[a]));
+        for (const hood of district?.subdistricts ?? []) {
+          const places = Object.values(world.locations).filter((l) => l.area === hood.name);
+          expect(places.length, `${world.seed} ${hood.name}`).toBeGreaterThan(0);
+          expect(places.every((l) => l.district === template.id)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('puts every place in its own neighborhood, as the map draws it', () => {
+    for (const world of worlds) {
+      const districts = Object.values(world.districts);
+      for (const location of Object.values(world.locations)) {
+        const at = subdistrictAt(districts, location);
+        expect(at?.district.id, `${world.seed} ${location.name}`).toBe(location.district);
+        expect(at?.subdistrict?.name, `${world.seed} ${location.name}`).toBe(location.area);
+      }
     }
   });
 
@@ -103,7 +122,7 @@ describe('generateWorld', () => {
     for (const world of worlds) {
       const { coast } = world.layout;
       if (!coast) continue;
-      const reach = { north: (y: number) => y, south: (y: number) => 100 - y, west: (x: number) => x, east: (x: number) => 100 - x };
+      const reach = { north: (y: number) => y, south: (y: number) => WORLD - y, west: (x: number) => x, east: (x: number) => WORLD - x };
       for (const location of Object.values(world.locations)) {
         const along = coast.side === 'north' || coast.side === 'south' ? location.y : location.x;
         expect(reach[coast.side](along), `${world.seed} ${location.id}`).toBeGreaterThanOrEqual(coast.depth + 4);
@@ -127,9 +146,9 @@ describe('generateWorld', () => {
       const list = Object.values(world.locations);
       for (const location of list) {
         expect(location.x).toBeGreaterThanOrEqual(7);
-        expect(location.x).toBeLessThanOrEqual(93);
+        expect(location.x).toBeLessThanOrEqual(WORLD - 7);
         expect(location.y).toBeGreaterThanOrEqual(7);
-        expect(location.y).toBeLessThanOrEqual(93);
+        expect(location.y).toBeLessThanOrEqual(WORLD - 7);
         for (const other of list) {
           if (other !== location) expect(distance(location, other), world.seed).toBeGreaterThanOrEqual(8);
         }
@@ -160,13 +179,24 @@ describe('generateWorld', () => {
 describe('canon first', () => {
   const realNames = new Set(CITY.districts.flatMap((d) => (d.landmarks ?? []).map((l) => l.name)));
 
-  it('uses real Night City places before making any up', () => {
+  it('uses real Night City places before making any up, each in its own neighborhood', () => {
     for (const world of worlds) {
       for (const template of CITY.districts) {
-        const places = Object.values(world.locations).filter((l) => l.district === template.id);
         const landmarks = template.landmarks ?? [];
-        const real = places.filter((l) => landmarks.some((m) => m.name === l.name));
-        expect(real.length, `${world.seed} ${template.id}`).toBe(Math.min(places.length, landmarks.length));
+        const unplaced = landmarks.filter((m) => !m.area && !Object.values(world.locations).some((l) => l.name === m.name));
+        for (const area of template.areas) {
+          const places = Object.values(world.locations).filter((l) => l.district === template.id && l.area === area);
+          const own = landmarks.filter((m) => m.area === area);
+          const real = places.filter((l) => landmarks.some((m) => m.name === l.name));
+          // A made-up place only once the neighborhood's own real places, and the district's
+          // real places that could go anywhere, are all used.
+          if (real.length < places.length) expect(own.filter((m) => !real.some((l) => l.name === m.name)), `${world.seed} ${area}`).toEqual([]);
+          if (real.length < places.length) expect(unplaced, `${world.seed} ${area}`).toEqual([]);
+        }
+        for (const location of Object.values(world.locations)) {
+          const landmark = landmarks.find((m) => m.name === location.name);
+          if (landmark?.area) expect(location.area, location.name).toBe(landmark.area);
+        }
       }
     }
   });
@@ -209,10 +239,16 @@ describe('canon first', () => {
         expect(pacifica.x, `${world.seed} Pacifica is west`).toBeLessThan(center.x);
         expect(pacifica.y, `${world.seed} Pacifica is south`).toBeGreaterThan(center.y);
       }
-      if (badlands) {
-        for (const other of Object.values(world.districts)) {
-          if (other !== badlands) expect(badlands.x, `${world.seed} the Badlands are east of ${other.id}`).toBeGreaterThan(other.x);
+      // The desert wraps the city on the east and the south, well out from the middle.
+      if (badlands && center) {
+        for (const place of Object.values(world.locations).filter((l) => l.district === badlands.id)) {
+          expect(place.x > center.x + 20 || place.y > center.y + 30, `${world.seed} ${place.name} is out past the city`).toBe(true);
         }
+      }
+      const santo = mean(world, 'santo_domingo');
+      if (center && santo) {
+        expect(santo.x, `${world.seed} Santo Domingo is east`).toBeGreaterThan(center.x);
+        expect(santo.y, `${world.seed} Santo Domingo is south`).toBeGreaterThan(center.y);
       }
     }
   });
@@ -315,7 +351,7 @@ describe('buildings', () => {
   it('puts every building in exactly one category, and every storefront in business', () => {
     const problems: string[] = [];
     const businesses = new Map(CITY.buildings.businesses.map((b) => [b.id, b]));
-    // Real storefronts keep their real names rather than their business's sign.
+    // A chain's outlets go by its sign; real storefronts keep their real names, and the rest make theirs up.
     const real = new Set((CITY.buildings.landmarks ?? []).map((l) => l.name));
     for (const world of worlds.slice(0, 100)) {
       for (const b of world.buildings) {
@@ -324,7 +360,7 @@ describe('buildings', () => {
         if (b.kind === 'shops') {
           const business = b.business ? businesses.get(b.business) : undefined;
           if (!business) problems.push(`${world.seed} ${b.id}: storefront without a business`);
-          else if (business.category !== b.category || business.label !== b.kindLabel || (!real.has(b.name) && !b.name.includes(business.sign))) {
+          else if (business.category !== b.category || business.label !== b.kindLabel || (business.chain && !real.has(b.name) && !b.name.includes(business.sign))) {
             problems.push(`${world.seed} ${b.id}: ${b.name} doesn't match ${business.id}`);
           }
           if (!CITY.buildings.categories[b.category]?.business) problems.push(`${world.seed} ${b.id}: storefront in ${b.category}`);
@@ -360,12 +396,170 @@ describe('buildings', () => {
     expect(share('city_center', 'clothing')).toBeGreaterThan(share('pacifica', 'clothing'));
   });
 
+  it('opens a hospital in a clinic, a pharmacy, a laundromat or a bodega of each district, by the name it has', () => {
+    const named = new Map((CITY.buildings.landmarks ?? []).filter((l) => l.business === 'hospital').map((l) => [l.name, l.district]));
+    const areas = new Map((CITY.buildings.landmarks ?? []).filter((l) => l.business === 'hospital').map((l) => [l.name, l.area]));
+    const without = new Map<string, number>();
+    let hospitalsSeen = 0;
+    let inArea = 0;
+    for (const world of worlds) {
+      const hospitals = world.buildings.filter((b) => b.business === 'hospital');
+      // The Night City Medical Center, when there is one, is a place of its own in Watson.
+      for (const l of Object.values(world.locations).filter((l) => l.kind === 'hospital')) expect([l.name, l.district]).toEqual(['Night City Medical Center', 'watson']);
+      for (const b of hospitals) {
+        expect(b.kind).toBe('shops');
+        expect(b.category).toBe('medical');
+        expect(named.get(b.name), b.name).toBe(b.district);
+        // One named for its neighborhood is in it.
+        const area = areas.get(b.name);
+        if (area && b.name.includes(area)) {
+          hospitalsSeen++;
+          if (subdistrictAt(Object.values(world.districts), { x: b.x + b.w / 2, y: b.y + b.h / 2 })?.subdistrict?.name === area) inArea++;
+        }
+      }
+      expect(new Set(hospitals.map((b) => b.name)).size).toBe(hospitals.length);
+      for (const district of named.values()) if (!hospitals.some((b) => b.district === district)) without.set(district, (without.get(district) ?? 0) + 1);
+    }
+    // The big districts always have one; downtown and Santo Domingo, with few storefronts, now and then go without.
+    for (const district of ['watson', 'pacifica', 'westbrook', 'heywood']) expect(without.get(district) ?? 0, district).toBeLessThan(worlds.length * 0.02);
+    // In the neighborhood its name says, nearly always.
+    expect(inArea / hospitalsSeen).toBeGreaterThan(0.9);
+  });
+
   it('builds the Badlands out of shacks and containers, and keeps them sparse', () => {
     for (const world of worlds) {
       const desert = world.buildings.filter((b) => world.districts[b.district]?.terrain === 'desert');
       for (const b of desert) expect(['shack', 'container']).toContain(b.kind);
       const city = world.buildings.filter((b) => world.districts[b.district]?.terrain === 'city');
       for (const b of city) expect(['shack', 'container']).not.toContain(b.kind);
+    }
+  });
+});
+
+describe('storefront names', () => {
+  const sample = worlds.slice(0, 40);
+  const businesses = new Map(CITY.buildings.businesses.map((b) => [b.id, b]));
+  const landmarks = new Set((CITY.buildings.landmarks ?? []).map((l) => l.name));
+  const places = new Set(CITY.districts.flatMap((d) => (d.landmarks ?? []).map((l) => l.name)));
+  const naming = CITY.buildings.shopNames;
+  if (!naming) throw new Error('the city has no storefront names');
+  /** The storefronts that make up their own names: neither a chain's outlet nor a real place. */
+  const own = (world: World) => world.buildings.filter((b) => b.kind === 'shops' && !businesses.get(b.business ?? '')?.chain && !landmarks.has(b.name));
+  const signOf = (b: Building) => businesses.get(b.business ?? '')?.sign ?? '';
+  // The wiki's bars, clubs and restaurants, brands, corporations, vendors and 2077 locations by district, and the words that have a page there.
+  const canon = new Set(
+    readFileSync(new URL('./fixtures/canon-places.txt', import.meta.url), 'utf8')
+      .split('\n')
+      .map((n) => n.replace(/ \(.*\)$/, '').trim())
+      .filter(Boolean)
+      .flatMap((n) => [n, n.replace(/^The /, ''), n.replace(/'s$/, '')])
+      .map((n) => n.toLowerCase()),
+  );
+  const isCanon = (name: string) => [name, name.replace(/^24\/7 /, ''), name.replace(/^(24\/7 )?The /, '')].some((n) => canon.has(n.toLowerCase()));
+
+  it('names every independent shop for itself, never just its sign', () => {
+    const plain: string[] = [];
+    for (const world of sample) {
+      for (const b of own(world)) if (b.name.replace(/^24\/7 /, '') === signOf(b) || b.name.startsWith('Neon ')) plain.push(`${world.seed} ${b.id}: ${b.name}`);
+    }
+    expect(plain).toEqual([]);
+  });
+
+  it('keeps exact repeats among them rare, in every city', () => {
+    for (const world of sample) {
+      const shops = own(world);
+      const counts = new Map<string, number>();
+      for (const b of shops) counts.set(b.name, (counts.get(b.name) ?? 0) + 1);
+      const repeated = shops.filter((b) => (counts.get(b.name) ?? 0) > 1);
+      expect(repeated.length / shops.length, `${world.seed}: ${repeated.map((b) => b.name).join(', ')}`).toBeLessThan(0.05);
+    }
+  });
+
+  it('fits every made-up name on the sign', () => {
+    expect(SHOP_NAME).toBeLessThanOrEqual(SHORT_NAME);
+    const long = sample.flatMap((world) => own(world).filter((b) => b.name.length > SHOP_NAME).map((b) => b.name));
+    expect(long).toEqual([]);
+  });
+
+  it("never takes a landmark's name, or a place's", () => {
+    for (const world of sample) {
+      const here = new Set(Object.values(world.locations).map((l) => l.name));
+      const taken = own(world).filter((b) => landmarks.has(b.name) || places.has(b.name) || here.has(b.name));
+      expect(taken.map((b) => b.name), world.seed).toEqual([]);
+    }
+  });
+
+  it('keeps the 24/7s as many as before, and about a quarter going by their neighborhood', () => {
+    const shops = sample.flatMap((world) => world.buildings.filter((b) => b.kind === 'shops'));
+    // The template draw decides it, as it did when the rest of the name was the sign: 22.1% of storefronts.
+    const allNight = shops.filter((b) => b.name.startsWith('24/7 ')).length / shops.length;
+    expect(allNight).toBeGreaterThan(0.21);
+    expect(allNight).toBeLessThan(0.235);
+    // A chain's outlet never says 24/7: the sign is all of its name.
+    expect(shops.filter((b) => businesses.get(b.business ?? '')?.chain && b.name.startsWith('24/7 '))).toEqual([]);
+    const hoods = CITY.districts.flatMap((d) => d.areas).map((a) => a.replace(/^The /, ''));
+    const independents = sample.flatMap(own);
+    const byHood = independents.filter((b) => hoods.some((h) => b.name.startsWith(`${h} `))).length / independents.length;
+    expect(byHood).toBeGreaterThan(0.18);
+    expect(byHood).toBeLessThan(0.27);
+  });
+
+  it('names a shop in its own neighborhood when it goes by one', () => {
+    const elsewhere: string[] = [];
+    for (const world of sample) {
+      const districts = Object.values(world.districts);
+      for (const b of own(world)) {
+        const block = blockAt(world.layout, { x: b.x + b.w / 2, y: b.y + b.h / 2 });
+        const hood = block && subdistrictAt(districts, { x: (block.x0 + block.x1) / 2, y: (block.y0 + block.y1) / 2 })?.subdistrict?.name;
+        const named = CITY.districts.flatMap((d) => d.areas).find((a) => b.name.replace(/^24\/7 /, '').startsWith(`${a.replace(/^The /, '')} `));
+        if (named && named !== hood) elsewhere.push(`${world.seed} ${b.id}: ${b.name} in ${hood}`);
+      }
+    }
+    expect(elsewhere).toEqual([]);
+  });
+
+  it('never gives a shop the name of a real place or business, nor makes one up from one', () => {
+    expect(canon.size).toBeGreaterThan(800);
+    const words = Object.values(naming.flavors).flatMap((f) => [...f.words, ...Object.values(f.by ?? {}).flat()]);
+    const nouns = Object.values(naming.plain).flat();
+    expect([...words, ...nouns].filter(isCanon)).toEqual([]);
+    expect(sample.flatMap((world) => own(world).filter((b) => isCanon(b.name)).map((b) => b.name))).toEqual([]);
+  });
+
+  it('has names for every business but the chains, and flavors for every neighborhood', () => {
+    for (const b of CITY.buildings.businesses) {
+      if (b.chain || b.where?.length === 0) continue;
+      expect(naming.kinds[b.id]?.length, b.id).toBeGreaterThan(0);
+      expect(naming.plain[b.id]?.length, b.id).toBeGreaterThan(0);
+    }
+    for (const id of [...Object.keys(naming.kinds), ...Object.keys(naming.plain)]) expect(businesses.has(id) && !businesses.get(id)?.chain, id).toBe(true);
+    const patterns = [...Object.values(naming.kinds).flat(), ...Object.values(naming.flavors).flatMap((f) => Object.values(f.kinds ?? {}).flat())];
+    for (const p of patterns) expect(p.match(/\{word\}/g)?.length, p).toBe(1);
+    for (const [id, flavor] of Object.entries(naming.flavors)) {
+      const words = [...flavor.words, ...Object.values(flavor.by ?? {}).flat()];
+      expect(new Set(words).size, id).toBe(words.length);
+      for (const w of words) expect(w, id).toMatch(/^[^{}]+$/);
+      for (const business of Object.keys(flavor.kinds ?? {})) expect(businesses.has(business), `${id}: ${business}`).toBe(true);
+    }
+    // No word turns up in two flavors, so each keeps to its own streets.
+    const all = Object.values(naming.flavors).flatMap((f) => [...f.words, ...Object.values(f.by ?? {}).flat()]);
+    expect(all.filter((w, i) => all.indexOf(w) !== i)).toEqual([]);
+    for (const weights of Object.values(naming.where)) for (const id of Object.keys(weights)) expect(naming.flavors[id], id).toBeDefined();
+    for (const district of CITY.districts) {
+      for (const area of district.areas) expect(naming.where[area] ?? naming.where[district.id], `${district.id}: ${area}`).toBeDefined();
+    }
+  });
+
+  it('draws them on streams of their own, so naming moves no building and changes no business', () => {
+    const unnamed = { ...CITY, buildings: { ...CITY.buildings, shopNames: undefined } };
+    for (const world of sample.slice(0, 10)) {
+      const before = generateWorld(world.seed, unnamed).buildings;
+      expect(world.buildings.map(({ name: _, ...b }) => b)).toEqual(before.map(({ name: _, ...b }) => b));
+      // What changes is the independents' names, and only theirs.
+      const changed = world.buildings.filter((b, i) => b.name !== before[i]?.name);
+      expect(changed.filter((b) => b.kind !== 'shops' || businesses.get(b.business ?? '')?.chain || landmarks.has(b.name))).toEqual([]);
+      // And a 24/7 is still one.
+      for (const [i, b] of world.buildings.entries()) expect(b.name.startsWith('24/7 '), b.id).toBe(before[i]?.name.startsWith('24/7 '));
     }
   });
 });

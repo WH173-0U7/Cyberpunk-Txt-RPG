@@ -73,6 +73,8 @@ export interface DialogueLines {
   /** Said after a chat or an answer, sometimes: by who they are. */
   tails: Line[];
   greeting: Line[];
+  /** Their name, said the first time it comes up: after a greeting, or an answer to something else (`{given}`, `{name}`, `{handle}`). */
+  introduce: Line[];
   topics: Record<Topic, Line[]>;
   /** From someone with nothing they'll bring up. */
   brushOff: Line[];
@@ -93,17 +95,44 @@ export interface DialogueLines {
   /** Asked what they already said, with `{answer}` for it. */
   repeat: Line[];
   /** Asked whether they know someone: they do (`{other}`, `{word}`), they don't, or they've said already; they did, and `{other}` is dead (`{otherAgo}`); they did, and they're done with them (an ex, a friend fallen out with). */
-  ask: { knows: Line[]; unknown: Line[]; repeat: Line[]; dead: Line[]; ex: Line[] };
   gift: { thanks: Line[]; favorite: Line[]; refuse: Line[] };
   insult: { reply: Line[]; shove: Line[] };
-  rob: { done: Line[]; nothing: Line[]; fought: Line[] };
+  /**
+   * Robbing someone: what comes of it, and (`cold`, `coldNothing`) of going through the pockets of someone out cold.
+   * By fear: unafraid, they say no (`refused`) or fight (`fightBack`, the fight's first beat); afraid enough, they hand over
+   * some and swear it's all (`holdBack`), or nothing and swear they've none (`bluff`). Searching them after: what was kept
+   * (`searched`), nothing (`searchEmpty`), pulled free (`searchFail`), or a swing (`searchFight`).
+   */
+  rob: { done: Line[]; nothing: Line[]; fought: Line[]; cold: Line[]; coldNothing: Line[]; refused: Line[]; bluff: Line[]; holdBack: Line[]; fightBack: Line[]; searched: Line[]; searchEmpty: Line[]; searchFail: Line[]; searchFight: Line[] };
   /** A netrunner asked to chop a stolen credchip (`{balance}` on it, `{cut}` theirs, `{left}` after): they do, or they won't. */
   chop: { done: Line[]; refuse: Line[] };
   /** A boss asked for work (`{title}` the bottom rung, `{work}` the place, `{pay}` a shift): taken on, turned down, or not in a mask; a word after a shift; moved up (`{title}` the new rung); told the player quits. */
   /** `broke`: a boss whose place is struggling, turning the player away; `rehire`: a boss the player walked out on (`memQuit`) or who let them go (`memFired`), still remembering it. */
-  work: { hire: Line[]; refuse: Line[]; masked: Line[]; shift: Line[]; promote: Line[]; quit: Line[]; broke: Line[]; rehire: Line[] };
-  revenge: { person: Line[]; gang: Line[] };
-  /** What someone brings up of what the player did, as they remember it (memory.ts): `mem` and `mem<Kind>` say which, with `{memWho}`, `{memWord}`, `{memAgo}`, `{memItem}`, `{memTook}`, `{memTitle}` and `memTwice`, `memAgain` (brought up before), `memRobbery`, `memInsult`, `memFavorite`. */
+  /** `notice`: told the player is leaving for other work; `moonlight`/`sideGig`: hearing of a side gig (`{gig}`), minding it or not. `hire` has `experienced` when the player starts above the bottom, `referee` the old boss who put in a word. */
+  /** A boss on work, and the people a shift brings: a coworker asking for cover (`coverAsk`, `coverThanks`, `coverSnub`), a ganger come for the cut (`cutDemand`, `cutPaid`, `cutBack`, `cutWorse`, `{work}`), a thief caught (`caught`), and the boss who saw the player stand up for the place (`stood`). */
+  work: { hire: Line[]; refuse: Line[]; masked: Line[]; shift: Line[]; promote: Line[]; quit: Line[]; notice: Line[]; moonlight: Line[]; sideGig: Line[]; broke: Line[]; rehire: Line[]; coverAsk: Line[]; coverThanks: Line[]; coverSnub: Line[]; cutDemand: Line[]; cutPaid: Line[]; cutBack: Line[]; cutWorse: Line[]; caught: Line[]; stood: Line[] };
+  revenge: { person: Line[]; gang: Line[]; debt: Line[] };
+  /**
+   * Dealing for a gang (dealing.ts). A connect: taking the player on (`{drug}`, `{doses}`,
+   * `{owed}`, `{when}`, `{corner}`), not yet, fronting another package, not while they owe
+   * (`{left}`), paid in full (`{owed}`) or in part (`{pay}`, `{left}`), moving them up
+   * (`{title}`), not to a mask, done with them, letting them walk. Any member: pointing them to
+   * the connect (`{connect}`, and `{where}` when the connect has a hangout). Anyone pitched:
+   * buying (`{drug}`, `{price}`), not from a stranger, not into it, or put out by being asked;
+   * one of a rival gang, pitched the player's gang's product (`{ours}`), taking it as war.
+   */
+  /**
+   * Borrowing and lending: a gang's loan shark lending (`sharkLend`), refusing a player they're
+   * cold to (`sharkNo`), more to one behind on what they owe (`sharkFull`) or out of an empty
+   * chest (`sharkDry`), paid some back
+   * (`sharkPaid`) or all of it (`sharkSquare`); someone
+   * taking a loan from the player (`lend`) or turning it down (`refuse`), and, asked for it back,
+   * paying (`payBack`), putting it off (`excuse`) or snapping at being asked again so soon
+   * (`pressed`). `{amount}`, `{owed}`, `{gang}`.
+   */
+  money: { sellYes: Line[]; sharkLend: Line[]; sharkNo: Line[]; sharkFull: Line[]; sharkDry: Line[]; sharkPaid: Line[]; sharkSquare: Line[]; lend: Line[]; refuse: Line[]; payBack: Line[]; excuse: Line[]; pressed: Line[] };
+  deal: { join: Line[]; notYet: Line[]; refer: Line[]; front: Line[]; owing: Line[]; paid: Line[]; some: Line[]; promote: Line[]; masked: Line[]; burned: Line[]; leave: Line[]; buy: Line[]; wary: Line[]; pass: Line[]; offended: Line[]; rival: Line[]; recruit: Line[]; recruitNo: Line[]; runnerFront: Line[]; runnerPaid: Line[]; runnerKept: Line[]; runnerSome: Line[]; runnerNothing: Line[]; runnerShort: Line[]; leanPaid: Line[]; leanFailed: Line[]; slide: Line[]; runnerQuit: Line[]; letGo: Line[] };
+  /** What someone brings up of what the player did, as they remember it (memory.ts): `mem` and `mem<Kind>` say which, with `{memWho}`, `{memWord}`, `{memAgo}`, `{memItem}`, `{memTook}`, `{memTitle}` and `memTwice`, `memAgain` (brought up before), `memRobbery`, `memInsult`, `memAssault`, `memMurder`, `memFavorite`. */
   memory: Line[];
   /** A storefront that won't serve the player. */
   barred: Line[];
@@ -116,7 +145,7 @@ export interface DialogueLines {
   /** What someone wants out of life, as the card says it once the player knows ("Wants out of Night City"). */
   dreams: Record<Dream, string>;
   /** Why an exchange went the way it did, on the note after it (`{given}`, `{his}`, `{item}`…): pushed after a no, one question too many, a favorite, a second gift in a day, a mask, a job, walking out, a chop. */
-  notes: { pressed: string; grilled: string; favorite: string; twice: string; masked: string; hired: string; quit: string; chopped: string; date: string; official: string; dumped: string; ended: string; jealous: string };
+  notes: { pressed: string; grilled: string; favorite: string; twice: string; masked: string; hired: string; quit: string; notice: string; chopped: string; date: string; official: string; dumped: string; ended: string; jealous: string; lent: string; dunned: string };
   /**
    * Romance with the player (romance.ts): asked out (yes; not drawn to the player; spoken for,
    * `{taken}` their `{takenWord}`; not yet; not in a mask); a date (`{item}` ordered for two,
@@ -136,7 +165,7 @@ export interface DialogueLines {
     notLooking: string;
   };
   /** The player's own lines, for the record, by eloquence. */
-  you: { talk: Line[]; askAbout: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; chop: Line[]; work: Line[]; quit: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[] };
+  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; robCold: Line[]; search: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[]; deal: Line[]; pitch: Line[]; payUp: Line[]; walkAway: Line[]; recruit: Line[]; frontRunner: Line[]; collect: Line[]; lean: Line[]; slide: Line[]; letGo: Line[]; borrow: Line[]; lend: Line[]; askBack: Line[]; payShark: Line[]; buyPlace: Line[] };
 }
 
 /** Everything a line can be picked and filled by; `vars.mask` is the word for the mask the player has on, or nothing. */
@@ -149,6 +178,8 @@ export interface Speaker {
   /** The player's, which the player's own lines follow. */
   eloquence: Eloquence;
   vars: Record<string, string>;
+  /** What was said lately (by them to the player, and by the player anywhere): a line steers clear of it while there's anything else to say. */
+  recent?: string[];
 }
 
 const DAY = 86_400_000;
@@ -197,14 +228,17 @@ export function fits(when: When | undefined, speaker: Speaker): boolean {
   if (when.history && !when.history.includes(speaker.history)) return false;
   if (when.eloquence && !when.eloquence.includes(speaker.eloquence)) return false;
   if (when.gang !== undefined && Boolean(speaker.person.gang) !== when.gang) return false;
-  if (when.traits) {
-    for (const [trait, level] of Object.entries(when.traits) as Array<[keyof Traits, 'high' | 'low']>) {
-      const value = speaker.person.traits[trait];
-      if (level === 'high' ? value < 0.6 : value > 0.4) return false;
+  // Checked for every fragment of every pool a line is picked from, so in plain loops that make nothing.
+  const traits = when.traits;
+  if (traits) {
+    for (const trait in traits) {
+      const value = speaker.person.traits[trait as keyof Traits];
+      if (traits[trait as keyof Traits] === 'high' ? value < 0.6 : value > 0.4) return false;
     }
   }
-  if (when.needs?.some((key) => !speaker.vars[key])) return false;
-  if (when.lacks?.some((key) => speaker.vars[key])) return false;
+  const { vars } = speaker;
+  if (when.needs) for (const key of when.needs) if (!vars[key]) return false;
+  if (when.lacks) for (const key of when.lacks) if (vars[key]) return false;
   return true;
 }
 
@@ -216,10 +250,23 @@ export function textOf(line: Line): string {
   return typeof line === 'string' ? line : line.text;
 }
 
+/** A pool's lines as fragments, made once a pool (again if it has grown or shrunk since). */
+const fragmentLists = new WeakMap<Line[], Fragment[]>();
+function fragmentsIn(pool: Line[]): Fragment[] {
+  let list = fragmentLists.get(pool);
+  if (!list || list.length !== pool.length) fragmentLists.set(pool, (list = pool.map(fragmentOf)));
+  return list;
+}
+
 /** One of the fragments that fit, by weight; null when none do. */
 export function pickFragment(pool: Line[], speaker: Speaker, rng: Rng): Fragment | null {
-  const fitting = pool.map(fragmentOf).filter((f) => fits(f.when, speaker));
-  if (!fitting.length) return null;
+  const all: Fragment[] = [];
+  for (const f of fragmentsIn(pool)) if (fits(f.when, speaker)) all.push(f);
+  if (!all.length) return null;
+  // Never the same thing twice running: what was just said gives way while anything else fits.
+  const recent = speaker.recent;
+  const fresh = recent?.length ? all.filter((f) => !saidIn(recent, finish(f.text, speaker.vars))) : all;
+  const fitting = fresh.length ? fresh : all;
   const total = fitting.reduce((sum, f) => sum + (f.weight ?? 1), 0);
   let roll = rng.next() * total;
   for (const f of fitting) {
@@ -227,6 +274,13 @@ export function pickFragment(pool: Line[], speaker: Speaker, rng: Rng): Fragment
     if (roll < 0) return f;
   }
   return fitting[fitting.length - 1] ?? null;
+}
+
+/** Whether a line, filled in, is in what was said lately (whole, or as part of something longer), whatever numbers are in it: the same blow for 12 or for 18 is the same line. */
+export function saidIn(recent: readonly string[], text: string): boolean {
+  const bare = (t: string) => t.replace(/\d+/g, '#');
+  const line = bare(text);
+  return line.length > 0 && recent.some((said) => bare(said).includes(line));
 }
 
 /** One line from a pool, filled in; empty when nothing fits. */
@@ -263,10 +317,11 @@ export function compose(pool: Line[], speaker: Speaker, lines: DialogueLines, rn
  * about them, the player's charisma, how talkative and warm they are, less what the thing
  * asks of them (their name is nothing; where they sleep is a lot; their people, the more
  * loyal they are; who they hate, the less nerve they have; a hot chip, the less greedy), and
- * less again for a mask on the player: nobody opens up to a face they can't see.
+ * less again for a mask on the player: nobody opens up to a face they can't see. `charisma`
+ * is the player's in levels past an ordinary person's (`skillEdge`): below one, it's against them.
  */
-export function openness(asked: Asked, stance: Stance, level: number, traits: Traits, rules: OpennessRules, masked = false, moment: Moment = {}): number {
-  let score = rules.stance[stance] + (level - 1) * rules.perLevel - rules.cost[asked];
+export function openness(asked: Asked, stance: Stance, charisma: number, traits: Traits, rules: OpennessRules, masked = false, moment: Moment = {}): number {
+  let score = rules.stance[stance] + charisma * rules.perLevel - rules.cost[asked];
   if (masked) score -= rules.mask;
   score += (traits.chatty - 0.5) * rules.traits.chatty + (traits.warmth - 0.5) * rules.traits.warmth;
   if (asked === 'kin') score -= (traits.loyalty - 0.5) * rules.traits.loyalty;
@@ -321,7 +376,7 @@ export function replyTo(score: number, rules: OpennessRules, rng: Rng): Reply {
 const TOPICS: Topic[] = ['district', 'life', 'here', 'job', 'likes', 'hates', 'kin', 'rumor', 'news', 'dream', 'views'];
 
 /** What someone will bring up on their own: the topics they're open about, as of this chat. */
-export function openTopics(speaker: Speaker, level: number, rules: OpennessRules, rng: Rng, reveal: boolean): Topic[] {
+export function openTopics(speaker: Speaker, charisma: number, rules: OpennessRules, rng: Rng, reveal: boolean): Topic[] {
   const { vars, person } = speaker;
   const open: Topic[] = [];
   for (const topic of TOPICS) {
@@ -331,7 +386,7 @@ export function openTopics(speaker: Speaker, level: number, rules: OpennessRules
     if (topic === 'rumor' && !['gangGood', 'gangBad', 'districtGood', 'districtBad'].some((key) => vars[key])) continue;
     if (topic === 'news' && !vars.news) continue;
     if (topic === 'dream' && !vars.dream) continue;
-    if (replyTo(openness(topic, speaker.stance, level, person.traits, rules, Boolean(vars.mask), momentOf(speaker)), rules, rng) === 'answer') open.push(topic);
+    if (replyTo(openness(topic, speaker.stance, charisma, person.traits, rules, Boolean(vars.mask), momentOf(speaker)), rules, rng) === 'answer') open.push(topic);
   }
   return open;
 }
@@ -418,7 +473,8 @@ export function fill(template: string, vars: Record<string, string>): string {
 
 /** Filled in, tidied, and each sentence starting with a capital. */
 export function finish(template: string, vars: Record<string, string>): string {
-  const text = fill(template, vars).replace(/\s+/g, ' ').trim();
+  // A name that ends in its own mark ("Got Escargot?") takes no full stop after it.
+  const text = fill(template, vars).replace(/\s+/g, ' ').trim().replace(/([?!])\.(?!\.)/g, '$1');
   return text.replace(/(^|[.!?…]["”]?\s+)(\p{Ll})/gu, (_, before: string, letter: string) => before + letter.toUpperCase());
 }
 

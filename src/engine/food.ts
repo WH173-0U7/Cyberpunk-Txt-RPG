@@ -40,6 +40,8 @@ export interface Dish {
   alcohol?: number;
   /** What one weighs, in grams, when it isn't the usual for its kind (src/data/gear.ts). */
   grams?: number;
+  /** How much of an empty stomach one fills, out of 100, when it isn't the usual for its kind (src/data/needs.ts). */
+  fill?: number;
 }
 
 /** What a kind of eatery serves, and how big its menu is. */
@@ -80,8 +82,8 @@ export interface Venue {
   chain: boolean;
 }
 
-/** What's for sale: something to eat or drink, a bag to carry things in, something to wear, a weapon, or a box of rounds. */
-export type MenuKind = Dish['kind'] | 'gear' | 'clothing' | 'weapon' | 'ammo';
+/** What's for sale: something to eat or drink, a bag to carry things in, something to wear, a weapon, a box of rounds, or an implant. */
+export type MenuKind = Dish['kind'] | 'gear' | 'clothing' | 'weapon' | 'ammo' | 'cyberware' | 'quickhack' | 'med' | 'treatment' | 'plan' | 'room' | 'component';
 
 export interface MenuItem {
   id: string;
@@ -89,8 +91,10 @@ export interface MenuItem {
   note: string;
   kind: MenuKind;
   price: number;
-  /** A word on what it is: for clothing, the slot, the style, the brand; for a weapon, its class, maker and magazine; for ammo, the box and what it's for. */
+  /** A word on what it is: for clothing, the slot, the style, the brand; for a weapon, its class, maker and magazine; for ammo, the box and what it's for; for an implant, the part of the body, the maker and the capacity. */
   detail?: string;
+  /** How many are left on a storefront's shelves (missing: a service, or a place that never runs out). */
+  left?: number;
 }
 
 export interface Menu {
@@ -98,6 +102,13 @@ export interface Menu {
   items: MenuItem[];
   /** An eatery's menu, or a store's rack of gear. */
   kind: 'food' | 'gear';
+  /** The share off at the staff price, where the player works. */
+  staff?: number;
+  /** What haggling has done to the prices, as a share over (or, under 0, under) what they'd be. */
+  haggle?: number;
+  /** What supply and demand have done to them: dearer with the shelves low, cheaper at a slow place sitting on full ones; and whether it's the last hour, with a share off what won't keep. */
+  market?: number;
+  closing?: number;
 }
 
 /** A dish that doesn't say turns up everywhere. */

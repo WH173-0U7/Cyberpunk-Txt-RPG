@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { CITY } from '../src/data/city';
+import { COMBAT } from '../src/data/combat';
 import { ENERGY } from '../src/data/energy';
 import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
@@ -16,12 +17,14 @@ import { TRAVEL } from '../src/data/travel';
 import { Game } from '../src/engine/game';
 import { GENERATOR_VERSION, generateWorld } from '../src/engine/generate';
 import { hashSeed } from '../src/engine/rng';
-import { createSave, readSave, resume, savedSeed, type Progress, type SaveData } from '../src/engine/save';
+import { createSave, progressFor, readSave, resume, savedSeed, type Progress, type SaveData } from '../src/engine/save';
 import type { World } from '../src/engine/types';
+
+const HOUR = 3_600_000;
 
 const world = generateWorld('7f3a29c1', CITY);
 const T0 = Date.UTC(2077, 9, 12, 20, 0);
-const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE };
+const rules = { ...TRAVEL, timeScale: 1, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT };
 
 /** Plays a few moves on foot to places next door, letting each trip finish. Returns the game and the time. */
 function played(steps: number): { game: Game; now: number } {
@@ -198,6 +201,93 @@ describe('saving', () => {
     expect(saveOf(game, now).job).toBeNull();
   });
 
+  it('carries both jobs and the shifts worked in each line, cleaning what it cannot use', () => {
+    const { game, now } = played(1);
+    const [a, b] = world.buildings.filter((x) => x.business);
+    const main = { building: a?.id ?? 'a', rung: 0, trust: 2, shifts: 2, lastShiftDay: 39366, days: [1, 3, 5], owed: 48, raise: 0.05, missed: 1, checked: 39367, paidOn: 39364, heard: false, uniform: true };
+    const side = { building: b?.id ?? 'b', rung: 1, trust: 8, shifts: 8, lastShiftDay: 39365 };
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), jobs: [main, side, { building: 'x', rung: -2 }], career: { food: 12, nightlife: 'lots', vehicles: -1 } })));
+    expect(read?.jobs).toEqual([main, side]);
+    expect(read?.career).toEqual({ food: 12 });
+    expect(read && resume(world, read)?.jobs).toEqual([main, side]);
+    // Junk in the extras goes; the job stays.
+    const messy = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), jobs: [{ ...side, days: [9, 'Mon'], owed: -5, heard: 'yes' }] })));
+    expect(messy?.jobs).toEqual([side]);
+    // A job at a building the city lacks is dropped; an older save has none.
+    const gone = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), jobs: [main, { ...side, building: 'b-nowhere' }] })));
+    expect(gone && resume(world, gone)?.jobs).toEqual([main]);
+    const { jobs: _, career: __, ...old } = saveOf(game, now);
+    expect(readSave(JSON.parse(JSON.stringify(old)))).toMatchObject({ jobs: null, career: null });
+    expect(saveOf(game, now)).toMatchObject({ jobs: [], career: {} });
+  });
+
+  it('carries the chrome fitted, and reads a save from before it, or anything that is not an implant, as none', () => {
+    const { game, now } = played(1);
+    const chrome = [{ id: 'mantis-blades', since: T0 }, { id: 'smart-link', since: T0 + 1 }];
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), chrome })));
+    expect(read?.chrome).toEqual(chrome);
+    expect(read && new Game(world, rules, resume(world, read)!).chromeSaved).toEqual(chrome);
+    expect(readSave({ ...saveOf(game, now), chrome: [...chrome, { id: 3 }, 'arms', { id: 'x', since: 'then' }] })?.chrome).toEqual(chrome);
+    const before: Record<string, unknown> = { ...saveOf(game, now) };
+    delete before.chrome;
+    expect(readSave(before)?.chrome).toBeNull();
+    expect(new Game(world, rules, resume(world, readSave(before)!)!).chromeSaved).toEqual([]);
+    expect(saveOf(game, now).chrome).toEqual([]);
+  });
+
+  it('carries health and what the NCPD has on the player, and reads a save from before them as well and clean', () => {
+    const { game, now } = played(1);
+    const health = { value: 42, at: now };
+    const spot = { kind: 'building', id: world.buildings[0]!.id };
+    const police = {
+      reports: [{ id: 1, crime: 'robbery', at: now - HOUR, district: 'watson', place: 'Somewhere', named: true, seen: 'your face' }, { id: 'two', crime: 'jaywalking' }],
+      dispatch: { report: 1, crime: 'robbery', spot, x: 1, y: 2, arriveAt: now + HOUR, officers: ['a', 'b'], told: true },
+      warrants: [{ crime: 'robbery', district: 'watson', since: now - HOUR, until: now + 24 * HOUR }, { crime: 'murder', district: 'watson', since: now, until: null }, 'wanted'],
+      held: null,
+      confront: null,
+      pending: [{ person: 'x', crime: 'assault', at: now, named: false, seen: 'a balaclava', odds: 0.4, district: 'watson', minutes: [10, 20], spot, x: 1, y: 2 }, { person: 'y' }],
+      lastStop: now,
+      nextId: 2,
+    };
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), health, police })));
+    expect(read).toMatchObject({ health });
+    // Anything in it that isn't a record of something is dropped.
+    expect(read?.police?.reports.map((r) => r.id)).toEqual([1]);
+    expect(read?.police?.warrants.map((w) => w.crime)).toEqual(['robbery', 'murder']);
+    expect(read?.police?.pending.map((p) => p.person)).toEqual(['x']);
+    const again = new Game(world, rules, resume(world, read!)!);
+    expect(again.health(now).current).toBe(42);
+    expect(again.police(now)).toMatchObject({ reports: 1, dispatch: { crime: 'robbery', arriveAt: now + HOUR }, held: null, confront: null });
+    expect(again.police(now).warrants).toHaveLength(2);
+    expect(again.policeSaved).toEqual(read?.police);
+    expect(readSave({ ...saveOf(game, now), health: { value: -3, at: now }, police: 'wanted' })).toMatchObject({ health: null, police: null });
+    const before: Record<string, unknown> = { ...saveOf(game, now) };
+    delete before.health;
+    delete before.police;
+    const fresh = new Game(world, rules, resume(world, readSave(before)!)!);
+    expect(fresh.health(now)).toMatchObject({ current: COMBAT.health.base, max: COMBAT.health.base, fullAt: null });
+    expect(fresh.police(now)).toEqual({ dispatch: null, warrants: [], held: null, reports: 0, confront: null });
+  });
+
+  it('carries the choice to kill or to wound and the Trauma Team plan, and reads a save from before them as wounding and uncovered', () => {
+    const { game, now } = played(1);
+    const coverage = { plan: 'gold', until: now + 86_400_000 };
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), lethal: true, coverage })));
+    expect(read).toMatchObject({ lethal: true, coverage });
+    const again = new Game(world, rules, resume(world, read!)!);
+    expect(again.lethal).toBe(true);
+    expect(again.covered(now)?.plan.name).toBe('Gold Package');
+    expect(saveOf(again, now)).toMatchObject({ lethal: true, coverage });
+    expect(readSave({ ...saveOf(game, now), lethal: 'yes', coverage: { plan: 'gold', until: 'soon' } })).toMatchObject({ lethal: null, coverage: null });
+    const before: Record<string, unknown> = { ...saveOf(game, now) };
+    delete before.lethal;
+    delete before.coverage;
+    const fresh = new Game(world, rules, resume(world, readSave(before)!)!);
+    expect(fresh.lethal).toBe(false);
+    expect(fresh.covered(now)).toBeNull();
+    expect(saveOf(game, now)).toMatchObject({ lethal: false, coverage: null });
+  });
+
   it('carries charisma and what the player knows of people, and starts fresh without them', () => {
     const { game, now } = played(1);
     const charisma = { level: 3, xp: 12 };
@@ -232,12 +322,41 @@ describe('saving', () => {
     expect(readSave({ ...saved, charisma: { level: 0, xp: 1 } })?.charisma).toBeNull();
   });
 
+  it('carries the weapon levels, forgetting any that do not read', () => {
+    const { game, now } = played(1);
+    const arms = { types: { pistol: { level: 3, xp: 4 }, katana: { level: 0, xp: 1 } }, models: { lexington: { level: 5, xp: 2 }, junk: 'x' } };
+    const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), arms })));
+    expect(read?.arms).toEqual({ types: { pistol: { level: 3, xp: 4 } }, models: { lexington: { level: 5, xp: 2 } } });
+    const again = new Game(world, rules, resume(world, read!)!);
+    expect(again.weaponType('pistol')).toMatchObject({ level: 3, xp: 4 });
+    expect(again.weaponModel('lexington')).toMatchObject({ level: 5, xp: 2 });
+    expect(again.weaponType('katana')).toMatchObject({ level: 1, xp: 0 });
+    const { arms: _a, ...old } = saveOf(game, now);
+    expect(readSave(JSON.parse(JSON.stringify(old)))?.arms).toBeNull();
+  });
+
+  it('carries the fighting skills, and an old save starts them at the first level', () => {
+    const { game, now } = played(1);
+    const saved = { ...saveOf(game, now), brawler: { level: 4, xp: 9 }, toughness: { level: 2, xp: 3 } };
+    const read = readSave(JSON.parse(JSON.stringify(saved)));
+    expect(read).toMatchObject({ brawler: { level: 4, xp: 9 }, toughness: { level: 2, xp: 3 } });
+    const again = new Game(world, rules, resume(world, read!)!);
+    expect(again.brawler()).toMatchObject({ level: 4, xp: 9 });
+    expect(again.toughness()).toMatchObject({ level: 2, xp: 3 });
+    const { brawler: _b, toughness: _t, ...old } = saveOf(game, now);
+    const oldRead = readSave(JSON.parse(JSON.stringify(old)));
+    expect(oldRead?.brawler).toBeNull();
+    expect(new Game(world, rules, resume(world, oldRead!)!).brawler()).toMatchObject({ level: 1, xp: 0 });
+    expect(readSave({ ...saved, toughness: { level: -1, xp: 0 } })?.toughness).toBeNull();
+  });
+
   it('carries what people remember of the player, and forgets what it cannot read', () => {
     const { game, now } = played(1);
     const someone = game.population.people[0];
     if (!someone) throw new Error('no people');
     const memory = { kind: 'wronged' as const, at: now, what: 'robbery', amount: 30, times: 1, said: 0 };
-    const society = { ...game.societySaved, memories: { [someone.id]: [memory, { kind: 'gift', at: 'yesterday' }], nobody: 'x' } };
+    // A kind the game no longer has (being asked about someone) is forgotten with the rest.
+    const society = { ...game.societySaved, memories: { [someone.id]: [memory, { kind: 'gift', at: 'yesterday' }, { kind: 'asked', at: now, about: someone.id, times: 1, said: 0 }], nobody: 'x' } };
     const read = readSave(JSON.parse(JSON.stringify({ ...saveOf(game, now), society })));
     expect(read?.society?.memories).toEqual({ [someone.id]: [memory] });
     const progress = read && resume(world, read);
@@ -294,27 +413,54 @@ describe('saving', () => {
     expect(again.peopleHere(now).length).toBeGreaterThanOrEqual(0);
   });
 
-  it('plays on from a save made by 0.1.0, keeping everything in it', () => {
-    // Saved by the 0.1.0 release after a few days in this city: food and a chip off someone in the jacket and wallet, a robbery or two, the people's days.
+  it('starts the city over from a save made before the city grew, keeping its seed', () => {
+    // Saved by the 0.1.0 release after a few days in this city, which the seed no longer builds.
     const old: unknown = JSON.parse(readFileSync(new URL('./fixtures/save-0.1.0.json', import.meta.url), 'utf8'));
     const save = readSave(old);
-    const progress = save && resume(world, save);
-    if (!save || !progress) throw new Error('the 0.1.0 save no longer loads');
+    if (!save) throw new Error('the 0.1.0 save no longer reads');
+    expect(save.seed).toBe(world.seed);
+    expect(save.generator).toBeLessThan(GENERATOR_VERSION);
+    expect(progressFor(world, save, GENERATOR_VERSION)).toBeNull();
+    // A save from this build picks up.
+    const { game, now } = played(2);
+    expect(progressFor(world, saveOf(game, now), GENERATOR_VERSION)?.where).toEqual(game.whereabouts);
+  });
+
+  it('plays on from a save made with every district in the city, keeping everything in it', () => {
+    // Saved after a few days in this city, as generator 4 builds it: an evening at El Pinche Pollo, two dishes in the jacket, a chip off someone in the wallet, the people's days.
+    const old: unknown = JSON.parse(readFileSync(new URL('./fixtures/save-generator-4.json', import.meta.url), 'utf8'));
+    const save = readSave(old);
+    const progress = save && progressFor(world, save, GENERATOR_VERSION);
+    if (!save || !progress) throw new Error('the generator 4 save no longer loads');
     const game = new Game(world, rules, progress);
     let now = save.savedAt ?? T0;
     game.start(now);
-    expect(game.inventory.map((i) => [i.id, i.in])).toEqual([['wontons', 'jacket'], ['rammmmen', 'jacket'], ['galician-pierogi', 'jacket'], ['credchip-1', 'wallet']]);
-    expect(game.wallet).toMatchObject({ bills: 204, coins: 3, account: 0 });
+    expect(game.inventory.map((i) => [i.id, i.in])).toEqual([['taco', 'jacket'], ['loaded-tamale', 'jacket'], ['credchip-1', 'wallet']]);
+    expect(game.wallet).toMatchObject({ bills: 127, coins: 3, account: 0 });
     expect(game.youSaved).toEqual({ pronouns: 'they' });
     expect(game.societySaved.romance).toBeNull();
-    expect(game.standingWith('bao-liu', now)?.stance).toBe('hostile');
+    expect(game.standingWith('hector-acosta', now)?.stance).toBe('hostile');
     // Ten days on, and it saves and loads again as it is.
     for (let day = 0; day < 10; day++) game.tick((now += 24 * 3_600_000));
     const again = readSave(JSON.parse(JSON.stringify(saveOf(game, now))));
-    const after = again && new Game(world, rules, resume(world, again) ?? undefined);
+    const after = again && new Game(world, rules, progressFor(world, again, GENERATOR_VERSION) ?? undefined);
     expect(after?.inventory).toEqual(game.inventory);
     expect(after?.lifeSaved).toEqual(game.lifeSaved);
     expect(after?.societySaved).toEqual(game.societySaved);
+  });
+
+  it('says which neighborhood the player is in: a place in its own, a building in the one it was named in', () => {
+    const game = new Game(world, rules);
+    for (const l of Object.values(world.locations)) expect(game.neighborhoodOf({ x: l.x, y: l.y, place: l.id })).toBe(l.area);
+    const chains = new Map(CITY.buildings.businesses.filter((b) => b.chain).map((b) => [b.id, b.sign]));
+    let named = 0;
+    for (const b of world.buildings) {
+      const sign = b.business ? chains.get(b.business) : undefined;
+      if (!sign || !b.name.startsWith(`${sign} `)) continue;
+      expect(`${sign} ${game.neighborhoodOf({ x: b.x, y: b.y - 1, building: b.id })}`, b.id).toBe(b.name);
+      named++;
+    }
+    expect(named).toBeGreaterThan(3);
   });
 
   it('picks up exactly where the player left off', () => {
@@ -388,12 +534,14 @@ describe('generator version', () => {
     1: '1b8af260',
     2: '518b9b2b',
     3: 'f56e245e',
+    // Every district of the real Night City in every city, by neighborhood, on a map 160 across.
+    4: '18e95a2a',
   };
 
   // Saves also name the building the player stands at, so its id must still be there. Every
   // building's id, kind, footprint and height (not its name or business) go into this one.
   // When it fails, bump GENERATOR_VERSION too, and record the new value here.
-  const BUILDING_LAYOUT = '49f20347';
+  const BUILDING_LAYOUT = '6c4223ec';
 
   it('keeps every building where saves expect it', () => {
     const layout = ['7f3a29c1', '0badc0de', '1c0ffee5'].map((seed) =>
