@@ -799,8 +799,9 @@ them up:
 
 ## Work
 
-Every storefront hires; the player holds up to two jobs, a day job and a side gig on hours
-that don't clash, and climbs a ladder of rungs at each:
+Every storefront hires; the player holds as many jobs as fit the day, a main one and side gigs,
+never two whose hours overlap (`overlaps`; with the ladders' hours as they are, a day job and a
+night one), and climbs a ladder of rungs at each:
 
 - `src/engine/jobs.ts` is the engine: `bossOf(building, population)` (the worker whose role
   says they run it, else the first one; every storefront has exactly one), `bossAt(person)`
@@ -819,11 +820,11 @@ that don't clash, and climbs a ladder of rungs at each:
   last shift, and its `days`, `owed`, `raise`, `missed`, `checked`, `paidOn`, `heard`; saved
   as `jobs`, the main one also as `job` for older builds, dropped when the building is gone
   or no longer hires) and the shifts worked in each line (`career`, saved). The main job is
-  `jobs[0]`, a side gig after it. `Game.jobsStatus(now)` is where each stands (rung, next,
+  `jobs[0]`, the side gigs after it. `Game.jobsStatus(now)` is where each stands (rung, next,
   pay, `side`, `hours`, `days`, `owed`, `here`, `open`, `blocked`: away, off, done today, or
   closed); `Game.jobStatus(now)` is the one here, else the main one. `Game.workWith(id)` says
   what a person's card offers (`hire`; `switch` when taking it means handing one in, its
-  hours clashing or no room for another, `switchingFrom` naming it; `quit` for a boss of
+  hours clashing with one held, `switchingFrom` naming it; `quit` for a boss of
   the player's); `Game.askForWork(id, now)` is an ask like any other (`openness` with the
   `hire` cost, pressing, the mask's own refusal, a boss with `quit` or `fired` on their mind),
   and a yes hands in the job it displaces (`notice`, a memory of its own) with a word from

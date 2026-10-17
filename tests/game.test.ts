@@ -1850,7 +1850,7 @@ describe('Game', () => {
         // Inside the bar, its job is the one the panel works.
         expect(game.jobStatus(now)?.building.id).toBe('b-bar');
         expect(game.jobsSaved[0]?.heard).toBe(false);
-        // No room for a third: asking anywhere else means handing one in.
+        // A third whose hours clash with the day job's: asking means handing that one in.
         const deck = bossOf(world.buildings.find((b) => b.id === 'b-deck') as Building, game.population) as Person;
         expect(game.workWith(deck.id)).toBe('switch');
         expect(game.switchingFrom(deck.id)).toBe('Test Noodles');
@@ -1872,6 +1872,19 @@ describe('Game', () => {
           expect(day.game.work(tomorrow)).toBe(true);
           expect(day.game.standingWith(noodle.id, tomorrow)?.standing.rapport).toBe(Math.min(100, after + JOBS.rapport));
         }
+      });
+
+      it('takes as many jobs as fit the day: a third on hours that clash with neither', () => {
+        // The deck shop's counter opens in the small hours here, done before the noodle bar opens.
+        const key = JOBS.ladders['cyberdeck-shop'] ? 'cyberdeck-shop' : 'netrunning';
+        const early: JobRules = { ...JOBS, ladders: { ...JOBS.ladders, [key]: { ...JOBS.ladders[key]!, hours: [2, 9] } } };
+        const held = [noodleJob(), { building: 'b-bar', rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 }];
+        const { game, now, boss } = withBoss('b-deck', 26, 20, { jobs: held }, true, barWorld, 11, { jobs: early });
+        expect(game.workWith(boss.id)).toBe('hire');
+        expect(game.switchingFrom(boss.id)).toBeNull();
+        expect(game.askForWork(boss.id, now)).toBe(true);
+        expect(game.jobsSaved.map((j) => j.building)).toEqual(['b-noodle', 'b-bar', 'b-deck']);
+        expect(game.jobsStatus(now).map((j) => j.side)).toEqual([false, true, true]);
       });
 
       it('hands in notice at a job whose hours clash, with a good word from a boss who liked the player, and starts a rung up on experience', () => {

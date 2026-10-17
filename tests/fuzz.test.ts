@@ -165,9 +165,8 @@ function check(game: Game, about: string): void {
   const tiesOf = (ties: Array<{ from: string; to: string; kind: string }>) => ties.map((t) => `${t.from}|${t.to}|${t.kind}`);
   if (!same(again.population.people, game.population.people)) expect(again.population.people, `${about}: the people after a save`).toEqual(game.population.people);
   if (digest(again.population.ties) !== digest(game.population.ties)) expect(tiesOf(again.population.ties).sort(), `${about}: the ties after a save`).toEqual(tiesOf(game.population.ties).sort());
-  // Every job is at a storefront that hires, on a rung of its ladder; at most two, never two whose hours clash.
+  // Every job is at a storefront that hires, on a rung of its ladder; as many as fit, never two whose hours clash.
   const jobs = game.jobsSaved;
-  expect(jobs.length, `${about}: jobs`).toBeLessThanOrEqual(JOBS.most);
   const hours = jobs.map((job) => {
     const at = game.world.buildings.find((b) => b.id === job.building);
     const ladder = at ? ladderFor(at, JOBS) : null;
