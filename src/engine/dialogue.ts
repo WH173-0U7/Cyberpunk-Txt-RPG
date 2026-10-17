@@ -106,7 +106,7 @@ export interface DialogueLines {
   /** `notice`: told the player is leaving for other work; `moonlight`/`sideGig`: hearing of a side gig (`{gig}`), minding it or not. `hire` has `experienced` when the player starts above the bottom, `referee` the old boss who put in a word. */
   /** A boss on work, and the people a shift brings: a coworker asking for cover (`coverAsk`, `coverThanks`, `coverSnub`), a ganger come for the cut (`cutDemand`, `cutPaid`, `cutBack`, `cutWorse`, `{work}`), a thief caught (`caught`), and the boss who saw the player stand up for the place (`stood`). */
   work: { hire: Line[]; refuse: Line[]; masked: Line[]; shift: Line[]; promote: Line[]; quit: Line[]; notice: Line[]; moonlight: Line[]; sideGig: Line[]; broke: Line[]; rehire: Line[]; coverAsk: Line[]; coverThanks: Line[]; coverSnub: Line[]; cutDemand: Line[]; cutPaid: Line[]; cutBack: Line[]; cutWorse: Line[]; caught: Line[]; stood: Line[] };
-  revenge: { person: Line[]; gang: Line[] };
+  revenge: { person: Line[]; gang: Line[]; debt: Line[] };
   /**
    * Dealing for a gang (dealing.ts). A connect: taking the player on (`{drug}`, `{doses}`,
    * `{owed}`, `{when}`, `{corner}`), not yet, fronting another package, not while they owe
@@ -116,6 +116,16 @@ export interface DialogueLines {
    * buying (`{drug}`, `{price}`), not from a stranger, not into it, or put out by being asked;
    * one of a rival gang, pitched the player's gang's product (`{ours}`), taking it as war.
    */
+  /**
+   * Borrowing and lending: a gang's loan shark lending (`sharkLend`), refusing a player they're
+   * cold to (`sharkNo`), more to one behind on what they owe (`sharkFull`) or out of an empty
+   * chest (`sharkDry`), paid some back
+   * (`sharkPaid`) or all of it (`sharkSquare`); someone
+   * taking a loan from the player (`lend`) or turning it down (`refuse`), and, asked for it back,
+   * paying (`payBack`), putting it off (`excuse`) or snapping at being asked again so soon
+   * (`pressed`). `{amount}`, `{owed}`, `{gang}`.
+   */
+  money: { sharkLend: Line[]; sharkNo: Line[]; sharkFull: Line[]; sharkDry: Line[]; sharkPaid: Line[]; sharkSquare: Line[]; lend: Line[]; refuse: Line[]; payBack: Line[]; excuse: Line[]; pressed: Line[] };
   deal: { join: Line[]; notYet: Line[]; refer: Line[]; front: Line[]; owing: Line[]; paid: Line[]; some: Line[]; promote: Line[]; masked: Line[]; burned: Line[]; leave: Line[]; buy: Line[]; wary: Line[]; pass: Line[]; offended: Line[]; rival: Line[]; recruit: Line[]; recruitNo: Line[]; runnerFront: Line[]; runnerPaid: Line[]; runnerKept: Line[]; runnerSome: Line[]; runnerNothing: Line[]; runnerShort: Line[]; leanPaid: Line[]; leanFailed: Line[]; slide: Line[]; runnerQuit: Line[]; letGo: Line[] };
   /** What someone brings up of what the player did, as they remember it (memory.ts): `mem` and `mem<Kind>` say which, with `{memWho}`, `{memWord}`, `{memAgo}`, `{memItem}`, `{memTook}`, `{memTitle}` and `memTwice`, `memAgain` (brought up before), `memRobbery`, `memInsult`, `memAssault`, `memMurder`, `memFavorite`. */
   memory: Line[];
@@ -130,7 +140,7 @@ export interface DialogueLines {
   /** What someone wants out of life, as the card says it once the player knows ("Wants out of Night City"). */
   dreams: Record<Dream, string>;
   /** Why an exchange went the way it did, on the note after it (`{given}`, `{his}`, `{item}`…): pushed after a no, one question too many, a favorite, a second gift in a day, a mask, a job, walking out, a chop. */
-  notes: { pressed: string; grilled: string; favorite: string; twice: string; masked: string; hired: string; quit: string; notice: string; chopped: string; date: string; official: string; dumped: string; ended: string; jealous: string };
+  notes: { pressed: string; grilled: string; favorite: string; twice: string; masked: string; hired: string; quit: string; notice: string; chopped: string; date: string; official: string; dumped: string; ended: string; jealous: string; lent: string; dunned: string };
   /**
    * Romance with the player (romance.ts): asked out (yes; not drawn to the player; spoken for,
    * `{taken}` their `{takenWord}`; not yet; not in a mask); a date (`{item}` ordered for two,
@@ -150,7 +160,7 @@ export interface DialogueLines {
     notLooking: string;
   };
   /** The player's own lines, for the record, by eloquence. */
-  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; robCold: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[]; deal: Line[]; pitch: Line[]; payUp: Line[]; walkAway: Line[]; recruit: Line[]; frontRunner: Line[]; collect: Line[]; lean: Line[]; slide: Line[]; letGo: Line[] };
+  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; robCold: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[]; deal: Line[]; pitch: Line[]; payUp: Line[]; walkAway: Line[]; recruit: Line[]; frontRunner: Line[]; collect: Line[]; lean: Line[]; slide: Line[]; letGo: Line[]; borrow: Line[]; lend: Line[]; askBack: Line[]; payShark: Line[] };
 }
 
 /** Everything a line can be picked and filled by; `vars.mask` is the word for the mask the player has on, or nothing. */

@@ -172,6 +172,16 @@ own.
   weeks behind and there's a notice on the door, three and you're out, with everything in the
   stash. Somebody goes through a squat's stash now and then. The map has a house on it, the
   status drop-down a Home row.
+- **Borrowing and lending**: a bank lends against what your work pays (**Loan** at the
+  counter: 200 €$ to 300 €$ plus two weeks' pay, up to 5,000 €$), adds 15% and takes it back in
+  eight weekly installments out of your account. Miss one and there's a fee; miss three running
+  and the bank sweeps your account every week till it's paid, and never lends to you again. Any
+  ganger will lend you their gang's cash (the **€$** on their card), at a tenth a week, up to
+  three times what you borrowed; two weeks without paying any back and someone comes for it.
+  And you can lend to people: the broke take it gladly, anyone else only if they like you, and
+  the honest pay you back as they can, every week, into your account. Ask for it back and they
+  pay what they can spare, or make excuses; ask again too soon and they resent it. The status
+  drop-down has a Debts row.
 - **Hard times**: when the eddies run out, people do what they must. Someone who can't pay for
   the week's food and has the nerve walks out with some of it. Whoever still can't make the week
   on payday borrows from the **loan shark**, the gang that runs their turf, at a tenth a week,

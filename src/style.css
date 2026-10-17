@@ -1858,10 +1858,12 @@ button {
   font-family: var(--font-mono);
   font-size: 11px;
 }
+/* Six commands at the counter, in two rows of three so each word fits at phone width */
 .bank-body .person-commands {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: auto;
 }
-/* Four commands share the counter's row: tighter type so Withdraw fits at phone width */
 .bank-body .person-cmd {
   padding: 6px 4px;
   font-size: 10.5px;

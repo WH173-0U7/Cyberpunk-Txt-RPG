@@ -24,6 +24,7 @@ import type { Building } from '../src/engine/types';
 import { ROOMS } from '../src/data/rooms';
 import { POLICE } from '../src/data/police';
 import { DEALING } from '../src/data/dealing';
+import { CREDIT } from '../src/data/credit';
 import { freshDealing } from '../src/engine/dealing';
 import { generatePeople } from '../src/engine/people';
 
@@ -51,6 +52,7 @@ const RULES: GameRules = {
   rooms: ROOMS,
   police: POLICE,
   join: JOIN,
+  credit: CREDIT,
   // Anyone will run for the player, so the crew gets put through its paces.
   dealing: { ...DEALING, crew: { ...DEALING.crew, stances: ['cold', 'wary', 'neutral', 'warm', 'friend'], keen: { gang: 3, user: 3, straight: 3 } } },
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
@@ -117,6 +119,12 @@ function check(game: Game, about: string): void {
   for (const p of game.carry().pockets) expect(p.over, `${about}: ${p.id} is over (${p.load.slots}/${p.slots}, ${p.load.grams}/${p.maxGrams} g)`).toBe(false);
   const { bills, coins, account, chips } = game.wallet;
   for (const [k, v] of Object.entries({ bills, coins, account, chips })) expect(v, `${about}: ${k}`).toBeGreaterThanOrEqual(0);
+  // What's owed either way is something, and a loan shark's never more than its cap.
+  const credit = game.creditSaved;
+  if (credit.bank) expect(credit.bank.owed, `${about}: a bank loan`).toBeGreaterThan(0);
+  if (credit.shark) expect(credit.shark.owed, `${about}: a loan shark`).toBeGreaterThan(0);
+  if (credit.shark) expect(credit.shark.owed, `${about}: a loan shark's cap`).toBeLessThanOrEqual(Math.ceil(credit.shark.borrowed * CREDIT.shark.cap));
+  for (const [id, lent] of Object.entries(credit.lent)) expect(lent.owed, `${about}: lent to ${id}`).toBeGreaterThan(0);
   // A save brings all of it back.
   const save = readSave(JSON.parse(JSON.stringify(createSave(game.world.seed, game, GENERATOR_VERSION))));
   const progress = save && resume(game.world, save);
@@ -298,6 +306,8 @@ describe('playing badly', () => {
               const front = game.dealWith(who, now).filter((o) => o.id.startsWith('crew-front'));
               if (front.length) game.deal(who, rng.pick(front)!.id, now);
             }
+            // Borrowed from a loan shark, paid back, lent, asked for back.
+            else if (rng.chance(0.2) && game.moneyWith(who, now).some((o) => !o.disabled)) game.moneyMove(who, rng.pick(game.moneyWith(who, now).filter((o) => !o.disabled))!.id, now);
             else if (ways.length && rng.chance(0.5)) {
               game.killCold(who, rng.pick(ways)!.id, now);
               playOut();
@@ -355,8 +365,14 @@ describe('playing badly', () => {
             const what = rng.next();
             if (what < 0.3) game.deposit();
             else if (what < 0.6) game.withdraw(rng.pick(MONEY.withdrawals) ?? 20);
-            else if (what < 0.8) game.exchange();
-            else game.bankChips();
+            else if (what < 0.75) game.exchange();
+            else if (what < 0.85) game.bankChips();
+            else {
+              // A loan taken, or paid off.
+              const offer = game.credit(now);
+              if (offer?.amounts.length) game.borrow(rng.pick(offer.amounts)!, now);
+              else game.repayLoan(now);
+            }
           }
           game.tick(now + act * 60_000);
           check(game, `${about}, act ${act}`);
