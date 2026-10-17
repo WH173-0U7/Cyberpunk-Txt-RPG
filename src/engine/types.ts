@@ -242,6 +242,8 @@ export interface Wallet {
   eddies: number;
   bills: number;
   coins: number;
+  /** The notes the bills are: how many of each, by denomination. */
+  notes: Record<string, number>;
   /** In the bank. */
   account: number;
   /** On credchips in your name, spendable where transfers are taken. */

@@ -5,7 +5,7 @@ import { FOOD } from './data/food';
 import { GEAR } from './data/gear';
 import { MONEY } from './data/money';
 import { itemGrams, outfit, type PocketLoad, type Slot } from './engine/carry';
-import { chipCut } from './engine/money';
+import { chipCut, notesLine } from './engine/money';
 import { INEBRIATION } from './data/inebriation';
 import { LINES } from './data/dialogue';
 import { PEOPLE } from './data/people';
@@ -1274,7 +1274,7 @@ function showWallet(wallet: Wallet, now: number): void {
   walletLabel.classList.toggle('has-pass', pass);
   // The button's name says what's on it, too.
   $('#inventory-toggle').setAttribute('aria-label', `Inventory, ${wallet.eddies} €$ in cash${pass ? ', NCART pass' : ''}`);
-  walletLabel.title = `${wallet.bills} €$ in bills, ${wallet.coins} €$ in coins, ${wallet.account} €$ in the bank${wallet.chips ? `, ${wallet.chips} €$ on chips` : ''}.${pass ? ` NCART monthly pass valid until ${formatDay(wallet.passUntil)}.` : ' Buy an NCART monthly pass at any station.'}`;
+  walletLabel.title = `${wallet.bills} €$ in notes${wallet.bills ? ` (${notesLine(wallet.notes)})` : ''}, ${wallet.coins} €$ in coins, ${wallet.account} €$ in the bank${wallet.chips ? `, ${wallet.chips} €$ on chips` : ''}.${pass ? ` NCART monthly pass valid until ${formatDay(wallet.passUntil)}.` : ' Buy an NCART monthly pass at any station.'}`;
 }
 
 /** Fills the bank's counter with the account, the cash and the chips on you, and what can be done with them. */
@@ -1287,7 +1287,7 @@ function showBank(): void {
   bank.render({
     name: at?.name ?? 'Bank',
     account: `€$ ${account}`,
-    bills: `€$ ${bills}${wallet ? ` of ${wallet.holds}` : ''}`,
+    bills: `€$ ${bills}${wallet ? ` · ${wallet.notes ?? 0} of ${wallet.holds} notes` : ''}`,
     coins: `€$ ${coins} · ${formatGrams(coins * GEAR.gramsPerCoin)}`,
     chips: carried.length ? `${carried.length} · €$ ${chips}${locked ? `, ${locked} locked` : ''}` : 'None',
     fee: `${Math.round((at?.fee ?? 0) * 100)}% on coins`,
@@ -1386,7 +1386,7 @@ function showInventory(): void {
       name: p.name,
       sub: [tier(p), p.mask ? 'Hides your face' : ''].filter(Boolean).join(' · '),
       // Just the slots on the row; the kilos are on the pocket's own page.
-      detail: wallet ? `€$ ${p.bills} of ${p.holds}${p.chips ? ` · ${p.chips}/${p.chipSlots} chips` : ''}` : p.slots ? `${p.load.slots}/${p.slots} slots` : 'No pockets',
+      detail: wallet ? `€$ ${p.bills} · ${p.notes ?? 0}/${p.holds} notes${p.chips ? ` · ${p.chips}/${p.chipSlots} chips` : ''}` : p.slots ? `${p.load.slots}/${p.slots} slots` : 'No pockets',
       weight: formatGrams(p.grams),
       over: p.over,
       opens: wallet || p.slots > 0 || holding,
@@ -1450,7 +1450,7 @@ function showInventory(): void {
   } else {
     const parent = open.in ? pockets.find((p) => p.id === open.in) : undefined;
     const figures: PocketPageFigures = [];
-    if (open.holds !== undefined) figures.push({ label: 'Bills', value: `€$ ${open.bills} of ${open.holds}` });
+    if (open.holds !== undefined) figures.push({ label: 'Bills', value: `€$ ${open.bills} · ${open.notes ?? 0} of ${open.holds} notes` }, ...(open.held && Object.keys(open.held).length ? [{ label: 'Notes', value: notesLine(open.held) }] : []));
     if (open.coins) figures.push({ label: 'Coins', value: `€$ ${open.coins} · ${formatGrams(open.coins * GEAR.gramsPerCoin)}` });
     page = {
       kind: 'pocket',

@@ -228,7 +228,7 @@ export function readSave(raw: unknown): SaveData | null {
     // Nor do saves from before the inventory: the player carried nothing. Anything unreadable is dropped.
     items: Array.isArray(save.items) ? save.items.filter(isItem) : [],
     gear: Array.isArray(save.gear) ? save.gear.filter(isPocket) : null,
-    money: isMoney(save.money) ? save.money : null,
+    money: isMoney(save.money) ? moneyOf(save.money) : null,
     // And saves from before energy start the player off fresh, and before drink, sober.
     energy: isEnergy(save.energy) ? save.energy : null,
     inebriation: isInebriation(save.inebriation) ? save.inebriation : null,
@@ -432,6 +432,15 @@ function romanceOf(value: unknown): Romance | null {
 function isMoney(value: unknown): value is Money {
   const m = value as Record<string, unknown> | null;
   return typeof m === 'object' && m !== null && isNumber(m.bills) && m.bills >= 0 && isNumber(m.coins) && m.coins >= 0 && isNumber(m.account) && m.account >= 0;
+}
+
+/** Money as read: its notes only when they read right (a count of each kind of note) and come to its bills; else the game works them out. */
+function moneyOf(money: Money): Money {
+  const { bills, coins, account } = money;
+  const notes = money.notes as unknown;
+  const fine = isObject(notes) && Object.entries(notes).every(([d, n]) => /^[1-9][0-9]*$/.test(d) && Number.isInteger(n) && (n as number) >= 0);
+  const sum = fine ? Object.entries(notes as Record<string, number>).reduce((s, [d, n]) => s + Number(d) * n, 0) : -1;
+  return { bills, coins, account, ...(fine && sum === bills ? { notes: { ...(notes as Record<string, number>) } } : {}) };
 }
 
 function isPocket(value: unknown): value is PocketState {

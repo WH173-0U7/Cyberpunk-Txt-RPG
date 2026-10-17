@@ -174,19 +174,35 @@ off people, for a fence: see Selling and fencing) are the items so far:
   (the wiki's chains and named stores keep to their districts) with roles in
   `src/data/people.ts`.
 - Eddies are `Money` (`src/engine/money.ts`): `bills` and `coins` on hand, and the
-  `account`; `Game.wallet` has all three and `eddies` (the cash). Every payment goes
+  `account`; `Game.wallet` has all three and `eddies` (the cash). Cash is real notes and coins,
+  the wiki's (`MONEY.notes`: §1, §5, §10, §20, §50, §100, §500; its cents never come up, so the
+  only coin is the €$1): `Money.notes` is how many of each (`Notes`, by denomination), `bills`
+  what they come to, `coins` the €$1 coins. Anything that changes the notes goes through
+  `money.ts` (`withNotes`, `pocket`, `payCash`, `takeCash`, `grabCash`, `withdraw`,
+  `changeCoins`), so the two always agree; `notesOf` works an older save's bills (or bills set by
+  hand) out as notes, the biggest first. The wallet holds a count of notes (`holds`), each a gram
+  (`gramsPerNote`), whatever it's worth (`notesHeld`, `walletRoom`); the coins weigh the change
+  pocket down as before (`changeRoom`, a `CashRoom` is both). Every payment goes
   through `Game`'s private `pay(price, transfers)`: a transfer from the account where the
   counter takes one (`MONEY.transfers`: chains, luxury places, racks of gear, the NCART)
-  and the account covers it, else cash through `payCash` (coins first, notes of `noteMin`
-  and up, change back in coins as far as `changeRoom` allows, measured once the coins paid
-  are out of the pocket); `Game.affords(id)` and
-  `affordsFare(amount)` tell the UI what can be paid for, by either. Anything that pays the
-  player cash goes through `walletRoom`/`changeRoom` (see `rob`); anything that takes it,
-  `takeCash` (bills first). A bank is a building whose business is `bank` (the `EuroBank`
+  and the account covers it, else cash through `payCash`: coins first, then the notes that cover
+  the rest (`notesToPay`: exactly, if they can, else the least over), the change back in notes no
+  bigger than a till's (`most.till`) and what's under `noteMin` in coins (`cashFor`), as far as the
+  wallet and the change pocket hold it (`changeSpace`, measured once the coins paid are out);
+  `Game.affords(id)` and `affordsFare(amount)` tell the UI what can be paid for, by either.
+  Anything that pays the player cash goes through `pocketCash`/`cashRoom` (in notes no bigger
+  than `most.street`, or a till's for a shop's or a gang's cash) or `pocketGiven` (particular
+  notes: a robbery's); anything owed them goes through `cashOut` (`takeCash`, change back), and a
+  thief takes the biggest notes first (`grabCash`, no change). People carry eddies as a number;
+  how it's made up is `purseOf` (`MONEY.purse`: a few coins, notes no bigger than their means
+  allow, drawn on `seed:purse:<id>:<eddies>`, so the same sum is the same notes), which a robbery
+  takes from (`takeFrom`: the smallest first when they hand it over, the biggest first going
+  through someone out cold). A bank is a building whose business is `bank` (the `EuroBank`
   chain and the Asukaga & Finch landmark in `src/data/city.ts`, both canon names):
-  `Game.bank()`, `deposit()`, `withdraw(amount)`, `exchange()`, with the numbers in
-  `src/data/money.ts`; `src/ui/bank.ts` is its counter. Saved as `money` (old saves' `eddies`
-  become bills).
+  `Game.bank()`, `deposit()`, `withdraw(amount)` (the teller's notes, up to a hundred),
+  `exchange()` (coins for notes), with the numbers in `src/data/money.ts`; `src/ui/bank.ts` is
+  its counter. Saved as `money` with its `notes` (`moneyOf` keeps them only when they read right
+  and come to the bills; old saves' `eddies` become bills, and their bills notes).
 - Credchips (the wiki's 2020 chips of eurodollars) are items of kind `credchip`, each its own
   (`newChipId`) with a `balance` and, taken off someone, `locked`. The wallet's `chips` card
   slots take them first (`placeFor`), a pocket slot each after that. Where transfers are
