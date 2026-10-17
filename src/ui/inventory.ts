@@ -19,6 +19,8 @@ export interface InventoryItemView {
   wear?: boolean;
   /** A drug the player could cut, with an agent on them. */
   cut?: boolean;
+  /** What the drop button says ("Stash", at home), or false for none (in the stash). */
+  drop?: string | false;
 }
 
 /** A pocket as a row: a garment worn, a bag carried, or the wallet in the pants. Tapping one that opens shows what's in it. */
@@ -41,6 +43,8 @@ export interface OutfitView {
   kind: 'outfit';
   slots: Array<{ label: string; garment: PocketRowView | null }>;
   bags: PocketRowView[];
+  /** At home, a row that opens onto the stash. */
+  stash?: PocketRowView;
   /** A row that opens onto the chrome fitted. */
   chrome: PocketRowView;
 }
@@ -177,6 +181,13 @@ function outfitPage(page: OutfitView): HTMLElement[] {
     for (const bag of page.bags) bags.append(pocketRow(bag));
     carried.append(bags);
     out.push(carried);
+  }
+  if (page.stash) {
+    const home = section('Home');
+    const rows = el('ul', 'inv-items');
+    rows.append(pocketRow(page.stash));
+    home.append(rows);
+    out.push(home);
   }
   const chrome = section('Chrome');
   const rows = el('ul', 'inv-items');
@@ -329,11 +340,13 @@ function itemRow(item: InventoryItemView): HTMLElement {
     wear.setAttribute('aria-label', `Wear ${item.name}`);
     row.append(wear);
   }
-  const drop = el('button', 'inv-drop', 'Drop');
+  if (item.drop === false) return row;
+  const label = item.drop ?? 'Drop';
+  const drop = el('button', 'inv-drop', label);
   drop.type = 'button';
   drop.dataset.id = item.id;
   drop.dataset.in = item.in;
-  drop.setAttribute('aria-label', `Drop ${item.name}${item.detail ? ` (${item.detail})` : ''}`);
+  drop.setAttribute('aria-label', `${label} ${item.name}${item.detail ? ` (${item.detail})` : ''}`);
   row.append(drop);
   return row;
 }

@@ -1182,6 +1182,36 @@ nobody there has a habit or deals):
   the line), a Crew row and a Habit row, and the line under the energy bar says a debt, a drug
   working, a craving or withdrawal.
 
+## The player's home
+
+The player can rent a unit or squat, and keep a stash there (`rules.home`, `HOME` in
+`src/data/home.ts`; the tests' `RULES` leave it out, so nobody there has a home):
+
+- `src/engine/home.ts` is the engine's shapes (`HomeState`, `HomeView`, `HomeKind`, `HomeRules`)
+  and the stash's arithmetic (`stashLoad`, `stackIn`, `stashFits`, by `stackSlots`/`itemGrams`).
+  `Game` keeps the home (`homeState`, saved as `home`) and the stash (`stashItems`, its own list
+  of items off the player, saved as `stash`; never in `inventory`, so no robbery, search or
+  weight sees it).
+- Taking a place is at its door (the lobby, `atCounter`): `Game.homeOffer()` is what the
+  panel's home button offers there (`rent` at an apartment block or a megabuilding, at what its
+  tenants pay a head, `ECONOMY.homes`, times `HOME.unit`; `squat` at an abandoned building or a
+  shack; `go` up to the player's own unit; `stash` in it), and `takeHome(now)` takes it: a week
+  up front (never to a mask, nor short of it) through the private `payRent` (the account, then
+  cash, to whoever owns the building, `ownersOf`/`holderOf`, into their account; a corp's
+  leaves the city), a unit nobody lives in (`freeUnit`, by `unitOf`, on its own stream), and an
+  old home given up for it once its stash is empty. The unit is the player's own (`RoomAccess`
+  `yours`; `goHome`); `moveOut` hands back the keys with an empty stash.
+- At home (`atHome`: in the unit, or anywhere in a squat), `Game.stash()` is the stash, and the
+  inventory's drop button is Stash (`stashIt`, a whole stack, by `stashFits`); the stash is a
+  page of the inventory (`STASH_PAGE` in `main.ts`: Take, `unstash`, as far as there's room).
+- `homeTick(now)` (from `start` and `tick`, after `punchClock`) takes each week as it falls due:
+  the rent and what's owed, as far as it goes, the rest owed; `warnAt` weeks owed, a warning
+  once; `evictAt`, put out, the stash lost and the player shown out of the unit. A squat's week
+  has `squat.raid` of somebody taking `squat.take` of every stack. The lines are `HOME.lines`.
+- The UI: the panel's **Rent**/**Squat**/**Home**/**Stash** button (`ActionId` `home`) and in
+  the unit **Vacate** (`move`, Leave for a squat), the panel's line on the rent (`homeNote`),
+  the status drop-down's Home row (`homeLine`), and a house pin on the map (`CityMap.setHome`).
+
 ## Inebriation
 
 Drinking alcohol makes the player drunk; nothing else happens yet:
@@ -1206,8 +1236,8 @@ Energy is in place, with nothing spending it yet:
 - Anything that costs energy calls `Game.spendEnergy(amount, now)`, which says false (and
   tells the player) when there isn't enough, and does the training: experience, the bonus
   for running down to empty, level-ups. `Game.energy(now)` is where it stands. It's saved.
-- A home with a bed adds `ENERGY.bed` to the max. There are no homes yet: when there are,
-  set `Game`'s `home` (and save it).
+- A home with a bed adds `ENERGY.bed` to the max: a rented one (see The player's home), never a
+  squat (`Game`'s private `hasBed`).
 
 ## Food
 

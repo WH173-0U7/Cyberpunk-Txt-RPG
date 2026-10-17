@@ -4,7 +4,7 @@ import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
-import { accountOf, holderOf as ownerNow, leftOf, ledgerOf, ownersOf, priceFactor, stockOf, tillOf, tradeAt, turfFrom, weekdayOf, type Health, type MarketNews, type Vice } from './economy';
+import { accountOf, holderOf as ownerNow, homeKind as blockKind, leftOf, ledgerOf, ownersOf, priceFactor, stockOf, tillOf, tradeAt, turfFrom, weekdayOf, type Health, type MarketNews, type Vice } from './economy';
 import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, runnerShort, settle, writeOff, type Runner, type RunnerView } from './crew';
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
 import { cutShare, foundOdds, harmOdds, mixedShare, sickOdds } from './cutting';
@@ -18,7 +18,8 @@ import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, over
 import { applyLife, freshLife, heldBy, learned, liveUntil, newsFor, scenesAt, type Held, type LifeEvent, type LifeRules, type LifeState, type Scene } from './life';
 import { forgetMemories, GRIEVANCES, memoriesOf, memoryAge, memoryOf, recall, recalled, regard, remember, type Memory } from './memory';
 import { chargesFor, freshPolice, issueWarrant, policing, warrantsAt, worstCrime, type Confrontation, type Crime, type Dispatch, type PoliceChoice, type PoliceContent, type PoliceState, type PoliceView } from './police';
-import { mainRoom, roomById, roomOf, roomsOn, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
+import { floorsOf, mainRoom, roomById, roomOf, roomsOn, unitOf, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
+import { stackIn, stashFits, stashLoad, type HomeKind, type HomeRules, type HomeState, type HomeView } from './home';
 import { buildingById, GUARD_ROLE, openingHours, rotaStaff, readOf, skillsOf, walkOf, type PersonSkills, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
@@ -147,6 +148,8 @@ export interface GameRules extends TravelRules {
   hours?: HoursRules;
   /** The rooms inside buildings. Without them (the tests' rules leave them out), a building is one room, as it was. */
   rooms?: RoomsContent;
+  /** The player's home: renting or squatting, the rent, the stash (missing: nowhere to live). */
+  home?: HomeRules;
   /** The NCPD: who calls it in, how fast it comes, warrants. Without it (the tests' rules leave it out), nobody ever calls. */
   police?: PoliceContent;
   /** Who throws in on a fight. Without it (the tests' rules leave it out), every fight is the player and one other. */
@@ -369,8 +372,9 @@ export class Game {
   /** The Trauma Team plan the player is on, if any (it may have run out). */
   private coverage: Coverage | null;
   private readonly baseEddies: ReadonlyMap<string, number>;
-  /** Where the player lives. Nowhere yet: once there are homes, one with a bed raises the most energy. */
-  private readonly home: { building: string; bed: boolean } | null = null;
+  /** Where the player lives, and what they keep there: a rented home has a bed, which raises the most energy. */
+  private homeState: HomeState | null;
+  private stashItems: Item[];
   private lastAmbient: AmbientLine | null = null;
   /** The scene (where, when, which mask) last looked over for someone who knows the mask; see `recognize`. */
   private noticed = '';
@@ -463,6 +467,10 @@ export class Game {
     this.roomState = room?.id ?? 'main';
     if (room?.kind === 'unit') this.letIn.add(room.id);
     this.lodgingState = progress?.lodging ? { ...progress.lodging } : null;
+    // A home in a building the city has, and what's kept there; no home, nothing kept anywhere.
+    const home = progress?.home && world.buildings.some((b) => b.id === progress.home?.building) ? progress.home : null;
+    this.homeState = home ? { ...home } : null;
+    this.stashItems = home ? (progress?.stash ?? []).map((item) => ({ ...item })) : [];
     if (progress) {
       for (const id of progress.visited) this.visit(this.locationById(id));
       for (const id of progress.discovered) this.discovered.add(this.locationById(id).id);
@@ -610,7 +618,7 @@ export class Game {
   }
 
   private get hasBed(): boolean {
-    return this.home?.bed ?? false;
+    return Boolean(this.homeState && !this.homeState.squat);
   }
 
   /** How drunk the player is at `now`: what's left of their drinks, clearing on the clock. */
@@ -7631,6 +7639,7 @@ export class Game {
   start(now: number): void {
     this.live(now);
     this.punchClock(now);
+    this.homeTick(now);
     this.dealTick(now);
     this.say(this.resumed ? this.world.welcomeBack : this.world.welcome);
     if (!this.resumed) this.settle(this.where);
@@ -7709,6 +7718,7 @@ export class Game {
     if (this.fightState && !this.fightState.over && now >= this.fightState.deadline) this.fightMove('freeze', now);
     this.live(now);
     this.punchClock(now);
+    this.homeTick(now);
     this.soberUp(now);
     this.settleThreats(now);
     this.policeTick(now);
@@ -7801,6 +7811,304 @@ export class Game {
     return this.lodgingState && this.lodgingState.until > now ? { ...this.lodgingState } : null;
   }
 
+  // ───────────── Home ─────────────
+
+  get homeSaved(): HomeState | null {
+    return this.homeState ? { ...this.homeState } : null;
+  }
+
+  get stashSaved(): Item[] {
+    return this.stashItems.map((item) => ({ ...item }));
+  }
+
+  /** What kind of home a building could be: a unit of a block or of a megabuilding, a squat in an abandoned building or a shack, or none. */
+  private homeKindOf(building: Building): HomeKind | null {
+    if (building.kind === 'apartments' || building.kind === 'megabuilding') return building.kind;
+    return building.kind === 'derelict' || building.kind === 'shack' ? 'squat' : null;
+  }
+
+  /** A unit's rent a week in a block: what its tenants pay a head there, times a whole unit's worth. */
+  private homeRentOf(building: Building): number {
+    const economy = this.rules.life.economy;
+    const kind = blockKind(building, economy);
+    return kind ? Math.round(economy.homes[kind][this.tierFn({ kind: 'building', id: building.id })] * (this.rules.home?.unit ?? 1)) : 0;
+  }
+
+  /** Whether the player is home: in their own unit (or anywhere in their squat, or their building, without rooms). */
+  private atHome(): boolean {
+    const home = this.homeState;
+    return Boolean(home && this.inside?.id === home.building && (!this.rules.rooms || this.roomState === home.room));
+  }
+
+  /** The name of the player's room at home: "Unit 12C", or the building's for a squat. */
+  private homeRoomName(home: HomeState, building: Building): string {
+    const room = this.rules.rooms && home.room !== 'main' ? roomById(building, home.room, this.rules.rooms) : null;
+    return room?.name ?? building.name;
+  }
+
+  /**
+   * What a home button offers where the player is: a unit to rent at a block's door, a corner to
+   * squat, the way up to their own unit, or (in it) their stash. Null anywhere else.
+   */
+  homeOffer(): { kind: 'rent'; rent: number } | { kind: 'squat' } | { kind: 'go'; room: string } | { kind: 'stash'; count: number; room: string } | null {
+    const building = this.inside;
+    if (!this.rules.home || !building) return null;
+    const kind = this.homeKindOf(building);
+    if (!kind) return null;
+    const home = this.homeState;
+    if (home?.building === building.id) {
+      const room = this.homeRoomName(home, building);
+      return this.atHome() ? { kind: 'stash', count: this.stashItems.length, room } : { kind: 'go', room };
+    }
+    // A place is taken at its door: the lobby.
+    if (!this.atCounter()) return null;
+    return kind === 'squat' ? { kind: 'squat' } : { kind: 'rent', rent: this.homeRentOf(building) };
+  }
+
+  /** A unit of a block nobody lives in, drawn for the building (any of them, if every one is someone's). */
+  private freeUnit(building: Building, rooms: RoomsContent): string {
+    const taken = new Set(this.population.people.filter((p) => p.home === building.id && p.diedOn === undefined).map((p) => unitOf(p, building, this.population, rooms)));
+    const units: Room[] = [];
+    for (let floor = 1; floor <= floorsOf(building); floor++) units.push(...roomsOn(building, floor, rooms).filter((r) => r.kind === 'unit'));
+    const free = units.filter((u) => !taken.has(u.id));
+    const rng = createRng(`${this.world.seed}:home:${building.id}`);
+    return (free.length ? rng.pick(free) : units.length ? rng.pick(units) : null)?.id ?? 'main';
+  }
+
+  /** Pays rent: out of the account first, then cash, as far as it goes, to whoever owns the building (a corp's leaves the city). What was paid. */
+  private payRent(amount: number, building: Building): number {
+    const fromAccount = Math.min(this.money.account, Math.max(0, amount));
+    this.money = { ...this.money, account: this.money.account - fromAccount };
+    const { money, taken } = takeCash(this.money, amount - fromAccount);
+    this.money = money;
+    const paid = fromAccount + taken;
+    const economy = this.rules.life.economy;
+    const owner = ownerNow(ownersOf(this.world, this.population, economy, this.world.seed).of.get(building.id), (id) => this.person(id), (id) => tiesOf(this.population, id));
+    const landlord = owner ? this.person(owner) : undefined;
+    if (landlord && paid > 0) {
+      const ledger = ledgerOf(landlord, this.world, this.population, economy, this.tierFn, this.world.seed, this.livingStaff);
+      (this.life.savings ??= {})[landlord.id] = accountOf(landlord, this.life, ledger, economy) + paid;
+    }
+    if (paid > 0) this.events.emit('walletChanged', this.wallet);
+    return paid;
+  }
+
+  /** A line about the player's home, filled in. */
+  private homeLine(pool: string[], vars: Record<string, string>, key: string): void {
+    this.say(this.narration(pool, vars, createRng(`${this.world.seed}:home:${key}`)), 'system');
+  }
+
+  /**
+   * Takes the place here as home: a unit of a block for a week's rent up front (never to a mask),
+   * or a corner of a squat for nothing. An old home is given up for it, once its stash is empty.
+   */
+  takeHome(now: number): boolean {
+    const rules = this.rules.home;
+    const building = this.inside;
+    const offer = this.homeOffer();
+    if (!rules || !building || !offer || (offer.kind !== 'rent' && offer.kind !== 'squat') || this.fighting || this.detained(now)) return false;
+    const key = `${building.id}:${now}`;
+    const mask = this.masked();
+    if (offer.kind === 'rent' && mask) {
+      this.homeLine(rules.lines.masked, { mask: mask.word }, key);
+      return false;
+    }
+    const old = this.homeState;
+    const oldPlace = old ? this.buildingOf(old.building) : undefined;
+    if (old && this.stashItems.length) {
+      this.homeLine(rules.lines.clear, { place: oldPlace?.name ?? 'your old place' }, key);
+      return false;
+    }
+    if (offer.kind === 'rent' && cash(this.money) + this.money.account < offer.rent) {
+      this.homeLine(rules.lines.short, { rent: String(offer.rent) }, key);
+      return false;
+    }
+    if (old) this.homeLine(rules.lines.left, { place: oldPlace?.name ?? 'the old place' }, key);
+    if (offer.kind === 'rent') this.payRent(offer.rent, building);
+    const today = this.clockAt(now).day;
+    const room = offer.kind === 'rent' && this.rules.rooms ? this.freeUnit(building, this.rules.rooms) : 'main';
+    this.homeState = { building: building.id, room, rent: offer.kind === 'rent' ? offer.rent : 0, since: today, due: today + 7, owed: 0, squat: offer.kind === 'squat' };
+    const vars = { place: building.name, room: this.homeRoomName(this.homeState, building), rent: String(offer.kind === 'rent' ? offer.rent : 0) };
+    this.homeLine(offer.kind === 'rent' ? rules.lines.rented : rules.lines.squatted, vars, key);
+    this.events.emit('homeChanged', this.home(now));
+    this.events.emit('energyChanged', this.energy(now));
+    return true;
+  }
+
+  /** Goes up to the player's own unit, from the lobby of their block. */
+  goHome(now: number): boolean {
+    const home = this.homeState;
+    if (!home || this.inside?.id !== home.building || this.atHome()) return false;
+    return this.goRoom(home.room, now);
+  }
+
+  /** Hands back the keys (or walks out of a squat), once the stash is empty. */
+  moveOut(now: number): boolean {
+    const rules = this.rules.home;
+    const home = this.homeState;
+    const building = home ? this.buildingOf(home.building) : undefined;
+    if (!rules || !home || !building || this.inside?.id !== building.id || this.fighting || this.detained(now)) return false;
+    const key = `${building.id}:out:${now}`;
+    if (this.stashItems.length) {
+      this.homeLine(rules.lines.clear, { place: building.name }, key);
+      return false;
+    }
+    this.homeLine(rules.lines.movedOut, { place: building.name, room: this.homeRoomName(home, building) }, key);
+    this.homeState = null;
+    this.events.emit('homeChanged', null);
+    this.events.emit('energyChanged', this.energy(now));
+    return true;
+  }
+
+  /** Where the player lives, for the UI: the place and the room, the rent and what's owed, when the next week falls due, and whether they're there. Null: nowhere. */
+  home(now: number): HomeView | null {
+    const home = this.homeState;
+    const building = home ? this.buildingOf(home.building) : undefined;
+    if (!home || !building) return null;
+    return {
+      building,
+      room: this.homeRoomName(home, building),
+      rent: home.rent,
+      owed: home.owed,
+      behind: home.rent > 0 ? Math.floor(home.owed / home.rent) : 0,
+      dueIn: Math.max(0, home.due - this.clockAt(now).day),
+      squat: home.squat,
+      bed: !home.squat,
+      inside: this.inside?.id === building.id,
+      atHome: this.atHome(),
+      stashed: this.stashItems.length,
+    };
+  }
+
+  /** The stash, while the player is home: what's in it, and how full it is. */
+  stash(): { items: Item[]; slots: number; maxSlots: number; grams: number; maxGrams: number } | null {
+    const rules = this.rules.home;
+    const home = this.homeState;
+    const building = home ? this.buildingOf(home.building) : undefined;
+    const kind = building ? this.homeKindOf(building) : null;
+    if (!rules || !kind || !this.atHome()) return null;
+    const { slots, grams } = stashLoad(this.stashItems, this.rules.gear, this.rules.food.dishes);
+    return { items: this.stashItems.map((item) => ({ ...item })), slots, maxSlots: rules.stash[kind].slots, grams, maxGrams: rules.stash[kind].maxGrams };
+  }
+
+  /** Puts a stack carried (from the pocket `from`, when it's in more than one) in the stash, all of it, while the player is home. */
+  stashIt(id: string, from?: string): boolean {
+    const rules = this.rules.home;
+    const home = this.homeState;
+    const building = home ? this.buildingOf(home.building) : undefined;
+    const kind = building ? this.homeKindOf(building) : null;
+    const item = this.items.find((i) => i.id === id && (from === undefined || i.in === from));
+    if (!rules || !building || !kind || !item || !this.atHome()) return false;
+    if (!stashFits(this.stashItems, item, item.count, rules.stash[kind], this.rules.gear, this.rules.food.dishes)) {
+      this.homeLine(rules.lines.full, {}, `${building.id}:full:${this.stashItems.length}`);
+      return false;
+    }
+    this.items.splice(this.items.indexOf(item), 1);
+    const stack = stackIn(this.stashItems, item);
+    if (stack) stack.count += item.count;
+    else {
+      const kept: Item = { ...item };
+      delete kept.in;
+      this.stashItems.push(kept);
+    }
+    this.say(`Into the stash: ${item.count > 1 ? `${item.count} × ` : ''}${item.name}.`, 'system');
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  /** Takes a stack out of the stash into pockets with room: all of it if it fits together, else as many as fit. */
+  unstash(id: string): boolean {
+    const stack = this.stashItems.find((i) => i.id === id);
+    if (!stack || !this.atHome()) return false;
+    const name = stack.name;
+    const move = (count: number, pocket: string) => {
+      const piece: Item = { ...stack, count, in: pocket };
+      this.items.push(piece);
+      this.putAway(this.items, piece, pocket);
+      stack.count -= count;
+    };
+    let taken = 0;
+    const all = this.pocketFor(stack, stack.count);
+    if (all) {
+      taken = stack.count;
+      move(stack.count, all);
+    } else {
+      for (let pocket = this.pocketFor(stack, 1); pocket && stack.count > 0; pocket = this.pocketFor(stack, 1)) {
+        move(1, pocket);
+        taken++;
+      }
+    }
+    if (stack.count <= 0) this.stashItems.splice(this.stashItems.indexOf(stack), 1);
+    if (!taken) {
+      this.say(`No room on you for the ${name}.`, 'error');
+      return false;
+    }
+    this.say(`Out of the stash: ${taken > 1 ? `${taken} × ` : ''}${name}.`, 'system');
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
+  }
+
+  /**
+   * The weeks of a home as each falls due: a rented one's rent (and what's owed) out of the
+   * account, then cash, as far as it goes, the rest owed; owing `warnAt` weeks, a warning;
+   * `evictAt`, put out, and the stash lost. A squat's week has a chance of someone going through
+   * the stash.
+   */
+  private homeTick(now: number): void {
+    const rules = this.rules.home;
+    const home = this.homeState;
+    if (!rules || !home) return;
+    const building = this.buildingOf(home.building);
+    if (!building) {
+      this.homeState = null;
+      this.stashItems = [];
+      return;
+    }
+    const today = this.clockAt(now).day;
+    if (home.due > today) return;
+    const vars = { place: building.name, room: this.homeRoomName(home, building) };
+    while (this.homeState === home && home.due <= today) {
+      const day = home.due;
+      home.due += 7;
+      const key = `${building.id}:${day}`;
+      if (home.squat) {
+        const rng = createRng(`${this.world.seed}:home:raid:${key}`);
+        if (!this.stashItems.length || !rng.chance(rules.squat.raid)) continue;
+        const gone: string[] = [];
+        for (const item of [...this.stashItems]) {
+          const take = item.count > 1 ? Math.ceil(item.count * rules.squat.take) : rng.chance(rules.squat.take) ? 1 : 0;
+          if (!take) continue;
+          gone.push(take > 1 ? `${take} × ${item.name}` : item.name);
+          item.count -= take;
+          if (item.count <= 0) this.stashItems.splice(this.stashItems.indexOf(item), 1);
+        }
+        if (gone.length) this.homeLine(rules.lines.raided, { ...vars, what: gone.join(', ') }, key);
+        continue;
+      }
+      const due = home.owed + home.rent;
+      const paid = this.payRent(due, building);
+      home.owed = due - paid;
+      if (!home.owed) {
+        delete home.warned;
+        this.homeLine(rules.lines.paid, { ...vars, rent: String(paid) }, key);
+        continue;
+      }
+      this.homeLine(rules.lines.behind, { ...vars, owed: String(home.owed) }, key);
+      if (home.owed >= rules.evictAt * home.rent) {
+        this.homeLine(rules.lines.evicted, { ...vars, weeks: String(Math.floor(home.owed / home.rent)) }, `${key}:out`);
+        this.homeState = null;
+        this.stashItems = [];
+        // Out of the unit, if they're in it: the locks have changed.
+        if (this.inside?.id === building.id && this.rules.rooms && this.roomState !== 'main') this.moveTo(mainRoom(building, this.rules.rooms), now);
+        this.events.emit('energyChanged', this.energy(now));
+      } else if (home.owed >= rules.warnAt * home.rent && home.warned === undefined) {
+        home.warned = day;
+        this.homeLine(rules.lines.warn, { ...vars, owed: String(home.owed) }, `${key}:warn`);
+      }
+    }
+    this.events.emit('homeChanged', this.home(now));
+  }
+
   /** Whether the player is where a building's counter is (the room you walk into); anywhere but inside a building, they are. */
   private atCounter(): boolean {
     return !this.inside || !this.rules.rooms || this.roomState === 'main';
@@ -7820,7 +8128,7 @@ export class Game {
     if (room.id === this.roomState) return 'here';
     const works = this.jobs.some((j) => j.building === this.inside?.id);
     if (room.kind === 'back' || room.kind === 'office') return works ? 'open' : 'staff';
-    if (room.kind === 'unit') return this.letIn.has(room.id) ? 'open' : 'locked';
+    if (room.kind === 'unit') return this.homeState?.building === this.inside?.id && this.homeState?.room === room.id ? 'yours' : this.letIn.has(room.id) ? 'open' : 'locked';
     if (room.kind === 'guest') {
       const rented = this.rented(now);
       return rented && rented.building === this.inside?.id && rented.room === room.id ? 'yours' : 'locked';

@@ -11,6 +11,7 @@ import type { Room } from './rooms';
 import type { PoliceView } from './police';
 import type { DealView } from './dealing';
 import type { HabitView } from './habit';
+import type { HomeView } from './home';
 /** Weather drives the particle layer behind the UI. */
 export type Weather = 'rain' | 'drizzle' | 'dust' | 'haze' | 'clear';
 
@@ -316,6 +317,8 @@ export type GameEvents = {
   skillChanged: { skill: 'brawler' | 'toughness' | 'weapon' | 'trading' | 'dealing' | 'cutting'; status: SkillStatus };
   /** The player walked into another room of the building they're in. */
   roomChanged: Room;
+  /** The player took a home, paid (or couldn't pay) its rent, moved out or was put out (null: nowhere now). */
+  homeChanged: HomeView | null;
   /** The player got a job, worked a shift, moved up, quit or was let go (null: no job now). */
   jobChanged: JobStatus | null;
   /** The player changed the pronouns they go by. */

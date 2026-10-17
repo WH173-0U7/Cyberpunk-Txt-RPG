@@ -163,6 +163,15 @@ own.
   drop-down has a **Market** row (what's dearer or cheaper than usual in the district) and a
   **News** row, and headlines turn up in the feed ("Food short in Watson: bare shelves, and
   prices up."); people complain about what they can't get, and the bare shelves at work.
+- **A home of your own**: at the door of an apartment block or a megabuilding, **Rent** a unit
+  nobody lives in for twice what a tenant pays a head there, a week up front to whoever owns the
+  building (one of the neighborhood's landlords, or a corp); or **Squat** an abandoned building
+  or a shack for nothing. A rented home has a bed (more energy); any home has a **stash**, kept
+  off you where no robber or search finds it: at home, Drop becomes Stash, and the stash is a
+  page of the inventory. The rent comes out of your account (then your cash) every week; two
+  weeks behind and there's a notice on the door, three and you're out, with everything in the
+  stash. Somebody goes through a squat's stash now and then. The map has a house on it, the
+  status drop-down a Home row.
 - **Hard times**: when the eddies run out, people do what they must. Someone who can't pay for
   the week's food and has the nerve walks out with some of it. Whoever still can't make the week
   on payday borrows from the **loan shark**, the gang that runs their turf, at a tenth a week,
