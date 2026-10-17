@@ -20,7 +20,15 @@ import { CITY } from './city';
  * over the cushion goes three percent a day. A day in a hospital bed is billed. Downtown and
  * Westbrook get the most trade from outside, Santo Domingo the least, and the ripperdocs, deck
  * shops, gun shops and motels draw it most. A storefront pays its suppliers a share of what it
- * takes (most for goods off a shelf, least for a service), the gangs on its turf six percent,
+ * takes (most for goods off a shelf, least for a service) for what it restocks, from the till,
+ * each day up to full shelves (a week and a half of its costs at its prices, never more than half
+ * the till in a day): a dish at a few eddies is a dozen on the shelf, a gun at a few hundred one
+ * or two. Now and then the trucks stop coming to one kind of store in a district for a few days
+ * (food and everyday goods most, then meds), and it gets a fifth of what it would. Under a third
+ * full, prices climb, up to two fifths over when the shelves are bare; a struggling place sitting
+ * on full shelves takes a tenth off; an eatery's last hour takes a quarter off what won't keep.
+ * Across a district, a kind of store under a third stocked is short there, and back over three
+ * fifths. It pays the gangs on its turf six percent,
  * its rent on Monday to whoever owns the building (its boss owns about one in three) and its
  * people; it starts with two weeks of costs in the till and keeps three after payday, the rest
  * to its owner. Eight to fourteen landlords a district own its small blocks and the buildings
@@ -100,6 +108,26 @@ export const ECONOMY: EconomyRules = {
   outsiders: { cyberware: 4, netrunning: 4, firearms: 3, melee: 3, lodging: 3, clothing: 2, vehicles: 2, food: 0.3, commodity: 0.5 },
   daySwing: 0.3,
   supplies: { default: 0.35, food: 0.45, nightlife: 0.3, commodity: 0.55, clothing: 0.45, firearms: 0.5, melee: 0.45, cyberware: 0.55, netrunning: 0.5, medical: 0.4, vehicles: 0.4, entertainment: 0.15, services: 0.15, lodging: 0.1 },
+  stock: {
+    weeks: 1.5,
+    restock: 0.5,
+    soldOut: 0.05,
+    par: 40,
+    most: 12,
+    shock: { chance: 0.03, days: [2, 5], cut: 0.2, weights: { food: 3, commodity: 3, medical: 2, nightlife: 1, clothing: 1, cyberware: 1, firearms: 1, netrunning: 0.5, vehicles: 0.5 } },
+  },
+  prices: { low: 0.35, scarce: 0.4, high: 0.85, glut: 0.1, closing: { hours: 1, off: 0.25, categories: ['food'] } },
+  market: {
+    short: 0.35,
+    back: 0.6,
+    keep: 24,
+    goods: { food: 'food', commodity: 'everyday goods', nightlife: 'drink', firearms: 'guns and ammo', melee: 'blades', cyberware: 'chrome', netrunning: 'decks and quickhacks', clothing: 'clothes', medical: 'meds', vehicles: 'car parts', entertainment: 'BD time', services: 'repairs', lodging: 'rooms' },
+    lines: {
+      shock: ["No deliveries of {goods} into {district}: the trucks aren't coming.", "{district}'s {goods} suppliers have stopped sending. Stock up while you can.", "The {goods} trucks skipped {district} today, and they'll skip it tomorrow."],
+      short: ['{Goods} short in {district}: bare shelves, and prices up.', "Can't find {goods} in {district} for love or eddies.", "{Goods} gone scarce in {district}. What's left costs more."],
+      back: ['{Goods} back on the shelves in {district}.', 'The {goods} shortage in {district} is over.', "{district}'s shelves are full of {goods} again."],
+    },
+  },
   rent: { luxury: 48, everyday: 21, poverty: 9 },
   float: 2,
   reserve: 3,

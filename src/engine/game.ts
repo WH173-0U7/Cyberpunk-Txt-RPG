@@ -4,7 +4,7 @@ import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
-import { accountOf, ledgerOf, ownersOf, tillOf, tradeAt, turfFrom, weekdayOf, type Health, type Vice } from './economy';
+import { accountOf, leftOf, ledgerOf, ownersOf, priceFactor, stockOf, tillOf, tradeAt, turfFrom, weekdayOf, type Health, type MarketNews, type Vice } from './economy';
 import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, runnerShort, settle, writeOff, type Runner, type RunnerView } from './crew';
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
 import { cutShare, foundOdds, harmOdds, mixedShare, sickOdds } from './cutting';
@@ -68,6 +68,7 @@ import { planTrip, startTrip, tripProgress, walkedSoFar, type TravelRules } from
 import type {
   AmbientLine,
   Building,
+  BuildingCategory,
   District,
   GameEvents,
   Item,
@@ -113,6 +114,13 @@ export function streetSpot(p: Point): Whereabouts {
 }
 
 /** How the game plays: getting around, energy, what there is to eat and drink, who lives here and how they take things. The numbers are in `src/data/`. */
+/** The market where the player is, for the status drop-down: what's dearer or cheaper than usual in the district, and the latest headlines. */
+export interface MarketView {
+  district: string;
+  prices: Array<{ goods: string; change: number }>;
+  news: Array<{ text: string; ago: string }>;
+}
+
 export interface GameRules extends TravelRules {
   energy: EnergyRules;
   food: FoodContent;
@@ -667,10 +675,41 @@ export class Game {
   menu(now = Date.now()): Menu | null {
     const at = this.inside ?? this.location;
     if (!at || !this.atCounter() || !this.counterOpen(at, now) || this.detained(now)) return null;
-    const menu = this.counterMenu(at, now);
-    if (!menu) return null;
+    const counter = this.counterMenu(at, now);
+    if (!counter) return null;
+    const menu = 'block' in at ? this.marketPriced(counter, at, now) : counter;
     // At work, the staff price; anywhere else, what the player's Trading gets them against the seller's.
     return this.jobs.some((j) => j.building === at.id) ? this.staffPriced(menu) : this.haggled(menu, at, now);
+  }
+
+  /**
+   * A storefront's menu as its shelves have it: how many of each thing are left, and its prices
+   * by supply and demand (dearer as the shelves empty, cheaper at a slow place sitting on full
+   * ones) and, in an eatery's last hour, a share off what won't keep. A chain's and a hospital's
+   * prices are set; a service is never short.
+   */
+  private marketPriced(menu: Menu, building: Building, now: number): Menu {
+    const economy = this.rules.life.economy;
+    const till = this.life.tills[building.id];
+    const set = Boolean(building.business && this.rules.food.fixed[building.business]) || building.business === 'hospital';
+    const factor = set ? 1 : priceFactor(stockOf(till), this.trade(building).health, economy);
+    const closing = !set && economy.prices.closing.categories.includes(building.category) && this.closingSoon(building, now) ? economy.prices.closing.off : 0;
+    const services = new Set(['plan', 'treatment', 'room']);
+    const by = factor * (1 - closing);
+    return {
+      ...menu,
+      ...(Math.round((factor - 1) * 100) ? { market: factor - 1 } : {}),
+      ...(closing ? { closing } : {}),
+      items: menu.items.map((i) => (services.has(i.kind) ? i : { ...i, left: leftOf(i.id, i.price, till, economy), price: Math.max(1, Math.round(i.price * by)) })),
+    };
+  }
+
+  /** Whether a storefront is in its last hours (`prices.closing.hours`) before it shuts. */
+  private closingSoon(building: Building, now: number): boolean {
+    const hours = this.hoursOf(building);
+    if (!hours || hours === 'always') return false;
+    const left = (((hours[1] - this.clockAt(now).hour) % 24) + 24) % 24;
+    return left > 0 && left <= this.rules.life.economy.prices.closing.hours;
   }
 
   /** A menu at the staff price: the player's own workplace takes a share off everything but Trauma Team's plans. */
@@ -707,12 +746,12 @@ export class Game {
     return menuFor(this.world, at, this.rules.food) ?? this.rack(at, now);
   }
 
-  /** The people who work at a storefront, kept until a day is lived (when hires, layoffs and deaths change them). */
-  /** Who works at a building, the living of them, from the same cache. */
+  /** Who works at a building, the living of them, from the staff kept below. */
   private readonly livingStaff = (id: string): Person[] => {
     const building = buildingById(this.world, id);
     return building ? this.staffOf(building).filter((p) => p.diedOn === undefined) : [];
   };
+  /** The people who work at a storefront, kept until a day is lived (when hires, layoffs and deaths change them). */
   private readonly staffCache = new Map<string, Person[]>();
   private staffOf(building: Building): Person[] {
     let staff = this.staffCache.get(building.id);
@@ -927,6 +966,7 @@ export class Game {
     }
     // A program is a program: one copy runs as well as two.
     if (item.kind === 'quickhack' && this.items.some((i) => i.kind === 'quickhack' && i.id === item.id)) return `You've got ${item.name} already.`;
+    if (item.left === 0) return `Sold out of ${item.name}. The shelves fill again when the next delivery comes.`;
     if (!this.canPay(item.price, this.takesTransfers(menu))) return this.shortBy(item.name, item.price, this.takesTransfers(menu));
     // Treatment and a plan are services: nothing to carry.
     const service = item.kind === 'treatment' || item.kind === 'plan' || item.kind === 'room';
@@ -997,8 +1037,12 @@ export class Game {
       this.fitted = fitted;
       return false;
     }
-    // Spent at a storefront, it's in the till when the day is lived.
-    if (this.inside?.business && menu.venue.id === this.inside.id) tillOf(this.life.tills, this.inside.id).pending += item.price;
+    // Spent at a storefront, it's in the till when the day is lived, and one fewer is on its shelves till they're stocked again.
+    if (this.inside?.business && menu.venue.id === this.inside.id) {
+      const till = tillOf(this.life.tills, this.inside.id);
+      till.pending += item.price;
+      if (item.left !== undefined) till.bought = { ...till.bought, [item.id]: (till.bought?.[item.id] ?? 0) + 1 };
+    }
     if (item.kind === 'treatment') this.healthState = { value: this.maxHealth(), at: now };
     // The same plan again runs on from when it ends; another starts now, in its place.
     if (plan) this.coverage = { plan: item.id, until: (on?.id === item.id ? on.until : now) + plan.days * DAY };
@@ -6043,7 +6087,10 @@ export class Game {
     // Whoever the player is seeing is no one else's to fall for.
     const spokenFor = new Set(this.society.romance ? [this.society.romance.with] : []);
     const vice = this.rules.dealing ? (p: Person) => this.viceOf(p) : undefined;
+    const lived = this.life.day;
     const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed, this.tierFn, turfFrom(this.rules.people.turf), this.rules.people, spokenFor, vice);
+    // The market's headlines from the days just lived, the latest few.
+    for (const news of (this.life.market?.news ?? []).filter((n) => n.day > lived).slice(-3)) this.say(`News: ${this.headline(news)}`, 'system');
     this.cornerWars(happened, now);
     this.crewDays(today, now);
     this.badBatches(today, now);
@@ -6069,10 +6116,56 @@ export class Game {
     return tier;
   }
 
+  /** A market headline, in words. */
+  private headline(news: MarketNews): string {
+    const { market } = this.rules.life.economy;
+    const goods = market.goods[news.category] ?? news.category;
+    const text = createRng(`${this.world.seed}:news:${news.day}:${news.district}:${news.category}:${news.kind}`).pick(market.lines[news.kind]);
+    return text.replace(/\{Goods\}/g, goods.charAt(0).toUpperCase() + goods.slice(1)).replace(/\{goods\}/g, goods).replace(/\{district\}/g, this.world.districts[news.district]?.name ?? news.district);
+  }
+
+  /**
+   * The market where the player is: what's dearer or cheaper than usual in the district, by the
+   * kind of store (at least a twentieth either way, the biggest first), and the city's latest
+   * headlines, newest first.
+   */
+  market(now: number): MarketView {
+    const economy = this.rules.life.economy;
+    const district = this.districtOf(this.where);
+    // Prices move only when a day is lived: the status line asks every tick.
+    const key = `${district?.id ?? ''}|${this.life.day}|${this.clockAt(now).day}`;
+    if (this.marketCache?.key === key) return this.marketCache.view;
+    const by = new Map<BuildingCategory, { sum: number; n: number }>();
+    for (const b of this.world.buildings) {
+      if (!b.business || b.district !== district?.id || this.rules.food.fixed[b.business] || b.business === 'hospital') continue;
+      const level = by.get(b.category) ?? { sum: 0, n: 0 };
+      level.sum += priceFactor(stockOf(this.life.tills[b.id]), this.trade(b).health, economy);
+      level.n++;
+      by.set(b.category, level);
+    }
+    const prices = [...by]
+      .map(([category, { sum, n }]) => ({ goods: economy.market.goods[category] ?? category, change: Math.round((sum / n - 1) * 100) / 100 }))
+      .filter((p) => Math.abs(p.change) >= 0.05)
+      .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+      .slice(0, 3);
+    const today = this.clockAt(now).day;
+    const news = [...(this.life.market?.news ?? [])].reverse().slice(0, 4).map((n) => ({ text: this.headline(n), ago: this.agoWord(today - n.day) }));
+    const view = { district: district?.name ?? '', prices, news };
+    this.marketCache = { key, view };
+    return view;
+  }
+  private marketCache: { key: string; view: MarketView } | null = null;
+
   /** How a storefront is doing on its last week's books, and the line that says so inside. */
   trade(building: Building): { health: Health; line: string } {
-    return tradeAt(building, this.population, this.life.tills, this.tierOf(building), this.rules.life.economy);
+    // The books change only when a day is lived: kept till then, since menus and the status ask often.
+    const known = this.tradeCache.get(building.id);
+    if (known && known.day === this.life.day) return known.trade;
+    const trade = tradeAt(building, this.population, this.life.tills, this.tierOf(building), this.rules.life.economy);
+    this.tradeCache.set(building.id, { day: this.life.day, trade });
+    return trade;
   }
+  private readonly tradeCache = new Map<string, { day: number; trade: { health: Health; line: string } }>();
 
   /** What a shift pays the player at a storefront: its rung by its tier, and more or less by how the place is doing. */
   private shiftPayAt(rung: Rung, building: Building, raise = 0): number {
@@ -6852,6 +6945,8 @@ export class Game {
     const landlord = ledger.landlord ? this.person(ledger.landlord) : undefined;
     const home = person.home ? buildingById(this.world, person.home) : undefined;
     const boss = work?.business ? bossOf(work, this.population, this.livingStaff(work.id)) : null;
+    // What's short where they live: what they'd shop for first.
+    const short = ['food', 'commodity', 'medical', 'nightlife', 'clothing'].map((c) => `${person.district}:${c}`).find((key) => this.life.market?.short.includes(key));
     return {
       broke: money < ledger.essentials ? 'yes' : '',
       flush: money > ledger.essentials * 10 ? 'yes' : '',
@@ -6862,6 +6957,8 @@ export class Game {
       landlord: holds.some((id) => buildingById(this.world, id)?.category === 'residential') ? 'yes' : '',
       ownsPlace: work && boss === person && holds.includes(work.id) ? 'yes' : '',
       shortPaid: work?.business && boss !== person && (this.life.tills[work.id]?.short ?? 0) > 0 ? 'yes' : '',
+      shortGoods: short ? (economy.market.goods[short.split(':')[1] as BuildingCategory] ?? '') : '',
+      lowStock: work?.business && stockOf(this.life.tills[work.id]) < economy.prices.low ? 'yes' : '',
       slow: health === 'struggling' ? 'yes' : '',
       brisk: health === 'thriving' ? 'yes' : '',
     };

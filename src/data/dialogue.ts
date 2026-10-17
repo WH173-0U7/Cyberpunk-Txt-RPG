@@ -524,6 +524,12 @@ export const LINES: DialogueLines = {
       only("I own the walls of {work}, not just the sign over the door. Nobody's raising my rent.", { needs: ['ownsPlace'] }),
       only("{work} paid us short on Friday. Boss says next week. Boss always says next week.", { needs: ['work', 'shortPaid'] }),
       only("Got half a week's pay out of {work}. The till was light, they said. The till's always light when it's us.", { needs: ['work', 'shortPaid'] }),
+      // Shortages, and the shelves at work.
+      only("Can't get {shortGoods} round here for love or {eddies}. The trucks stopped coming.", { needs: ['shortGoods'] }),
+      only("{district}'s run out of {shortGoods}. What's left costs a fifth more and it's the stuff nobody wanted.", { needs: ['shortGoods'] }),
+      only("No {shortGoods} anywhere this week. Somebody upstream's squeezing, and it isn't us.", { needs: ['shortGoods'] }),
+      only("Shelves at {work} are half bare. The supplier keeps saying tomorrow.", { needs: ['work', 'lowStock'] }),
+      only("We're down to the last of everything at {work}. Boss marked it all up, and nobody's happy.", { needs: ['work', 'lowStock'] }),
       'Everything in this city costs {eddies}. Even air, one of these days.',
       'NCART was late again. NCART is always late.',
       "The {badges} don't come to {district} unless a corpo calls.",

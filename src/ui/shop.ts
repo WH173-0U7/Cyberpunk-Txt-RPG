@@ -17,6 +17,8 @@ export interface ShopItemView {
   why?: string;
   /** How many the player already carries. */
   carried: number;
+  /** How many are left on the shelves (missing: a service, or a place that never runs out). */
+  left?: number;
 }
 
 /** Everything a menu shows. */
@@ -80,7 +82,8 @@ function row(item: ShopItemView): HTMLElement {
   const text = el('div', 'shop-item-text');
   const head = el('div', 'shop-item-head');
   // Each part of the line keeps together; a long one (a gun's class, maker and magazine) wraps between them.
-  const parts = [...(item.detail ? item.detail.split(' · ') : [KIND_LABEL[item.kind]]), ...(item.carried ? [`×${item.carried} carried`] : [])];
+  const stock = item.left === undefined ? [] : item.left === 0 ? ['Sold out'] : item.left <= 3 ? [`${item.left} left`] : [];
+  const parts = [...(item.detail ? item.detail.split(' · ') : [KIND_LABEL[item.kind]]), ...stock, ...(item.carried ? [`×${item.carried} carried`] : [])];
   const kind = el('span', 'shop-item-kind');
   parts.forEach((part, i) => kind.append(...(i ? [' · '] : []), el('span', 'shop-item-part', part)));
   head.append(el('span', 'shop-item-name', item.name), kind);
@@ -91,7 +94,7 @@ function row(item: ShopItemView): HTMLElement {
   buy.disabled = !item.affordable;
   const verb = item.verb ?? 'Buy';
   buy.append(el('span', 'shop-buy-label', verb), el('span', 'shop-price', `${item.price} €$`));
-  buy.setAttribute('aria-label', `${verb} ${item.name}, ${item.price} eddies${item.affordable ? '' : item.barred ? ", they won't serve you" : item.why ? `, ${item.why}` : ', not enough eddies'}`);
+  buy.setAttribute('aria-label', `${verb} ${item.name}, ${item.price} eddies${item.affordable ? '' : item.barred ? ", they won't serve you" : item.left === 0 ? ', sold out' : item.why ? `, ${item.why}` : ', not enough eddies'}`);
   li.append(text, buy);
   return li;
 }

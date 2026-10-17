@@ -36,6 +36,10 @@ export interface Till {
   cash?: number;
   /** What it was short of its people's wages on the last payday (missing: paid in full). */
   short?: number;
+  /** How full its shelves are, 0 to 1 (missing: full). */
+  stock?: number;
+  /** What the player has bought off them since they were last stocked, by menu item. */
+  bought?: Record<string, number>;
 }
 
 /** Where someone's pay comes from: a storefront's till, a payroll from outside the city (the corps', the NCPD's), a gang's chest, the street's trade, clients across the city, a pension, or nowhere. */
@@ -112,8 +116,22 @@ export interface EconomyRules {
   visitors: Record<string, number>;
   outsiders: Partial<Record<BuildingCategory, number>>;
   daySwing: number;
-  /** The share of a storefront's takings that goes to its suppliers, outside the city, by category. */
+  /** What a storefront's stock costs it from its suppliers, outside the city, as a share of what it sells it for, by category. */
   supplies: Partial<Record<BuildingCategory, number>> & { default: number };
+  /**
+   * Stock: full shelves are `weeks` of a storefront's costs at its prices; each day it buys back
+   * up to full from its suppliers, with no more than `restock` of the cash in the till; under
+   * `soldOut` there's nothing left to sell. A counter's `par` (a dish at a few eddies, a dozen of
+   * it; a gun at a few hundred, one or two) is how many of a thing full shelves hold, up to
+   * `most`. Now and then (`shock.chance` a day, a district) the trucks stop coming for one
+   * kind of store there (by `shock.weights`) for `shock.days`, and it gets only `shock.cut` of
+   * what it would.
+   */
+  stock: { weeks: number; restock: number; soldOut: number; par: number; most: number; shock: { chance: number; days: [number, number]; cut: number; weights: Partial<Record<BuildingCategory, number>> } };
+  /** Prices by supply and demand: under `low` stock, dearer, up to `scarce` over when the shelves are bare; a struggling place with its shelves over `high`, `glut` off to shift it; and the last `closing.hours` before a counter of these categories shuts, `closing.off` off what won't keep. */
+  prices: { low: number; scarce: number; high: number; glut: number; closing: { hours: number; off: number; categories: BuildingCategory[] } };
+  /** The market as people hear of it: a kind of store across a district under `short` is short there, and back over `back`; the last `keep` headlines are kept; what each kind of store's goods are called, and the headlines' lines (`{goods}`, `{district}`). */
+  market: { short: number; back: number; keep: number; goods: Partial<Record<BuildingCategory, string>>; lines: Record<MarketNews['kind'], string[]> };
   /** A storefront's rent a day by tier, paid weekly to whoever owns the building. */
   rent: Record<Quality, number>;
   /** Weeks of its costs a till starts with, and keeps after payday: what's over goes to its owner. */
@@ -167,6 +185,55 @@ export function healthOf(till: Till | undefined, weeklyCosts: number, rules: Eco
   const net = till.days.reduce((n, d) => n + d, 0);
   if (net < 0) return 'struggling';
   return net > rules.thrivingAt * weeklyCosts ? 'thriving' : 'steady';
+}
+
+// ───────────── Stock and prices ─────────────
+
+/** How full a storefront's shelves are. */
+export function stockOf(till: Till | undefined): number {
+  return till?.stock ?? 1;
+}
+
+/** What a storefront's prices come to by its stock and its trade: dearer as the shelves empty, cheaper to shift what a slow place is sitting on. */
+export function priceFactor(stock: number, health: Health, rules: EconomyRules): number {
+  const { low, scarce, high, glut } = rules.prices;
+  if (stock < low) return 1 + (scarce * (low - stock)) / low;
+  if (health === 'struggling' && stock > high) return 1 - glut;
+  return 1;
+}
+
+/** How many of something at a price full shelves hold. */
+export function parOf(price: number, rules: EconomyRules): number {
+  return Math.max(1, Math.min(rules.stock.most, Math.round(rules.stock.par / Math.sqrt(Math.max(1, price)))));
+}
+
+/** How many of a menu item are left on a storefront's shelves: its share of them, less what the player has had since they were stocked. */
+export function leftOf(id: string, price: number, till: Till | undefined, rules: EconomyRules): number {
+  const stock = stockOf(till);
+  if (stock < rules.stock.soldOut) return 0;
+  return Math.max(0, Math.round(stock * parOf(price, rules)) - (till?.bought?.[id] ?? 0));
+}
+
+/** A supply shock: the trucks not coming to one kind of store in a district, until a day. */
+export interface Shock {
+  district: string;
+  category: BuildingCategory;
+  until: number;
+}
+
+/** A headline: one kind of store's stock across a district gone short, come back, or cut off at the source. */
+export interface MarketNews {
+  day: number;
+  district: string;
+  category: BuildingCategory;
+  kind: 'shock' | 'short' | 'back';
+}
+
+/** The market's state: the shocks on, the kinds of store short where (`district:category`), and the headlines, newest last. */
+export interface MarketState {
+  shocks: Shock[];
+  short: string[];
+  news: MarketNews[];
 }
 
 // ───────────── Who owns what ─────────────
@@ -364,6 +431,8 @@ export interface EconomyState {
   arrears?: Record<string, number>;
   /** What's been spent at each district's places of its own since its street freelancers were last paid. */
   street?: Record<string, number>;
+  /** Supply shocks, shortages and the headlines about them. */
+  market?: MarketState;
   tills: Record<string, Till>;
   treasuries: Record<string, number>;
   hurt: Record<string, number>;
@@ -613,10 +682,22 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
       street[where] = (street[where] ?? 0) + amount;
     }
   };
+  // A storefront with nothing on its shelves sells nothing: its customers go to another of its kind in the district, if one has any.
+  const bare = new Set(storefronts.filter((b) => stockOf(state.tills[b.id]) < rules.stock.soldOut).map((b) => b.id));
+  const soldOut = (b: Building) => bare.has(b.id);
+  const unsold = (shops: Building[]) => (bare.size ? shops.filter((b) => !bare.has(b.id)) : shops);
+  const stocked = (spot: Spot | null): Spot | null => {
+    if (spot?.kind !== 'building' || !bare.has(spot.id)) return spot;
+    const b = shop.get(spot.id);
+    if (!b) return spot;
+    const others = shopsIn(world, `${b.district}:${b.category}`).filter((o) => !soldOut(o));
+    return others.length ? { kind: 'building', id: rng.pick(others).id } : null;
+  };
   for (const b of storefronts) {
     const till = tillOf(state.tills, b.id);
     const [lo, hi] = rules.walkIn[tierAt(b)];
-    const outside = Math.round((lo + usualOf(world, seed, b.id) * (hi - lo)) * (rules.visitors[b.district] ?? 0) * (rules.outsiders[b.category] ?? 1) * rng.range(1 - rules.daySwing, 1 + rules.daySwing));
+    const swing = rng.range(1 - rules.daySwing, 1 + rules.daySwing);
+    const outside = soldOut(b) ? 0 : Math.round((lo + usualOf(world, seed, b.id) * (hi - lo)) * (rules.visitors[b.district] ?? 0) * (rules.outsiders[b.category] ?? 1) * swing);
     flows.in += outside + Math.max(0, till.pending);
     flows.out += Math.max(0, -till.pending);
     takings.set(b.id, outside + till.pending);
@@ -738,13 +819,14 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
     if ((state.hurt[p.id] ?? -1) < day) {
       const food = take(i, rules.food[l.means] * 7);
       const lunch = l.lunch ? Math.round(food * rules.lunch) : 0;
-      spendAt(l.lunch, lunch, p.district);
-      spendAt(l.grocer, food - lunch, p.district);
+      spendAt(stocked(l.lunch), lunch, p.district);
+      spendAt(stocked(l.grocer), food - lunch, p.district);
       const hangout = p.likes.hangout;
       const nights = hangout ? timesIn(7, rules.outing[0] + p.traits.chatty * (rules.outing[1] - rules.outing[0]), rng.next()) : 0;
-      for (let night = 0; hangout && night < nights; night++) {
-        const cost = rules.spend[tier(hangout)];
-        if (spare(i) >= cost * rules.stayIn) spendAt(hangout, take(i, cost), p.district);
+      const out = hangout && nights ? stocked(hangout) : null;
+      for (let night = 0; out && night < nights; night++) {
+        const cost = rules.spend[tier(out)];
+        if (spare(i) >= cost * rules.stayIn) spendAt(out, take(i, cost), p.district);
       }
       const buys = timesIn(7, rules.goods.chance, rng.next());
       for (let d = 0; d < buys; d++) {
@@ -752,7 +834,7 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
         const { weights, total } = goodsFor(l.walk);
         let left = rng.next() * total;
         const pick = goods.find((_, k) => (left -= weights[k] as number) < 0) ?? goods[goods.length - 1];
-        const shops = pick ? shopsIn(world, `${p.district}:${pick[0]}`) : [];
+        const shops = pick ? unsold(shopsIn(world, `${p.district}:${pick[0]}`)) : [];
         if (!pick || !shops.length) continue;
         // What they can't half afford, they don't buy.
         const b = rng.pick(shops);
@@ -764,7 +846,8 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
       const over = spare(i);
       if (over > 0 && rules.splurge > 0) {
         const shops = around(p.district);
-        if (shops.length) spendAt({ kind: 'building', id: rng.pick(shops).id }, take(i, Math.floor(over * (1 - (1 - rules.splurge) ** 7))), p.district);
+        const at = shops.length ? stocked({ kind: 'building', id: rng.pick(shops).id }) : null;
+        if (at) spendAt(at, take(i, Math.floor(over * (1 - (1 - rules.splurge) ** 7))), p.district);
       }
     }
     const habit = vice?.(p);
@@ -796,23 +879,38 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
     }
   }
 
+  // The supply shocks on today.
+  const market = (state.market ??= { shocks: [], short: [], news: [] });
+  market.shocks = market.shocks.filter((s) => s.until >= day);
+  const shocked = new Set(market.shocks.map((s) => `${s.district}:${s.category}`));
+
   // The books.
   for (const b of storefronts) {
     const t = tierAt(b);
     const staff = staffAt(b.id);
     const took = takings.get(b.id) ?? 0;
     const till = tillOf(state.tills, b.id);
-    // Its suppliers, outside the city, and the gangs on its turf.
-    const supplies = Math.max(0, Math.round(took * (rules.supplies[b.category] ?? rules.supplies.default)));
+    // What it sold off its shelves (fewer things for the money when it's dear), and what its suppliers, outside the city, sold it back.
+    const share = rules.supplies[b.category] ?? rules.supplies.default;
+    const shelves = Math.max(1, rules.stock.weeks * weeklyCost(b));
+    const stock = stockOf(till);
+    // Dear, the money buys fewer things; a slow place's price cut is for the player's haggling, since nobody else here buys more for it.
+    const factor = Math.max(1, priceFactor(stock, 'steady', rules));
+    const left = Math.max(0, stock - Math.max(0, took) / (shelves * factor));
+    const cut = shocked.has(`${b.district}:${b.category}`) ? rules.stock.shock.cut : 1;
+    const want = Math.round((1 - left) * shelves * share * cut);
+    const supplies = Math.max(0, Math.min(want, Math.floor(Math.max(0, (till.cash as number) + took) * rules.stock.restock)));
     flows.out += supplies;
+    till.stock = Math.min(1, left + (share > 0 ? supplies / (shelves * share) : 1 - left));
+    delete till.bought;
     const gangs = turf(b.district);
-    let cut = 0;
-    for (const [gang, share] of gangs) {
-      const theirs = Math.max(0, Math.round(took * rules.protection * share));
+    let protection = 0;
+    for (const [gang, part] of gangs) {
+      const theirs = Math.max(0, Math.round(took * rules.protection * part));
       state.treasuries[gang] = (state.treasuries[gang] ?? 0) + theirs;
-      cut += theirs;
+      protection += theirs;
     }
-    till.cash = (till.cash as number) + took - supplies - cut;
+    till.cash = (till.cash as number) + took - supplies - protection;
     // Paid out, what's over its reserve goes to its owner: the boss, or a corp out of the city.
     if (payday) {
       const over = Math.floor((till.cash as number) - rules.reserve * weeklyCost(b));
@@ -823,7 +921,7 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
         else flows.out += over;
       }
     }
-    const net = took - supplies - cut - rules.rent[t] - staffCostOf(staff, bosses.get(b.id) ?? null, t, rules) / 7;
+    const net = took - supplies - protection - rules.rent[t] - staffCostOf(staff, bosses.get(b.id) ?? null, t, rules) / 7;
     till.days.push(Math.round(net) || 0);
     if (till.days.length > 7) till.days.splice(0, till.days.length - 7);
   }
@@ -838,6 +936,45 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
       }
     }
   }
+  // The market: a new shock now and then, and the kinds of store gone short across a district, or back.
+  const headline = (district: string, category: BuildingCategory, kind: MarketNews['kind']) => {
+    market.news.push({ day, district, category, kind });
+    if (market.news.length > rules.market.keep) market.news.splice(0, market.news.length - rules.market.keep);
+  };
+  const { shock } = rules.stock;
+  const kinds = Object.entries(shock.weights) as Array<[BuildingCategory, number]>;
+  const weight = kinds.reduce((n, [, w]) => n + w, 0);
+  for (const district of Object.keys(world.districts)) {
+    if (!kinds.length || !rng.chance(shock.chance)) continue;
+    let roll = rng.next() * weight;
+    const category = (kinds.find(([, w]) => (roll -= w) < 0) ?? kinds[kinds.length - 1])?.[0] as BuildingCategory;
+    const key = `${district}:${category}`;
+    if (shocked.has(key) || !shopsIn(world, key).length) continue;
+    market.shocks.push({ district, category, until: day + rng.int(shock.days[0], shock.days[1]) });
+    headline(district, category, 'shock');
+  }
+  const levels = new Map<string, { sum: number; n: number }>();
+  for (const b of storefronts) {
+    const key = `${b.district}:${b.category}`;
+    const level = levels.get(key) ?? { sum: 0, n: 0 };
+    level.sum += stockOf(state.tills[b.id]);
+    level.n++;
+    levels.set(key, level);
+  }
+  const short = new Set(market.short);
+  for (const [key, { sum, n }] of levels) {
+    const level = sum / n;
+    const [district, category] = key.split(':') as [string, BuildingCategory];
+    if (!short.has(key) && level < rules.market.short) {
+      short.add(key);
+      headline(district, category, 'short');
+    } else if (short.has(key) && level > rules.market.back) {
+      short.delete(key);
+      headline(district, category, 'back');
+    }
+  }
+  market.short = [...short];
+
   // The accounts the day touched, written back.
   for (const i of touched) savings[(people[i] as Person).id] = acct[i] as number;
   return flows;

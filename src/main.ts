@@ -15,7 +15,7 @@ import { LIFE } from './data/life';
 import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
-import { Game, type Description, type PersonStanding, type Presence, streetSpot } from './engine/game';
+import { Game, type Description, type MarketView, type PersonStanding, type Presence, streetSpot } from './engine/game';
 import { hasRooms, type RoomAccess } from './engine/rooms';
 import type { JobStatus } from './engine/jobs';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
@@ -1361,6 +1361,7 @@ function showStatus(now: number): void {
   // A hold, a unit the player knows is coming, a warrant: the worst of it, on the line.
   const ncpd = police.held ? `Held · ${formatCountdown(police.held - now)}` : police.dispatch ? `NCPD · ${formatCountdown(police.dispatch.arriveAt - now)}` : police.warrants.length ? 'Wanted' : '';
   const heart = game.romance(now);
+  const market = game.market(now);
   const deal = game.dealing(now);
   const dealer = game.dealingSkill();
   const cutter = game.cuttingSkill();
@@ -1396,6 +1397,8 @@ function showStatus(now: number): void {
     { label: 'Weapons', value: game.mastery().types.map((t) => `${t.label} Lv ${t.status.level}`).join(' · ') || 'None used yet' },
     { label: 'Eddies', value: `€$ ${wallet.eddies} on you${wallet.account ? ` · €$ ${wallet.account} banked` : ''}${wallet.chips ? ` · €$ ${wallet.chips} on chips` : ''}` },
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
+    { label: 'Market', value: marketLine(market) },
+    ...(market.news[0] ? [{ label: 'News', value: market.news.slice(0, 2).map((n) => `${n.text} (${n.ago})`).join(' · ') }] : []),
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
     ...(jobs.length ? jobs.map((j) => ({ label: j.side ? 'Side gig' : 'Work', value: `${j.rung.title} at ${j.building.name} · ${formatDays(j.days)} ${j.hours[0]}–${j.hours[1]}h${j.owed ? ` · ${j.owed} €$ owed` : ''} · ${j.shifts} ${j.shifts === 1 ? 'shift' : 'shifts'}${j.next ? ` · trust ${j.trust}, ${j.next.title.toLowerCase()} at ${j.next.at}` : ' · top of the ladder'} · trade ${game.trade(j.building).health} · ${j.perks.join(', ')}` })) : [{ label: 'Work', value: 'No job' }]),
     ...(dealer && (deal || dealer.level > 1 || dealer.xp > 0) ? [{ label: 'Dealing', value: `Lv ${dealer.level} · ${dealer.xp}/${dealer.xpToNext} XP` }] : []),
@@ -1415,6 +1418,13 @@ function showStatus(now: number): void {
   statusPanel.render(summary, rows);
 }
 
+/** The market where the player is, for the status drop-down: what's dear or cheap in the district against usual. */
+function marketLine(market: MarketView): string {
+  const where = market.district || 'Here';
+  if (!market.prices.length) return `${where}: prices as usual`;
+  return `${where}: ${market.prices.map((p) => `${p.goods} ${p.change > 0 ? '+' : '−'}${Math.abs(Math.round(p.change * 100))}%`).join(', ')}`;
+}
+
 /** What the NCPD has on the player, for the status drop-down: a hold, a unit coming, the warrants, what's on record. */
 function ncpdLine(police: PoliceView, now: number): string {
   const parts = [
@@ -1425,6 +1435,23 @@ function ncpdLine(police: PoliceView, now: number): string {
   ].filter(Boolean);
   return parts.join(' · ') || 'Nothing on you';
 }
+
+/** A menu's strip: what the shelves, the hour and haggling have done to its prices all told, else how good a place it is (the blurb says both, and why). */
+function priceKicker(menu: Menu): string {
+  const change = Math.round(((1 + (menu.market ?? 0)) * (1 - (menu.closing ?? 0)) * (1 + (menu.haggle ?? 0)) - 1) * 100);
+  return change ? `Prices ${change > 0 ? '+' : '−'}${Math.abs(change)}%` : qualityLabel(menu);
+}
+
+/** Why a storefront's prices are what they are today, after its blurb: the shelves, a slow week, the last hour. */
+function marketNote(menu: Menu): string {
+  return [
+    (menu.market ?? 0) > 0 ? MARKET_NOTES.low : (menu.market ?? 0) < 0 ? MARKET_NOTES.slow : '',
+    menu.closing ? MARKET_NOTES.closing.replace('{off}', Math.round(menu.closing * 100) >= 25 ? 'a quarter' : `${Math.round(menu.closing * 100)}%`) : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+const MARKET_NOTES = { low: 'The shelves are low, and it shows in the prices.', slow: "Slow week: everything's marked down to move it.", closing: "Last hour: {off} off what won't keep." };
 
 /** Fills the menu with what's for sale where the player is, and whether they can afford it. */
 function showShop(): void {
@@ -1444,13 +1471,13 @@ function showShop(): void {
   const chrome = game.chromeSaved;
   const cover = game.covered(now);
   shop.render({
-    // The staff price at work; anywhere else, what haggling made of the prices, if anything.
-    kicker: menu.staff ? `${qualityLabel(menu)} · staff −${Math.round(menu.staff * 100)}%` : menu.haggle && Math.round(menu.haggle * 100) ? `${qualityLabel(menu)} · prices ${menu.haggle > 0 ? '+' : '−'}${Math.abs(Math.round(menu.haggle * 100))}%` : qualityLabel(menu),
-    blurb: barred ?? menuBlurb(menu),
+    // The staff price at work; anywhere else, what the shelves and haggling made of the prices, if anything, and an eatery's last hour.
+    kicker: menu.staff ? `Staff −${Math.round(menu.staff * 100)}%` : priceKicker(menu),
+    blurb: barred ?? [menuBlurb(menu), marketNote(menu)].filter(Boolean).join(' '),
     status: shopStatus,
     // Cash, or a transfer where this counter takes one: the game knows which.
     items: items.map((item) => {
-      const row = { ...item, affordable: !barred && game.affords(item.id, now), barred: Boolean(barred), carried: carried.get(item.id) ?? 0 };
+      const row = { ...item, affordable: !barred && item.left !== 0 && game.affords(item.id, now), barred: Boolean(barred), carried: carried.get(item.id) ?? 0 };
       // A service is had, not carried: treatment there and then, a plan signed (or renewed).
       if (item.kind === 'treatment') return { ...row, verb: 'Treat' };
       // A room for the night: rented, or kept another night.

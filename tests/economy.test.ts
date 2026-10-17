@@ -4,7 +4,7 @@ import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
 import { LIFE } from '../src/data/life';
 import { PEOPLE } from '../src/data/people';
-import { accountOf, economyDay, healthOf, ledgerOf, ownersOf, staffCostOf, tillOf, timesIn, turfFrom, weekdayOf, type EconomyRules, type Flows, type Health } from '../src/engine/economy';
+import { accountOf, economyDay, healthOf, ledgerOf, ownersOf, parOf, priceFactor, staffCostOf, stockOf, tillOf, timesIn, turfFrom, weekdayOf, type EconomyRules, type Flows, type Health } from '../src/engine/economy';
 import { drawQuality, menuFor, type Quality } from '../src/engine/food';
 import { generateWorld } from '../src/engine/generate';
 import { bossOf } from '../src/engine/jobs';
@@ -292,6 +292,67 @@ describe('the economy', () => {
     const someone = c.population.people[0] as Person;
     const l = ledger(c, someone);
     expect(accountOf(someone, { savings: {} }, l, ECONOMY)).toBe(Math.round(ECONOMY.savings * (l.pay || l.essentials)));
+  });
+
+  it('prices by the shelves: dearer as they empty, a tenth off at a slow place sitting on full ones; and holds fewer of a dear thing', () => {
+    const { low, scarce, glut } = ECONOMY.prices;
+    expect(priceFactor(1, 'steady', ECONOMY)).toBe(1);
+    expect(priceFactor(0, 'steady', ECONOMY)).toBeCloseTo(1 + scarce);
+    expect(priceFactor(low / 2, 'steady', ECONOMY)).toBeCloseTo(1 + scarce / 2);
+    expect(priceFactor(0.95, 'struggling', ECONOMY)).toBeCloseTo(1 - glut);
+    expect(priceFactor(0.95, 'thriving', ECONOMY)).toBe(1);
+    let last = Infinity;
+    for (const price of [1, 3, 8, 20, 60, 200, 900, 3000]) {
+      const par = parOf(price, ECONOMY);
+      expect(par).toBeLessThanOrEqual(last);
+      expect(par).toBeGreaterThanOrEqual(1);
+      expect(par).toBeLessThanOrEqual(ECONOMY.stock.most);
+      last = par;
+    }
+  });
+
+  it('runs a kind of store short when its trucks stop coming: bare shelves, dearer, a headline, and full again after', () => {
+    for (const seed of seeds.slice(0, 2)) {
+      const c = city(seed);
+      for (let d = T; d < T + 7; d++) day(c, d);
+      // The busiest kind of store somewhere: the trucks stop.
+      const counts = new Map<string, number>();
+      for (const b of c.world.buildings.filter((x) => x.business && x.category === 'food')) counts.set(b.district, (counts.get(b.district) ?? 0) + 1);
+      const district = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] as string;
+      const shops = c.world.buildings.filter((b) => b.business && b.district === district && b.category === 'food');
+      const market = c.state.market as NonNullable<LifeState['market']>;
+      market.shocks.push({ district, category: 'food', until: T + 20 });
+      for (let d = T + 7; d < T + 21; d++) day(c, d);
+      const level = () => shops.reduce((n, b) => n + stockOf(c.state.tills[b.id]), 0) / shops.length;
+      expect(level(), seed).toBeLessThan(ECONOMY.market.short);
+      expect(market.short, seed).toContain(`${district}:food`);
+      expect(market.news.some((n) => n.kind === 'short' && n.district === district && n.category === 'food'), seed).toBe(true);
+      expect(shops.some((b) => priceFactor(stockOf(c.state.tills[b.id]), 'steady', ECONOMY) > 1), seed).toBe(true);
+      // The rest of the district's stores are stocked as ever.
+      const others = c.world.buildings.filter((b) => b.business && b.district === district && b.category !== 'food' && !market.shocks.some((s) => s.district === district && s.category === b.category));
+      expect(others.reduce((n, b) => n + stockOf(c.state.tills[b.id]), 0) / others.length, seed).toBeGreaterThan(0.8);
+      // The trucks come again, and so does the food.
+      for (let d = T + 21; d < T + 30; d++) day(c, d);
+      expect(level(), seed).toBeGreaterThan(ECONOMY.market.back);
+      expect(market.news.some((n) => n.kind === 'back' && n.district === district && n.category === 'food'), seed).toBe(true);
+    }
+  });
+
+  it('sells nothing off bare shelves: its customers go elsewhere, and without the cash to restock it stays bare', () => {
+    const c = city(seeds[0] as string);
+    for (let d = T; d < T + 7; d++) day(c, d);
+    const grocers = c.world.buildings.filter((b) => b.business && b.category === 'food');
+    const bare = grocers[0] as { id: string };
+    const till = c.state.tills[bare.id] as NonNullable<LifeState['tills'][string]>;
+    till.stock = 0;
+    till.cash = 0;
+    day(c, T + 7);
+    expect(till.days.at(-1), 'nothing taken').toBeLessThan(0);
+    expect(stockOf(till)).toBe(0);
+    // With cash in the till again, it restocks.
+    till.cash = 5000;
+    day(c, T + 8);
+    expect(stockOf(till)).toBeGreaterThan(0);
   });
 
   it('counts how often something comes off in a week by one roll', () => {
