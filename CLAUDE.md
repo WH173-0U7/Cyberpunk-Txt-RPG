@@ -370,20 +370,37 @@ it needs no generator bump. The pieces:
   making up) is `relearnLink`, which replaces what the player knew.
 - People remember what the player did, thing by thing (`src/engine/memory.ts`): a `Memory`
   is a `kind` (`MemoryKind`: wronged, heard, saw, settled, gift, goodWord, hired, promoted,
-  quit, notice, fired, chopped, date, dumped, cheated; `MEMORY_KINDS`, which a save is read
+  quit, notice, fired, chopped, date, dumped, cheated; chat and rebuffed, a way into a chat
+  they liked or didn't, `what` the way; covered, a shift the player covered for them; backed,
+  a fight they threw in on the player's side; `MEMORY_KINDS`, which a save is read
   by, so a kind the game drops is forgotten), when, `about` whom, `what`, an `amount`, how many `times` and
   how often it's been `said`, kept per person in `SocietyState.memories` (saved under
   `society`), with the numbers in `SOCIETY.memory` (days each kind lasts, its weight, how
-  often it's brought up, the `cap`). The incident cascade writes what was done, seen and
+  often it's brought up, the `cap`). They remember on the calendar (`memory.clock`, 1: the
+  people's days, whatever the streets' test speed), and so do their grudges, their spark and
+  the reputations (`standingOf` and `repOf` drift by it); `deep` makes what was done last
+  longer and weigh more (a robbery half again, a beating twice, a killing heard of eight
+  times), and every time it happens again, half again (`memoryAge`, `lasts`). The incident cascade writes what was done, seen and
   heard (from `heardAt` grudge up); `Game`'s private `remember` writes the rest (gifts, a
   good word through `passGoodWord` to the people closest to whoever got one, work, chops,
-  dates, someone collecting). `Game.talk` brings up `recall`'s pick (`memory.recall` of
+  dates, someone collecting, a way into a chat that landed or didn't (never a plain chat),
+  covering a shift, throwing in on a fight). `Game.talk` brings up `recall`'s pick (`memory.recall` of
   the time) from `LINES.memory`, filled by `memoryVars` (`mem`, `mem<Kind>`, `memWho`,
-  `memWord`, `memAgo`, `memTook`, `memItem`, `memTwice`…); a grievance (`GRIEVANCES`) is all
+  `memWord`, `memAgo` (to "months back"), `memTook`, `memItem`, `memTwice`, `memRobbery`,
+  `memInsult`, `memAssault`, `memMurder`, `memJoke`… for the way in, `memPlace`…); a grievance (`GRIEVANCES`) is all
   they say. What memory changes goes through it too: a boss with `quit` or `fired` on their
-  mind turns the player away (`LINES.work.rehire`), a gift had before is `again`. A new thing
-  to remember is another `MemoryKind` with its numbers and lines (the dialogue test pins
-  every memory line, and every news line, to exactly one kind).
+  mind turns the player away (`LINES.work.rehire`), a gift had before is `again`; and all
+  of it adds up to their `regard` of the player (what counts for them on their mind, less
+  what they hold against them, by strength, over `memory.regard`, -1 to 1; `Game`'s private
+  `regardOf`), which moves how ready they are to answer or agree (`leaning`: times
+  `openness.memory`, on every ask), what they charge behind a counter (`haggled`: the fondest
+  hand in takes `MONEY.regard` of it off, the sorest puts it on), whether they'd call the NCPD
+  (`callOdds`, `police.caller.regard`), and which side they take in a fight (`JOIN.owed`). And
+  before someone comes to collect (`SOCIETY.warning`, `Game`'s private `warnings`, once a
+  threat), whoever thinks well enough of the player and knows the one coming (or is of the
+  gang that is) sends word, `hours` ahead. A new thing to remember is another `MemoryKind`
+  with its numbers and lines, on the side of `FOR` or `AGAINST` if it should count in regard
+  (the dialogue test pins every memory line, and every news line, to exactly one kind).
 - `src/engine/skills.ts` is a skill that grows with use (experience, levels, a bonus by
   level): charisma (`src/data/skills.ts`), applied in `Game.talk`, `gift` and `askFact`, the
   two fighting skills, Street Brawler and Toughness, and the weapon levels (see Fighting).
@@ -522,6 +539,20 @@ it needs no generator bump. The pieces:
   and the People overlay says "eating Wontons · arguing with a woman in Mox colors". A new
   kind of thing that can happen between people is another `LifeKind` with a chance, a roll
   in `liveDay`, and news lines for every side it can be told from (the dialogue sweep checks).
+- People remember each other too (`LifeState.held`, `Held`, numbers in `LIFE.held`): what a
+  day's event leaves someone holding against someone else (`HeldKind`: robbed, shook, beaten,
+  dumped, fallout both ways, laidOff by their boss, killed, their kin by whoever did it, with
+  `about` the one who died), written by `liveDay`'s `write` (`hold`, the same again fresh again,
+  `cap` a person, the oldest out) and kept its kind's `days` (`heldBy`; a killing a year). It
+  keeps the two from making friends or a couple (`feuding`, checked on the pair drawn, so
+  nothing new is counted), a makeup lets a falling out go, and now and then someone with the
+  nerve goes for whoever robbed, beat or shook them down or killed their kin (`revenge`, a
+  `fight` like any; won, it's settled). `scenesAt` takes the grudges (`held`) and shows them
+  from both sides ("glaring at Raul" · "avoiding the eyes of Ana", `scenes.grudge`/`grudged`,
+  by `glaring`); `Game`'s private `grudgeOf`/`grudgeVars` put the worst on their mind in the
+  speaker's vars (`grudgeWho`, `grudge<Kind>`, `grudgeAgo`, `grudgeKin`, `grudgeWord`) for the
+  `life` topic's lines, and telling it gives the player the name. Part of the `life` save;
+  `applyLife` drops what anyone holds against someone the city no longer has.
 - The eddies move too (`src/engine/economy.ts`, numbers in `src/data/economy.ts`, under
   `LIFE.economy`): `economyDay` runs first in every lived day. Each person pays a day's
   living (a share of what they started with, plus a little of what they hold) and, some

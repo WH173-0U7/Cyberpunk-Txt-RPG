@@ -17,5 +17,7 @@ export const MONEY: MoneyRules = {
   chopCut: 0.25,
   // A shopkeeper twice as sharp as the player gets about two fifths more off them, and the other way round.
   haggle: 0.5,
+  // A shopkeeper who remembers nothing but good of the player knocks up to a seventh off; nothing but bad, puts it on.
+  regard: 0.15,
   tradeXp: 2,
 };

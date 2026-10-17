@@ -862,6 +862,7 @@ export const COMBAT: CombatContent = {
 /**
  * Who throws in on a fight: the other side's people and the place's guards against the player,
  * a friend or the one they're seeing for them, by nerve; a stranger hardly ever, and less in a
- * crowd; an officer always, against the player.
+ * crowd; an officer always, against the player. Someone whose memories of the player come to
+ * a regard of 0.4 or more throws in for them like a friend; as far the other way, against.
  */
-export const JOIN: JoinRules = { kin: 0.5, friend: 0.3, gang: 0.6, guard: 0.6, stranger: 0.02, crowd: 0.5, friendly: 40, ally: 0.3, partner: 0.6, perBeat: 0.3, foes: 3, allies: 2 };
+export const JOIN: JoinRules = { kin: 0.5, friend: 0.3, gang: 0.6, guard: 0.6, stranger: 0.02, crowd: 0.5, friendly: 40, ally: 0.3, partner: 0.6, owed: 0.4, perBeat: 0.3, foes: 3, allies: 2 };

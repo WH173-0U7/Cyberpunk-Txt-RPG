@@ -506,6 +506,8 @@ export interface JoinRules {
   friendly: number;
   ally: number;
   partner: number;
+  /** What someone remembers of the player, as their regard (memory.ts): this much and up and they'd throw in for them though not a friend; this much down and against them though no kin of the other side. */
+  owed?: number;
   perBeat: number;
   foes: number;
   allies: number;

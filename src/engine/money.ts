@@ -30,6 +30,8 @@ export interface MoneyRules {
   transfers: { chain: boolean; luxury: boolean; gear: boolean; ncart: boolean };
   /** How far Trading moves a price: the seller's Trading over the player's, to this power (0: not at all). Only with the rules for Trading. */
   haggle?: number;
+  /** How far what the one behind the counter remembers of the player moves a price: their regard, all good, takes this share off; all bad, puts it on. */
+  regard?: number;
   /** Trading experience a purchase gives. */
   tradeXp?: number;
   /** A netrunner's cut for chopping a stolen credchip (0.25: a quarter of what's on it). */

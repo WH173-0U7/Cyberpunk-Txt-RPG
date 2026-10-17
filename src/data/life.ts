@@ -57,5 +57,17 @@ export const LIFE: LifeRules = {
     // The help's side of each of those, in the same order.
     leanedOn: ['being leaned on by', 'paying off', 'getting a quiet word from', 'handing an envelope to', 'being reminded by', 'trying not to look at'],
     rivals: ['staring down', 'squaring up to', 'keeping an eye on', 'trading looks with', 'sizing up', 'muttering about'],
+    // Someone in a room with whoever they hold something against, and the other side of each, in the same order.
+    grudge: ['glaring at', 'giving a wide berth to', 'not taking their eyes off', 'muttering about', 'turning their back on'],
+    grudged: ['avoiding the eyes of', 'pretending not to see', 'keeping clear of', 'being muttered about by', 'ignoring'],
   },
+  // What people hold against each other, and for how long: a killing for a year, being left for three months,
+  // a robbery two, a beating or a falling out a month and a half, being let go or shaken down a month.
+  held: {
+    days: { robbed: 60, shook: 30, beaten: 45, dumped: 90, fallout: 45, laidOff: 30, killed: 365 },
+    cap: 6,
+    revenge: 0.15,
+    nerve: 0.55,
+  },
+  glaring: 0.7,
 };

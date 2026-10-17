@@ -90,15 +90,39 @@ export const SOCIETY: SocietyRules = {
     press: 2,
     moment: { drinking: 0.5, busy: 0.4, eating: 0.2, grilled: 0.4, enemy: 1.6, grieving: 0.4, late: 0.6, drunk: 0.4 },
     grill: { free: 3, minutes: 20, rapport: 1 },
+    // What they remember of the player: all good is near a friend's openness again, all bad near a cold one's.
+    memory: 2,
   },
   memory: {
-    cap: 12,
-    days: { wronged: 30, heard: 14, saw: 10, settled: 21, gift: 7, goodWord: 10, hired: 7, promoted: 7, quit: 21, notice: 14, fired: 30, chopped: 10, date: 14, dumped: 45, cheated: 30 },
-    weight: { wronged: 10, heard: 6, saw: 5, settled: 7, gift: 3, goodWord: 4, hired: 3, promoted: 4, quit: 6, notice: 3, fired: 6, chopped: 2, date: 3, dumped: 8, cheated: 7 },
-    repeat: { wronged: 3, heard: 2, saw: 1, settled: 1, gift: 1, goodWord: 1, hired: 1, promoted: 1, quit: 2, notice: 1, fired: 2, chopped: 1, date: 1, dumped: 2, cheated: 2 },
+    // On the calendar: a robbery is a month and a half of being remembered, a killing heard of the best part of a year.
+    clock: 1,
+    cap: 24,
+    deep: { murder: 8, assault: 2, robbery: 1.5 },
+    days: { wronged: 30, heard: 14, saw: 10, settled: 21, gift: 14, goodWord: 14, hired: 30, promoted: 30, quit: 30, notice: 14, fired: 30, chopped: 14, date: 21, dumped: 45, cheated: 30, chat: 10, rebuffed: 14, covered: 30, backed: 60 },
+    weight: { wronged: 10, heard: 6, saw: 5, settled: 7, gift: 3, goodWord: 4, hired: 3, promoted: 4, quit: 6, notice: 3, fired: 6, chopped: 2, date: 3, dumped: 8, cheated: 7, chat: 2, rebuffed: 3, covered: 4, backed: 6 },
+    repeat: { wronged: 3, heard: 2, saw: 1, settled: 1, gift: 1, goodWord: 1, hired: 1, promoted: 1, quit: 2, notice: 1, fired: 2, chopped: 1, date: 1, dumped: 2, cheated: 2, chat: 1, rebuffed: 1, covered: 2, backed: 2 },
     recall: 0.75,
     heardAt: 5,
     goodWord: 0.4,
+    // A fresh gift and a good chat, or a robbery, go a third of the way; a killing heard of goes all of it.
+    regard: 12,
+  },
+  // A friend in the right place: two hours before someone comes to collect, whoever thinks well of you and knows them sends word.
+  warning: {
+    hours: 2,
+    regard: 0.25,
+    lines: {
+      person: [
+          'A message from {who}: "Heads up: {name} has been asking where you drink. Watch your back tonight."',
+          '{who} pings you: "Heads up. {name} is coming for you, and soon. You didn\'t hear it from me."',
+          'Word from {who}: "Heads up: {name} wants a word with you, the kind with fists. Keep your eddies somewhere safe."',
+      ],
+      gang: [
+          'A message from {who}: "{gang} have your name. Stay off the street a while."',
+          '{who} pings you: "Heard {gang} talking about you. It wasn\'t friendly. Bank what you\'re carrying."',
+          'Word from {who}: "{gang} are sending someone your way. Be smart about it."',
+      ],
+    },
   },
   // A flirt that lands with someone drawn to you is worth five spark a point, the way in they fall for three more; twenty spark and fifteen
   // rapport, warm or better, and they'll say yes. A date is twelve, three dates and forty-five spark and it can be official. Spark fades
