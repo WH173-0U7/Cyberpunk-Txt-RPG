@@ -133,7 +133,8 @@ Going inside a building is in place, with nothing to do in there yet. What's add
 ## The inventory
 
 Everything the player owns is in a pocket of something worn, but the chrome in them; food,
-drink, meds, credchips, clothing, weapons, ammo, cyberware and quickhacks are the items so far:
+drink, meds, credchips, clothing, weapons, ammo, cyberware, quickhacks and valuables (junk taken
+off people, for a fence: see Selling and fencing) are the items so far:
 
 - An `Item` has a `kind` (`ItemKind`: weapon, ammo, attachment, cyberware, quickhack, clothing,
   consumable, shard, credchip, junk, component (the cutting agent, `GEAR.components`, by its id), after the wiki's 2077 item types plus the
@@ -1290,6 +1291,42 @@ the numbers and narration in `src/data/economy.ts`; missing, nobody sells):
   Prices, Sell, each with its picker); the status drop-down's **Business** row
   (`businessLine`); and a work pin with a coin on the map for each (`WorkPin.owned`). Lines are
   `ECONOMY.business.lines` (`{place}`, `{amount}`, `{weeks}`, `{under}`, `{level}`).
+
+## Selling and fencing
+
+The player can sell what they carry to the stores that deal in it, and fence what they took off
+people (`rules.trade`, `TRADE` in `src/data/trade.ts`; the tests' `RULES` leave it out, so
+nobody there buys off the player and nobody carries anything worth taking):
+
+- `src/engine/trade.ts` is the engine, pure: `TradeKind` (what a store deals in: a gun, a melee
+  weapon, ammo, clothing, cyberware, a deck, a quickhack, meds, food, supplies, a valuable),
+  `tradeKindOf` and `worthOf` (what one of a thing is worth by its own catalogue: a weapon's,
+  a garment's, an implant's, a hack's, a med's, a dish's, a component's price, a round its share
+  of a box, a valuable its own), and `valuableOf`.
+- A store buys what it deals in (`TRADE.buys`, by business id; a chain, absent there, buys
+  nothing off the street): `Game.sellables(now)` is what the counter here would give for each
+  thing the player carries, by `Game`'s private `offerFor`: `share` of its worth (or `shares`
+  for a thrift shop, a pawn shop, a junk shop), times `tier` by the store's, times its shelves'
+  `priceFactor` (dearer while they're short, cheaper at a slow place sitting on full ones), over
+  `haggleFactor` (the counter's Trading against the player's, and what the hands in remember of
+  them, which `haggled` uses too), and never more than `resale` of what it would charge for it
+  itself, so no Trading buys and sells back at a profit. So what's bought cheap where the shelves
+  are full and the tier is low sells dear where they're bare. `Game.sell(id, from, now)` sells one (ammo a box's
+  worth): out of the till (refused short of it, or with no room for the cash, by
+  `walletRoom`/`changeRoom`, or for a gun still loaded), the cash in bills and coins
+  (`splitLoot`), its worth onto the store's shelves (`Till.stock`), and Trading for the deal.
+- Valuables (`VALUABLES` in `src/data/valuables.ts`, on `GEAR.valuables` for their weight) are
+  the wiki's 2077 junk and jewellery, by its sets (a gang's own, a corporation's, a casino's, the
+  street's, the rich and the poor), with our notes, prices and weights; items of kind `junk`
+  named by their id. `valuableOf` is the one someone has on them this week (on
+  `seed:valuable:<id>:<week>`: `carry.chance` by their means, of their gang's, walk's or means'
+  likelier, jewellery rarer), which `rob` (awake or out cold) takes with the cash and the chip if
+  there's room, named in the `haul` by whose it was ("her Cufflinks"). Only a fence buys one
+  (`fences`: a pawn shop at its price, a junk shop for less, by the tier and the haggling); any
+  other counter lists it as "Only a fence" and turns it away (`lines.hot`).
+- The UI: the shop overlay has **Buy** and **Sell** tabs where the counter does both (`ShopView`
+  `mode`, `sells`, `SellItemView`), and a fence, with no shelves for the player, is the panel's
+  **Sell** (`ActionId` `sell`), the overlay in its sell mode. The narration is `TRADE.lines`.
 
 ## Inebriation
 

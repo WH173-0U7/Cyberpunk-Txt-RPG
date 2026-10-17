@@ -192,6 +192,15 @@ own.
   customers elsewhere) or sell it back. A place of yours can still go under: three paydays short
   of its wages and it's gone, and you're told each payday it comes up short. Its counter is open
   to you whoever's in, at the staff price; the map marks it with a coin.
+- **Selling and fencing**: a store buys what it deals in (gun shops guns and ammo, clothing
+  stores clothes, ripperdocs chrome, pharmacies meds, bodegas food; a chain buys nothing off the
+  street) at half of what it's worth, more at a dear store and while its shelves are short,
+  less at a secondhand one or a slow place sitting on full shelves, and by your Trading against
+  theirs: buy where it's cheap and plentiful, sell where it's short. The shop's **Sell** tab
+  lists what they'd give for what you carry. Rob someone and you may come away with what they
+  had on them worth taking (the wiki's junk and jewellery: a Tyger Claw's Omamori, a corpo's
+  Silver Watch, a Valentino's Gold Cross); no store will touch it, but a pawn shop or a junk
+  shop will, no questions asked.
 - **Hard times**: when the eddies run out, people do what they must. Someone who can't pay for
   the week's food and has the nerve walks out with some of it. Whoever still can't make the week
   on payday borrows from the **loan shark**, the gang that runs their turf, at a tenth a week,

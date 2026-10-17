@@ -2490,6 +2490,15 @@ button {
 .shop-status:empty {
   display: none;
 }
+.shop-empty {
+  padding: 12px 4px;
+  color: var(--muted);
+  font-size: 13px;
+  list-style: none;
+}
+#shop-tabs {
+  margin-bottom: 8px;
+}
 .shop-list {
   display: grid;
   gap: 6px;

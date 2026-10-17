@@ -16,6 +16,7 @@ import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
 import { Game, type Description, type MarketView, type PersonStanding, type Presence, streetSpot } from './engine/game';
+import type { TradeKind } from './engine/trade';
 import type { BusinessView, PriceLevel } from './engine/economy';
 import type { HomeView } from './engine/home';
 import { hasRooms, type RoomAccess } from './engine/rooms';
@@ -43,6 +44,7 @@ import { HOURS } from './data/hours';
 import { ROOMS } from './data/rooms';
 import { HOME } from './data/home';
 import { CREDIT } from './data/credit';
+import { TRADE } from './data/trade';
 import { POLICE } from './data/police';
 import { DEALING } from './data/dealing';
 import type { PoliceView } from './engine/police';
@@ -69,7 +71,7 @@ import { People, STANCE_LABEL, type CardTab, type PeopleTab, type PersonAction, 
 import { PlacePanel, type ActionId, type PanelAction, type PanelView } from './ui/place';
 import { saveSlot } from './ui/save-slot';
 import { Settings } from './ui/settings';
-import { Shop } from './ui/shop';
+import { Shop, type SellItemView } from './ui/shop';
 import { Transmissions } from './ui/transmissions';
 
 function $<T extends Element = HTMLElement>(selector: string): T {
@@ -127,6 +129,7 @@ const place = new PlacePanel(
       move: $<HTMLButtonElement>('#act-move'),
       buy: $<HTMLButtonElement>('#act-buy'),
       books: $<HTMLButtonElement>('#act-books'),
+      sell: $<HTMLButtonElement>('#act-sell'),
     },
     close: $<HTMLButtonElement>('#place-close'),
   },
@@ -313,14 +316,24 @@ const shop = new Shop(
     kicker: $('#shop-kicker'),
     blurb: $('#shop-blurb'),
     status: $('#shop-status'),
+    tabs: $('#shop-tabs'),
     list: $('#shop-list'),
   },
   () => showShop(),
-  (id) => buyFromShop(id),
+  {
+    onBuy: (id) => buyFromShop(id),
+    onSell: (id, from) => sellToShop(id, from),
+    onMode: (mode) => {
+      shopMode = mode;
+      shopStatus = '';
+      showShop();
+    },
+  },
   reducedMotion,
 );
-/** What last happened at the counter, shown under the menu's header until it closes. */
+/** What last happened at the counter, shown under the menu's header until it closes; and whether it's buying or selling. */
 let shopStatus = '';
+let shopMode: 'buy' | 'sell' = 'buy';
 
 const bank = new Bank(
   {
@@ -690,7 +703,12 @@ function act(id: ActionId): void {
   else if (id === 'leave') game.leave();
   else if (id === 'menu' && game.menu()) {
     shopStatus = '';
+    shopMode = 'buy';
     shop.overlay.show($('#act-menu'));
+  } else if (id === 'sell' && game.sellables(now)) {
+    shopStatus = '';
+    shopMode = 'sell';
+    shop.overlay.show($('#act-sell'));
   } else if (id === 'people') {
     personShown = null;
     people.overlay.show($('#act-people'));
@@ -760,7 +778,7 @@ function refresh(): void {
   const now = Date.now();
   const trip = game.currentTrip;
   // The menu, the counter and the people are for where the player is; they go when they leave.
-  if (shop.overlay.isOpen && !game.menu()) shop.overlay.close();
+  if (shop.overlay.isOpen && !game.menu() && !game.sellables(now)) shop.overlay.close();
   if (bank.overlay.isOpen && !game.bank()) bank.overlay.close();
   if (books.overlay.isOpen && !game.books()) books.overlay.close();
   if (people.overlay.isOpen && !game.interior && !game.location && !game.police(now).confront) people.overlay.close();
@@ -1084,7 +1102,10 @@ function insideView(building: Building): PanelView {
   const shut = closed ? (closed.down ? 'Closed down. The place has gone under, and nobody works here any more.' : `Closed. The shutters are half down and nobody's behind the counter. ${closed.opensAt ? `Someone's in again at ${formatClock(closed.opensAt)}.` : 'Nobody works here any more.'}`) : '';
   // How the place is doing on its books, after what it sells.
   const trade = menu || closed ? ` ${game.trade(building).line}` : '';
-  const description = (barred ?? (shut || (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut, and a credchip in your name is banked.' : here ? 'People live and work in here.' : 'Nobody around right now.'))) + trade + (homeNote(now) ? ` ${homeNote(now)}` : '');
+  // A fence, with nothing on its shelves for the player: only a counter that buys.
+  const selling = !menu ? game.sellables(now) : null;
+  const sellBlurb = selling ? (selling.fence ? "Glass cases of other people's things, and a counter that'll take yours. Nobody asks where it came from." : 'A counter that buys what it deals in.') : '';
+  const description = (barred ?? (shut || (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut, and a credchip in your name is banked.' : sellBlurb || (here ? 'People live and work in here.' : 'Nobody around right now.')))) + trade + (homeNote(now) ? ` ${homeNote(now)}` : '');
   return {
     mode: 'inside',
     kicker: `Inside · Block ${building.block}`,
@@ -1095,6 +1116,8 @@ function insideView(building: Building): PanelView {
       peopleAction(here),
       ...(menu ? [barred ? { id: 'menu' as const, label: menu.kind === 'gear' ? 'Shop' : 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []),
       ...(game.bank() ? [{ id: 'bank' as const, label: 'Bank', sub: `€$ ${game.wallet.account} banked` }] : []),
+      // A fence has no shelves for the player: only what it would give for what they've got.
+      ...(!menu && game.sellables(now) ? [{ id: 'sell' as const, label: 'Sell', sub: game.sellables(now)!.fence ? 'No questions asked' : 'What they buy' }] : []),
       ...(closed ? [{ id: closed.what === 'bank' ? ('bank' as const) : ('menu' as const), label: 'Closed', sub: opens, disabled: true }] : []),
       ...homeActions(),
       // The player's shift here: what it pays and costs, or why not now (masked, or too tired, it's refused).
@@ -1686,8 +1709,11 @@ const MARKET_NOTES = { low: 'The shelves are low, and it shows in the prices.', 
 /** Fills the menu with what's for sale where the player is, and whether they can afford it. */
 function showShop(): void {
   const menu = game.menu();
+  const sells = sellRows(Date.now());
   if (!menu) {
-    shop.render({ kicker: 'No menu', blurb: 'Nothing to eat here.', status: '', items: [] });
+    // A fence: nothing on the shelves for the player, only an eye for what they've got.
+    if (sells) shop.render({ kicker: sells.fence ? 'Fence' : 'Buying', blurb: sellBlurb(sells.till, sells.fence), status: shopStatus, items: [], mode: 'sell', sells: sells.rows });
+    else shop.render({ kicker: 'No menu', blurb: 'Nothing to eat here.', status: '', items: [] });
     return;
   }
   const { items } = menu;
@@ -1703,8 +1729,9 @@ function showShop(): void {
   shop.render({
     // The staff price at work; anywhere else, what the shelves and haggling made of the prices, if anything, and an eatery's last hour.
     kicker: menu.staff ? `Staff −${Math.round(menu.staff * 100)}%` : priceKicker(menu),
-    blurb: barred ?? [menuBlurb(menu), marketNote(menu)].filter(Boolean).join(' '),
+    blurb: barred ?? (sells && shopMode === 'sell' ? sellBlurb(sells.till, sells.fence) : [menuBlurb(menu), marketNote(menu)].filter(Boolean).join(' ')),
     status: shopStatus,
+    ...(sells ? { mode: shopMode, sells: sells.rows } : {}),
     // Cash, or a transfer where this counter takes one: the game knows which.
     items: items.map((item) => {
       const row = { ...item, affordable: !barred && item.left !== 0 && game.affords(item.id, now), barred: Boolean(barred), carried: carried.get(item.id) ?? 0 };
@@ -1878,6 +1905,30 @@ function withCompany(doing: string, scene: Presence['scene']): string {
 }
 
 /** Buys off the menu, and says how it went under the menu's header. */
+/** What the counter here would buy off the player, as the shop's rows (null: it buys nothing). */
+function sellRows(now: number): { till: number; fence: boolean; rows: SellItemView[] } | null {
+  const sells = game.sellables(now);
+  if (!sells) return null;
+  const labels: Record<TradeKind, string> = { gun: 'Gun', melee: 'Melee weapon', ammo: 'Ammo', clothing: 'Clothing', cyberware: 'Cyberware', deck: 'Cyberdeck', quickhack: 'Quickhack', med: 'Meds', food: 'Food', component: 'Supplies', valuable: 'Valuable' };
+  return { till: sells.till, fence: sells.fence, rows: sells.items.map((i) => ({ id: i.id, ...(i.from ? { from: i.from } : {}), name: i.name, label: labels[i.kind], count: i.count, units: i.units, offer: i.offer, ...(i.why ? { why: i.why } : {}) })) };
+}
+
+/** What the counter says about buying off the player: what's in its till, and a fence's way. */
+function sellBlurb(till: number, fence: boolean): string {
+  return `${fence ? 'No questions asked, and no receipts.' : 'They buy what they sell, at what it would fetch them.'} €$ ${till} in the till.`;
+}
+
+/** Sells one of a thing at the counter here; what came of it is the shop's line. */
+function sellToShop(id: string, from: string | undefined): void {
+  lastActivity = performance.now();
+  const said: string[] = [];
+  const off = game.events.on('output', ({ text }) => said.push(text));
+  game.sell(id, from, Date.now());
+  off();
+  shopStatus = said.at(-1) ?? '';
+  showShop();
+}
+
 function buyFromShop(id: string): void {
   lastActivity = performance.now();
   const item = game.menu()?.items.find((i) => i.id === id);
@@ -2057,7 +2108,7 @@ function wire(g: Game): void {
     if ((held || g.police(Date.now()).confront) && MapOverlay.open && MapOverlay.open !== fight.overlay) MapOverlay.open.close();
     if (people.overlay.isOpen) showPeople();
     if (rooms.overlay.isOpen) rooms.overlay.close();
-    if (shop.overlay.isOpen && !g.menu()) shop.overlay.close();
+    if (shop.overlay.isOpen && !g.menu() && !g.sellables(Date.now())) shop.overlay.close();
     refresh();
     showStatus(Date.now());
     queueSave();
@@ -2148,7 +2199,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, police: POLICE, join: JOIN, dealing: DEALING }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, police: POLICE, join: JOIN, dealing: DEALING }, progress);
   wire(game);
   map.setWorld(world);
   try {

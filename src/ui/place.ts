@@ -3,7 +3,7 @@ import { typewrite, type Typing } from './typewriter';
 const TYPE_MS = 9;
 
 /** `pick-1`, `pick-2`, `pick-3`: the choices of a shift's moment, or of officers on the player, in order. */
-export type ActionId = 'walk' | 'ride' | 'pass' | 'stop' | 'enter' | 'leave' | 'menu' | 'people' | 'bank' | 'work' | 'deal' | 'home' | 'move' | 'buy' | 'books' | 'pick-1' | 'pick-2' | 'pick-3';
+export type ActionId = 'walk' | 'ride' | 'pass' | 'stop' | 'enter' | 'leave' | 'menu' | 'people' | 'bank' | 'work' | 'deal' | 'home' | 'move' | 'buy' | 'books' | 'sell' | 'pick-1' | 'pick-2' | 'pick-3';
 
 export interface PanelAction {
   id: ActionId;
