@@ -26,6 +26,7 @@ import { POLICE } from '../src/data/police';
 import { DEALING } from '../src/data/dealing';
 import { CREDIT } from '../src/data/credit';
 import { TRADE } from '../src/data/trade';
+import { NEEDS } from '../src/data/needs';
 import { freshDealing } from '../src/engine/dealing';
 import { generatePeople } from '../src/engine/people';
 
@@ -55,6 +56,7 @@ const RULES: GameRules = {
   join: JOIN,
   credit: CREDIT,
   trade: TRADE,
+  needs: NEEDS,
   // Anyone will run for the player, so the crew gets put through its paces.
   dealing: { ...DEALING, crew: { ...DEALING.crew, stances: ['cold', 'wary', 'neutral', 'warm', 'friend'], keen: { gang: 3, user: 3, straight: 3 } } },
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
@@ -128,6 +130,11 @@ function check(game: Game, about: string): void {
   if (credit.shark) expect(credit.shark.owed, `${about}: a loan shark's cap`).toBeLessThanOrEqual(Math.ceil(credit.shark.borrowed * CREDIT.shark.cap));
   for (const [id, lent] of Object.entries(credit.lent)) expect(lent.owed, `${about}: lent to ${id}`).toBeGreaterThan(0);
   for (const view of game.businesses()) expect(view.till, `${about}: the till at ${view.building.name}`).toBeGreaterThanOrEqual(0);
+  const hunger = game.hunger(Date.now())!;
+  expect(hunger.value, `${about}: how full`).toBeGreaterThanOrEqual(0);
+  expect(hunger.value, `${about}: how full`).toBeLessThanOrEqual(100);
+  const energy = game.energy(Date.now());
+  expect(energy.current, `${about}: energy over the most`).toBeLessThanOrEqual(energy.max);
   // A save brings all of it back.
   const save = readSave(JSON.parse(JSON.stringify(createSave(game.world.seed, game, GENERATOR_VERSION))));
   const progress = save && resume(game.world, save);
@@ -141,6 +148,7 @@ function check(game: Game, about: string): void {
   expect(again.youSaved, `${about}: who the player is after a save`).toEqual(game.youSaved);
   expect(again.chromeSaved, `${about}: chrome after a save`).toEqual(game.chromeSaved);
   expect(again.healthSaved, `${about}: health after a save`).toEqual(game.healthSaved);
+  expect(again.hungerSaved, `${about}: hunger after a save`).toEqual(game.hungerSaved);
   expect(again.policeSaved, `${about}: the NCPD after a save`).toEqual(game.policeSaved);
   expect(again.tradingSaved, `${about}: Trading after a save`).toEqual(game.tradingSaved);
   expect(again.dealingSaved, `${about}: dealing after a save`).toEqual(game.dealingSaved);

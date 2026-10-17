@@ -3,7 +3,10 @@
  * by the same test speed as trips), while the game is closed too. Spending it trains it: every
  * point spent is experience, running right down to empty is worth a bonus, and enough
  * experience raises the energy level, and with it the most energy the player can hold. It's
- * meant to be a very long grind. A home with a bed raises the most too.
+ * meant to be a very long grind. A home with a bed raises the most too. How fast it comes back
+ * is the state's `rate` (resting, src/engine/needs.ts), and hunger takes a share off the most
+ * (`cap`): the most only ever falls while nothing's done, so what's there at a moment is never
+ * more than the most at that moment, and anything that raises it again writes energy down first.
  */
 export interface EnergyRules {
   /** The most energy at level 1. */
@@ -32,6 +35,8 @@ export interface EnergyState {
   xp: number;
   /** Milliseconds since 1970. */
   updatedAt: number;
+  /** How many times as fast as usual it's been coming back since (resting); missing, as usual. */
+  rate?: number;
 }
 
 /** Everything about the player's energy at a moment, worked out. */
@@ -47,9 +52,10 @@ export interface EnergyStatus {
   nextPointAt: number | null;
 }
 
-/** The most energy at a level, with or without a bed at home. */
-export function maxEnergy(rules: EnergyRules, level: number, bed: boolean): number {
-  return rules.start + (level - 1) * rules.perLevel + (bed ? rules.bed : 0);
+/** The most energy at a level, with or without a bed at home, and what hunger leaves of it (`cap`). */
+export function maxEnergy(rules: EnergyRules, level: number, bed: boolean, cap = 1): number {
+  const most = rules.start + (level - 1) * rules.perLevel + (bed ? rules.bed : 0);
+  return cap >= 1 ? most : Math.max(1, Math.round(most * cap));
 }
 
 /** Experience it takes to go from `level` to the next. It climbs steeply. */
@@ -62,23 +68,23 @@ export function freshEnergy(rules: EnergyRules): EnergyState {
   return { current: maxEnergy(rules, 1, false), level: 1, xp: 0, updatedAt: 0 };
 }
 
-/** How long one point takes to come back, in clock milliseconds. */
-function msPerPoint(rules: EnergyRules, timeScale: number): number {
-  return (rules.regenMinutes * 60_000) / timeScale;
+/** How long one point takes to come back, in clock milliseconds, at the state's rate. */
+function msPerPoint(rules: EnergyRules, timeScale: number, rate = 1): number {
+  return (rules.regenMinutes * 60_000) / timeScale / rate;
 }
 
 /** Energy at `now`, refilled since it was last spent, fractions included, never over the most. */
-export function energyAt(state: EnergyState, rules: EnergyRules, timeScale: number, bed: boolean, now: number): number {
-  const max = maxEnergy(rules, state.level, bed);
-  const refilled = Math.max(0, now - state.updatedAt) / msPerPoint(rules, timeScale);
+export function energyAt(state: EnergyState, rules: EnergyRules, timeScale: number, bed: boolean, now: number, cap = 1): number {
+  const max = maxEnergy(rules, state.level, bed, cap);
+  const refilled = Math.max(0, now - state.updatedAt) / msPerPoint(rules, timeScale, state.rate);
   return Math.min(max, state.current + refilled);
 }
 
-export function energyStatus(state: EnergyState, rules: EnergyRules, timeScale: number, bed: boolean, now: number): EnergyStatus {
-  const max = maxEnergy(rules, state.level, bed);
-  const value = energyAt(state, rules, timeScale, bed, now);
+export function energyStatus(state: EnergyState, rules: EnergyRules, timeScale: number, bed: boolean, now: number, cap = 1): EnergyStatus {
+  const max = maxEnergy(rules, state.level, bed, cap);
+  const value = energyAt(state, rules, timeScale, bed, now, cap);
   const whole = Math.floor(value + 1e-9);
-  const nextPointAt = whole >= max ? null : now + Math.ceil((whole + 1 - value) * msPerPoint(rules, timeScale));
+  const nextPointAt = whole >= max ? null : now + Math.ceil((whole + 1 - value) * msPerPoint(rules, timeScale, state.rate));
   return { current: whole, max, level: state.level, xp: state.xp, xpToNext: xpToNext(rules, state.level), nextPointAt };
 }
 
@@ -93,8 +99,9 @@ export function spendEnergy(
   timeScale: number,
   bed: boolean,
   now: number,
+  cap = 1,
 ): { state: EnergyState; levels: number } | null {
-  const value = energyAt(state, rules, timeScale, bed, now);
+  const value = energyAt(state, rules, timeScale, bed, now, cap);
   if (amount <= 0 || value + 1e-9 < amount) return null;
   const current = Math.max(0, value - amount);
   let xp = state.xp + amount * rules.xpPerPoint;
@@ -107,5 +114,5 @@ export function spendEnergy(
     level++;
     levels++;
   }
-  return { state: { current, level, xp, updatedAt: now }, levels };
+  return { state: { current, level, xp, updatedAt: now, ...(state.rate ? { rate: state.rate } : {}) }, levels };
 }

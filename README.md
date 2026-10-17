@@ -450,7 +450,14 @@ own.
   anyone in a gang reads a mask on their turf as a threat and goes cold. The **People**
   overlay's strip says when you're masked.
 - **Eating and drinking**: in the inventory, every dish has an **Eat** or **Drink** button.
-  Food and soft drinks do nothing yet. Alcohol goes to your head: every drink has its units
+  You get hungry: a full stomach empties in twenty hours on the game's clock (twenty minutes
+  at the testing speed), even while the game is closed, and whatever you eat fills it, a meal
+  about a third, a Burrito XXL or a pizza nearly half, a snack or a drink a little. Under half
+  full you're **Peckish**, which only says so; under a quarter **Hungry**, holding three
+  quarters of your energy; under a tenth **Starving**, half your energy and four fifths of your
+  health. Nobody starves to death. The line under the energy bar says how hungry, the status
+  drop-down's **Hunger** row how full and when it gets worse, and there's no eating past full
+  (a drink still goes down). A kitchen job's staff meal is lunch. Alcohol goes to your head: every drink has its units
   (a beer about one, a shot of Moonshine three), they add up, and the body clears a unit an
   hour on the game's clock (a unit a minute at the testing speed), even while the game is
   closed. From one unit you're **Tipsy**, from three **Drunk**, from five **Wasted**, from
@@ -461,8 +468,10 @@ own.
   on the clock, a point every 6 minutes (faster at the testing speed), even while the game is
   closed. Max energy starts very low (10). Spending energy trains it: every point spent is
   experience, running right down to empty earns a bonus, and the energy level (and the max)
-  goes up very slowly; level 2 alone takes 600 points spent. A home with a bed will raise
-  the max too. Nothing spends energy yet; it's ready for jobs, training and the rest.
+  goes up very slowly; level 2 alone takes 600 points spent. A home with a bed raises the max
+  too. Energy comes back three times as fast in a bed (in your own unit, or a motel room
+  you've rented for the night) and half again as fast in a squat; the line under the bar says
+  **Resting** while it does. Hunger takes a share off the max (above).
 - **Overlays**: the inventory, settings, people and menus open over the map and the panel
   under it, so they get the whole lower screen. Each has one strip for a header (what it
   is, a count, **×**); the place you're at stays on the sign above, so nothing is said

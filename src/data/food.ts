@@ -10,10 +10,10 @@ import type { Dish, FoodContent } from '../engine/food';
 const DISHES: Dish[] = [
   // ── Noodles and dumplings ──
   { id: 'rammmmen', name: 'RaMMMMen', note: 'Kabayan Foods instant ramen, heavy on the MSG.', kind: 'food', price: 4, on: ['noodles', 'street'], favored: ['watson', 'westbrook'] },
-  { id: 'wontons', name: 'Wontons', note: "Little China's specialty, in broth or fried.", kind: 'food', price: 2, on: ['noodles', 'dumplings', 'street', 'market'], favored: ['watson'] },
+  { id: 'wontons', name: 'Wontons', note: "Little China's specialty, in broth or fried.", kind: 'food', price: 2, on: ['noodles', 'dumplings', 'street', 'market'], favored: ['watson'], fill: 25 },
   { id: 'galician-pierogi', name: 'Galician Pierogi', note: 'Dumplings by the plate, Galician style.', kind: 'food', price: 4, on: ['dumplings', 'fine'] },
-  { id: 'yikes-tofu-bar', name: 'Yikes! Tofu Bar', note: 'An All Foods tofu bar. Calories, not flavor.', kind: 'food', price: 2, on: ['noodles', 'snack', 'street'], favored: ['westbrook'], where: ['everyday', 'poverty'], grams: 90 },
-  { id: 'soy-paste', name: 'Soy Paste', note: 'Nutrients in a tube. Quicker than chewing.', kind: 'food', price: 1, on: ['street', 'snack'], favored: ['pacifica'], where: ['everyday', 'poverty'], grams: 120 },
+  { id: 'yikes-tofu-bar', name: 'Yikes! Tofu Bar', note: 'An All Foods tofu bar. Calories, not flavor.', kind: 'food', price: 2, on: ['noodles', 'snack', 'street'], favored: ['westbrook'], where: ['everyday', 'poverty'], grams: 90, fill: 20 },
+  { id: 'soy-paste', name: 'Soy Paste', note: 'Nutrients in a tube. Quicker than chewing.', kind: 'food', price: 1, on: ['street', 'snack'], favored: ['pacifica'], where: ['everyday', 'poverty'], grams: 120, fill: 25 },
 
   // ── Scopdogs and grill ──
   { id: 'hawt-dawg', name: 'Hawt Dawg', note: 'A scopdog in a soft steamed bun.', kind: 'food', price: 2, on: ['street', 'grill', 'diner', 'market'], favored: ['santo_domingo', 'watson'], where: ['everyday', 'poverty'] },
@@ -24,53 +24,53 @@ const DISHES: Dish[] = [
   { id: 'all-foods-meat-delight', name: 'All Foods Meat Delight', note: 'Synthetic meat that tastes nearly like the real thing.', kind: 'food', price: 3, on: ['grill', 'diner'], where: ['everyday', 'poverty'] },
   { id: 'all-foods-veggie-delight', name: 'All Foods Veggie Delight', note: 'The vegan plate from the same factory.', kind: 'food', price: 3, on: ['grill', 'diner'], where: ['everyday', 'poverty'] },
   { id: 'slaughterhouse-prime', name: 'Slaughterhouse Prime', note: 'A Slaughterhouse syn-meat patty, heavy on the derivatives.', kind: 'food', price: 4, on: ['grill'], favored: ['santo_domingo'] },
-  { id: 'slaughterhouse-jerky', name: 'Slaughterhouse Jerky', note: 'Dried syn-meat strips.', kind: 'food', price: 3, on: ['grill', 'snack'], where: ['everyday', 'poverty'], grams: 80 },
+  { id: 'slaughterhouse-jerky', name: 'Slaughterhouse Jerky', note: 'Dried syn-meat strips.', kind: 'food', price: 3, on: ['grill', 'snack'], where: ['everyday', 'poverty'], grams: 80, fill: 15 },
   { id: 'slaughterhouse-veggie', name: 'Slaughterhouse Veggie', note: 'The grudging vegetarian option.', kind: 'food', price: 3, on: ['grill'], where: ['everyday', 'poverty'] },
 
   // ── Mexican ──
-  { id: 'taco', name: 'Taco', note: 'A street taco: tortilla, syn-meat, salsa.', kind: 'food', price: 2, on: ['street'], favored: ['heywood'] },
+  { id: 'taco', name: 'Taco', note: 'A street taco: tortilla, syn-meat, salsa.', kind: 'food', price: 2, on: ['street'], favored: ['heywood'], fill: 25 },
   { id: 'loaded-tamale', name: 'Loaded Tamale', note: 'A tamale stuffed to bursting.', kind: 'food', price: 3, on: ['street'], favored: ['heywood'] },
-  { id: 'burrito-xxl', name: 'Burrito XXL', note: "All Foods' oversized burrito.", kind: 'food', price: 4, on: ['street', 'market'], favored: ['heywood'], where: ['everyday', 'poverty'], grams: 600 },
-  { id: 'burrito-xxl-rosado', name: 'Burrito XXL Rosado', note: 'The pink one.', kind: 'food', price: 4, on: ['street'], favored: ['heywood'], where: ['everyday', 'poverty'] },
-  { id: 'burrito-xxl-turquesa', name: 'Burrito XXL Turquesa', note: 'The turquoise one, a cut above.', kind: 'food', price: 7, on: ['street'], where: ['everyday', 'luxury'] },
+  { id: 'burrito-xxl', name: 'Burrito XXL', note: "All Foods' oversized burrito.", kind: 'food', price: 4, on: ['street', 'market'], favored: ['heywood'], where: ['everyday', 'poverty'], grams: 600, fill: 45 },
+  { id: 'burrito-xxl-rosado', name: 'Burrito XXL Rosado', note: 'The pink one.', kind: 'food', price: 4, on: ['street'], favored: ['heywood'], where: ['everyday', 'poverty'], fill: 45 },
+  { id: 'burrito-xxl-turquesa', name: 'Burrito XXL Turquesa', note: 'The turquoise one, a cut above.', kind: 'food', price: 7, on: ['street'], where: ['everyday', 'luxury'], fill: 45 },
 
   // ── Japanese ──
   { id: 'nigiri', name: 'Nigiri', note: 'Rice and syn-fish, with non-toxic coloring.', kind: 'food', price: 7, on: ['fine', 'market'], where: ['everyday', 'luxury'], favored: ['westbrook'] },
   { id: 'norimaki', name: 'Norimaki', note: 'Rolled sushi, the classic.', kind: 'food', price: 6, on: ['fine', 'market'], where: ['everyday', 'luxury'], favored: ['westbrook'] },
 
   // ── Pizza ──
-  { id: 'locust-pepperoni-pizza', name: 'Locust Pepperoni Pizza', note: 'Pepperoni made of locusts.', kind: 'food', price: 6, on: ['market'] },
-  { id: 'ham-and-mushroom-pizza', name: 'Ham and Mushroom Pizza', note: 'Syn-ham and mushroom.', kind: 'food', price: 6, on: ['market'] },
-  { id: 'artichoke-n-avocado-pizza', name: "Artichoke 'n' Avocado Pizza", note: 'The expensive toppings.', kind: 'food', price: 7, on: ['market'] },
-  { id: 'tofud-tuna-and-pineapple-pizza', name: "Tofu'd Tuna and Pineapple Pizza", note: 'Tofu tuna, pineapple, controversy.', kind: 'food', price: 6, on: ['market'] },
+  { id: 'locust-pepperoni-pizza', name: 'Locust Pepperoni Pizza', note: 'Pepperoni made of locusts.', kind: 'food', price: 6, on: ['market'], fill: 40 },
+  { id: 'ham-and-mushroom-pizza', name: 'Ham and Mushroom Pizza', note: 'Syn-ham and mushroom.', kind: 'food', price: 6, on: ['market'], fill: 40 },
+  { id: 'artichoke-n-avocado-pizza', name: "Artichoke 'n' Avocado Pizza", note: 'The expensive toppings.', kind: 'food', price: 7, on: ['market'], fill: 40 },
+  { id: 'tofud-tuna-and-pineapple-pizza', name: "Tofu'd Tuna and Pineapple Pizza", note: 'Tofu tuna, pineapple, controversy.', kind: 'food', price: 6, on: ['market'], fill: 40 },
 
   // ── Diner and bakery ──
-  { id: 'ham-and-cheese-sandwich', name: 'Ham and cheese sandwich', note: 'Syn-ham and cheese-flavored paste, made by hand.', kind: 'food', price: 3, on: ['diner', 'snack'] },
-  { id: 'dairing-dairy-milkshake', name: 'Dairing Dairy "Milkshake"', note: 'A milkshake with authentic milk flavoring.', kind: 'food', price: 3, on: ['diner', 'market'], where: ['everyday', 'poverty'] },
-  { id: 'holobites-peach-pie', name: 'Holobites Peach Pie', note: 'Peach pie, in paste form.', kind: 'food', price: 2, on: ['diner', 'market', 'snack'], where: ['everyday', 'poverty'] },
-  { id: 'holobites-grape-pie', name: 'Holobites Grape Pie', note: 'Grape pie. Also paste.', kind: 'food', price: 2, on: ['diner', 'market', 'snack'], where: ['everyday', 'poverty'] },
-  { id: 'pierres-croissants', name: "Pierre's Croissants", note: 'Croissants with a two-year shelf life.', kind: 'food', price: 5, on: ['diner', 'fine', 'market', 'street'], favored: ['city_center'] },
-  { id: 'sweets-for-sweetie-cupcake', name: 'Sweets for Sweetie Cupcake', note: 'A cupcake under a drift of sprinkles.', kind: 'food', price: 3, on: ['diner', 'snack'] },
+  { id: 'ham-and-cheese-sandwich', name: 'Ham and cheese sandwich', note: 'Syn-ham and cheese-flavored paste, made by hand.', kind: 'food', price: 3, on: ['diner', 'snack'], fill: 25 },
+  { id: 'dairing-dairy-milkshake', name: 'Dairing Dairy "Milkshake"', note: 'A milkshake with authentic milk flavoring.', kind: 'food', price: 3, on: ['diner', 'market'], where: ['everyday', 'poverty'], fill: 15 },
+  { id: 'holobites-peach-pie', name: 'Holobites Peach Pie', note: 'Peach pie, in paste form.', kind: 'food', price: 2, on: ['diner', 'market', 'snack'], where: ['everyday', 'poverty'], fill: 15 },
+  { id: 'holobites-grape-pie', name: 'Holobites Grape Pie', note: 'Grape pie. Also paste.', kind: 'food', price: 2, on: ['diner', 'market', 'snack'], where: ['everyday', 'poverty'], fill: 15 },
+  { id: 'pierres-croissants', name: "Pierre's Croissants", note: 'Croissants with a two-year shelf life.', kind: 'food', price: 5, on: ['diner', 'fine', 'market', 'street'], favored: ['city_center'], fill: 15 },
+  { id: 'sweets-for-sweetie-cupcake', name: 'Sweets for Sweetie Cupcake', note: 'A cupcake under a drift of sprinkles.', kind: 'food', price: 3, on: ['diner', 'snack'], fill: 10 },
 
   // ── Fine dining ──
-  { id: 'jambalaya', name: 'Jambalaya', note: 'Rice, sausage and everything else in the pot.', kind: 'food', price: 6, on: ['fine', 'diner'], favored: ['pacifica'] },
-  { id: 'tajine', name: 'Tajine!', note: 'A slow-cooked North African stew.', kind: 'food', price: 6, on: ['fine', 'street', 'noodles'] },
+  { id: 'jambalaya', name: 'Jambalaya', note: 'Rice, sausage and everything else in the pot.', kind: 'food', price: 6, on: ['fine', 'diner'], favored: ['pacifica'], fill: 40 },
+  { id: 'tajine', name: 'Tajine!', note: 'A slow-cooked North African stew.', kind: 'food', price: 6, on: ['fine', 'street', 'noodles'], fill: 40 },
   { id: 'ave-saitan', name: 'Ave Saitan', note: 'A 666-gram seitan roast.', kind: 'food', price: 5, on: ['fine', 'street', 'grill'], where: ['everyday', 'luxury'] },
-  { id: 'got-escargot', name: 'Got Escargot?', note: 'Real snails, fully legal.', kind: 'food', price: 8, on: ['fine'], where: ['luxury'], favored: ['city_center'] },
-  { id: 'realfruit', name: 'RealFruit', note: 'Actual fruit, which is why it costs that.', kind: 'food', price: 6, on: ['fine', 'market'], where: ['everyday', 'luxury'], favored: ['city_center'] },
-  { id: 'dark-chocolate', name: 'Dark Chocolate', note: 'Real chocolate, with vitamin C.', kind: 'food', price: 5, on: ['fine', 'snack'], where: ['everyday', 'luxury'] },
+  { id: 'got-escargot', name: 'Got Escargot?', note: 'Real snails, fully legal.', kind: 'food', price: 8, on: ['fine'], where: ['luxury'], favored: ['city_center'], fill: 20 },
+  { id: 'realfruit', name: 'RealFruit', note: 'Actual fruit, which is why it costs that.', kind: 'food', price: 6, on: ['fine', 'market'], where: ['everyday', 'luxury'], favored: ['city_center'], fill: 15 },
+  { id: 'dark-chocolate', name: 'Dark Chocolate', note: 'Real chocolate, with vitamin C.', kind: 'food', price: 5, on: ['fine', 'snack'], where: ['everyday', 'luxury'], fill: 10 },
 
   // ── Snacks and the bottom shelf ──
-  { id: 'synthsnack', name: 'SynthSnack', note: 'Salt, fat and sugar in a bag.', kind: 'food', price: 1, on: ['snack', 'street'], where: ['everyday', 'poverty'] },
-  { id: 'pop-turd', name: 'Pop-Turd', note: 'A toaster pastry.', kind: 'food', price: 1, on: ['snack', 'market'], where: ['everyday', 'poverty'] },
-  { id: 'mr-whitey', name: 'Mr. Whitey', note: 'A calorie-packed snack bar.', kind: 'food', price: 1, on: ['snack', 'market'], where: ['everyday', 'poverty'] },
-  { id: 'moonchies', name: 'Moonchies', note: 'Puffed snacks for when you are sky high.', kind: 'food', price: 1, on: ['snack', 'market'], where: ['everyday', 'poverty'] },
-  { id: 'cat-food', name: 'Cat Food', note: "Cat food. It's calories.", kind: 'food', price: 1, on: ['street', 'market', 'snack'], where: ['poverty'], favored: ['pacifica', 'watson'] },
-  { id: 'dried-meat', name: 'Dried Meat', note: "Don't ask what it was.", kind: 'food', price: 2, on: ['street', 'snack'], where: ['poverty'], favored: ['pacifica'] },
+  { id: 'synthsnack', name: 'SynthSnack', note: 'Salt, fat and sugar in a bag.', kind: 'food', price: 1, on: ['snack', 'street'], where: ['everyday', 'poverty'], fill: 10 },
+  { id: 'pop-turd', name: 'Pop-Turd', note: 'A toaster pastry.', kind: 'food', price: 1, on: ['snack', 'market'], where: ['everyday', 'poverty'], fill: 10 },
+  { id: 'mr-whitey', name: 'Mr. Whitey', note: 'A calorie-packed snack bar.', kind: 'food', price: 1, on: ['snack', 'market'], where: ['everyday', 'poverty'], fill: 10 },
+  { id: 'moonchies', name: 'Moonchies', note: 'Puffed snacks for when you are sky high.', kind: 'food', price: 1, on: ['snack', 'market'], where: ['everyday', 'poverty'], fill: 10 },
+  { id: 'cat-food', name: 'Cat Food', note: "Cat food. It's calories.", kind: 'food', price: 1, on: ['street', 'market', 'snack'], where: ['poverty'], favored: ['pacifica', 'watson'], fill: 15 },
+  { id: 'dried-meat', name: 'Dried Meat', note: "Don't ask what it was.", kind: 'food', price: 2, on: ['street', 'snack'], where: ['poverty'], favored: ['pacifica'], fill: 15 },
 
   // ── Chain-only dishes (from the chains' own menus) ──
-  { id: 'paste-taco', name: 'Paste Taco', note: "Capitán Caliente's one-eddie taco. Paste in a shell.", kind: 'food', price: 1, on: [] },
-  { id: 'big-buddha-baby-burrito', name: 'Big Buddha Baby Burrito', note: "Capitán Caliente's burrito, bigger than it sounds.", kind: 'food', price: 4, on: [] },
+  { id: 'paste-taco', name: 'Paste Taco', note: "Capitán Caliente's one-eddie taco. Paste in a shell.", kind: 'food', price: 1, on: [], fill: 20 },
+  { id: 'big-buddha-baby-burrito', name: 'Big Buddha Baby Burrito', note: "Capitán Caliente's burrito, bigger than it sounds.", kind: 'food', price: 4, on: [], fill: 25 },
   { id: 'synthcoff', name: 'SynthCoff', note: "Buck-A-Slice's synthetic coffee.", kind: 'drink', price: 1, on: [] },
 
   // ── Coffee and tea ──
@@ -95,9 +95,9 @@ const DISHES: Dish[] = [
   { id: 'spunky-monkey', name: 'Spunky Monkey', note: 'A sugary mixed drink.', kind: 'drink', price: 3, on: ['soft', 'market', 'diner'], where: ['everyday', 'poverty'] },
   { id: 'tiancha', name: 'Tiancha', note: 'A tea drink that soothes and stimulates at once.', kind: 'drink', price: 3, on: ['soft', 'tea'] },
   { id: 'tiancha-pomegranate', name: 'Tiancha Pomegranate', note: 'The pomegranate Tiancha.', kind: 'drink', price: 5, on: ['soft', 'tea'], where: ['everyday', 'luxury'] },
-  { id: 'soop', name: 'Soop', note: 'Soup, juice or smoothie. Nobody is sure.', kind: 'drink', price: 3, on: ['soft'], where: ['everyday', 'poverty'] },
-  { id: 'tomato-juice', name: 'Tomato "Juice"', note: 'Red, at least.', kind: 'drink', price: 2, on: ['soft', 'diner'], where: ['everyday', 'poverty'] },
-  { id: 'vita-mine', name: 'Vita-Mine', note: 'Every vitamin in one bottle.', kind: 'drink', price: 3, on: ['soft', 'snack'], where: ['everyday', 'poverty'] },
+  { id: 'soop', name: 'Soop', note: 'Soup, juice or smoothie. Nobody is sure.', kind: 'drink', price: 3, on: ['soft'], where: ['everyday', 'poverty'], fill: 10 },
+  { id: 'tomato-juice', name: 'Tomato "Juice"', note: 'Red, at least.', kind: 'drink', price: 2, on: ['soft', 'diner'], where: ['everyday', 'poverty'], fill: 6 },
+  { id: 'vita-mine', name: 'Vita-Mine', note: 'Every vitamin in one bottle.', kind: 'drink', price: 3, on: ['soft', 'snack'], where: ['everyday', 'poverty'], fill: 6 },
   { id: 'water', name: 'Water', note: 'Clean water.', kind: 'drink', price: 1, on: ['water', 'street'], where: ['everyday', 'poverty'] },
   { id: 'filtered-rainwater', name: 'Filtered Rainwater', note: 'Rainwater, filtered, with a metallic edge.', kind: 'drink', price: 1, on: ['water', 'street'], where: ['poverty'], favored: ['pacifica'] },
   { id: 'real-water-still', name: 'Real Water (Still)', note: 'Water that was real once.', kind: 'drink', price: 5, on: ['water', 'fine', 'market'], where: ['everyday', 'luxury'] },
