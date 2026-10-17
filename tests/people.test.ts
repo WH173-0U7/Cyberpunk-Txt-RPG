@@ -118,15 +118,24 @@ describe('the people', () => {
   it('keeps every storefront staffed through its opening hours, a 24/7 round the clock, and shut otherwise; the regulars only there while it\'s open', () => {
     for (const { world, population } of cities.slice(0, 3)) {
       const shops = world.buildings.filter((b) => b.business);
+      // Who works at each, and who hangs out there, looked up once (asking who's at every shop, every hour of a week, is minutes on a slow machine).
+      const staff = new Map<string, Population['people']>();
+      const regulars = new Map<string, Population['people']>();
+      for (const p of population.people) {
+        if (p.job.building) staff.set(p.job.building, [...(staff.get(p.job.building) ?? []), p]);
+        const h = p.likes.hangout;
+        if (h?.kind === 'building' && p.job.building !== h.id) regulars.set(h.id, [...(regulars.get(h.id) ?? []), p]);
+      }
       const gaps: string[] = [];
       for (let day = 100; day < 107; day++) {
         for (let hour = 0; hour < 24; hour++) {
           const clock = { day, hour, weekday: (day + 4) % 7 };
+          const at = (p: Population['people'][number], id: string) => whereIs(p, world, clock, FOOD.dishes, PEOPLE.out)?.spot.id === id;
           for (const b of shops) {
-            const here = peopleAt(population, world, { kind: 'building', id: b.id }, clock, FOOD.dishes, PEOPLE.out);
-            const staffed = here.some((p) => p.person.job.building === b.id);
-            if (openAt(world, b, hour) !== staffed) gaps.push(`${world.seed} ${b.name} day ${day} at ${hour}: ${staffed ? 'staffed but shut' : 'open with nobody in'}`);
-            if (!openAt(world, b, hour) && here.some((p) => p.person.job.building !== b.id && p.person.likes.hangout?.id === b.id)) gaps.push(`${world.seed} ${b.name} at ${hour}: regulars in a shut place`);
+            const staffed = (staff.get(b.id) ?? []).some((p) => at(p, b.id));
+            const open = openAt(world, b, hour);
+            if (open !== staffed) gaps.push(`${world.seed} ${b.name} day ${day} at ${hour}: ${staffed ? 'staffed but shut' : 'open with nobody in'}`);
+            if (!open && (regulars.get(b.id) ?? []).some((p) => at(p, b.id))) gaps.push(`${world.seed} ${b.name} at ${hour}: regulars in a shut place`);
           }
         }
       }
