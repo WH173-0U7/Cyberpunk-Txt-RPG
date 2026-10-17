@@ -75,6 +75,8 @@ export interface PeopleContent {
    * NCPD doesn't go), living in its homes, with their ranks. Beat cops go in pairs.
    */
   ncpd?: { perDistrict: Record<string, number>; roles: string[] };
+  /** When the storefronts keep their doors open and how their hands cover it (missing: everyone at a counter keeps the old day, nine till six, and nights at a bar). */
+  shifts?: ShiftContent;
   /** Everyone's own levels in what the player has levels in, by walk of life and nature (missing: everyone ordinary). */
   skills?: SkillProfiles;
   /** Who carries a credchip, and with how much on it: the odds and the range, for corpos, gangers and the street. */
@@ -91,6 +93,23 @@ export interface PeopleContent {
   hearts: HeartContent;
   /** One line each, picked by a person's strongest trait. */
   traitLines: Record<keyof Traits, { high: string; low: string }>;
+}
+
+/**
+ * Opening hours and the shifts that cover them. A storefront keeps its kind's hours (its
+ * business's own over them), `[open, close]`, a close at or before the open running past
+ * midnight; a day open longer than `split` hours is worked in two shifts, and a place that
+ * never closes (`allHours`) in the three of `round`. Every shift wants `perShift` hands at the
+ * least (the fifth draw takes on the rest), each off `daysOff` days a week in turn with the
+ * others on it, so a place is open every day it keeps hours: one alone on a shift takes a day.
+ */
+export interface ShiftContent {
+  hours: Record<string, [number, number]>;
+  business: Record<string, [number, number]>;
+  split: number;
+  round: Array<[number, number]>;
+  perShift: number;
+  daysOff: number;
 }
 
 /** What someone wants out of life: out of Night City, new chrome, a place of their own, a family, wheels, a Trauma Team card, fame, the corporate ladder, payback, a quiet life, to retire, to move up in their gang, or to be a legend. */
@@ -400,6 +419,24 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
       work: (rng) => rng.pick(ncpd.roles),
     });
   }
+  // The fifth takes on the hands the storefronts' shifts want, living round where they work:
+  // two a shift, so every place is open every day it keeps hours, and one that never closes,
+  // round the clock. On its own stream, so everyone the first four made is as they were.
+  const shifts = content.shifts;
+  const hands = new Set<Person>();
+  if (shifts) {
+    openings.set(world, { content: shifts, shifts: new Map() });
+    const have = new Map<string, number>();
+    for (const p of people) if (p.job.building) have.set(p.job.building, (have.get(p.job.building) ?? 0) + 1);
+    const before = people.length;
+    draw(createRng(`${world.seed}:people:shifts`), {
+      staff: (_rng, b) => Math.max(0, leastStaff(b, shifts) - (have.get(b.id) ?? 0)),
+      role: (rng, b) => rng.pick(content.roles.extra[b.category] ?? content.roles.extra.default ?? ['helps out']),
+      residents: () => 0,
+      gang: () => 0,
+    });
+    for (const p of people.slice(before)) hands.add(p);
+  }
 
   // Coworkers and crews know each other (gangers hold no storefront job, so nobody is both).
   const byWork = new Map<string, Person[]>();
@@ -410,14 +447,14 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
     else by.set(key, [p]);
   };
   for (const p of people) {
-    if (p.job.building) add(byWork, p.job.building, p);
+    if (p.job.building && !hands.has(p)) add(byWork, p.job.building, p);
     if (p.gang) add(byGang, p.gang, p);
   }
-  // Everyone at a place knows everyone else there, but for the crowd (below).
+  // Everyone at a place knows everyone else there, but for the crowd and the hands taken on for the shifts (below).
   const knownAt = new Map<string, Person[]>();
   for (const [building, staff] of byWork) knownAt.set(building, staff.filter((p) => !crowd.has(p)));
   for (const a of people) {
-    if (!crowd.has(a)) for (const b of (a.job.building && knownAt.get(a.job.building)) || []) if (a.id < b.id) tie(a, b, 'coworker');
+    if (!crowd.has(a) && !hands.has(a)) for (const b of (a.job.building && knownAt.get(a.job.building)) || []) if (a.id < b.id) tie(a, b, 'coworker');
     for (const b of (a.gang && byGang.get(a.gang)) || []) if (a.id < b.id) tie(a, b, 'crew');
   }
   // The crowd knows a few of the people they work with, not the whole floor of a tower (on a stream of its own).
@@ -426,8 +463,17 @@ export function generatePeople(world: World, content: PeopleContent, dishes: Dis
     const mates = ((a.job.building && byWork.get(a.job.building)) || []).filter((b) => b !== a);
     for (const b of workRng.shuffle(mates).slice(0, content.crowdKnows)) tie(a, b, 'coworker');
   }
+  // So do the hands, among everyone on the shifts with them (on a stream of their own, so the crowd's picks stay as they were).
+  const handRng = createRng(`${world.seed}:people:shifts:work`);
+  for (const a of hands) if (a.job.building) add(byWork, a.job.building, a);
+  for (const a of hands) {
+    const mates = ((a.job.building && byWork.get(a.job.building)) || []).filter((b) => b !== a);
+    for (const b of handRng.shuffle(mates).slice(0, content.crowdKnows)) tie(a, b, 'coworker');
+  }
   for (const person of people) person.bio = describe(person, world, content, dishes);
-  return { people, ties };
+  const population = { people, ties };
+  if (shifts) rotaStaff(population, world, shifts);
+  return population;
 }
 
 /** How many more people a draw after the first makes: the chance of another pair of hands per storefront; residents per home, plus more for a tall block and a megabuilding; and the gangs again, by this much. */
@@ -499,7 +545,10 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
   const rng = createRng(`${person.id}:${day}:${Math.floor(hour / 3)}`);
   const home: Spot | null = person.home ? { kind: 'building', id: person.home } : null;
   const work: Spot | null = person.job.building ? { kind: 'building', id: person.job.building } : null;
-  const hangout = person.likes.hangout;
+  // A storefront someone hangs out at is somewhere to be only while it's open.
+  const liked = person.likes.hangout;
+  const likedShop = liked?.kind === 'building' ? buildingById(world, liked.id) : undefined;
+  const hangout = liked && (!likedShop || openAt(world, likedShop, hour)) ? liked : null;
   const offOn = (d: number, wd: number) => createRng(`${person.id}:${d}:off`).chance(wd === 0 || wd === 6 ? 0.5 : 0.12);
   const dayOff = offOn(day, weekday);
   const at = (spot: Spot | null, doing: string) => (spot ? { spot, doing } : null);
@@ -519,10 +568,18 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
     const asleep = hour < 6 || hour >= 23;
     return ward ? at(ward, asleep ? 'asleep in a hospital bed' : 'in a hospital bed') : at(home, asleep ? 'at home, asleep' : 'at home, laid up');
   }
-  // Night work (a bar, a club, the night desk): from six in the evening till three, asleep till late morning, the afternoon their own.
-  if (work && worksNights(person, world)) {
+  // A storefront's hands keep its rota: on shift, or sleeping off one that ran into the small hours; else their time is their own, as on anyone's day off.
+  const rota = work !== null && onARota(person);
+  if (rota) {
+    const now = onRota(person, clock);
+    if (now === 'on') return at(work, atWork(person));
+    if (now === 'asleep') return at(home, 'at home, asleep');
+  }
+  const job = rota ? null : work;
+  // Night work off a rota (a warehouse's watch; a bar, a club, the night desk in a city made without shifts): from six in the evening till three, asleep till late morning, the afternoon their own.
+  if (job && worksNights(person, world)) {
     const off = hour < 3 ? offOn(day - 1, (weekday + 6) % 7) : dayOff;
-    if (!off && (hour >= 18 || hour < 3)) return at(work, atWork(person));
+    if (!off && (hour >= 18 || hour < 3)) return at(job, atWork(person));
     if (hour >= 3 && hour < 11) return at(home, 'at home, asleep');
     if (hour >= 11 && hour < 18) {
       const roll = rng.next();
@@ -534,7 +591,7 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
   if (hour < 6) return rng.chance(outLate) && hangout ? at(hangout, hanging(hangout)) : at(home, 'at home, asleep');
   if (hour < 9) return rng.chance(0.5) ? at(home, 'at home') : about();
   if (hour < 18) {
-    if (work && !dayOff) return at(work, atWork(person));
+    if (job && !dayOff) return at(job, atWork(person));
     const roll = rng.next();
     if (roll < 0.35 && hangout) return at(hangout, hanging(hangout));
     if (roll < 0.7) return at(home, 'at home');
@@ -549,7 +606,7 @@ export function whereIs(person: Person, world: World, clock: Clock, dishes: Dish
 
 const buildingsById = new WeakMap<World, Map<string, Building>>();
 
-/** Whether someone works nights: anyone at a bar, a club or a karaoke box, the night clerks and watchmen, and half the hands at a place that never closes. */
+/** Whether someone works nights, off a rota: anyone at a bar, a club or a karaoke box, the night clerks and watchmen, and half the hands at a place that never closes (a storefront's rota, when the city has shifts, says otherwise). */
 export function worksNights(person: Person, world: World): boolean {
   if (/\bnight\b/i.test(person.job.role)) return true;
   if (!person.job.building) return false;
@@ -563,6 +620,158 @@ export function worksNights(person: Person, world: World): boolean {
 /** A place that never closes: a hospital, a motel's or a capsule hotel's desk, and anywhere whose sign says 24/7. */
 export function allHours(building: Building): boolean {
   return building.business === 'hospital' || building.category === 'lodging' || building.name.startsWith('24/7 ');
+}
+
+/** A shift's hours, `[from, to]`: a `to` at or before the `from` runs on past midnight into the next day. */
+export type Shift = [number, number];
+
+/** A storefront's shifts: round the clock for one that never closes, else its opening hours, in two halves when it's a long day. */
+export function shiftsOf(building: Building, content: ShiftContent): Shift[] {
+  if (allHours(building)) return content.round;
+  const [open, close] = (building.business && content.business[building.business]) || content.hours[building.category] || content.hours.default || [9, 18];
+  const span = ((close - open + 23) % 24) + 1;
+  if (span <= content.split) return [[open % 24, close % 24]];
+  const mid = (open + Math.ceil(span / 2)) % 24;
+  return [
+    [open % 24, mid],
+    [mid, close % 24],
+  ];
+}
+
+/** The hands a storefront's shifts want at the least. */
+export function leastStaff(building: Building, content: ShiftContent): number {
+  return shiftsOf(building, content).length * content.perShift;
+}
+
+/** Whether an hour is in a shift: in the day it started (`today`), or in the small hours it runs on into (`yesterday`'s). */
+function shiftAt([from, to]: Shift, hour: number): 'today' | 'yesterday' | null {
+  if (from < to) return hour >= from && hour < to ? 'today' : null;
+  if (hour >= from) return 'today';
+  return hour < to ? 'yesterday' : null;
+}
+
+/** Each city's shift content (from the people content it was made with) and its storefronts' shifts, worked out once a storefront. */
+const openings = new WeakMap<World, { content: ShiftContent; shifts: Map<string, Shift[]> }>();
+
+function shiftsAt(world: World, building: Building): Shift[] | null {
+  const known = openings.get(world);
+  if (!known || !building.business) return null;
+  let shifts = known.shifts.get(building.id);
+  if (!shifts) known.shifts.set(building.id, (shifts = shiftsOf(building, known.content)));
+  return shifts;
+}
+
+/** A storefront's opening hours, open to close (`always`: round the clock), as its shifts make them. */
+export function openingHours(building: Building, content: ShiftContent): [number, number] | 'always' {
+  const shifts = shiftsOf(building, content);
+  return allHours(building) ? 'always' : [shifts[0]?.[0] ?? 0, shifts[shifts.length - 1]?.[1] ?? 0];
+}
+
+/** Whether a storefront keeps its doors open at this hour, by its hours (who's in is `whereIs`'s business). Anywhere else, and a city made without shifts, always. */
+export function openAt(world: World, building: Building, hour: number): boolean {
+  const shifts = shiftsAt(world, building);
+  return !shifts || shifts.some((s) => shiftAt(s, hour) !== null);
+}
+
+/**
+ * A storefront's rota: its hands, each on a shift of their own (a night hand on the last, a day
+ * hand on the first, the rest in turn), off their days in turn with the others on it, from a
+ * weekday of the place's own. The laid up and the dead are skipped day by day, and a shift with
+ * nobody on it is covered by someone off that day, one of its own first.
+ */
+interface Rota {
+  building: string;
+  staff: Person[];
+  /** Each hand's shift, and their place among those on it. */
+  home: number[];
+  turn: number[];
+  /** How many are on each shift. */
+  count: number[];
+  shifts: Shift[];
+  offset: number;
+  daysOff: number;
+}
+const rotas = new WeakMap<Person, Rota>();
+
+/** Puts a storefront's hands on its rota: everyone who works there, living or not, in the order given. */
+export function seatRota(building: Building, staff: Person[], content: ShiftContent): void {
+  if (!building.business) return;
+  const shifts = shiftsOf(building, content);
+  const count = shifts.map(() => 0);
+  const home: number[] = [];
+  const turn: number[] = [];
+  // As even as the hands go: a night hand on the last shift and a day hand on the first while there's room on it, anyone else on the emptiest.
+  const most = Math.ceil(staff.length / shifts.length);
+  for (const p of staff) {
+    const wants = /\bnight\b/i.test(p.job.role) ? shifts.length - 1 : /\bday\b/i.test(p.job.role) ? 0 : -1;
+    const h = wants >= 0 && (count[wants] as number) < most ? wants : count.indexOf(Math.min(...count));
+    home.push(h);
+    turn.push(count[h]!++);
+  }
+  const rota: Rota = { building: building.id, staff, home, turn, count, shifts, offset: createRng(`${building.id}:rota`).int(0, 6), daysOff: content.daysOff };
+  for (const p of staff) rotas.set(p, rota);
+}
+
+/** Every storefront's hands on their rotas (after the people are made, and after a save's jobs are put back). */
+export function rotaStaff(population: Population, world: World, content: ShiftContent): void {
+  const byWork = new Map<string, Person[]>();
+  for (const p of population.people) {
+    if (!p.job.building) continue;
+    const list = byWork.get(p.job.building);
+    if (list) list.push(p);
+    else byWork.set(p.job.building, [p]);
+  }
+  for (const [id, staff] of byWork) {
+    const building = buildingById(world, id);
+    if (building?.business) seatRota(building, staff, content);
+  }
+}
+
+/** Who works which shift on a day (by their place on the rota; -1: not in): their own but on their days off, a shift left empty covered by someone off. */
+function rotaDay(rota: Rota, day: number, weekday: number): number[] {
+  const able = (p: Person) => p.job.building === rota.building && !(p.diedOn !== undefined && day >= p.diedOn) && !(p.hurtUntil !== undefined && day <= p.hurtUntil);
+  const working = rota.staff.map(() => -1);
+  const off: number[] = [];
+  for (const [i, p] of rota.staff.entries()) {
+    if (!able(p)) continue;
+    const h = rota.home[i] as number;
+    const days = (rota.count[h] ?? 0) > 1 ? rota.daysOff : Math.min(1, rota.daysOff);
+    const first = (rota.offset + h * 3 + (rota.turn[i] as number) * rota.daysOff) % 7;
+    if ((weekday - first + 7) % 7 < days) off.push(i);
+    else working[i] = h;
+  }
+  for (let h = 0; h < rota.shifts.length; h++) {
+    if (working.includes(h)) continue;
+    const cover = off.find((i) => rota.home[i] === h && working[i] === -1) ?? off.find((i) => working[i] === -1);
+    if (cover !== undefined) working[cover] = h;
+  }
+  return working;
+}
+
+/** Where a storefront's hand is by their rota: on shift, sleeping off one that ran into the small hours, or (null) on their own time. */
+function onRota(person: Person, clock: Clock): 'on' | 'asleep' | null {
+  const rota = rotas.get(person);
+  const i = rota ? rota.staff.indexOf(person) : -1;
+  if (!rota || i < 0) return null;
+  const { hour, day, weekday } = clock;
+  const yesterday = (weekday + 6) % 7;
+  let today: number[] | null = null;
+  let before: number[] | null = null;
+  for (const [k, shift] of rota.shifts.entries()) {
+    const when = shiftAt(shift, hour);
+    if (when === 'today' && (today ??= rotaDay(rota, day, weekday))[i] === k) return 'on';
+    if (when === 'yesterday' && (before ??= rotaDay(rota, day - 1, yesterday))[i] === k) return 'on';
+    // A shift that ended in the small hours is slept off for eight hours after.
+    const end = shift[1];
+    const late = shift[1] <= shift[0] && end <= 8;
+    if (late && hour >= end && hour < end + 8 && (before ??= rotaDay(rota, day - 1, yesterday))[i] === k) return 'asleep';
+  }
+  return null;
+}
+
+/** Whether someone keeps a storefront's rota: on one, and still working there. */
+function onARota(person: Person): boolean {
+  return rotas.get(person)?.building === person.job.building;
 }
 
 /** Everyone to be found at a spot right now. */

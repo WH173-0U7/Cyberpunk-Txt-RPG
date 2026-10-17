@@ -794,7 +794,10 @@ function targetView(t: Target, to: Whereabouts, plans: { foot: TripPlan | null; 
     kicker = `Block ${b?.block ?? '?'} · ${district}`;
     title = b?.name ?? title;
     meta = b ? [categoryOf(b).label, b.kindLabel, heightOf(b)].filter(Boolean).join(' · ') : '';
-    description = b ? categoryOf(b).description : undefined;
+    // A storefront's hours, and whether it's shut right now.
+    const hours = b ? signOf(b) : '';
+    const shut = b && game.locked(b, now);
+    description = b ? [hours ? `${hours}${shut ? `, shut till ${shut.opensAt ? formatClock(shut.opensAt) : 'who knows'}` : ''}.` : '', categoryOf(b).description].filter(Boolean).join(' ') : undefined;
   } else {
     const block = blockAt(world.layout, to);
     kicker = block ? `Block ${block.address} · ${district}` : district;
@@ -896,14 +899,26 @@ function hereView(now: number): PanelView {
   const building = where.building ? buildingOf(where.building) : undefined;
   const mood = district?.mood ?? '';
   const door = game.door;
+  // A storefront's door says its hours, and when it's shut, when someone's next in.
+  const locked = door ? game.locked(door, now) : null;
+  const open = door ? signOf(door) : '';
+  const enter: PanelAction | null = !door ? null : locked ? { id: 'enter', label: 'Closed', sub: locked.opensAt ? `Opens ${formatClock(locked.opensAt)}` : 'Shut for good', disabled: true } : { id: 'enter', label: 'Go inside', sub: door.kindLabel };
   return {
     mode: 'here',
     kicker: `You are here${building ? ` · Block ${building.block}` : ''}`,
-    description: building ? `${categoryOf(building).label} · ${[building.kindLabel, heightOf(building)].filter(Boolean).join(', ')}. ${mood}` : mood,
-    actions: door ? [{ id: 'enter', label: 'Go inside', sub: door.kindLabel }] : [],
+    ...(open ? { meta: open } : {}),
+    description: building ? `${categoryOf(building).label} · ${[building.kindLabel, heightOf(building)].filter(Boolean).join(', ')}. ${locked ? 'The shutters are down. ' : ''}${mood}` : mood,
+    actions: enter ? [enter] : [],
     closable: false,
-    announce: `${name}. ${mood}`,
+    announce: `${name}. ${open ? `${open}. ` : ''}${locked ? 'Closed. ' : ''}${mood}`,
   };
+}
+
+/** A storefront's hours as its door says them: "Open 11:00–23:00", "Open 24/7" (nothing for anywhere that keeps none). */
+function signOf(building: Building): string {
+  const hours = game.hoursOf(building);
+  const at = (hour: number) => `${String(hour % 24).padStart(2, '0')}:00`;
+  return hours === 'always' ? 'Open 24/7' : hours ? `Open ${at(hours[0])}–${at(hours[1])}` : '';
 }
 
 /**

@@ -5,7 +5,7 @@ import { JOBS } from '../src/data/jobs';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
 import { bossAt, bossOf, canPromote, ladderFor, lineOf, nextRung, overlaps, overnight, rungOf, shiftDay, shiftOpen, shiftPay, startOf, type JobState } from '../src/engine/jobs';
-import { generatePeople } from '../src/engine/people';
+import { allHours, generatePeople, openAt } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 
 const seeds = Array.from({ length: 12 }, (_, i) => createRng(`jobs-${i}`).next().toString(16).slice(2, 10));
@@ -33,6 +33,15 @@ describe('work', () => {
       const length = overnight(hours) ? 24 - hours[0] + hours[1] : hours[1] - hours[0];
       expect(length, line).toBeGreaterThanOrEqual(6);
       expect(length, line).toBeLessThanOrEqual(10);
+    }
+    // A shift is worked while the place is open: every hour of a storefront's ladder is in its opening hours.
+    for (const seed of seeds.slice(0, 4)) {
+      const world = generateWorld(seed, CITY);
+      generatePeople(world, PEOPLE, FOOD.dishes);
+      for (const b of world.buildings.filter((b) => b.business && !allHours(b))) {
+        const { hours } = ladderFor(b, JOBS) ?? { hours: [0, 0] as [number, number] };
+        for (let h = 0; h < 24; h++) if (shiftOpen(h, hours)) expect(openAt(world, b, h), `${b.name} (${b.business}) at ${h}`).toBe(true);
+      }
     }
     // A bar works nights, and a night job sits beside a day job without a clash; two day jobs clash.
     expect(overnight(JOBS.ladders.nightlife!.hours)).toBe(true);

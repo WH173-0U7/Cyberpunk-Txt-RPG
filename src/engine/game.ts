@@ -19,7 +19,7 @@ import { applyLife, freshLife, learned, liveUntil, newsFor, scenesAt, type LifeE
 import { daysSince, forgetMemories, GRIEVANCES, memoriesOf, memoryOf, recall, recalled, remember, type Memory } from './memory';
 import { chargesFor, freshPolice, issueWarrant, policing, warrantsAt, worstCrime, type Confrontation, type Crime, type Dispatch, type PoliceChoice, type PoliceContent, type PoliceState, type PoliceView } from './police';
 import { mainRoom, roomById, roomOf, roomsOn, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
-import { allHours, buildingById, GUARD_ROLE, readOf, skillsOf, walkOf, type PersonSkills, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
+import { buildingById, GUARD_ROLE, openingHours, rotaStaff, readOf, skillsOf, walkOf, type PersonSkills, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
@@ -388,6 +388,8 @@ export class Game {
     // every first write to it slow in V8, which stalled the first day lived after loading for seconds.
     this.life = progress?.life ? { ...freshLife(), ...copyOf(progress.life) } : freshLife();
     applyLife(this.population, this.life);
+    // The storefronts' rotas, with the jobs as the days have left them.
+    if (rules.people.shifts) rotaStaff(this.population, this.world, rules.people.shifts);
     this.society = progress?.society ? { ...freshSociety(), ...copyOf(progress.society) } : freshSociety();
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
     this.brawlerState = progress?.brawler ? { ...progress.brawler } : freshSkill();
@@ -706,11 +708,11 @@ export class Game {
 
   /**
    * Whether a counter is open: with opening hours on, a storefront's only while someone who
-   * works there is in (one that never closes, a hospital or a 24/7, always); a place of its own's
-   * (a market, a stall) never closes.
+   * works there is in (its rota keeps one that never closes staffed round the clock); a hospital
+   * always, and a place of its own (a market, a stall) never closes.
    */
   private counterOpen(at: Building | Location, now: number): boolean {
-    if (!this.rules.hours?.close || !('block' in at) || !at.business || allHours(at)) return true;
+    if (!this.rules.hours?.close || !('block' in at) || !at.business || at.business === 'hospital') return true;
     // Keys: the player's own counter, high enough up the ladder, is open to them whoever's in.
     if (this.jobs.some((j) => j.building === at.id && j.rung >= this.rules.jobs.perks.keys)) return true;
     const clock = this.clockAt(now);
@@ -730,11 +732,34 @@ export class Game {
     const menu = this.counterMenu(at, now);
     const what = menu ? (menu.kind === 'gear' ? 'shop' : 'menu') : at.business === 'bank' ? 'bank' : null;
     if (!what) return null;
+    return { what, opensAt: this.opensAgain(at, now) };
+  }
+
+  /** When someone who works a counter is next in, to the hour (null: nobody is, as far ahead as `hours.ahead` looks). */
+  private opensAgain(at: Building, now: number): number | null {
     const HOUR_MS = 3_600_000;
     const from = Math.floor(now / HOUR_MS) * HOUR_MS;
-    let opensAt: number | null = null;
-    for (let k = 1; k <= (this.rules.hours?.ahead ?? 0) && opensAt === null; k++) if (this.counterOpen(at, from + k * HOUR_MS)) opensAt = from + k * HOUR_MS;
-    return { what, opensAt };
+    for (let k = 1; k <= (this.rules.hours?.ahead ?? 0); k++) if (this.counterOpen(at, from + k * HOUR_MS)) return from + k * HOUR_MS;
+    return null;
+  }
+
+  /**
+   * A storefront locked up for now, with opening hours on: nobody who works there is in, so the
+   * shutters are down, and when someone's next in. A hospital never locks, nor does the player's
+   * own workplace to them, in their shift's hours or with its keys. Null: the door is open.
+   */
+  locked(building: Building, now = Date.now()): { opensAt: number | null } | null {
+    if (!building.business || this.counterOpen(building, now)) return null;
+    const hour = this.clockAt(now).hour;
+    if (this.jobs.some((j) => j.building === building.id && shiftOpen(hour, ladderFor(building, this.rules.jobs)?.hours ?? [0, 0]))) return null;
+    return { opensAt: this.opensAgain(building, now) };
+  }
+
+  /** A storefront's opening hours as its door says them (null: it keeps none, or the city has none). */
+  hoursOf(building: Building): [number, number] | 'always' | null {
+    const shifts = this.rules.people.shifts;
+    if (!this.rules.hours?.close || !building.business || !shifts) return null;
+    return openingHours(building, shifts);
   }
 
   /** The medical counter where the player is, if there's one: what it does (meds, treatment, Trauma Team's plans), and the key it's kept under. */
@@ -7404,11 +7429,19 @@ export class Game {
     this.dealTick(now);
     this.habitTick(now);
     this.recognize(now);
+    this.closingTime(now);
     const trip = this.trip;
     if (!trip) return;
     const changed = this.exploreTrip(now);
     if (now >= trip.endsAt) this.finish(trip, away);
     else if (changed) this.events.emit('mapChanged', this.mapState);
+  }
+
+  /** The last hand out locks up: the player, still inside a storefront that's shut, is seen out the door (not mid-fight, nor with anyone on them). */
+  private closingTime(now: number): void {
+    const at = this.inside;
+    if (!at || this.fighting || this.detained(now) || this.shiftEventState || !this.locked(at, now)) return;
+    if (this.leave()) this.say(`Closing time at ${at.name}: the lights go down and the shutters come down behind you.`, 'system');
   }
 
   /** Stops walking right where the player is. (No getting off a moving train.) */
@@ -7430,6 +7463,12 @@ export class Game {
   enter(now = Date.now()): boolean {
     const building = this.door;
     if (!building || this.fighting || this.detained(now)) return false;
+    // Shut, it's locked: a storefront is the whole building, so there's no getting in till someone who works there is.
+    const shut = this.locked(building, now);
+    if (shut) {
+      this.say(`Locked. The shutters are down and nobody's in${shut.opensAt ? `: someone's back ${this.whenWord(shut.opensAt)}` : ''}.`, 'error');
+      return false;
+    }
     this.inside = building;
     // In through the front: the room you walk into, and no door anyone's opened for you yet.
     this.roomState = 'main';

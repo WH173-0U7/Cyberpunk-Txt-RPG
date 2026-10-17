@@ -9,7 +9,7 @@ import { healthOf, staffCostOf, turfFrom, weekdayOf } from '../src/engine/econom
 import { bossOf } from '../src/engine/jobs';
 import { drawQuality, menuFor, type Quality } from '../src/engine/food';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, tieKey, type LifeEvent } from '../src/engine/life';
-import { drawnTo, generatePeople, heartOf, hospitalOf, INVERSE, peopleAt, tiesOf, whereIs, type Person, type Population, type Spot } from '../src/engine/people';
+import { allHours, drawnTo, generatePeople, heartOf, hospitalOf, INVERSE, leastStaff, peopleAt, tiesOf, whereIs, type Person, type Population, type Spot } from '../src/engine/people';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 
@@ -39,6 +39,33 @@ function lived(seed: string, days: number, from = T, spokenFor: ReadonlySet<stri
 }
 
 describe("the people's own days", () => {
+  it('fill a place short of the hands its shifts want, never lay one off below them, and keep the new hands on its rota', () => {
+    const seed = seeds[1] as string;
+    const world = generateWorld(seed, CITY);
+    const population = generatePeople(world, PEOPLE, FOOD.dishes);
+    const base = new Map(population.people.map((p) => [p.id, p.eddies]));
+    const state = freshLife();
+    const shifts = PEOPLE.shifts!;
+    // A place that never closes, two of its hands dead before the days begin.
+    const shop = world.buildings.find((b) => b.business && allHours(b) && b.business !== 'hospital' && population.people.some((p) => p.district === b.district && LIFE.jobless.includes(p.job.role))) as World['buildings'][number];
+    const least = leastStaff(shop, shifts);
+    const hands = population.people.filter((p) => p.job.building === shop.id);
+    for (const p of hands.slice(0, 2)) {
+      p.diedOn = T - 1;
+      state.dead[p.id] = T - 1;
+    }
+    const busy = { ...LIFE, chances: Object.fromEntries(Object.keys(LIFE.chances).map((k) => [k, k === 'hired' || k === 'laidOff' ? 1 : 0])) as typeof LIFE.chances, perDistrict: 6 };
+    const staffOf = (id: string) => population.people.filter((p) => p.job.building === id && p.diedOn === undefined);
+    const before = new Map(world.buildings.filter((b) => b.business).map((b) => [b.id, staffOf(b.id).length]));
+    for (let day = T; day < T + 30; day++) liveUntil(world, population, state, busy, base, day, seed, tierIn(world), turf, PEOPLE);
+    expect(staffOf(shop.id).length).toBeGreaterThanOrEqual(least);
+    // No place let anyone go below what its shifts want (or what it had, if it was short to begin with).
+    for (const b of world.buildings.filter((b) => b.business)) expect(staffOf(b.id).length, b.name).toBeGreaterThanOrEqual(Math.min(leastStaff(b, shifts), before.get(b.id) ?? 0));
+    // The new hands work its rota with the rest: someone's in every hour of the day.
+    const day = T + 30;
+    for (let hour = 0; hour < 24; hour++) expect(staffOf(shop.id).some((p) => whereIs(p, world, { day, hour, weekday: (day + 4) % 7 }, FOOD.dishes)?.spot.id === shop.id), `${shop.name} at ${hour}`).toBe(true);
+  });
+
   it('bring together only people drawn to each other, and never anyone the player is seeing', () => {
     // Everyone in the first few districts is spoken for, as if the player were seeing them.
     const world = generateWorld(seeds[0] as string, CITY);

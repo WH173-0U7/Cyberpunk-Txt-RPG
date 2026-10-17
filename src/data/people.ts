@@ -253,6 +253,36 @@ export const PEOPLE: PeopleContent = {
   // The third draw: the homes as full as Night City's are, a megabuilding most of all, a few more hands behind the counters, and the gangs a little deeper.
   crowd: { staff: 0.3, perHome: [2, 6], tall: 8, megabuilding: 20, gangs: 0.5 },
   crowdKnows: 3,
+  // Opening hours (ours), by category, a business's own over them: shops and services by day, eateries
+  // from lunch till late in two shifts, the arcades and BD parlors from the afternoon into the small hours,
+  // bars and clubs from six till three. A 24/7, a motel's or a capsule hotel's desk and a hospital never
+  // close: three shifts round the clock. Two hands a shift, each off two days a week in turn.
+  shifts: {
+    hours: {
+      default: [9, 18],
+      commodity: [9, 19],
+      clothing: [10, 19],
+      firearms: [10, 19],
+      melee: [10, 19],
+      cyberware: [10, 20],
+      netrunning: [10, 20],
+      medical: [8, 18],
+      services: [9, 18],
+      vehicles: [8, 18],
+      food: [11, 23],
+      entertainment: [14, 2],
+      nightlife: [18, 3],
+    },
+    business: { bank: [9, 17], laundromat: [8, 18], 'tattoo-studio': [10, 20] },
+    split: 10,
+    round: [
+      [6, 14],
+      [14, 22],
+      [22, 6],
+    ],
+    perShift: 2,
+    daysOff: 2,
+  },
   // The NCPD, after the wiki's 2077: privatized and cut to half its officers, gone from Pacifica, rarely seen
   // in the Badlands, thickest downtown. Officers in pairs, a sergeant over them, the odd detective.
   ncpd: {

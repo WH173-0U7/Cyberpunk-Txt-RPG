@@ -77,13 +77,13 @@ const busy = (policed = true): Building => {
   return found;
 };
 
-const play = (b: Building, police: PoliceContent, extra: Partial<Progress> = {}, combat = COMBAT) => {
+const play = (b: Building, police: PoliceContent, extra: Partial<Progress> = {}, combat = COMBAT, nth = 0) => {
   const game = new Game(world, rulesWith(police, combat), progressAt(b, extra));
   const said: string[] = [];
   game.events.on('output', ({ text }) => said.push(text));
   game.start(NOON);
   const here = game.peopleHere(NOON);
-  const victim = here.find((p) => p.doing !== 'out cold')?.person as Person;
+  const victim = here.filter((p) => p.doing !== 'out cold')[nth]?.person as Person;
   return { game, said, victim, others: here.map((p) => p.person).filter((p) => p.id !== victim.id) };
 };
 
@@ -358,15 +358,19 @@ describe('killing someone out cold', () => {
   const nobodyStops = { ...COMBAT.finish, intervene: { ...COMBAT.finish.intervene, base: 0 } };
   const knife: Progress['items'][number] = { id: 'knife', kind: 'weapon', weapon: 'knife', name: 'Knife', count: 1, in: 'jacket' };
   const lexington: Progress['items'][number] = { id: 'lexington-1', kind: 'weapon', weapon: 'lexington', name: 'M-10AF Lexington', count: 1, in: 'jacket', loaded: 20 };
-  /** The player knocks someone out cold at the shop, carrying what's said. */
+  /** The player knocks someone out cold at the shop, carrying what's said: whoever lands first knocks the other out, so the first in the shop who goes down before the player does. */
   const knockedOut = (items: Progress['items'], finish = nobodyStops, police = QUIET, extra: Partial<Progress> = {}) => {
-    const { game, said: out, victim } = play(shop, police, { items, ...extra }, knockouts(finish));
-    game.attack(victim.id, NOON);
-    let t = NOON;
-    for (let n = 0; n < 30 && game.fighting; n++) game.fightMove('attack', (t += 1000));
-    if (game.fightView()?.over !== 'out') throw new Error(`not out cold: ${game.fightView()?.over}`);
-    game.leaveFight();
-    return { game, out, victim, t };
+    for (let nth = 0; nth < 6; nth++) {
+      const { game, said: out, victim } = play(shop, police, { items, ...extra }, knockouts(finish), nth);
+      if (!victim) break;
+      game.attack(victim.id, NOON);
+      let t = NOON;
+      for (let n = 0; n < 30 && game.fighting; n++) game.fightMove('attack', (t += 1000));
+      if (game.fightView()?.over !== 'out') continue;
+      game.leaveFight();
+      return { game, out, victim, t };
+    }
+    throw new Error('nobody in the shop went down before the player');
   };
 
   it('offers the ways the player has to do it: bare hands always, and a blade, a loaded gun, chrome', () => {
