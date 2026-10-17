@@ -316,7 +316,8 @@ describe("the people's own days", () => {
       for (const p of population.people) if (p.job.building) expect(p.diedOn, p.name).toBeUndefined();
       for (const e of events.filter((x) => x.kind === 'hired')) {
         const [boss, hire] = e.who;
-        const since = events.some((x) => x.day >= e.day && x.id !== e.id && x.who.includes(boss) && x.who.includes(hire));
+        // Something between them since, or the place went under (letting everyone go) and was taken on again.
+        const since = events.some((x) => x.day >= e.day && x.id !== e.id && ((x.who.includes(boss) && x.who.includes(hire)) || (x.kind === 'closed' && x.where?.id === e.where?.id)));
         if (byId.get(hire)?.job.building === e.where?.id && !since) expect(ties.has(`${hire}|${boss}`), `${seed} ${hire} hired by ${boss}`).toBe(true);
       }
       // The dead are nowhere, and a gang takes on no more than it has lost, and a few with nothing left to lose.

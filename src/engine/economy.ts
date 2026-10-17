@@ -46,6 +46,28 @@ export interface Till {
   lifted?: number;
   /** How many times it has gone under before. */
   failed?: number;
+  /** What it pays its people, a share on the usual (missing: the usual): up while it thrives, down while it struggles. */
+  wage?: number;
+}
+
+/** A block's rent as its landlord sets it, a share on the usual, and how its tenants have paid since the last rent day. */
+export interface Let {
+  level: number;
+  paid: number;
+  short: number;
+}
+
+/**
+ * Pay and rent that move (missing: they stay as set). On payday a storefront that thrived its
+ * last week pays its people `wages.up` more, one that struggled `wages.down` less, and a steady
+ * one comes `wages.settle` of the way back to the usual, between `least` and `most` (a corp sets
+ * its own pay). On rent day a block whose tenants all paid puts its rent up `rents.up`, one where
+ * over `rents.behind` of them fell short brings it down `rents.down`, and one in between holds,
+ * between `least` and `most`.
+ */
+export interface DriftRules {
+  wages: { up: number; down: number; settle: number; least: number; most: number };
+  rents: { up: number; down: number; behind: number; least: number; most: number };
 }
 
 /** What someone owes a gang's loan shark: how much (interest on it every payday), the day they first borrowed, and the day they last paid any of it back (or were made to). */
@@ -254,6 +276,8 @@ export interface EconomyRules {
   hard?: HardRules;
   /** The player's own business (missing: they can't buy one). */
   business?: BusinessRules;
+  /** Pay and rent that move (missing: they stay as set). */
+  drift?: DriftRules;
 }
 
 /** Who collects in each district, from the people data's turf table: every gang there, by its share of the turf. */
@@ -275,9 +299,26 @@ export function tillOf(tills: Record<string, Till>, id: string): Till {
   return (tills[id] ??= { days: [], pending: 0 });
 }
 
-/** What a week of a storefront's people costs it: each worker, the boss more. */
-export function staffCostOf(staff: Person[], boss: Person | null, tier: Quality, rules: EconomyRules): number {
-  return staff.length * rules.staff[tier] + (boss ? rules.staff[tier] * (rules.boss - 1) : 0);
+/** What a week of a storefront's people costs it: each worker, the boss more, at what it pays now (`wage`, a share on the usual). */
+export function staffCostOf(staff: Person[], boss: Person | null, tier: Quality, rules: EconomyRules, wage = 1): number {
+  return (staff.length * rules.staff[tier] + (boss ? rules.staff[tier] * (rules.boss - 1) : 0)) * wage;
+}
+
+/** What a storefront pays its people now, a share on the usual. */
+export function wageOf(till: Till | undefined): number {
+  return till?.wage ?? 1;
+}
+
+/** What a block's rent is now, a share on the usual. */
+export function rentLevelOf(lets: Record<string, Let> | undefined, id: string): number {
+  return lets?.[id]?.level ?? 1;
+}
+
+/** A share on the usual moved by `by` (or back toward the usual by `settle`), kept between `least` and `most`, rounded, and dropped (null) once it's back at the usual. */
+function moved(level: number, by: number, least: number, most: number, settle = 0): number | null {
+  const next = by ? level * (1 + by) : 1 + (level - 1) * (1 - settle);
+  const kept = Math.round(Math.min(most, Math.max(least, next)) * 1000) / 1000;
+  return Math.abs(kept - 1) < 0.005 ? null : kept;
 }
 
 /** How a place is doing on its last week: thriving when the week's net clears a share of its costs, struggling when it lost money, steady in between, and steady until a whole week is on the books. */
@@ -548,6 +589,8 @@ export interface EconomyState {
   closed?: Record<string, Closure>;
   /** The storefronts the player owns. */
   owned?: Record<string, Owned>;
+  /** Every block's rent where it isn't the usual, and how its tenants paid this week. */
+  lets?: Record<string, Let>;
   tills: Record<string, Till>;
   treasuries: Record<string, number>;
   hurt: Record<string, number>;
@@ -702,7 +745,9 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
   };
   const tierAt = (b: Building) => tier({ kind: 'building', id: b.id });
   const bosses = new Map(storefronts.map((b) => [b.id, bossOf(b, population, staffAt(b.id))]));
-  const weeklyCost = (b: Building) => staffCostOf(staffAt(b.id), bosses.get(b.id) ?? null, tierAt(b), rules) + rules.rent[tierAt(b)] * 7;
+  const weeklyCost = (b: Building) => staffCostOf(staffAt(b.id), bosses.get(b.id) ?? null, tierAt(b), rules, wageOf(state.tills[b.id])) + rules.rent[tierAt(b)] * 7;
+  const drift = rules.drift;
+  const lets = drift ? (state.lets ??= {}) : undefined;
   const holder = (owner: string | null | undefined) => holderOf(owner, (id) => people[index.get(id) ?? -1], ties);
   const payday = weekdayOf(day) === rules.payday;
   const rentDay = weekdayOf(day) === rules.rentDay;
@@ -882,7 +927,8 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
       const staff = staffAt(b.id);
       if (!staff.length || closed[b.id]) continue;
       const till = tillOf(state.tills, b.id);
-      const owed = staff.map((p) => (book(at(p)) as Ledger).pay);
+      const wage = wageOf(till);
+      const owed = staff.map((p) => Math.round((book(at(p)) as Ledger).pay * wage));
       const total = owed.reduce((x, w) => x + w, 0);
       const corp = owners.corp.has(b.business as string);
       if (corp && (till.cash as number) < total) {
@@ -914,6 +960,14 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
       } else {
         delete till.short;
         delete till.lean;
+      }
+      // Next week's pay, by how this one went: more where it's thriving, less where it's struggling (a corp sets its own).
+      if (drift && !corp) {
+        const w = drift.wages;
+        const health = healthOf(till, weeklyCost(b), rules);
+        const next = moved(wage, health === 'thriving' ? w.up : health === 'struggling' ? -w.down : 0, w.least, w.most, w.settle);
+        if (next === null) delete till.wage;
+        else till.wage = next;
       }
     }
     const working: number[] = [];
@@ -1061,13 +1115,20 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
     if (habit && habit.perDay > 0) state.treasuries[habit.gang] = (state.treasuries[habit.gang] ?? 0) + take(i, habit.perDay * 7);
     const to = l.landlord !== undefined && l.rent > 0 ? holder(l.landlord) : undefined;
     if (to !== undefined && to !== p.id) {
-      const due = l.rent + (arrears[p.id] ?? 0);
+      const rent = lets && p.home ? Math.round(l.rent * rentLevelOf(lets, p.home)) : l.rent;
+      const due = rent + (arrears[p.id] ?? 0);
       const paid = take(i, due);
       const landlord = to ? index.get(to) : undefined;
       if (landlord !== undefined && book(landlord)) collect(landlord, paid, p.district);
       else flows.out += paid;
       if (paid < due) arrears[p.id] = due - paid;
       else delete arrears[p.id];
+      // How the building's tenants are paying, for its next rent day.
+      if (lets && p.home) {
+        const let_ = (lets[p.home] ??= { level: 1, paid: 0, short: 0 });
+        if (paid < due) let_.short++;
+        else let_.paid++;
+      }
     }
     // What's over a week or so of food and rent goes on paying the loan shark back.
     const debt = debts?.[p.id];
@@ -1082,6 +1143,18 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
       }
     }
     keepOn(i);
+  }
+
+  // On rent day, a block's rent for the week to come: up where everyone paid, down where too many couldn't.
+  if (rentDay && drift && lets) {
+    const r = drift.rents;
+    for (const [id, let_] of Object.entries(lets)) {
+      const tenants = let_.paid + let_.short;
+      const by = !tenants ? 0 : let_.short === 0 ? r.up : let_.short / tenants > r.behind ? -r.down : 0;
+      const level = by ? moved(let_.level, by, r.least, r.most) : let_.level === 1 ? null : let_.level;
+      if (level === null) delete lets[id];
+      else lets[id] = { level, paid: 0, short: 0 };
+    }
   }
 
   // Rent on rent day, out of each storefront's till as far as it goes, to whoever owns the building (nothing when it's its boss's).
@@ -1238,6 +1311,6 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
 /** How a storefront is doing, and the line that says so inside. */
 export function tradeAt(building: Building, population: Population, tills: Record<string, Till>, tier: Quality, rules: EconomyRules): { health: Health; line: string } {
   const staff = population.people.filter((p) => p.job.building === building.id && p.diedOn === undefined);
-  const health = healthOf(tills[building.id], staffCostOf(staff, bossOf(building, population), tier, rules) + rules.rent[tier] * 7, rules);
+  const health = healthOf(tills[building.id], staffCostOf(staff, bossOf(building, population), tier, rules, wageOf(tills[building.id])) + rules.rent[tier] * 7, rules);
   return { health, line: rules.trade[health] };
 }

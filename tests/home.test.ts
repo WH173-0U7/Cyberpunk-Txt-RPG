@@ -117,15 +117,16 @@ describe("the player's home", () => {
     game.takeHome(NOW);
     game.goHome(NOW);
     game.stashIt('taco');
-    const rent = game.home(NOW)!.rent;
     const account = game.wallet.account;
     game.tick(NOW + 7 * DAY);
+    // The week's rent as the landlord sets it now (it moves with how the block pays).
+    const rent = game.home(NOW + 7 * DAY)!.rent;
     expect(game.wallet.account).toBe(account - rent);
     expect(game.home(NOW + 7 * DAY)).toMatchObject({ owed: 0, dueIn: 7 });
     // Broke: a week owed, then two (the warning), then out.
     (game as unknown as { money: { bills: number; coins: number; account: number } }).money = { bills: 0, coins: 0, account: 0 };
     game.tick(NOW + 14 * DAY);
-    expect(game.home(NOW + 14 * DAY)).toMatchObject({ owed: rent, behind: 1 });
+    expect(game.home(NOW + 14 * DAY)).toMatchObject({ owed: game.home(NOW + 14 * DAY)!.rent, behind: 1 });
     game.tick(NOW + 21 * DAY);
     expect(game.home(NOW + 21 * DAY)?.behind).toBe(HOME.warnAt);
     expect(lines.some((l) => /Pay before the week's out|locks change/.test(l))).toBe(true);

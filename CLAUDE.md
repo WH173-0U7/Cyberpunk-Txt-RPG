@@ -618,6 +618,23 @@ it needs no generator bump. The pieces:
   part of the `life` save. Anything new that moves eddies between people and places goes in
   `economyDay`; anything that reads them goes through `Game.trade`, `ledgerOf`/`accountOf` or the
   vars. Keep `npm run bench` in mind: the economy is a few milliseconds of every day.
+- Pay and rent that move (`ECONOMY.drift`, `DriftRules`, in `economyDay`; missing, they stay as
+  set). A storefront's `Till.wage` is what it pays its people, a share on the usual (`wageOf`):
+  on payday, after paying at it, it goes up `wages.up` where the place thrived its last week,
+  down `wages.down` where it struggled, and `wages.settle` of the way back where it was steady,
+  between `least` and `most` (`moved`), never at a corp's. A block's rent is
+  `EconomyState.lets[building]` (`Let`: its `level`, `rentLevelOf`, and how its tenants `paid` or
+  fell `short` since the last rent day, counted as each pays on their own day at its level): on
+  `rentDay` it goes up `rents.up` where every tenant paid, down `rents.down` where over
+  `rents.behind` of them fell short, and holds in between. A ledger's `pay`, `rent`, `means` and
+  `essentials` stay the usual (so nothing kept is worked out again); what's paid is times the
+  level. `staffCostOf` takes the wage, so a place's costs, its health and its price do too. The
+  player's shift pay is times its till's wage (`shiftPayAt`), the rent of a unit times its
+  block's level (`homeRentOf`: `homeTick` sets each week's, `HOME.lines.raised`/`lowered`, and
+  counts the weeks behind to the nearest, `weeksBehind`, since what's owed was at the rent then);
+  the Market row says the district's pay and rents against the usual (`MarketView.pay`/`rent`),
+  and the speaker's `payRaised`/`payCut`/`rentUp`/`rentDown` fit their lines. Part of the `life`
+  save (`letsOf` reads it).
 - Hard times (`ECONOMY.hard`, `HardRules`, in `economyDay`; `LIFE.hard`, `HardLifeRules`, in
   `liveDay`; either missing, none of it). The money side: someone short of the week's food with
   the nerve (`lift.nerve`, courage and greed) walks out with `lift.share` of it (`Till.lifted`

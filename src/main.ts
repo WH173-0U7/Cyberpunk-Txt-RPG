@@ -1686,8 +1686,9 @@ function hungerLine(hunger: HungerStatus, now: number): string {
 /** The market where the player is, for the status drop-down: what's dear or cheap in the district against usual. */
 function marketLine(market: MarketView): string {
   const where = market.district || 'Here';
-  if (!market.prices.length) return `${where}: prices as usual`;
-  return `${where}: ${market.prices.map((p) => `${p.goods} ${p.change > 0 ? '+' : '−'}${Math.abs(Math.round(p.change * 100))}%`).join(', ')}`;
+  const pct = (change: number) => `${change > 0 ? '+' : '−'}${Math.abs(Math.round(change * 100))}%`;
+  const moves = [...market.prices.map((p) => `${p.goods} ${pct(p.change)}`), Math.abs(market.rent) >= 0.03 ? `rents ${pct(market.rent)}` : '', Math.abs(market.pay) >= 0.03 ? `pay ${pct(market.pay)}` : ''].filter(Boolean);
+  return moves.length ? `${where}: ${moves.join(', ')}` : `${where}: prices as usual`;
 }
 
 /** What the NCPD has on the player, for the status drop-down: a hold, a unit coming, the warrants, what's on record. */

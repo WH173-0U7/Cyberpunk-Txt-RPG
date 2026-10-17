@@ -4,7 +4,7 @@ import { FOOD } from '../src/data/food';
 import { GEAR } from '../src/data/gear';
 import { LIFE } from '../src/data/life';
 import { PEOPLE } from '../src/data/people';
-import { accountOf, economyDay, healthOf, ledgerOf, ownersOf, parOf, priceFactor, staffCostOf, stockOf, tillOf, timesIn, turfFrom, weekdayOf, type EconomyRules, type Flows, type Health } from '../src/engine/economy';
+import { accountOf, economyDay, healthOf, ledgerOf, ownersOf, parOf, priceFactor, staffCostOf, stockOf, tillOf, timesIn, turfFrom, wageOf, weekdayOf, type EconomyRules, type Flows, type Health } from '../src/engine/economy';
 import { drawQuality, menuFor, type Quality } from '../src/engine/food';
 import { generateWorld } from '../src/engine/generate';
 import { bossOf } from '../src/engine/jobs';
@@ -22,6 +22,7 @@ import { LINES } from '../src/data/dialogue';
 import { MONEY } from '../src/data/money';
 import { SOCIETY } from '../src/data/society';
 import { TRAVEL } from '../src/data/travel';
+import { HOME } from '../src/data/home';
 import { createRng } from '../src/engine/rng';
 import type { World } from '../src/engine/types';
 
@@ -384,6 +385,127 @@ describe('the economy', () => {
     expect(owned[failing.id]?.due).toBeGreaterThanOrEqual(due);
   });
 
+  it("moves a storefront's pay on payday by how its week went: up thriving, down struggling, back steady, between its bounds, and never a corp's; and pays it", () => {
+    const drift = ECONOMY.drift!;
+    const c = city(seeds[0] as string);
+    day(c, T);
+    const payday = nextDay(T + 1, ECONOMY.payday);
+    for (let d = T + 1; d < payday; d++) day(c, d);
+    const staffOf = (id: string) => c.population.people.filter((p) => p.job.building === id && p.diedOn === undefined);
+    const shops = c.world.buildings.filter((b) => b.business && staffOf(b.id).length >= 2);
+    const own = shops.filter((b) => !ECONOMY.owners.corp.includes(b.business as string));
+    const corp = shops.find((b) => ECONOMY.owners.corp.includes(b.business as string))!;
+    expect(own.length).toBeGreaterThan(5);
+    const [up, down, steady, top, bottom] = own;
+    // A week on the books: a thriving one, a struggling one, a steady one off the usual, and two at their bounds; cash enough that nobody's paid short.
+    const week = (b: (typeof own)[number], net: number, wage?: number) => {
+      const till = tillOf(c.state.tills, b.id);
+      till.days = Array(7).fill(net / 7);
+      till.cash = 1_000_000;
+      if (wage) till.wage = wage;
+    };
+    week(up!, 1_000_000);
+    week(down!, -7000);
+    week(steady!, 0, 1.2);
+    week(top!, 1_000_000, drift.wages.most);
+    week(bottom!, -7000, drift.wages.least);
+    week(corp, 1_000_000);
+    day(c, payday);
+    expect(c.state.tills[up!.id]?.wage).toBeCloseTo(1 + drift.wages.up);
+    expect(c.state.tills[down!.id]?.wage).toBeCloseTo(1 - drift.wages.down);
+    expect(c.state.tills[steady!.id]?.wage).toBeCloseTo(1 + 0.2 * (1 - drift.wages.settle));
+    expect(c.state.tills[top!.id]?.wage).toBe(drift.wages.most);
+    expect(c.state.tills[bottom!.id]?.wage).toBe(drift.wages.least);
+    expect(c.state.tills[corp.id]?.wage).toBeUndefined();
+    // The next payday pays at it: a hand who doesn't shop that day is paid what they're owed times it.
+    const next = payday + 7;
+    for (let d = payday + 1; d < next; d++) day(c, d);
+    const till = tillOf(c.state.tills, up!.id);
+    till.cash = 1_000_000;
+    const wage = wageOf(till);
+    const boss = bossOf(up!, c.population, staffOf(up!.id));
+    const hands = staffOf(up!.id).filter((p) => p !== boss && indexOf(c, p) % 7 !== weekdayOf(next));
+    const before = new Map(hands.map((p) => [p.id, money(c, p)]));
+    day(c, next);
+    const got = hands.map((p) => money(c, p) - (before.get(p.id) as number));
+    expect(got.some((g, i) => g === Math.round(ledger(c, hands[i]!).pay * wage)), `${wage}: ${got}`).toBe(true);
+  });
+
+  it("moves a block's rent on rent day: up where every tenant paid, down where too many fell short, held in between, between its bounds; and charges it", () => {
+    const drift = ECONOMY.drift!;
+    const c = city(seeds[0] as string);
+    const rentDay = nextDay(T, ECONOMY.rentDay);
+    c.state.lets = {
+      paid: { level: 1, paid: 6, short: 0 },
+      behind: { level: 1.1, paid: 2, short: 3 },
+      some: { level: 1.2, paid: 9, short: 1 },
+      top: { level: drift.rents.most, paid: 4, short: 0 },
+      usual: { level: 1, paid: 19, short: 1 },
+    };
+    day(c, rentDay);
+    const lets = c.state.lets;
+    expect(lets.paid).toEqual({ level: 1 + drift.rents.up, paid: 0, short: 0 });
+    expect(lets.behind?.level).toBeCloseTo(1.1 * (1 - drift.rents.down));
+    expect(lets.some).toEqual({ level: 1.2, paid: 0, short: 0 });
+    expect(lets.top?.level).toBe(drift.rents.most);
+    expect(lets.usual, 'back at the usual: nothing kept').toBeUndefined();
+    // A tenant with nothing pays nothing, and owes the week's rent at its level (one whose own day isn't payday).
+    const tenant = c.population.people.find((p) => {
+      const l = ledger(c, p);
+      return p.home && l.rent > 0 && l.landlord && l.landlord !== p.id && indexOf(c, p) % 7 !== ECONOMY.payday;
+    })!;
+    const d = nextDay(rentDay + 1, indexOf(c, tenant) % 7);
+    for (let k = rentDay + 1; k < d; k++) day(c, k);
+    c.state.lets[tenant.home!] = { level: 1.2, paid: 0, short: 0 };
+    tenant.eddies = 0;
+    (c.state.savings ??= {})[tenant.id] = 0;
+    delete c.state.arrears?.[tenant.id];
+    day(c, d);
+    expect(c.state.arrears?.[tenant.id]).toBe(Math.round(ledger(c, tenant).rent * 1.2));
+    expect(c.state.lets[tenant.home!]?.short).toBeGreaterThanOrEqual(1);
+  });
+
+  it("pays the player's shifts at the till's pay, rents them a unit at the block's rent, and shows both on the Market row", () => {
+    const DAY = 86_400_000;
+    const NOW = Date.UTC(2077, 9, 12, 13, 0);
+    const seed = seeds[0] as string;
+    const world = generateWorld(seed, CITY);
+    const rules: GameRules = { ...RULES, home: HOME };
+    const game = new Game(world, rules);
+    game.start(NOW - DAY);
+    const owners = ownersOf(world, game.population, ECONOMY, seed);
+    const shop = world.buildings.find((b) => b.business && b.category === 'food' && !owners.corp.has(b.business) && game.population.people.some((p) => p.job.building === b.id))!;
+    const block = world.buildings.find((b) => b.kind === 'apartments' && b.district === shop.district)!;
+    const save = readSave(JSON.parse(JSON.stringify(createSave(seed, game, GENERATOR_VERSION, NOW - DAY)))) as SaveData;
+    const at = (where: typeof shop, moved: boolean) => {
+      const life = JSON.parse(JSON.stringify(save.life)) as LifeState;
+      // The district's storefronts paying a fifth over the usual, and its blocks charging it.
+      if (moved) {
+        for (const b of world.buildings.filter((b) => b.district === shop.district)) {
+          if (b.business) tillOf(life.tills, b.id).wage = 1.2;
+          if (b.kind === 'apartments' || b.kind === 'megabuilding') (life.lets ??= {})[b.id] = { level: 1.2, paid: 0, short: 0 };
+        }
+      }
+      const progress = progressFor(world, { ...save, life, where: { x: where.x, y: where.y, place: null, station: null, building: where.id }, inside: where.id, room: 'main', jobs: [{ building: shop.id, rung: 0, trust: 0, shifts: 0, lastShiftDay: -1 }] }, GENERATOR_VERSION) as Progress;
+      const g = new Game(generateWorld(seed, CITY), rules, progress);
+      g.start(NOW - DAY + 1000);
+      return g;
+    };
+    const usual = at(shop, false);
+    const moved = at(shop, true);
+    expect(moved.jobsStatus(NOW - DAY + 1000)[0]!.pay).toBe(Math.round((usual.jobsStatus(NOW - DAY + 1000)[0]!.pay) * 1.2));
+    const offer = (g: Game) => g.homeOffer();
+    const plain = offer(at(block, false));
+    const dearer = offer(at(block, true));
+    expect(plain?.kind === 'rent' && dearer?.kind === 'rent' && dearer.rent > plain.rent).toBe(true);
+    // The district's pay and rents against the usual, as the city's own days have moved them: higher with the till and the block put up.
+    const market = at(block, true).market(NOW - DAY + 1000);
+    const was = at(block, false).market(NOW - DAY + 1000);
+    expect(market.rent).toBeGreaterThan(0.15);
+    expect(market.pay).toBeGreaterThan(0.15);
+    expect(Math.abs(was.rent)).toBeLessThan(0.05);
+  });
+
   it('counts how often something comes off in a week by one roll', () => {
     expect(timesIn(7, 0, 0.99)).toBe(0);
     expect(timesIn(7, 1, 0)).toBe(7);
@@ -417,7 +539,7 @@ describe('the economy', () => {
       for (const b of shops) {
         const staff = c.population.people.filter((p) => p.job.building === b.id && p.diedOn === undefined);
         const t = c.tier({ kind: 'building', id: b.id });
-        healths[healthOf(c.state.tills[b.id], staffCostOf(staff, bossOf(b, c.population, staff), t, ECONOMY) + ECONOMY.rent[t] * 7, ECONOMY)]++;
+        healths[healthOf(c.state.tills[b.id], staffCostOf(staff, bossOf(b, c.population, staff), t, ECONOMY, wageOf(c.state.tills[b.id])) + ECONOMY.rent[t] * 7, ECONOMY)]++;
       }
       expect(healths.thriving, seed).toBeGreaterThan(0);
       expect(healths.steady, seed).toBeGreaterThan(0);

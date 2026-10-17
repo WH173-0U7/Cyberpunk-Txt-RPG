@@ -163,6 +163,13 @@ own.
   drop-down has a **Market** row (what's dearer or cheaper than usual in the district) and a
   **News** row, and headlines turn up in the feed ("Food short in Watson: bare shelves, and
   prices up."); people complain about what they can't get, and the bare shelves at work.
+- **Pay and rent move**: a storefront that's thriving pays its people a little more every payday
+  (up to a quarter over), one that's struggling a little less (down to 15% under), and a steady
+  one drifts back to the usual; a corp's chains keep their pay as it's set. A block whose tenants
+  all paid puts its rent up 1% a week (up to a quarter over); one where more than a tenth fell
+  behind brings it down 3%. Your shifts pay at the till's level, your unit's rent follows its
+  block (the landlord leaves a note when it moves), the **Market** row says how pay and rents in
+  the district stand against the usual, and people talk about a raise, a pay cut or the rent.
 - **A home of your own**: at the door of an apartment block or a megabuilding, **Rent** a unit
   nobody lives in for twice what a tenant pays a head there, a week up front to whoever owns the
   building (one of the neighborhood's landlords, or a corp); or **Squat** an abandoned building

@@ -173,6 +173,10 @@ export const ECONOMY: EconomyRules = {
       prices: ['{place} is on {level} prices now.', 'New prices at {place}: {level}.'],
     },
   },
+  drift: {
+    wages: { up: 0.02, down: 0.03, settle: 0.25, least: 0.85, most: 1.25 },
+    rents: { up: 0.01, down: 0.03, behind: 0.1, least: 0.8, most: 1.25 },
+  },
   trade: {
     thriving: "Packed; the till hasn't stopped all week.",
     steady: 'Trade is steady.',
