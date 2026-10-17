@@ -1,4 +1,4 @@
-import { economyDay, healthOf, staffCostOf, type EconomyRules, type Till } from './economy';
+import { economyDay, healthOf, staffCostOf, type EconomyRules, type Till, type Vice } from './economy';
 import type { Quality } from './food';
 import { bossOf } from './jobs';
 import { drawnTo, heartOf, INVERSE, leastStaff, personById, seatRota, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
@@ -18,8 +18,8 @@ import type { Building, World } from './types';
  * for good (eddies, who hates whom, who is tied to whom and how, who works where, who runs
  * with which gang, who is laid up, who is gone), so the city the player comes back to has
  * moved on; and the people talk about it.
- * Under it all the eddies move (`economy.ts`): payday, evenings out, the tills, the gangs'
- * cut. On top of that, wherever the player is, the people there are seen with each other: a couple
+ * Under it all the eddies go round (`economy.ts`): pay from tills, payrolls and chests, food,
+ * evenings out and rent, the tills' books, the gangs' cut. On top of that, wherever the player is, the people there are seen with each other: a couple
  * sharing a table, a crew holding court, a ganger leaning on the cook. Everything here is
  * drawn from the seed and the day, so a city's days are the same whenever they're lived
  * through; the numbers are in `src/data/life.ts`.
@@ -121,6 +121,10 @@ export interface LifeState {
   /** Every storefront's books, by building id; every gang's treasury. */
   tills: Record<string, Till>;
   treasuries: Record<string, number>;
+  /** What's in each person's account (missing in a save from before: started afresh from their pay); the rent they owe; what's been spent at each district's places of its own since its street was paid. */
+  savings?: Record<string, number>;
+  arrears?: Record<string, number>;
+  street?: Record<string, number>;
   /** The job someone has now, where it isn't what they started with (taken on somewhere, let go, a gang's), and the day it changed. */
   jobs: Record<string, { role: string; building: string | null; day: number }>;
   /** The gang someone has joined. */
@@ -195,6 +199,10 @@ export function applyLife(population: Population, state: LifeState): void {
   state.made = state.made.filter((t) => ids.has(t.from) && ids.has(t.to));
   state.broken = state.broken.filter((key) => key.split('|').every((id) => ids.has(id)));
   for (const key of ['eddies', 'chips', 'hurt', 'hates', 'jobs', 'gangs', 'dead'] as const) for (const id of Object.keys(state[key])) if (!ids.has(id)) delete state[key][id];
+  for (const key of ['savings', 'arrears'] as const) {
+    const record = state[key];
+    if (record) for (const [id, amount] of Object.entries(record)) if (!ids.has(id) || !Number.isFinite(amount)) delete record[id];
+  }
   for (const key of Object.keys(state.since)) if (!key.split('|').every((id) => ids.has(id))) delete state.since[key];
   // What anyone holds against someone the city no longer has goes with them; so does anything not shaped like a grudge.
   if (state.held) {
@@ -245,14 +253,14 @@ export function applyLife(population: Population, state: LifeState): void {
 
 /**
  * Lives the days since the last one lived, up to today (and at most `catchUpDays` of them),
- * changing the people as it goes: the day's eddies first (wages, evenings out, the tills),
- * then what happens between people. `base` is what everyone started with in eddies, which
- * sets their wages; `tier` is the tier a place runs at, for what an evening there costs and
+ * changing the people as it goes: the day's eddies first (pay, food, evenings out, rent, the
+ * tills), then what happens between people. `base` is what everyone started with in eddies,
+ * the cash they keep on them; `tier` is the tier a place runs at, for what's spent there and
  * how a storefront is doing; `turf` is who collects in a district, and their shares, for the
- * gangs' cut; `content` is the people data, for the roles a hire or a recruit takes. Returns
- * the events of those days.
+ * gangs' cut; `content` is the people data, for the roles a hire or a recruit takes; `vice` is
+ * what a habit costs someone a day and which gang it goes to. Returns the events of those days.
  */
-export function liveUntil(world: World, population: Population, state: LifeState, rules: LifeRules, base: ReadonlyMap<string, number>, today: number, seed: string, tier: (spot: Spot) => Quality, turf: (district: string) => Array<[string, number]>, content: PeopleContent, spokenFor: ReadonlySet<string> = new Set()): LifeEvent[] {
+export function liveUntil(world: World, population: Population, state: LifeState, rules: LifeRules, base: ReadonlyMap<string, number>, today: number, seed: string, tier: (spot: Spot) => Quality, turf: (district: string) => Array<[string, number]>, content: PeopleContent, spokenFor: ReadonlySet<string> = new Set(), vice?: (person: Person) => Vice | null): LifeEvent[] {
   if (state.day >= today) return [];
   const from = state.day < 0 ? today - 1 : Math.max(state.day + 1, today - rules.catchUpDays + 1);
   // Everyone's practice counts from the first day the city lived.
@@ -289,7 +297,7 @@ export function liveUntil(world: World, population: Population, state: LifeState
   for (let day = from; day <= today; day++) {
     const rng = createRng(`${seed}:life:${day}`);
     for (const id of Object.keys(state.hurt)) if ((state.hurt[id] as number) < day) delete state.hurt[id];
-    economyDay({ world, population, state, rules: rules.economy, tier, turf, base, seed, day, rng });
+    economyDay({ world, population, state, rules: rules.economy, tier, turf, base, seed, day, ties: (id) => book.web.get(id) ?? [], vice });
     for (const district of Object.keys(world.districts)) happened.push(...liveDay(population, state, rules, district, day, rng, ctx));
     state.day = day;
     // Forgotten day by day, so days caught up on all at once come out as they would have one at a time.

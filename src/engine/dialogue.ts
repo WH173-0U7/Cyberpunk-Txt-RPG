@@ -213,14 +213,17 @@ export function fits(when: When | undefined, speaker: Speaker): boolean {
   if (when.history && !when.history.includes(speaker.history)) return false;
   if (when.eloquence && !when.eloquence.includes(speaker.eloquence)) return false;
   if (when.gang !== undefined && Boolean(speaker.person.gang) !== when.gang) return false;
-  if (when.traits) {
-    for (const [trait, level] of Object.entries(when.traits) as Array<[keyof Traits, 'high' | 'low']>) {
-      const value = speaker.person.traits[trait];
-      if (level === 'high' ? value < 0.6 : value > 0.4) return false;
+  // Checked for every fragment of every pool a line is picked from, so in plain loops that make nothing.
+  const traits = when.traits;
+  if (traits) {
+    for (const trait in traits) {
+      const value = speaker.person.traits[trait as keyof Traits];
+      if (traits[trait as keyof Traits] === 'high' ? value < 0.6 : value > 0.4) return false;
     }
   }
-  if (when.needs?.some((key) => !speaker.vars[key])) return false;
-  if (when.lacks?.some((key) => speaker.vars[key])) return false;
+  const { vars } = speaker;
+  if (when.needs) for (const key of when.needs) if (!vars[key]) return false;
+  if (when.lacks) for (const key of when.lacks) if (vars[key]) return false;
   return true;
 }
 
@@ -232,9 +235,18 @@ export function textOf(line: Line): string {
   return typeof line === 'string' ? line : line.text;
 }
 
+/** A pool's lines as fragments, made once a pool (again if it has grown or shrunk since). */
+const fragmentLists = new WeakMap<Line[], Fragment[]>();
+function fragmentsIn(pool: Line[]): Fragment[] {
+  let list = fragmentLists.get(pool);
+  if (!list || list.length !== pool.length) fragmentLists.set(pool, (list = pool.map(fragmentOf)));
+  return list;
+}
+
 /** One of the fragments that fit, by weight; null when none do. */
 export function pickFragment(pool: Line[], speaker: Speaker, rng: Rng): Fragment | null {
-  const all = pool.map(fragmentOf).filter((f) => fits(f.when, speaker));
+  const all: Fragment[] = [];
+  for (const f of fragmentsIn(pool)) if (fits(f.when, speaker)) all.push(f);
   if (!all.length) return null;
   // Never the same thing twice running: what was just said gives way while anything else fits.
   const recent = speaker.recent;

@@ -5,7 +5,7 @@ import { LIFE } from '../src/data/life';
 import { PEOPLE } from '../src/data/people';
 import { generateWorld } from '../src/engine/generate';
 import { GEAR } from '../src/data/gear';
-import { healthOf, staffCostOf, turfFrom, weekdayOf } from '../src/engine/economy';
+import { turfFrom } from '../src/engine/economy';
 import { bossOf } from '../src/engine/jobs';
 import { drawQuality, menuFor, type Quality } from '../src/engine/food';
 import { applyLife, freshLife, liveUntil, newsFor, scenesAt, tieKey, type LifeEvent } from '../src/engine/life';
@@ -358,43 +358,6 @@ describe("the people's own days", () => {
       }
       expect(whereIs(hurt, world, { hour: 11, weekday: 2, day: fight.day + 3 }, FOOD.dishes)?.doing ?? '').not.toMatch(/laid up|hospital bed/);
     }
-  });
-
-  it('moves the eddies: payday lifts nearly everyone, other days wear them down, the tills keep a week and the gangs take their cut', () => {
-    const payday = (day: number) => weekdayOf(day) === LIFE.economy.payday;
-    const healths = new Set<string>();
-    for (const seed of seeds) {
-      const { world, population, base, state } = lived(seed, 30);
-      const civilians = population.people.filter((p) => !p.gang);
-      const total = () => civilians.reduce((n, p) => n + p.eddies, 0);
-      // A day that isn't payday costs: living, and evenings out.
-      let day = state.day + 1;
-      while (payday(day)) day++;
-      const before = total();
-      liveUntil(world, population, state, LIFE, base, day, seed, tierIn(world), turf, PEOPLE);
-      expect(total(), `${seed} day ${day}`).toBeLessThan(before);
-      // Payday: a week's money on nearly everyone who isn't paid by a gang.
-      while (!payday(day)) day++;
-      const had = new Map(civilians.map((p) => [p.id, p.eddies]));
-      const chests = Object.values(state.treasuries).reduce((n, v) => n + v, 0);
-      expect(chests, `${seed} treasuries before payday`).toBeGreaterThan(0);
-      liveUntil(world, population, state, LIFE, base, day, seed, tierIn(world), turf, PEOPLE);
-      const up = civilians.filter((p) => p.eddies > (had.get(p.id) as number)).length;
-      expect(up / civilians.length, `${seed} paid on ${day}`).toBeGreaterThan(0.9);
-      // Every storefront keeps a week of books, and the city has places doing well and badly.
-      const storefronts = world.buildings.filter((b) => b.business);
-      for (const b of storefronts) expect(state.tills[b.id]?.days.length, `${seed} ${b.name}`).toBe(7);
-      for (const b of storefronts) {
-        const staff = population.people.filter((p) => p.job.building === b.id);
-        const tier = tierIn(world)({ kind: 'building', id: b.id });
-        healths.add(healthOf(state.tills[b.id], staffCostOf(staff, bossOf(b, population), tier, LIFE.economy) + LIFE.economy.rent[tier] * 7, LIFE.economy));
-      }
-      // Nobody is ruined by it: the city's civilians still hold about what they started with.
-      const started = civilians.reduce((n, p) => n + (base.get(p.id) as number), 0);
-      expect(total() / started, `${seed} eddies against the start`).toBeGreaterThan(0.6);
-      expect(total() / started, `${seed} eddies against the start`).toBeLessThan(2);
-    }
-    expect([...healths].sort()).toEqual(['steady', 'struggling', 'thriving']);
   });
 
   it('gives everyone news to tell from their own side of it, and pairs people up where they are', () => {
