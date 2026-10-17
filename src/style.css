@@ -920,6 +920,30 @@ button {
   opacity: 1;
 }
 
+/* Where the player lives: a house, its roof a triangle over a square. */
+.node.is-home .node-mark::before {
+  width: 10px;
+  height: 7px;
+  border-radius: 1px;
+  background: #04050a;
+  transform: translateY(3px);
+}
+.node.is-home .node-mark::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 6px solid #04050a;
+  transform: translateY(-4px);
+}
+.node.is-home:hover .node-mark::before,
+.node.is-home:focus-visible .node-mark::before,
+.node.is-home.is-selected .node-mark::before {
+  transform: translateY(3px) scale(1.25);
+}
+
 /* Where the player works: a briefcase on the building, glowing while a shift there is on. */
 .node.is-work .node-mark::before {
   width: 13px;

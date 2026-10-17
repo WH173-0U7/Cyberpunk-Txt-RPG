@@ -16,6 +16,7 @@ import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
 import { Game, type Description, type MarketView, type PersonStanding, type Presence, streetSpot } from './engine/game';
+import type { HomeView } from './engine/home';
 import { hasRooms, type RoomAccess } from './engine/rooms';
 import type { JobStatus } from './engine/jobs';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
@@ -39,6 +40,7 @@ import { HACKS } from './data/quickhacks';
 import { MEDICAL } from './data/medical';
 import { HOURS } from './data/hours';
 import { ROOMS } from './data/rooms';
+import { HOME } from './data/home';
 import { POLICE } from './data/police';
 import { DEALING } from './data/dealing';
 import type { PoliceView } from './engine/police';
@@ -118,6 +120,8 @@ const place = new PlacePanel(
       bank: $<HTMLButtonElement>('#act-bank'),
       work: $<HTMLButtonElement>('#act-work'),
       deal: $<HTMLButtonElement>('#act-deal'),
+      home: $<HTMLButtonElement>('#act-home'),
+      move: $<HTMLButtonElement>('#act-move'),
     },
     close: $<HTMLButtonElement>('#place-close'),
   },
@@ -165,8 +169,9 @@ const inventory = new Inventory(
     sections: $('#inventory-sections'),
   },
   () => {
-    // It opens on the player head to toe.
-    inventoryPath = [];
+    // It opens on the player head to toe, unless it was opened onto a page of its own.
+    inventoryPath = inventoryOpensAt ? [inventoryOpensAt] : [];
+    inventoryOpensAt = null;
     showInventory();
   },
   {
@@ -178,13 +183,22 @@ const inventory = new Inventory(
       inventoryPath.pop();
       showInventory();
     },
-    onUse: (id, pocket) => use(id, pocket),
+    onUse: (id, pocket) => {
+      if (pocket !== STASH_PAGE) return use(id, pocket);
+      lastActivity = performance.now();
+      game.unstash(id);
+    },
     onUnload: (id) => unload(id),
     onCut: (id, pocket) => {
       lastActivity = performance.now();
       game.cut(id, pocket || undefined);
     },
-    onDrop: (id, pocket) => drop(id, pocket),
+    // At home, what would be dropped goes in the stash.
+    onDrop: (id, pocket) => {
+      if (!game.stash()) return drop(id, pocket);
+      lastActivity = performance.now();
+      game.stashIt(id, pocket || undefined);
+    },
     onWear: (id, pocket) => wear(id, pocket),
     onTakeOff: (id) => {
       lastActivity = performance.now();
@@ -201,6 +215,10 @@ const inventory = new Inventory(
 let inventoryPath: string[] = [];
 /** The inventory's page for the chrome fitted: no pocket has this id. */
 const CHROME_PAGE = ':chrome';
+/** The stash at home, as a page of the inventory. */
+const STASH_PAGE = ':stash';
+/** A page the inventory opens straight onto, once (the stash, from the panel's button). */
+let inventoryOpensAt: string | null = null;
 
 const settings = new Settings(
   {
@@ -620,6 +638,15 @@ function act(id: ActionId): void {
     bank.overlay.show($('#act-bank'));
   } else if (id === 'work') game.work(now);
   else if (id === 'deal') game.walkUp(now);
+  else if (id === 'home') {
+    const offer = game.homeOffer();
+    if (offer?.kind === 'rent' || offer?.kind === 'squat') game.takeHome(now);
+    else if (offer?.kind === 'go') game.goHome(now);
+    else if (offer?.kind === 'stash') {
+      inventoryOpensAt = STASH_PAGE;
+      inventory.overlay.show($('#act-home'));
+    }
+  } else if (id === 'move') game.moveOut(now);
   else if (id === 'pick-1' || id === 'pick-2' || id === 'pick-3') {
     const at = Number(id.slice(-1)) - 1;
     // Officers on the player come before a collector, a collector before a buyer, a buyer before anything on a shift.
@@ -960,7 +987,7 @@ function insideView(building: Building): PanelView {
     const blurbs = ROOMS.blurbs[room.kind];
     const blurb = blurbs.length ? blurbs[hashOf(`${building.id}:${room.id}`) % blurbs.length]! : '';
     const yours = game.rented(now)?.room === room.id;
-    const description = [blurb, yours ? `It's yours till ${formatClock(game.rented(now)!.until)}.` : ''].filter(Boolean).join(' ');
+    const description = [blurb, yours ? `It's yours till ${formatClock(game.rented(now)!.until)}.` : '', homeNote(now)].filter(Boolean).join(' ');
     return {
       mode: 'inside',
       kicker: `Inside · Block ${building.block}`,
@@ -968,7 +995,7 @@ function insideView(building: Building): PanelView {
       meta: [room.floor > 1 ? `Floor ${room.floor}` : '', building.kindLabel].filter(Boolean).join(' · '),
       description,
       // Out back on a shift's day, the shift can be worked from here too.
-      actions: [peopleAction(count), ...(room.kind === 'back' && job?.here ? [workAction(job, now)] : [])],
+      actions: [peopleAction(count), ...(room.kind === 'back' && job?.here ? [workAction(job, now)] : []), ...homeActions()],
       closable: true,
       closeLabel: `Leave ${building.name}`,
       announce: `${room.name}, in ${building.name}. ${description} ${count ? `${count} people here.` : ''} Leave with the corner button.`,
@@ -985,7 +1012,7 @@ function insideView(building: Building): PanelView {
   const shut = closed ? (closed.down ? 'Closed down. The place has gone under, and nobody works here any more.' : `Closed. The shutters are half down and nobody's behind the counter. ${closed.opensAt ? `Someone's in again at ${formatClock(closed.opensAt)}.` : 'Nobody works here any more.'}`) : '';
   // How the place is doing on its books, after what it sells.
   const trade = menu || closed ? ` ${game.trade(building).line}` : '';
-  const description = (barred ?? (shut || (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut, and a credchip in your name is banked.' : here ? 'People live and work in here.' : 'Nobody around right now.'))) + trade;
+  const description = (barred ?? (shut || (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut, and a credchip in your name is banked.' : here ? 'People live and work in here.' : 'Nobody around right now.'))) + trade + (homeNote(now) ? ` ${homeNote(now)}` : '');
   return {
     mode: 'inside',
     kicker: `Inside · Block ${building.block}`,
@@ -997,6 +1024,7 @@ function insideView(building: Building): PanelView {
       ...(menu ? [barred ? { id: 'menu' as const, label: menu.kind === 'gear' ? 'Shop' : 'Menu', sub: "Won't serve you", disabled: true } : menuAction(menu)] : []),
       ...(game.bank() ? [{ id: 'bank' as const, label: 'Bank', sub: `€$ ${game.wallet.account} banked` }] : []),
       ...(closed ? [{ id: closed.what === 'bank' ? ('bank' as const) : ('menu' as const), label: 'Closed', sub: opens, disabled: true }] : []),
+      ...homeActions(),
       // The player's shift here: what it pays and costs, or why not now (masked, or too tired, it's refused).
       ...(shift ? [workAction(shift, now)] : []),
     ],
@@ -1005,6 +1033,38 @@ function insideView(building: Building): PanelView {
     closeLabel: `Leave ${building.name}`,
     announce: `Inside ${building.name}. ${description} ${here ? `${here} people here.` : ''} Leave with the corner button.`,
   };
+}
+
+/** What a home's buttons offer here: a unit to rent at a block's door, a corner to squat, the way up to the player's own unit, or (in it) the stash and moving out. */
+function homeActions(): PanelAction[] {
+  const offer = game.homeOffer();
+  if (!offer) return [];
+  if (offer.kind === 'rent') return [{ id: 'home', label: 'Rent', sub: `€$ ${offer.rent} a week` }];
+  if (offer.kind === 'squat') return [{ id: 'home', label: 'Squat', sub: 'No rent, no bed' }];
+  if (offer.kind === 'go') return [{ id: 'home', label: 'Home', sub: offer.room }];
+  const squat = game.home(Date.now())?.squat;
+  return [
+    { id: 'home', label: 'Stash', sub: offer.count ? `${offer.count} ${offer.count === 1 ? 'thing' : 'things'}` : 'Empty' },
+    { id: 'move', label: squat ? 'Leave' : 'Vacate', sub: squat ? 'Walk away' : 'Keys back' },
+  ];
+}
+
+/** The Home row: where the player lives and how the rent stands, or that they live nowhere. */
+function homeLine(home: HomeView | null): string {
+  if (!home) return 'Nowhere: rent a unit at a block, or squat';
+  const stash = home.stashed ? ` · ${home.stashed} in the stash` : '';
+  if (home.squat) return `Squatting at ${home.building.name} · no bed${stash}`;
+  const due = home.dueIn === 0 ? 'due today' : `due in ${home.dueIn} ${home.dueIn === 1 ? 'day' : 'days'}`;
+  return `${home.room}, ${home.building.name} · €$ ${home.rent}/wk ${due}${home.owed ? ` · €$ ${home.owed} behind` : ''} · bed${stash}`;
+}
+
+/** A word on the player's home, where they're in it: the rent and when it's due, or how far behind; a squat's lack of a bed and a lock. */
+function homeNote(now: number): string {
+  const home = game.home(now);
+  if (!home?.atHome) return '';
+  if (home.squat) return 'Home, of a sort: no bed, no lock, and somebody always knows what you left.';
+  const due = home.dueIn === 0 ? 'today' : home.dueIn === 1 ? 'tomorrow' : `in ${home.dueIn} days`;
+  return home.behind ? `Home, for now: ${home.behind} ${home.behind === 1 ? 'week' : 'weeks'} behind on the rent (€$ ${home.owed} owed). The next ${home.rent} €$ is due ${due}.` : `Home. A bed, a door that locks, and ${home.rent} €$ due ${due}.`;
 }
 
 /** The people button: how many are here. */
@@ -1140,6 +1200,8 @@ function showBank(): void {
 function showInventory(): void {
   const { grams, pockets } = game.carry();
   const items = game.inventory;
+  // At home, the stash: what's dropped goes in it, and it's a page of its own.
+  const stash = game.stash();
   const order = Object.keys(ITEM_KINDS);
   const byKind = (a: Item, b: Item) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.name.localeCompare(b.name);
   const tier = (p: { brand?: string; style?: PocketLoad['style']; quality?: Quality } | undefined) => (p ? [p.brand, p.style ? GEAR.styleLabels[p.style] : '', p.quality ? GEAR.labels[p.quality] : ''].filter(Boolean).join(' · ') : '');
@@ -1154,6 +1216,7 @@ function showInventory(): void {
     cut: Boolean(GEAR.drugs[item.id]) && item.kind === 'consumable' && game.canCut(item.id, item.in) === null,
     weight: formatGrams(item.count * itemGrams(item, GEAR, FOOD.dishes)),
     detail: itemDetail(item, tier),
+    ...(stash ? { drop: 'Stash' } : {}),
   });
   // What a new player comes dressed in stays on (it gets swapped); anything else worn, a hat or face wear, can come off.
   const required = new Set(GEAR.start.map((p) => GEAR.kinds[p.kind]?.slot));
@@ -1173,12 +1236,26 @@ function showInventory(): void {
     };
   };
   // What the player is looking into, if it's still there; else back out to themselves.
-  while (inventoryPath.length && inventoryPath.at(-1) !== CHROME_PAGE && !pockets.some((p) => p.id === inventoryPath.at(-1))) inventoryPath.pop();
+  while (inventoryPath.length && inventoryPath.at(-1) !== CHROME_PAGE && !(stash && inventoryPath.at(-1) === STASH_PAGE) && !pockets.some((p) => p.id === inventoryPath.at(-1))) inventoryPath.pop();
   const open = inventoryPath.length ? pockets.find((p) => p.id === inventoryPath.at(-1)) : undefined;
   const chrome = game.chrome();
   let page: InventoryView['page'];
   if (inventoryPath.at(-1) === CHROME_PAGE) {
     page = chromePage();
+  } else if (stash && inventoryPath.at(-1) === STASH_PAGE) {
+    page = {
+      kind: 'pocket',
+      id: STASH_PAGE,
+      name: 'Stash',
+      sub: game.home(Date.now())?.room ?? '',
+      note: 'Kept here, off you: no robber or search finds it. Take out what you need.',
+      load: `${stash.slots}/${stash.maxSlots} slots · ${formatGrams(stash.grams, true)} / ${formatGrams(stash.maxGrams, true)}`,
+      over: false,
+      back: 'On you',
+      items: [...stash.items].sort(byKind).map((item) => ({ ...view({ ...item, in: STASH_PAGE }), use: 'Take', unload: false, wear: false, cut: false, drop: false })),
+      inside: [],
+      figures: [],
+    };
   } else if (!open) {
     const { worn, bags } = outfit(pockets, GEAR);
     const load = (id: string | undefined) => (id ? pockets.find((p) => p.id === id) : undefined);
@@ -1189,6 +1266,19 @@ function showInventory(): void {
         return { label: GEAR.slotLabels[slot], garment: garment ? row(garment) : null };
       }),
       bags: bags.map((b) => load(b.id)).filter((b): b is PocketLoad => Boolean(b)).map(row),
+      ...(stash
+        ? {
+            stash: {
+              id: STASH_PAGE,
+              name: 'Stash',
+              sub: game.home(Date.now())?.room ?? '',
+              detail: `${stash.slots}/${stash.maxSlots} slots`,
+              weight: formatGrams(stash.grams),
+              over: false,
+              opens: true,
+            },
+          }
+        : {}),
       chrome: {
         id: CHROME_PAGE,
         name: chrome.fitted.length ? `${chrome.fitted.length} ${chrome.fitted.length === 1 ? 'implant' : 'implants'}` : 'None fitted',
@@ -1376,6 +1466,8 @@ function showStatus(now: number): void {
   const jobs = game.jobsStatus(now);
   // Where the player works, on the map; lit while a shift there is on.
   map.setWork(jobs.map((j) => ({ id: j.building.id, name: j.building.name, open: j.open })));
+  const home = game.home(now);
+  map.setHome(home ? { id: home.building.id, name: home.building.name } : null);
   // A shift open somewhere else: how far, on foot.
   const due = jobs.find((j) => j.open && !j.here);
   const away = due ? walkTo(due.building.id, now) : 0;
@@ -1400,6 +1492,7 @@ function showStatus(now: number): void {
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
     { label: 'Market', value: marketLine(market) },
     ...(market.news[0] ? [{ label: 'News', value: market.news.slice(0, 2).map((n) => `${n.text} (${n.ago})`).join(' · ') }] : []),
+    { label: 'Home', value: homeLine(home), ...(home?.behind ? { tone: home.behind >= HOME.warnAt ? ('bad' as const) : ('warn' as const) } : {}) },
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
     ...(jobs.length ? jobs.map((j) => ({ label: j.side ? 'Side gig' : 'Work', value: `${j.rung.title} at ${j.building.name} · ${formatDays(j.days)} ${j.hours[0]}–${j.hours[1]}h${j.owed ? ` · ${j.owed} €$ owed` : ''} · ${j.shifts} ${j.shifts === 1 ? 'shift' : 'shifts'}${j.next ? ` · trust ${j.trust}, ${j.next.title.toLowerCase()} at ${j.next.at}` : ' · top of the ladder'} · trade ${game.trade(j.building).health} · ${j.perks.join(', ')}` })) : [{ label: 'Work', value: 'No job' }]),
     ...(dealer && (deal || dealer.level > 1 || dealer.xp > 0) ? [{ label: 'Dealing', value: `Lv ${dealer.level} · ${dealer.xp}/${dealer.xpToNext} XP` }] : []),
@@ -1871,6 +1964,13 @@ function wire(g: Game): void {
     queueSave();
   });
 
+  g.events.on('homeChanged', () => {
+    if (inventory.overlay.isOpen) showInventory();
+    if (rooms.overlay.isOpen) showRooms();
+    if (!target && !g.currentTrip) refresh();
+    queueSave();
+  });
+
   g.events.on('jobChanged', () => {
     if (people.overlay.isOpen) showPeople();
     if (!target && !g.currentTrip) refresh();
@@ -1906,7 +2006,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, police: POLICE, join: JOIN, dealing: DEALING }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, police: POLICE, join: JOIN, dealing: DEALING }, progress);
   wire(game);
   map.setWorld(world);
   try {

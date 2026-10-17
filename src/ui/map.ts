@@ -18,6 +18,7 @@ export interface WorkPin {
 
 /** The work badge's color: the yellow of the signs. */
 const WORK_COLOR = '#ffd84d';
+const HOME_COLOR = '#5ef1ff';
 
 /** Room around the edge of the map so markers don't touch the frame. */
 const PAD = 14;
@@ -104,6 +105,8 @@ export class CityMap {
   private work: WorkPin[] = [];
   /** The place the player deals from, if they deal. */
   private corner: string | null = null;
+  /** Where the player lives (null: nowhere). */
+  private homePin: { id: string; name: string } | null = null;
   private workKey = '[]';
   private preview: Preview = { path: null, stations: [] };
   private trip: Trip | null = null;
@@ -220,6 +223,13 @@ export class CityMap {
   setCorner(id: string | null): void {
     if (id === this.corner) return;
     this.corner = id;
+    this.render();
+  }
+
+  /** Marks where the player lives (null: nowhere). Redrawn only when it changes. */
+  setHome(pin: { id: string; name: string } | null): void {
+    if (pin?.id === this.homePin?.id) return;
+    this.homePin = pin;
     this.render();
   }
 
@@ -941,6 +951,19 @@ export class CityMap {
         else this.handlers.onSelect({ kind: 'building', id: pin.id });
       });
       node.setAttribute('aria-label', `Work: ${pin.name}${pin.open ? ', a shift is on' : ''}`);
+      node.setAttribute('aria-pressed', String(picked));
+      markers.push(node);
+    }
+    // Where the player lives: tap to pick it, and again to go.
+    const home = this.homePin ? this.buildings.get(this.homePin.id) : undefined;
+    if (home && this.homePin) {
+      const pin = this.homePin;
+      const picked = this.target?.kind === 'building' && this.target.id === pin.id;
+      const node = this.marker(`home:${pin.id}`, pin.name, this.project({ x: home.x + home.w / 2, y: home.y + home.h / 2 }), HOME_COLOR, ['is-home', picked ? 'is-selected' : ''], undefined, () => {
+        if (picked) this.handlers.onGo();
+        else this.handlers.onSelect({ kind: 'building', id: pin.id });
+      });
+      node.setAttribute('aria-label', `Home: ${pin.name}`);
       node.setAttribute('aria-pressed', String(picked));
       markers.push(node);
     }
