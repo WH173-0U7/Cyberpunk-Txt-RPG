@@ -464,8 +464,8 @@ it needs no generator bump. The pieces:
   change; `levelsOf(id)` reads them. How someone strikes the
   player is on their card (`Description.fight`, plain to see, and `talk`, once they've talked
   `reads.talks` times; the Profile's Fighting and Talking rows, by `readOf` and `reads`).
-- `src/engine/dialogue.ts` puts lines together from fragments in `src/data/dialogue.ts`
-  (our own words; slang from the wiki's Streetslang page, by voice through the `lexicon`).
+- `src/engine/dialogue.ts` puts lines together from fragments in `src/data/dialogue.ts` and
+  `src/data/chat.ts` (the conditions they're picked by shared from `src/data/when.ts`; our own words; slang from the wiki's Streetslang page, by voice through the `lexicon`).
   A `Speaker` is everything a line is picked and filled by (voice, mood, stance, history,
   the player's eloquence, `vars`); `Game.speakerFor` builds it. `compose` adds an opener and
   an aside by how chatty someone is; `fits` is the one place conditions are checked. New
@@ -776,6 +776,63 @@ it needs no generator bump. The pieces:
   whose choices (`Picker`) unfold only while open; keep new things to do with a person
   behind a command, not as another row, and new things to know on the Profile tab. Lines
   a person says use the `talk` tone, which the feed skips while the card is open.
+
+## Conversations
+
+Talking is a conversation (`src/engine/chat.ts`, the numbers `SOCIETY.chat`, `ChatRules`;
+without them, talking is one exchange, as it was):
+
+- `Game.talk(id, now, approach)` is the opening, as it always was; a way in that went down well
+  enough (not a grievance aired, a grudge's brush-off, a way in they disliked, or a plain chat they
+  had nothing for), with them in the mood (`interestOf`: their chattiness and warmth, how they feel
+  about the player, what they're doing, how they took the way in), leaves a `Chat` in `Game`'s
+  private `chatState` (not saved). `Game.chatWith(id, now)` is what can be said next (`movesFor`:
+  `more`, `agree` once there's something to agree with, `share`, another `joke` or `flirt` when
+  that's how it started, `comfort` after asking how they're holding up or when they're grieving or
+  broke, `holo` face to face while the player hasn't theirs, and `bye`), each with its label;
+  `Game.reply(id, move, now)` is a turn. A turn: the player's line (`LINES.chat.moves`, the way in's
+  for a joke or a flirt), how they take it (`SOCIETY.reactions.reply`, a joke or flirt by
+  `approach`, less `samePenalty` for the same thing again past `free`), what they say (`more`: more
+  of their topic, or another, never what they've said in the conversation, else `dry`; `agree`,
+  `share`, `comfort`: `LINES.chat` liked/flat/disliked, and glad of it, sometimes something of
+  theirs back), what they let slip learned like a chat's (`learnTopic`), rapport (`replyRapport`,
+  the good of it fading a turn), charisma, spark for a flirt, and their interest (`interestAfter`);
+  out of it, or at `turns`, they wrap it up (`windDown`, `LINES.chat.wrap`). `bye` is their goodbye
+  (`good` after a talk that went well), and leaving on one, they may give their holo unasked
+  (`holo.offerAt`). `holo` is an ask (`Asked` `holo`, easier by `holo.interest` a point of interest
+  left; never to a mask; the one the player is seeing always).
+- A conversation is over when it's left `idleMinutes`, the player walks off (`chatWhere`), a fight
+  or the NCPD starts, or they die (`chatOpen`). A new `talk` starts over.
+- The card shows a conversation's replies in the picker while nothing else is unfolded
+  (`PersonCardView.chat`, `data-reply`); Talk toggles to the ways in.
+
+## The holophone
+
+Everyone has a holophone, the 2077 phone (the wiki's holophone, neuralware reached through the
+neuroport), and the player has the holos of whoever gave theirs (`src/engine/phone.ts`, the numbers
+and narration `PHONE` in `src/data/phone.ts`, `rules.phone`; the tests' `RULES` leave it out):
+
+- `PhoneState` (saved as `phone`, read by `phoneOf`): `contacts` (`Contact`: since, the last word
+  either way, the last call, texts waiting on an answer), `threads` (`Text`, `keep` a thread),
+  `due` (texts on their way: answers, a word after a missed call, ones they send first), `unread`.
+  A holo comes with the name on it (`addContact`); the one the player starts seeing gives theirs.
+- `Game.call(id, now)` (`CallResult`): a dead number, turned down (hostile or cold), rung out
+  (`answerOdds`: by stance, at work, late, the one the player is seeing, again too soon, which
+  costs rapport; asleep, never), when they may text back (`reply.missed`), or picked up: their
+  `pickup` line and what's on their mind, half a chat's rapport, and a conversation with `remote`
+  set (no holo move; goodbye is Hang up; the speaker's `holo` var, and nothing of where the player
+  is). `Game.text(id, kind, now)` (`TextKind`: hey, how, word, joke, miss to the one the player is
+  seeing): the player's line in the thread, and by `replyOdds` an answer due in `reply.minutes`, put
+  together now (smallTalk by kind, a joke's reaction, `LINES.phone`), worth `reply.worth` of the
+  same face to face; past `reply.waiting` unanswered, each costs `pester`.
+- `phoneTick` (from `tick`): what's due lands (held an hour at a time by anyone asleep, dropped by
+  the dead), into the thread, unread, on the feed; and every `reach.everyMinutes` a contact may
+  text first (`reachOdds`, never within `quietHours` of the last word): the one the player is
+  seeing (`sweet`), news, or a check-in. A warning (`warnings`) from a contact lands in their thread.
+- The UI: the holo button in the map's head (`#phone-toggle`, **H**, the unread count on it),
+  `src/ui/phone.ts` (`Phone`): the contacts, the latest word first, and a thread with the texts to
+  send, **Call** and **Card**; a call picked up opens their card in the People overlay
+  (`openCard`), where it's a conversation; the Profile has a Holo row.
 
 ## Fighting
 
@@ -1519,8 +1576,10 @@ everything else about the player: experience, charisma, the fighting skills and 
 job, the condition, the mask, every reputation, the map count, the weather, the date, and
 last the **Settings** link (the drop-down's `foot`, which `StatusPanel.render` keeps at the
 bottom). Anything new the player should know about themselves goes in there as a row, not
-on the header, the map's head (the save light and the one button: the inventory, with the
-cash on it) or the People overlay's strip (only what people here can see: the mask). The
+on the header, the map's head (the save light and the two buttons: the holo, with what's
+unread on it, and the inventory, with the cash on it) or the People overlay's strip (only what
+people here can see: the mask). Who they made themselves is its first row (**You**: name,
+lifepath, look). The
 map has no footer; it zooms by pinch, scroll or a tap on a block, and its only button, the
 one that finds the player (`CityMap`'s `updateControls`), shows while they're off the
 screen. Where the player works is a pin on the map, not a button (see Work). Buttons go away when they can, not into a corner.
@@ -1545,11 +1604,47 @@ panel's buttons share their row (`flex: 1`) with one-line labels, so keep subtit
 ## Settings
 
 `src/ui/settings.ts` is the settings overlay: **You** (the pronouns the player goes by, three
-choices, `onPronouns`), then the save: restart this city, or erase the save and start a new
-one, each asking first. New options go in it as their own groups. Opened from the foot of the
-status drop-down, it hands focus back to the drop-down's toggle. A save that reads but won't
-play starts the same city over (`boot` in `main.ts`), and `readSave` drops any record inside
-a save that isn't one, rather than trip over it.
+choices, `onPronouns`), then the save: back to the main menu (`onMenu`, the game kept), restart
+this city (the same character, from the start), or erase the save (back to the menu to make
+someone new), the last two asking first. New options go in it as their own groups. Opened from
+the foot of the status drop-down, it hands focus back to the drop-down's toggle. `readSave`
+drops any record inside a save that isn't one, rather than trip over it.
+
+## The main menu and the character builder
+
+The game opens on the title screen (`src/ui/menu.ts`, `MainMenu`), over everything (the rest of
+the page `inert`): **Continue**, when there's a saved game (begun behind the menu by `boot` in
+`main.ts`, its line "name · lifepath · neighborhood, district"), and **New game**, the builder.
+Without a save, nothing is begun until the builder is done (`game` is unset: `tick`, the keys
+and the ambient lines wait for it). A save that won't play, or one from before the city
+changed, leaves its city in `freshSeed` for the next new game, as a shared link's seed does;
+otherwise a new game is a new city. Dying (`flatlined`) or erasing the save is `gameOver`: the
+save cleared, nothing more saved (`over`), the menu saying why.
+
+- `src/engine/character.ts` is the engine's shapes (`Character`: name, pronouns, `Lifepath`,
+  `Look`; `CharacterRules`), `validCharacter`, `lookWords` (a look as a line puts it: "cyan
+  mohawk", "chrome optics", "scar") and `nameFor` (a name from the pools of the people where the
+  lifepath starts); `src/data/character.ts` is the content (`CHARACTER`, on `rules.character`).
+  The lifepaths are the wiki's three, each starting where its prologue does (the Streetkid at El
+  Coyote Cojo in the Glen, the Nomad at the Sunset Motel in the Badlands, the Corpo on Corpo Plaza
+  under Arasaka Tower), with its cash and account, the clothes nearest its starting gear
+  (`outfit`, by slot: the same pocket ids as `GEAR.start`, so the wallet stays where it is), its
+  reputation (`rep`), the people round there who know it (`known`: how many, from which district,
+  one of a gang or only corpos, at what rapport, their holos the player's) and how each voice
+  takes to it (`voices`, added in `Game`'s private `leaning`, so on every ask). The look is a few
+  parts of the wiki's creator (hair, its color, eyes, a mark), all words. There are no
+  attributes: the builder doesn't hand out skills.
+- `new Game(world, rules, undefined, character)` is a new game as someone (`becomes`: `Game.you`
+  gets the name, lifepath and look, the start, the cash, the outfit and the people who know them;
+  the reputation and the holos are written down at `start`, `arrive`). `Game.character` is null for
+  a save from before the builder, which plays as it always did; `You` carries it (saved as
+  `you`, read by `youOf`, which keeps the pronouns of a character that doesn't read right).
+  Restarting the city keeps the character. The speaker's vars have `youStreetkid`/`youNomad`/
+  `youCorpo` and the look (`yourHair`, `yourEyes`, `yourMark`, empty behind a mask), for the
+  greetings that notice them and the player's own story in a conversation.
+- `src/ui/builder.ts` is the builder (`Builder`): a step at a time (lifepath, you, look, a last
+  look), Next only once the step is filled in, the name drawn again with the lifepath or the
+  pronouns until the player types one, **Start** saying when it replaces a save.
 
 ## Checks before a PR
 
