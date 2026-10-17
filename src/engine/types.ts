@@ -319,6 +319,8 @@ export type GameEvents = {
   roomChanged: Room;
   /** The player took a home, paid (or couldn't pay) its rent, moved out or was put out (null: nowhere now). */
   homeChanged: HomeView | null;
+  /** Something about a storefront the player owns changed: bought, sold, priced, paid, gone under. */
+  businessChanged: null;
   /** The player got a job, worked a shift, moved up, quit or was let go (null: no job now). */
   jobChanged: JobStatus | null;
   /** The player changed the pronouns they go by. */

@@ -962,6 +962,14 @@ button {
   border-radius: 2px 2px 0 0;
   transform: translateY(-5px);
 }
+/* A place the player owns: a coin over the case instead of its handle */
+.node.is-work.is-owned .node-mark::after {
+  width: 5px;
+  height: 5px;
+  border: 2px solid var(--node);
+  border-radius: 50%;
+  transform: translateY(-6px);
+}
 .node.is-work:hover .node-mark::before,
 .node.is-work:focus-visible .node-mark::before,
 .node.is-work.is-selected .node-mark::before {
@@ -1863,6 +1871,9 @@ button {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: auto;
+}
+.books-body .person-commands {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .bank-body .person-cmd {
   padding: 6px 4px;

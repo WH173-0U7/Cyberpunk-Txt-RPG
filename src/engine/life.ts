@@ -1,4 +1,4 @@
-import { economyDay, headlineIn, healthOf, holderOf, homeKind, ledgerOf, staffCostOf, type Closure, type Debt, type EconomyRules, type Ledger, type MarketState, type Till, type Vice } from './economy';
+import { economyDay, headlineIn, healthOf, holderOf, homeKind, ledgerOf, staffCostOf, type Closure, type Debt, type EconomyRules, type Ledger, type MarketState, type Owned, type Till, type Vice } from './economy';
 import type { Quality } from './food';
 import { bossOf, runsIt } from './jobs';
 import { buildingById, drawnTo, heartOf, INVERSE, leastStaff, personById, rolesFor, seatRota, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
@@ -156,6 +156,8 @@ export interface LifeState {
   /** What people owe the gangs' loan sharks; the storefronts gone under. */
   debts?: Record<string, Debt>;
   closed?: Record<string, Closure>;
+  /** The storefronts the player owns: kept with the people's days, since the economy pays them what's theirs. */
+  owned?: Record<string, Owned>;
   /** Where someone lives now, where it isn't where they started (null: nowhere, sleeping rough), since when, where from, and why. */
   homes?: Record<string, Moved>;
   /** The job someone has now, where it isn't what they started with (taken on somewhere, let go, a gang's), and the day it changed; let go when a storefront went under, which one (`was`), and whether they ran it (`ran`). */

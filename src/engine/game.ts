@@ -4,7 +4,7 @@ import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
-import { accountOf, holderOf as ownerNow, homeKind as blockKind, leftOf, ledgerOf, ownersOf, priceFactor, stockOf, tillOf, tradeAt, turfFrom, weekdayOf, type Health, type MarketNews, type Vice } from './economy';
+import { accountOf, holderOf as ownerNow, homeKind as blockKind, leftOf, ledgerOf, ownersOf, priceFactor, staffCostOf, stockOf, tillOf, tradeAt, turfFrom, weekdayOf, type BusinessView, type Health, type MarketNews, type PriceLevel, type Vice } from './economy';
 import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, runnerShort, settle, writeOff, type Runner, type RunnerView } from './crew';
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
 import { cutShare, foundOdds, harmOdds, mixedShare, sickOdds } from './cutting';
@@ -693,7 +693,7 @@ export class Game {
     if (!counter) return null;
     const menu = 'block' in at ? this.marketPriced(counter, at, now) : counter;
     // At work, the staff price; anywhere else, what the player's Trading gets them against the seller's.
-    return this.jobs.some((j) => j.building === at.id) ? this.staffPriced(menu) : this.haggled(menu, at, now);
+    return this.jobs.some((j) => j.building === at.id) || this.owns(at.id) ? this.staffPriced(menu) : this.haggled(menu, at, now);
   }
 
   /**
@@ -709,7 +709,10 @@ export class Game {
     const factor = set ? 1 : priceFactor(stockOf(till), this.trade(building).health, economy);
     const closing = !set && economy.prices.closing.categories.includes(building.category) && this.closingSoon(building, now) ? economy.prices.closing.off : 0;
     const services = new Set(['plan', 'treatment', 'room']);
-    const by = factor * (1 - closing);
+    // The player's own place, at the prices they've set.
+    const mine = this.life.owned?.[building.id];
+    const level = mine ? (economy.business?.levels[mine.prices]?.price ?? 1) : 1;
+    const by = factor * (1 - closing) * level;
     return {
       ...menu,
       ...(Math.round((factor - 1) * 100) ? { market: factor - 1 } : {}),
@@ -782,8 +785,8 @@ export class Game {
     // Gone under: nobody's behind the counter till new management takes it on.
     if ('block' in at && this.life.closed?.[at.id]) return false;
     if (!this.rules.hours?.close || !('block' in at) || !at.business || at.business === 'hospital') return true;
-    // Keys: the player's own counter, high enough up the ladder, is open to them whoever's in.
-    if (this.jobs.some((j) => j.building === at.id && j.rung >= this.rules.jobs.perks.keys)) return true;
+    // Keys: the player's own counter, high enough up the ladder (or their own place), is open to them whoever's in.
+    if (this.owns(at.id) || this.jobs.some((j) => j.building === at.id && j.rung >= this.rules.jobs.perks.keys)) return true;
     const clock = this.clockAt(now);
     return this.staffOf(at).some((p) => {
       const where = whereIs(p, this.world, clock, this.rules.food.dishes, this.rules.people.out);
@@ -6119,6 +6122,7 @@ export class Game {
     this.cornerWars(happened, now);
     this.crewDays(today, now);
     this.badBatches(today, now);
+    this.businessDays();
     // Seeing someone who has died: word reaches the player, and it's over.
     const partner = this.society.romance ? this.person(this.society.romance.with) : undefined;
     if (partner?.diedOn !== undefined) {
@@ -8194,16 +8198,21 @@ export class Game {
   }
 
   /**
-   * What a person's €$ command offers: with a ganger, borrowing from their gang's loan shark (one
-   * gang at a time, up to what it will) and paying back what's owed it; with anyone else but an
-   * officer, lending them something, or asking for back what they owe.
+   * What a person's €$ command offers: with a boss, buying their storefront off them; with a
+   * ganger, borrowing from their gang's loan shark (one gang at a time, up to what it will) and
+   * paying back what's owed it; with anyone else but an officer, lending them something, or
+   * asking for back what they owe.
    */
   moneyWith(id: string, now: number): Array<{ id: string; label: string; sub?: string; disabled?: boolean }> {
     const rules = this.rules.credit;
     const here = this.isHere(id, now);
-    if (!rules || !here) return [];
+    if (!here) return [];
     const { person } = here;
     const options: Array<{ id: string; label: string; sub?: string; disabled?: boolean }> = [];
+    // A boss's own storefront, for sale to the player if they'd sell it.
+    const place = this.placeOffer(person, here.stance);
+    if (place) options.push(place);
+    if (!rules) return options;
     if (person.gang) {
       const shark = this.creditState.shark;
       const theirs = !shark || shark.gang === person.gang;
@@ -8211,9 +8220,9 @@ export class Game {
       for (const amount of rules.shark.amounts) options.push({ id: `borrow:${amount}`, label: `Borrow ${amount}`, disabled: !theirs || (shark?.owed ?? 0) + amount > rules.shark.most });
       return options;
     }
-    if (/NCPD/.test(person.job.role)) return [];
+    if (/NCPD/.test(person.job.role)) return options;
     const lent = this.creditState.lent[id];
-    if (lent) return [{ id: 'ask', label: 'Ask for it back', sub: `€$ ${lent.owed}` }];
+    if (lent) return [...options, { id: 'ask', label: 'Ask for it back', sub: `€$ ${lent.owed}` }];
     for (const amount of rules.lend.amounts) options.push({ id: `lend:${amount}`, label: `Lend ${amount}`, disabled: cash(this.money) < amount });
     return options;
   }
@@ -8228,6 +8237,7 @@ export class Game {
     if (what === 'repay') return this.payShark(here.person, here.stance, here.doing, now);
     if (what === 'lend') return this.lendTo(here.person, Number(amount), here.stance, here.doing, now);
     if (what === 'ask') return this.askBack(here.person, here.stance, here.doing, now);
+    if (what === 'buy') return this.buyFrom(here.person, here.stance, here.doing, now);
     return false;
   }
 
@@ -8493,6 +8503,270 @@ export class Game {
     };
   }
 
+  // ───────────── The player's business ─────────────
+
+  /** Whether the player owns a storefront. */
+  owns(id: string): boolean {
+    return Boolean(this.life.owned?.[id]);
+  }
+
+  /** A line of the player's business, filled in. */
+  private businessLine(pool: string[], vars: Record<string, string>, key: string): void {
+    this.say(this.narration(pool, vars, createRng(`${this.world.seed}:business:${key}`)), 'system');
+  }
+
+  /** Whether a storefront can be bought at all: a business of its own, never a corp's, a bank, a hospital or a real place. */
+  private sellable(building: Building): boolean {
+    const economy = this.rules.life.economy;
+    const never = economy.hard?.close.never;
+    if (!economy.business || !building.business) return false;
+    return !economy.owners.corp.includes(building.business) && !never?.businesses.includes(building.business) && !never?.names.includes(building.name);
+  }
+
+  /** What a week costs a storefront: its people's wages and its rent; one gone under, as if two hands and a boss. */
+  private weekCostOf(building: Building): number {
+    const economy = this.rules.life.economy;
+    const tier = this.tierOf(building);
+    const rent = economy.rent[tier] * 7;
+    if (this.life.closed?.[building.id]) return economy.staff[tier] * (2 + economy.boss) + rent;
+    const staff = this.livingStaff(building.id);
+    return staffCostOf(staff, bossOf(building, this.population, staff), tier, economy) + rent;
+  }
+
+  /** What a storefront goes for: weeks of its costs and of what it cleared last week, or as one gone under, to the nearest fifty. */
+  private priceOfPlace(building: Building): number {
+    const rules = this.rules.life.economy.business;
+    if (!rules) return 0;
+    const cost = this.weekCostOf(building);
+    const net = Math.max(0, (this.life.tills[building.id]?.days ?? []).reduce((n, d) => n + d, 0));
+    const price = this.life.closed?.[building.id] ? rules.price.closed * cost : rules.price.costs * cost + rules.price.profits * net;
+    return Math.max(50, Math.round(price / 50) * 50);
+  }
+
+  /** Takes eddies off the player, the account first and then cash; what was taken. */
+  private takePlayers(amount: number): number {
+    const fromAccount = Math.min(this.money.account, Math.max(0, amount));
+    this.money = { ...this.money, account: this.money.account - fromAccount };
+    const { money, taken } = takeCash(this.money, amount - fromAccount);
+    this.money = money;
+    return fromAccount + taken;
+  }
+
+  /** Pays someone from the player's account and cash into their own account; nobody, and it leaves the city. What was paid. */
+  private payInto(amount: number, payee: Person | undefined): number {
+    const paid = this.takePlayers(amount);
+    if (payee && paid > 0) {
+      const economy = this.rules.life.economy;
+      const ledger = ledgerOf(payee, this.world, this.population, economy, this.tierFn, this.world.seed, this.livingStaff);
+      (this.life.savings ??= {})[payee.id] = accountOf(payee, this.life, ledger, economy) + paid;
+    }
+    return paid;
+  }
+
+  /** The storefront gone under at the player's door, for sale off its building's owner, at its price (null: none, or it's theirs). */
+  forSale(): { price: number; affordable: boolean } | null {
+    const door = this.door;
+    if (!door || !this.life.closed?.[door.id] || !this.sellable(door) || this.owns(door.id)) return null;
+    const price = this.priceOfPlace(door);
+    return { price, affordable: this.money.account + cash(this.money) >= price };
+  }
+
+  /** Buys the storefront gone under at the player's door off whoever owns the building: new hands open it the next day, the player's. */
+  buyClosed(now: number): boolean {
+    const rules = this.rules.life.economy.business;
+    const door = this.door;
+    const offer = this.forSale();
+    const closure = door ? this.life.closed?.[door.id] : undefined;
+    if (!rules || !door || !offer || !offer.affordable || !closure || this.fighting || this.detained(now)) return false;
+    const economy = this.rules.life.economy;
+    const owner = ownerNow(ownersOf(this.world, this.population, economy, this.world.seed).of.get(door.id), (id) => this.person(id), (id) => tiesOf(this.population, id));
+    this.payInto(offer.price, owner ? this.person(owner) : undefined);
+    (this.life.owned ??= {})[door.id] = { since: this.clockAt(now).day, prices: 'fair', due: 0 };
+    // New management is the player's people: they start the next day lived.
+    closure.until = Math.min(closure.until, this.life.day + 1);
+    this.businessLine(rules.lines.boughtClosed, { place: door.name, amount: String(offer.price) }, `${door.id}:${now}`);
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('businessChanged', null);
+    return true;
+  }
+
+  /** What a boss's €$ command offers for their storefront: buying it at its price, if they'd sell it to the player as they stand and as it's doing (null: nothing of theirs to sell). */
+  private placeOffer(person: Person, stance: Stance): { id: string; label: string; sub?: string; disabled?: boolean } | null {
+    const rules = this.rules.life.economy.business;
+    const place = rules ? bossAt(person, this.world, this.population, this.rules.jobs) : null;
+    if (!rules || !place || !this.sellable(place) || this.owns(place.id) || this.life.closed?.[place.id]) return null;
+    const willing = rules.sellers[this.trade(place).health].includes(stance);
+    const price = this.priceOfPlace(place);
+    return { id: 'buy', label: 'Buy the place', sub: willing ? `€$ ${price}` : 'Not selling', disabled: !willing || this.money.account + cash(this.money) < price };
+  }
+
+  /** Buys a boss's storefront off them: paid into their account, and they stay on to run it. */
+  private buyFrom(person: Person, stance: Stance, doing: string, now: number): boolean {
+    const rules = this.rules.life.economy.business;
+    const place = bossAt(person, this.world, this.population, this.rules.jobs);
+    if (!rules || !place) return false;
+    const price = this.priceOfPlace(place);
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const rng = createRng(`${this.world.seed}:${person.id}:buy:${place.id}:${now}`);
+    const before = this.snapshot(person, now);
+    speaker.vars = { ...speaker.vars, amount: String(price), work: place.name };
+    this.logged(person.id, 'you', line(this.rules.lines.you.buyPlace, speaker, rng), now);
+    if (this.payInto(price, person) < price) return false;
+    (this.life.owned ??= {})[place.id] = { since: this.clockAt(now).day, prices: 'fair', due: 0 };
+    changeStanding(this.society, person.id, { rapport: 3 }, this.rules.society, this.rules.timeScale, now);
+    this.speech(person, line(this.rules.lines.money.sellYes, speaker, rng), now);
+    this.businessLine(rules.lines.bought, { place: place.name, amount: String(price) }, `${place.id}:${now}`);
+    this.noteFeedback(person, before, now);
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('businessChanged', null);
+    return true;
+  }
+
+  /** A storefront of the player's as the UI shows it. */
+  private businessOf(building: Building): BusinessView | null {
+    const rules = this.rules.life.economy.business;
+    const mine = this.life.owned?.[building.id];
+    if (!rules || !mine) return null;
+    const economy = this.rules.life.economy;
+    const till = this.life.tills[building.id];
+    const cost = this.weekCostOf(building);
+    const staff = this.livingStaff(building.id);
+    const boss = staff.length ? bossOf(building, this.population, staff) : null;
+    const trade = this.trade(building);
+    const cashIn = Math.max(0, Math.floor(till?.cash ?? 0));
+    return {
+      building,
+      health: trade.health,
+      line: trade.line,
+      week: (till?.days ?? []).reduce((n, d) => n + d, 0),
+      till: cashIn,
+      over: Math.max(0, cashIn - Math.ceil(economy.float * cost)),
+      stock: stockOf(till),
+      staff: staff.length,
+      manager: boss ? this.nameInLine(boss.id) : null,
+      prices: mine.prices,
+      worth: Math.round((this.priceOfPlace(building) * rules.sell) / 50) * 50,
+      lean: till?.lean ?? 0,
+      opening: Boolean(this.life.closed?.[building.id]),
+    };
+  }
+
+  /** Someone as a line names them mid-sentence: by name if the player knows it, else by their look ("a woman"). */
+  private nameInLine(id: string): string | null {
+    const d = this.describe(id, Date.now());
+    return d ? (d.named ? d.name : d.name.replace(/^\p{Lu}/u, (c) => c.toLowerCase())) : null;
+  }
+
+  /** Every storefront the player owns, for the status. */
+  businesses(): BusinessView[] {
+    return Object.keys(this.life.owned ?? {})
+      .map((id) => this.buildingOf(id))
+      .filter((b): b is Building => Boolean(b))
+      .map((b) => this.businessOf(b))
+      .filter((v): v is BusinessView => Boolean(v));
+  }
+
+  /** The books of the storefront of the player's they're in: out back, where it has a back (null: not theirs, or not there). */
+  books(): BusinessView | null {
+    const at = this.inside;
+    if (!at || !this.owns(at.id)) return null;
+    if (this.rules.rooms && roomsOn(at, 1, this.rules.rooms).some((r) => r.kind === 'back') && this.room()?.kind !== 'back') return null;
+    return this.businessOf(at);
+  }
+
+  /** Puts eddies into the till of the storefront of the player's they're at the books of, the account first. */
+  putIn(amount: number, now: number): boolean {
+    const rules = this.rules.life.economy.business;
+    const view = this.books();
+    if (!rules || !view || !rules.amounts.includes(amount) || this.detained(now) || this.money.account + cash(this.money) < amount) return false;
+    const paid = this.takePlayers(amount);
+    const till = tillOf(this.life.tills, view.building.id);
+    till.cash = (till.cash ?? 0) + paid;
+    this.businessLine(rules.lines.putIn, { place: view.building.name, amount: String(paid) }, `${view.building.id}:in:${now}`);
+    this.tradeCache.delete(view.building.id);
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('businessChanged', null);
+    return true;
+  }
+
+  /** Takes what's over its float out of the till, into the player's account. */
+  takeOut(now: number): boolean {
+    const rules = this.rules.life.economy.business;
+    const view = this.books();
+    if (!rules || !view || !view.over || this.detained(now)) return false;
+    const till = tillOf(this.life.tills, view.building.id);
+    till.cash = (till.cash ?? 0) - view.over;
+    this.money = { ...this.money, account: this.money.account + view.over };
+    this.businessLine(rules.lines.tookOut, { place: view.building.name, amount: String(view.over) }, `${view.building.id}:out:${now}`);
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('businessChanged', null);
+    return true;
+  }
+
+  /** Prices the storefront of the player's they're at the books of. */
+  setPrices(level: PriceLevel, now: number): boolean {
+    const rules = this.rules.life.economy.business;
+    const view = this.books();
+    const mine = view ? this.life.owned?.[view.building.id] : undefined;
+    if (!rules || !view || !mine || !rules.levels[level] || mine.prices === level || this.detained(now)) return false;
+    mine.prices = level;
+    this.businessLine(rules.lines.prices, { place: view.building.name, level }, `${view.building.id}:${level}:${now}`);
+    this.events.emit('businessChanged', null);
+    return true;
+  }
+
+  /** Sells the storefront of the player's they're at the books of, for what it fetches, into the account; its boss runs it for themselves again. */
+  sellBusiness(now: number): boolean {
+    const rules = this.rules.life.economy.business;
+    const view = this.books();
+    if (!rules || !view || view.opening || this.detained(now)) return false;
+    delete this.life.owned?.[view.building.id];
+    this.money = { ...this.money, account: this.money.account + view.worth };
+    this.businessLine(rules.lines.sold, { place: view.building.name, amount: String(view.worth) }, `${view.building.id}:sold:${now}`);
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('businessChanged', null);
+    return true;
+  }
+
+  /**
+   * After the days are lived: what each storefront of the player's made over its reserve on payday,
+   * into the account; one that went under is theirs no longer (what was left in its till comes to
+   * them); and a till short of its wages says so, each payday running.
+   */
+  private businessDays(): void {
+    const rules = this.rules.life.economy.business;
+    const owned = this.life.owned;
+    if (!rules || !owned) return;
+    let changed = false;
+    for (const [id, mine] of Object.entries(owned)) {
+      const place = this.buildingOf(id);
+      const name = place?.name ?? 'Your place';
+      const due = Math.floor(mine.due);
+      if (due > 0) {
+        this.money = { ...this.money, account: this.money.account + due };
+        changed = true;
+      }
+      mine.due = 0;
+      if (mine.lost !== undefined || !place) {
+        this.businessLine(rules.lines.lost, { place: name }, `${id}:lost:${mine.lost ?? 0}`);
+        if (due > 0) this.businessLine(rules.lines.left, { place: name, amount: String(due) }, `${id}:left:${mine.lost ?? 0}`);
+        delete owned[id];
+        changed = true;
+        continue;
+      }
+      if (due > 0) this.businessLine(rules.lines.profit, { place: name, amount: String(due) }, `${id}:profit:${this.life.day}`);
+      const lean = this.life.tills[id]?.lean ?? 0;
+      if (lean > (mine.told ?? 0)) this.businessLine(rules.lines.short, { place: name, weeks: String(lean), under: String(this.rules.life.economy.hard?.close.weeks ?? lean) }, `${id}:short:${this.life.day}`);
+      if (lean !== (mine.told ?? 0)) changed = true;
+      if (lean) mine.told = lean;
+      else delete mine.told;
+    }
+    if (changed) {
+      this.events.emit('walletChanged', this.wallet);
+      this.events.emit('businessChanged', null);
+    }
+  }
+
   /** Whether the player is where a building's counter is (the room you walk into); anywhere but inside a building, they are. */
   private atCounter(): boolean {
     return !this.inside || !this.rules.rooms || this.roomState === 'main';
@@ -8510,7 +8784,7 @@ export class Game {
   /** Whether the player can walk into a room: the staff's rooms are theirs alone, a home's units take being let in, a rented room the key. */
   private accessTo(room: Room, now: number): RoomAccess {
     if (room.id === this.roomState) return 'here';
-    const works = this.jobs.some((j) => j.building === this.inside?.id);
+    const works = this.jobs.some((j) => j.building === this.inside?.id) || Boolean(this.inside && this.owns(this.inside.id));
     if (room.kind === 'back' || room.kind === 'office') return works ? 'open' : 'staff';
     if (room.kind === 'unit') return this.homeState?.building === this.inside?.id && this.homeState?.room === room.id ? 'yours' : this.letIn.has(room.id) ? 'open' : 'locked';
     if (room.kind === 'guest') {

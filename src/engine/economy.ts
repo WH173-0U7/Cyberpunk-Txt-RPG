@@ -62,6 +62,65 @@ export interface Closure {
   until: number;
 }
 
+/** How the player prices what a storefront of theirs sells: under the going rate, at it, or over. */
+export type PriceLevel = 'low' | 'fair' | 'high';
+
+/**
+ * A storefront the player owns: since when, how they've priced it, and what it's made them since
+ * they last heard (what was over its reserve on payday, or what was left in the till when it went
+ * under, the day it did: `lost`).
+ */
+export interface Owned {
+  since: number;
+  prices: PriceLevel;
+  due: number;
+  lost?: number;
+  /** Paydays running it's been short of its wages, as far as the player has been told. */
+  told?: number;
+}
+
+/** A storefront of the player's, as the UI shows it: how it's doing, the week's net, the till and what can come out of it, the shelves, its people and who runs it, its prices, what it would fetch, and paydays it's been short. */
+export interface BusinessView {
+  building: Building;
+  health: Health;
+  line: string;
+  week: number;
+  till: number;
+  over: number;
+  stock: number;
+  staff: number;
+  manager: string | null;
+  prices: PriceLevel;
+  worth: number;
+  lean: number;
+  /** Shut till new management starts (the day after it was bought). */
+  opening: boolean;
+}
+
+/**
+ * The player's own business. What a storefront goes for: one gone under, `closed` weeks of its
+ * costs (its people's wages and its rent, as if two hands and a boss); a going one, `costs` weeks
+ * of them and `profits` weeks of what it cleared last week (nothing, losing money). Its boss sells
+ * a going one only at these `sellers` stances by how it's doing (none, not at all). Sold back, it fetches `sell` of its price. A price level is a share on what it charges
+ * (`price`: the shelves give fewer things for the money, so they cost less to fill; the menu shows
+ * it), on the trade it draws from outside the city (`walkIn`), the share of its own customers it
+ * keeps (`keep`: the rest go to another of its kind in the district) and the trade it draws from
+ * the others of its kind there (`draw`, a share of one place's worth, from all of them alike). The player puts in one of
+ * `amounts` at a time. The narration: `bought` (a going concern) and `boughtClosed` (one gone
+ * under, open again the next day), `profit` (payday's share, into the account), `short` (wages
+ * paid short this payday, `{weeks}` running, of `{under}` before it goes under), `lost` (gone
+ * under) and `left` (what was in its till then), `sold`, `putIn`, `tookOut`, `prices`. `{place}`, `{amount}`, `{weeks}`, `{under}`,
+ * `{level}`.
+ */
+export interface BusinessRules {
+  price: { closed: number; costs: number; profits: number };
+  sellers: Record<Health, string[]>;
+  sell: number;
+  levels: Record<PriceLevel, { price: number; walkIn: number; keep: number; draw: number }>;
+  amounts: number[];
+  lines: Record<'bought' | 'boughtClosed' | 'profit' | 'short' | 'lost' | 'left' | 'sold' | 'putIn' | 'tookOut' | 'prices', string[]>;
+}
+
 /**
  * Hard times. Someone who can't pay for the week's food with the nerve for it (`lift.nerve`, of
  * courage and greed) walks out with `lift.share` of what they're short. Whoever still can't make
@@ -193,6 +252,8 @@ export interface EconomyRules {
   trade: Record<Health, string>;
   /** Hard times: shoplifting, loan sharks, evictions, storefronts going under (missing: none of it). */
   hard?: HardRules;
+  /** The player's own business (missing: they can't buy one). */
+  business?: BusinessRules;
 }
 
 /** Who collects in each district, from the people data's turf table: every gang there, by its share of the turf. */
@@ -485,6 +546,8 @@ export interface EconomyState {
   debts?: Record<string, Debt>;
   /** The storefronts gone under, till new management takes them on. */
   closed?: Record<string, Closure>;
+  /** The storefronts the player owns. */
+  owned?: Record<string, Owned>;
   tills: Record<string, Till>;
   treasuries: Record<string, number>;
   hurt: Record<string, number>;
@@ -606,6 +669,14 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
   const debts = hard ? (state.debts ??= {}) : undefined;
   // A storefront gone under takes nothing and pays nothing till new management takes it on.
   const closed = state.closed ?? {};
+  // The player's own storefronts, and how they've priced them.
+  const owned = state.owned ?? {};
+  const owns = Object.keys(owned).length > 0;
+  const fair = { price: 1, walkIn: 1 };
+  const levelOf = (id: string) => {
+    const mine = owns ? owned[id] : undefined;
+    return (mine && rules.business?.levels[mine.prices]) || fair;
+  };
   const market = (state.market ??= { shocks: [], short: [], news: [] });
   const people = population.people;
   const n = people.length;
@@ -745,7 +816,10 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
   };
   const spendAt = (spot: Spot | null, amount: number, district: string) => {
     if (amount <= 0) return;
-    if (spot?.kind === 'building' && takings.has(spot.id)) takings.set(spot.id, (takings.get(spot.id) as number) + amount);
+    if (spot?.kind === 'building' && takings.has(spot.id)) {
+      const id = owns ? priced(spot.id) : spot.id;
+      takings.set(id, (takings.get(id) as number) + amount);
+    }
     else {
       const where = spot?.kind === 'location' ? (world.locations[spot.id]?.district ?? district) : district;
       street[where] = (street[where] ?? 0) + amount;
@@ -755,6 +829,28 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
   const bare = new Set(storefronts.filter((b) => closed[b.id] || stockOf(state.tills[b.id]) < rules.stock.soldOut).map((b) => b.id));
   const soldOut = (b: Building) => bare.has(b.id);
   const unsold = (shops: Building[]) => (bare.size ? shops.filter((b) => !bare.has(b.id)) : shops);
+  // The player's own prices: dear, some of its customers go to another of its kind in the district; cheap, it draws some of theirs.
+  const draws = new Map<string, string>();
+  for (const [id, mine] of Object.entries(owned)) {
+    const b = shop.get(id);
+    if (b && !bare.has(id) && (rules.business?.levels[mine.prices]?.draw ?? 0) > 0) draws.set(`${b.district}:${b.category}`, id);
+  }
+  const priced = (id: string): string => {
+    const b = shop.get(id);
+    const mine = owned[id];
+    if (!b || (!mine && !draws.size)) return id;
+    if (mine) {
+      const keep = rules.business?.levels[mine.prices]?.keep ?? 1;
+      if (keep >= 1 || rng.chance(keep)) return id;
+      const others = unsold(shopsIn(world, `${b.district}:${b.category}`)).filter((o) => o.id !== id && takings.has(o.id));
+      return others.length ? rng.pick(others).id : id;
+    }
+    // What it draws is a share of one place's trade, taken from all the others of its kind alike.
+    const cheap = draws.get(`${b.district}:${b.category}`);
+    if (!cheap || !takings.has(cheap)) return id;
+    const rivals = Math.max(1, shopsIn(world, `${b.district}:${b.category}`).length - 1);
+    return rng.chance((rules.business?.levels[(owned[cheap] as Owned).prices]?.draw ?? 0) / rivals) ? cheap : id;
+  };
   const stocked = (spot: Spot | null): Spot | null => {
     if (spot?.kind !== 'building' || !bare.has(spot.id)) return spot;
     const b = shop.get(spot.id);
@@ -771,7 +867,7 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
     }
     const [lo, hi] = rules.walkIn[tierAt(b)];
     const swing = rng.range(1 - rules.daySwing, 1 + rules.daySwing);
-    const outside = soldOut(b) ? 0 : Math.round((lo + usualOf(world, seed, b.id) * (hi - lo)) * (rules.visitors[b.district] ?? 0) * (rules.outsiders[b.category] ?? 1) * swing);
+    const outside = soldOut(b) ? 0 : Math.round((lo + usualOf(world, seed, b.id) * (hi - lo)) * (rules.visitors[b.district] ?? 0) * (rules.outsiders[b.category] ?? 1) * swing * levelOf(b.id).walkIn);
     flows.in += outside + Math.max(0, till.pending);
     flows.out += Math.max(0, -till.pending);
     takings.set(b.id, outside + till.pending);
@@ -1018,7 +1114,7 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
     const shelves = Math.max(1, rules.stock.weeks * weeklyCost(b));
     const stock = stockOf(till);
     // Dear, the money buys fewer things; a slow place's price cut is for the player's haggling, since nobody else here buys more for it.
-    const factor = Math.max(1, priceFactor(stock, 'steady', rules));
+    const factor = Math.max(1, priceFactor(stock, 'steady', rules)) * levelOf(b.id).price;
     const walked = lifted.get(b.id) ?? 0;
     const left = Math.max(0, stock - (Math.max(0, took) + walked) / (shelves * factor));
     const cut = shocked.has(`${b.district}:${b.category}`) ? rules.stock.shock.cut : 1;
@@ -1045,7 +1141,10 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
       if (over > 0) {
         const boss = bosses.get(b.id);
         till.cash = (till.cash as number) - over;
-        if (!owners.corp.has(b.business as string) && boss) give(at(boss), over);
+        // The player's own: theirs, out of the city's money.
+        const mine = owned[b.id];
+        if (mine) mine.due += over;
+        if (!mine && !owners.corp.has(b.business as string) && boss) give(at(boss), over);
         else flows.out += over;
       }
     }
@@ -1110,9 +1209,13 @@ export function economyDay({ world, population, state, rules, tier: tierOf, turf
       const till = state.tills[b.id];
       if (!till || closed[b.id] || (till.lean ?? 0) < hard.close.weeks || owners.corp.has(b.business as string) || never.has(b.business as string) || named.has(b.name)) continue;
       const cash = till.cash ?? 0;
+      // The player's own goes under too, and what's left is theirs.
+      const mine = owned[b.id];
+      if (mine) mine.lost = day;
       if (cash > 0) {
         const boss = bosses.get(b.id);
-        if (boss) give(at(boss), cash);
+        if (mine) mine.due += cash;
+        if (!mine && boss) give(at(boss), cash);
         else flows.out += cash;
         till.cash = 0;
       }

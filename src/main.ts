@@ -16,6 +16,7 @@ import { SOCIETY } from './data/society';
 import { TRAVEL } from './data/travel';
 import { blockAt } from './engine/buildings';
 import { Game, type Description, type MarketView, type PersonStanding, type Presence, streetSpot } from './engine/game';
+import type { BusinessView, PriceLevel } from './engine/economy';
 import type { HomeView } from './engine/home';
 import { hasRooms, type RoomAccess } from './engine/rooms';
 import type { JobStatus } from './engine/jobs';
@@ -58,6 +59,7 @@ import { Hud, WEATHER_LABEL } from './ui/hud';
 import { EnergyMeter } from './ui/energy';
 import { StatusPanel, type StatusRow } from './ui/status';
 import { Bank } from './ui/bank';
+import { Books, type BooksPicker } from './ui/books';
 import { RoomsPanel } from './ui/rooms';
 import { Inventory, type ChromePageView, type InventoryItemView, type InventoryView, type PocketRowView } from './ui/inventory';
 import { MapOverlay } from './ui/overlay';
@@ -123,6 +125,8 @@ const place = new PlacePanel(
       deal: $<HTMLButtonElement>('#act-deal'),
       home: $<HTMLButtonElement>('#act-home'),
       move: $<HTMLButtonElement>('#act-move'),
+      buy: $<HTMLButtonElement>('#act-buy'),
+      books: $<HTMLButtonElement>('#act-books'),
     },
     close: $<HTMLButtonElement>('#place-close'),
   },
@@ -354,6 +358,33 @@ let bankStatus = '';
 let withdrawOpen = false;
 let loanOpen = false;
 
+const books = new Books(
+  {
+    root: $('#books'),
+    close: $<HTMLButtonElement>('#books-close'),
+    name: $('#books-name'),
+    figures: $('#books-figures'),
+    status: $('#books-status'),
+    picker: $('#books-picker'),
+    commands: $('#books-commands'),
+  },
+  () => showBooks(),
+  {
+    onPicker: (open) => {
+      booksPicker = booksPicker === open ? null : open;
+      showBooks();
+    },
+    onPutIn: (amount) => atTheBooks(() => game.putIn(amount, Date.now())),
+    onTakeOut: () => atTheBooks(() => game.takeOut(Date.now())),
+    onPrices: (level) => atTheBooks(() => game.setPrices(level as PriceLevel, Date.now())),
+    onSell: () => atTheBooks(() => game.sellBusiness(Date.now())),
+  },
+  reducedMotion,
+);
+/** What the books last said, and which choices are unfolded. */
+let booksStatus = '';
+let booksPicker: BooksPicker = null;
+
 const rooms = new RoomsPanel(
   {
     root: $('#rooms'),
@@ -429,6 +460,19 @@ function atTheCounter(act: () => boolean): void {
   withdrawOpen = false;
   loanOpen = false;
   showBank();
+}
+
+/** Does something at the books of the player's own storefront; whatever the game says about it becomes the books' line. */
+function atTheBooks(act: () => boolean): void {
+  lastActivity = performance.now();
+  const said: string[] = [];
+  const off = game.events.on('output', ({ text }) => said.push(text));
+  act();
+  off();
+  booksStatus = said.at(-1) ?? '';
+  booksPicker = null;
+  if (game.books()) showBooks();
+  else books.overlay.close();
 }
 
 const people = new People(
@@ -665,6 +709,12 @@ function act(id: ActionId): void {
       inventory.overlay.show($('#act-home'));
     }
   } else if (id === 'move') game.moveOut(now);
+  else if (id === 'buy') game.buyClosed(now);
+  else if (id === 'books' && game.books()) {
+    booksStatus = '';
+    booksPicker = null;
+    books.overlay.show($('#act-books'));
+  }
   else if (id === 'pick-1' || id === 'pick-2' || id === 'pick-3') {
     const at = Number(id.slice(-1)) - 1;
     // Officers on the player come before a collector, a collector before a buyer, a buyer before anything on a shift.
@@ -712,6 +762,7 @@ function refresh(): void {
   // The menu, the counter and the people are for where the player is; they go when they leave.
   if (shop.overlay.isOpen && !game.menu()) shop.overlay.close();
   if (bank.overlay.isOpen && !game.bank()) bank.overlay.close();
+  if (books.overlay.isOpen && !game.books()) books.overlay.close();
   if (people.overlay.isOpen && !game.interior && !game.location && !game.police(now).confront) people.overlay.close();
   // The NCPD has the player: nothing else on the panel till that's settled.
   const ncpd = policeView(now) ?? collectorView(now);
@@ -948,15 +999,18 @@ function hereView(now: number): PanelView {
   const locked = door ? game.locked(door, now) : null;
   // Gone under, its hours mean nothing.
   const open = door && !locked?.down ? signOf(door) : '';
-  const enter: PanelAction | null = !door ? null : locked ? { id: 'enter', label: locked.down ? 'Closed down' : 'Closed', sub: locked.down ? 'Gone under' : locked.opensAt ? `Opens ${formatClock(locked.opensAt)}` : 'Shut for good', disabled: true } : { id: 'enter', label: 'Go inside', sub: door.kindLabel };
+  const enter: PanelAction | null = !door ? null : locked ? { id: 'enter', label: locked.down ? 'Closed down' : 'Closed', sub: locked.down ? (game.owns(door.id) ? 'Yours · opens tomorrow' : 'Gone under') : locked.opensAt ? `Opens ${formatClock(locked.opensAt)}` : 'Shut for good', disabled: true } : { id: 'enter', label: 'Go inside', sub: door.kindLabel };
+  // Gone under, it's for sale off the notice on its shutters.
+  const sale = game.forSale();
+  const buy: PanelAction | null = sale ? { id: 'buy', label: 'Buy it', sub: `€$ ${sale.price}`, ...(sale.affordable ? {} : { disabled: true }) } : null;
   return {
     mode: 'here',
     kicker: `You are here${building ? ` · Block ${building.block}` : ''}`,
     ...(open ? { meta: open } : {}),
-    description: building ? `${categoryOf(building).label} · ${[building.kindLabel, heightOf(building)].filter(Boolean).join(', ')}. ${locked?.down ? "It's gone under: the shutters are chained, with a notice on them. " : locked ? 'The shutters are down. ' : ''}${mood}` : mood,
-    actions: enter ? [enter] : [],
+    description: building ? `${categoryOf(building).label} · ${[building.kindLabel, heightOf(building)].filter(Boolean).join(', ')}. ${locked?.down ? (game.owns(building.id) ? "It's yours: the notice is off the shutters, and new hands start tomorrow. " : "It's gone under: the shutters are chained, with a notice on them. ") : locked ? 'The shutters are down. ' : ''}${mood}` : mood,
+    actions: [enter, buy].filter((a): a is PanelAction => Boolean(a)),
     closable: false,
-    announce: `${name}. ${open ? `${open}. ` : ''}${locked ? 'Closed. ' : ''}${mood}`,
+    announce: `${name}. ${open ? `${open}. ` : ''}${locked ? 'Closed. ' : ''}${sale ? `For sale at ${sale.price} eddies. ` : ''}${mood}`,
   };
 }
 
@@ -1013,7 +1067,7 @@ function insideView(building: Building): PanelView {
       meta: [room.floor > 1 ? `Floor ${room.floor}` : '', building.kindLabel].filter(Boolean).join(' · '),
       description,
       // Out back on a shift's day, the shift can be worked from here too.
-      actions: [peopleAction(count), ...(room.kind === 'back' && job?.here ? [workAction(job, now)] : []), ...homeActions()],
+      actions: [peopleAction(count), ...(room.kind === 'back' && job?.here ? [workAction(job, now)] : []), ...homeActions(), ...booksAction()],
       closable: true,
       closeLabel: `Leave ${building.name}`,
       announce: `${room.name}, in ${building.name}. ${description} ${count ? `${count} people here.` : ''} Leave with the corner button.`,
@@ -1045,12 +1099,19 @@ function insideView(building: Building): PanelView {
       ...homeActions(),
       // The player's shift here: what it pays and costs, or why not now (masked, or too tired, it's refused).
       ...(shift ? [workAction(shift, now)] : []),
+      ...booksAction(),
     ],
     // Leaving is the corner button, so the row keeps to what there is to do in here.
     closable: true,
     closeLabel: `Leave ${building.name}`,
     announce: `Inside ${building.name}. ${description} ${here ? `${here} people here.` : ''} Leave with the corner button.`,
   };
+}
+
+/** The Books button in the player's own storefront (out back): how it's doing. */
+function booksAction(): PanelAction[] {
+  const view = game.books();
+  return view ? [{ id: 'books', label: 'Books', sub: `€$ ${view.week} this week` }] : [];
 }
 
 /** What a home's buttons offer here: a unit to rent at a block's door, a corner to squat, the way up to the player's own unit, or (in it) the stash and moving out. */
@@ -1216,6 +1277,36 @@ function showBank(): void {
     loanOpen,
     canRepay: Boolean(game.credit(Date.now())?.loan) && account + bills + coins > 0,
   });
+}
+
+/** Fills the books of the player's own storefront. */
+function showBooks(): void {
+  const view = game.books();
+  if (!view) return;
+  const { bills, coins, account } = game.wallet;
+  const money = bills + coins + account;
+  const rules = LIFE.economy.business;
+  const labels: Record<PriceLevel, string> = { low: 'Low', fair: 'Fair', high: 'High' };
+  books.render({
+    name: view.building.name,
+    trade: view.opening ? 'Opens tomorrow' : `${view.health[0]!.toUpperCase()}${view.health.slice(1)} · €$ ${view.week} this week`,
+    till: `€$ ${view.till}${view.over ? ` · €$ ${view.over} over its float` : ''}${view.lean ? ` · short ${view.lean} ${view.lean === 1 ? 'payday' : 'paydays'}` : ''}`,
+    stock: `${Math.round(view.stock * 100)}%`,
+    staff: view.staff ? `${view.staff}${view.manager ? ` · run by ${view.manager}` : ''}` : 'Nobody yet',
+    prices: labels[view.prices],
+    worth: `€$ ${view.worth}`,
+    status: booksStatus,
+    picker: booksPicker,
+    amounts: (rules?.amounts ?? []).map((amount) => ({ amount, enabled: amount <= money })),
+    over: view.over,
+    levels: (Object.keys(labels) as PriceLevel[]).map((id) => ({ id, label: labels[id], on: id === view.prices })),
+    canSell: !view.opening,
+  });
+}
+
+/** The status's Business row: each storefront the player owns, how it's doing and its till. */
+function businessLine(list: BusinessView[]): string {
+  return list.map((b) => `${b.building.name} · ${b.opening ? 'opens tomorrow' : `${b.health} · €$ ${b.week} this week · till €$ ${b.till}`}${b.lean ? ` · short ${b.lean}` : ''}`).join(' · ') || 'None';
 }
 
 /** The bank counter's Loan figure: the loan the player has, or what the bank would lend. */
@@ -1507,7 +1598,8 @@ function showStatus(now: number): void {
   const job = game.jobStatus(now);
   const jobs = game.jobsStatus(now);
   // Where the player works, on the map; lit while a shift there is on.
-  map.setWork(jobs.map((j) => ({ id: j.building.id, name: j.building.name, open: j.open })));
+  const owned = game.businesses();
+  map.setWork([...jobs.map((j) => ({ id: j.building.id, name: j.building.name, open: j.open, ...(game.owns(j.building.id) ? { owned: true } : {}) })), ...owned.filter((b) => !jobs.some((j) => j.building.id === b.building.id)).map((b) => ({ id: b.building.id, name: b.building.name, open: false, owned: true }))]);
   const home = game.home(now);
   map.setHome(home ? { id: home.building.id, name: home.building.name } : null);
   // A shift open somewhere else: how far, on foot.
@@ -1536,6 +1628,7 @@ function showStatus(now: number): void {
     ...(market.news[0] ? [{ label: 'News', value: market.news.slice(0, 2).map((n) => `${n.text} (${n.ago})`).join(' · ') }] : []),
     { label: 'Debts', value: debtLine(now), ...(game.debts(now).shark?.late || game.debts(now).bank?.missed ? { tone: 'bad' as const } : {}) },
     { label: 'Home', value: homeLine(home), ...(home?.behind ? { tone: home.behind >= HOME.warnAt ? ('bad' as const) : ('warn' as const) } : {}) },
+    ...(owned.length ? [{ label: 'Business', value: businessLine(owned), ...(owned.some((b) => b.lean) ? { tone: 'bad' as const } : {}) }] : []),
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
     ...(jobs.length ? jobs.map((j) => ({ label: j.side ? 'Side gig' : 'Work', value: `${j.rung.title} at ${j.building.name} · ${formatDays(j.days)} ${j.hours[0]}–${j.hours[1]}h${j.owed ? ` · ${j.owed} €$ owed` : ''} · ${j.shifts} ${j.shifts === 1 ? 'shift' : 'shifts'}${j.next ? ` · trust ${j.trust}, ${j.next.title.toLowerCase()} at ${j.next.at}` : ' · top of the ladder'} · trade ${game.trade(j.building).health} · ${j.perks.join(', ')}` })) : [{ label: 'Work', value: 'No job' }]),
     ...(dealer && (deal || dealer.level > 1 || dealer.xp > 0) ? [{ label: 'Dealing', value: `Lv ${dealer.level} · ${dealer.xp}/${dealer.xpToNext} XP` }] : []),
@@ -2008,6 +2101,11 @@ function wire(g: Game): void {
     queueSave();
   });
 
+  g.events.on('businessChanged', () => {
+    if (books.overlay.isOpen) showBooks();
+    if (!target && !g.currentTrip) refresh();
+    queueSave();
+  });
   g.events.on('homeChanged', () => {
     if (inventory.overlay.isOpen) showInventory();
     if (rooms.overlay.isOpen) showRooms();

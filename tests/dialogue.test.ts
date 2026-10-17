@@ -536,11 +536,12 @@ describe('dialogue', () => {
         for (const eloquence of eloquences) for (const pool of [LINES.you.work, LINES.you.quit, LINES.you.notice]) check(line(pool, { ...bossing, eloquence }, rng), `${about} you work ${eloquence}`);
         lines += 9;
         // Money: a loan shark lending, full, paid and square; someone lent to, refusing, paying back, putting it off, pressed; the player asking each.
-        const lending: Speaker = { ...speaker, vars: { ...vars, amount: '250', owed: '300', gang: 'Tyger Claws' } };
+        // And a boss selling the player their place, slow, brisk or steady.
+        const lending: Speaker = { ...speaker, vars: { ...vars, amount: '250', owed: '300', gang: 'Tyger Claws', work: 'El Pinche Grill' } };
         for (const pool of Object.values(LINES.money)) check(line(pool, lending, rng), `${about} money pool`);
-        for (const eloquence of eloquences) for (const pool of [LINES.you.borrow, LINES.you.lend, LINES.you.askBack, LINES.you.payShark]) check(line(pool, { ...lending, eloquence }, rng), `${about} you money ${eloquence}`);
+        for (const eloquence of eloquences) for (const pool of [LINES.you.borrow, LINES.you.lend, LINES.you.askBack, LINES.you.payShark, LINES.you.buyPlace]) check(line(pool, { ...lending, eloquence }, rng), `${about} you money ${eloquence}`);
         check(finish(textOf(rng.pick(LINES.revenge.debt)), { ...vars, gang: 'Tyger Claws', take: '120', where: 'Kabuki Market' }), `${about} debt collected`);
-        lines += 22;
+        lines += 25;
         // With a mask on the player, and without: the pools that care either way, and the ones only a mask brings up.
         for (const mask of ['balaclava', '']) {
           const masked: Speaker = { ...speaker, vars: { ...vars, mask, work: 'The Afterlife' } };

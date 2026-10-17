@@ -182,6 +182,16 @@ own.
   the honest pay you back as they can, every week, into your account. Ask for it back and they
   pay what they can spare, or make excuses; ask again too soon and they resent it. The status
   drop-down has a Debts row.
+- **A business of your own**: buy a storefront off its boss (the **€$** on their card, when
+  they'd sell to you: a struggling place to anyone not cold to you, a thriving one only to a
+  friend), at four weeks of its costs and eight of its profit, or a place gone under off the
+  notice on its shutters for three weeks of costs, and new hands open it the next day. The old
+  boss runs it; what it makes over its reserve comes to your account every payday. Out back are
+  the **Books**: put money in the till, take out what's over its float, set its prices (cheap
+  draws custom from its rivals and walk-ins, dear makes more on each sale but sends some
+  customers elsewhere) or sell it back. A place of yours can still go under: three paydays short
+  of its wages and it's gone, and you're told each payday it comes up short. Its counter is open
+  to you whoever's in, at the staff price; the map marks it with a coin.
 - **Hard times**: when the eddies run out, people do what they must. Someone who can't pay for
   the week's food and has the nerve walks out with some of it. Whoever still can't make the week
   on payday borrows from the **loan shark**, the gang that runs their turf, at a tenth a week,
