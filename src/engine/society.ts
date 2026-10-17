@@ -120,6 +120,8 @@ export interface Threat {
   amount: number;
   /** Whether anyone who thinks well of the player has had the chance to warn them yet. */
   warned?: boolean;
+  /** Why they're coming: a debt to a loan shark (missing: what the player did). */
+  why?: 'debt';
 }
 
 /** How the player came to know of someone, or of a tie between two people (`asked`: in an older save, from asking someone about them). */

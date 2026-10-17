@@ -5,6 +5,7 @@ import type { DealingState, DealState, Front } from './dealing';
 import type { Runner, RunnerNews } from './crew';
 import type { HabitState } from './habit';
 import type { HomeState } from './home';
+import type { CreditState } from './credit';
 import type { Arms, Meter } from './combat';
 import type { Lodging } from './rooms';
 import type { Confrontation, Crime, Dispatch, PendingCall, PoliceState, Report, Warrant } from './police';
@@ -89,6 +90,8 @@ export interface Progress {
   /** Where the player lives, and what they keep there (missing or null: a save from before homes; nowhere, nothing). */
   home?: HomeState | null;
   stash?: Item[] | null;
+  /** What the player owes and is owed (missing or null: a save from before; nothing either way). */
+  credit?: CreditState | null;
 }
 
 /** What a save takes from a game in progress (a `Game` has all of it). */
@@ -126,6 +129,7 @@ export interface SaveSource {
   readonly habitSaved: HabitState;
   readonly homeSaved: HomeState | null;
   readonly stashSaved: readonly Item[];
+  readonly creditSaved: CreditState;
 }
 
 /** What gets written to the player's device. The city itself is rebuilt from its seed. */
@@ -182,6 +186,7 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     habit: game.habitSaved,
     home: game.homeSaved ? { ...game.homeSaved } : null,
     stash: game.stashSaved.map((item) => ({ ...item })),
+    credit: game.creditSaved,
     savedAt: now,
   };
 }
@@ -266,6 +271,8 @@ export function readSave(raw: unknown): SaveData | null {
     // And before homes, the player had none, and kept nothing anywhere.
     home: isHome(save.home) ? save.home : null,
     stash: Array.isArray(save.stash) ? save.stash.filter(isItem) : null,
+    // And before borrowing and lending, nobody owed anybody.
+    credit: creditOf(save.credit),
     savedAt: save.savedAt,
   };
 }
@@ -287,13 +294,13 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, trading, dealer, cutter, toughness, arms, room, lodging, job, jobs, career, life, you, chrome, health, police, lethal, coverage, dealing, habit, home, stash } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, trading, dealer, cutter, toughness, arms, room, lodging, job, jobs, career, life, you, chrome, health, police, lethal, coverage, dealing, habit, home, stash, credit } = save;
   const exists = (j: JobState) => world.buildings.some((b) => b.id === j.building);
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, trading: trading ?? null, dealer: dealer ?? null, cutter: cutter ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, police: police ?? null, lethal: lethal ?? null, coverage: coverage ?? null, dealing: dealing ?? null, habit: habit ?? null, home: home && world.buildings.some((b) => b.id === home.building) ? home : null, stash: stash ?? null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, trading: trading ?? null, dealer: dealer ?? null, cutter: cutter ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, police: police ?? null, lethal: lethal ?? null, coverage: coverage ?? null, dealing: dealing ?? null, habit: habit ?? null, home: home && world.buildings.some((b) => b.id === home.building) ? home : null, stash: stash ?? null, credit: credit ? { ...credit, bank: credit.bank && world.buildings.some((b) => b.id === credit.bank?.bank) ? credit.bank : null } : null };
 }
 
 const CRIMES: ReadonlySet<string> = new Set<Crime>(['assault', 'robbery', 'murder', 'possession', 'dealing']);
@@ -508,6 +515,16 @@ function jobOf(j: JobState): JobState {
 function isJob(value: unknown): value is JobState {
   const j = value as Record<string, unknown> | null;
   return typeof j === 'object' && j !== null && typeof j.building === 'string' && Number.isInteger(j.rung) && (j.rung as number) >= 0 && isNumber(j.trust) && j.trust >= 0 && Number.isInteger(j.shifts) && (j.shifts as number) >= 0 && Number.isInteger(j.lastShiftDay);
+}
+
+/** What the player owes and is owed, as saved: a loan that isn't one is dropped, and so is a debt to someone with no amount. */
+function creditOf(value: unknown): CreditState | null {
+  if (!isObject(value)) return null;
+  const bank = isObject(value.bank) && typeof value.bank.bank === 'string' && isNumber(value.bank.owed) && isNumber(value.bank.installment) && isNumber(value.bank.due) && isNumber(value.bank.missed) && isNumber(value.bank.since) ? (value.bank as unknown as CreditState['bank']) : null;
+  const shark = isObject(value.shark) && typeof value.shark.gang === 'string' && isNumber(value.shark.owed) && isNumber(value.shark.borrowed) && isNumber(value.shark.since) && isNumber(value.shark.paid) && isNumber(value.shark.due) ? (value.shark as unknown as CreditState['shark']) : null;
+  const lent: CreditState['lent'] = {};
+  if (isObject(value.lent)) for (const [id, l] of Object.entries(value.lent)) if (isObject(l) && isNumber(l.owed) && isNumber(l.since) && isNumber(l.paid) && isNumber(l.due)) lent[id] = l as unknown as CreditState['lent'][string];
+  return { bank, barred: value.barred === true, shark, lent };
 }
 
 function isHome(value: unknown): value is HomeState {

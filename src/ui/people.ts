@@ -31,7 +31,7 @@ export interface LogLineView {
 }
 
 /** Which set of choices is unfolded under the conversation, if any. */
-export type Picker = 'talk' | 'ask' | 'give' | 'chop' | 'work' | 'deal' | 'heart' | 'more' | null;
+export type Picker = 'talk' | 'ask' | 'give' | 'chop' | 'work' | 'deal' | 'money' | 'heart' | 'more' | null;
 
 /** What the heart command offers: asking them out, a date, making it official, ending it. */
 export type HeartMove = 'askOut' | 'date' | 'official' | 'end';
@@ -83,6 +83,8 @@ export interface PersonCardView {
   roster: Array<{ day: number; label: string; on: boolean }>;
   /** What there is to do about dealing with them: ask to deal for their gang, take a package, pay up, walk away, or sell them something (`sell:<drug>`). */
   deal: Array<{ id: string; label: string; sub?: string; disabled?: boolean; danger?: boolean }>;
+  /** What there is to do about money with them: borrow from a ganger's loan shark or pay it back; lend to anyone else, or ask for it back. */
+  money: Array<{ id: string; label: string; sub?: string; disabled?: boolean }>;
   /** What there is to do about the heart with them: ask them out, or, with the one the player is seeing, a date, making it official, ending it (that one even when they're not here). */
   heart: HeartMove[];
   /** What has passed between them, oldest first. */
@@ -141,6 +143,8 @@ export interface PeopleHandlers {
   onHeart(id: string, move: HeartMove): void;
   /** The player did something about dealing with a person: an option `deal` offered. */
   onDeal(id: string, option: string): void;
+  /** The player borrowed, paid back, lent or asked for it back: an option `money` offered. */
+  onMoney(id: string, option: string): void;
   /** A tab of the card was picked (the facts line is the way to the profile too). */
   onCardTab(tab: CardTab): void;
   /** A list was picked: who's here, or everyone known. */
@@ -187,11 +191,12 @@ export class People {
     // Everything on the card goes through one listener: commands, the choices they unfold, names in the web.
     els.card.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
-      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-item], [data-chip], [data-action], [data-kill], [data-heart], [data-deal], [data-open], [data-day]');
+      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-item], [data-chip], [data-action], [data-kill], [data-heart], [data-deal], [data-money], [data-open], [data-day]');
       if (!button) return;
-      const { cmd, approach, fact, item, chip, action, kill, heart, deal, open, id, day } = button.dataset;
-      if (cmd === 'talk' || cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'deal' || cmd === 'heart' || cmd === 'more') handlers.onPicker(cmd);
+      const { cmd, approach, fact, item, chip, action, kill, heart, deal, money, open, id, day } = button.dataset;
+      if (cmd === 'talk' || cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'deal' || cmd === 'money' || cmd === 'heart' || cmd === 'more') handlers.onPicker(cmd);
       else if (deal && id && !(button as HTMLButtonElement).disabled) handlers.onDeal(id, deal);
+      else if (money && id && !(button as HTMLButtonElement).disabled) handlers.onMoney(id, money);
       else if (heart && id) handlers.onHeart(id, heart as HeartMove);
       else if (approach && id) handlers.onTalk(id, approach);
       else if (fact && id) handlers.onQuestion(id, fact);
@@ -210,7 +215,7 @@ export class People {
     els.reputation.replaceChildren(...view.reputation.map((line) => el('span', 'people-rep-item', line)));
     els.reputation.hidden = view.reputation.length === 0;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'approach', 'fact', 'about', 'item', 'chip', 'action', 'heart', 'deal', 'open', 'id', 'tab', 'cardtab'].includes(key)) : undefined;
+    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'approach', 'fact', 'about', 'item', 'chip', 'action', 'heart', 'deal', 'money', 'open', 'id', 'tab', 'cardtab'].includes(key)) : undefined;
     const focusedId = active?.dataset.id;
     // The two lists' tabs, over the list; a card has its own.
     els.tabs.hidden = Boolean(view.card);
@@ -311,6 +316,12 @@ export class People {
         if (o.disabled) button.disabled = true;
         picker.push(button);
       }
+    } else if (card.here && card.picker === 'money' && card.money.length) {
+      for (const o of card.money) {
+        const button = chip(o.sub ? `${o.label} · ${o.sub}` : o.label, { id: card.id, money: o.id }, 'person-chip');
+        if (o.disabled) button.disabled = true;
+        picker.push(button);
+      }
     } else if (card.picker === 'heart' && card.heart.length) {
       picker.push(...card.heart.map((move) => chip(HEART_LABEL[move], { id: card.id, heart: move }, `person-chip${move === 'end' ? ' is-danger' : ' is-heart'}`)));
     } else if (card.cold && card.picker === 'more') {
@@ -331,6 +342,7 @@ export class People {
           ...(card.chops.length ? [{ cmd: 'chop', label: 'Chop', active: card.picker === 'chop' }] : []),
           ...(card.work ? [{ cmd: 'work', label: 'Work', active: card.picker === 'work' }] : []),
           ...(card.deal.length ? [{ cmd: 'deal', label: 'Deal', active: card.picker === 'deal' }] : []),
+          ...(card.money.length ? [{ cmd: 'money', label: '€$', active: card.picker === 'money' }] : []),
           ...heart,
           { cmd: 'more', label: '⋯', active: card.picker === 'more', quiet: true },
         ]
@@ -346,6 +358,7 @@ export class People {
         button.dataset.id = card.id;
         if (c.cmd === 'more') button.setAttribute('aria-label', card.cold ? `More: rob${card.finishes.map((f) => `, ${f.label.toLowerCase()}`).join('')}` : 'More: insult, rob, attack');
         if (c.cmd === 'heart') button.setAttribute('aria-label', `Heart: ${card.heart.map((m) => HEART_LABEL[m]).join(', ')}`);
+        if (c.cmd === 'money') button.setAttribute('aria-label', `Money: ${card.money.map((m) => m.label).join(', ')}`);
         if (c.active !== undefined) button.setAttribute('aria-pressed', String(c.active));
         return button;
       }),

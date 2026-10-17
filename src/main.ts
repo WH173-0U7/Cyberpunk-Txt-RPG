@@ -41,6 +41,7 @@ import { MEDICAL } from './data/medical';
 import { HOURS } from './data/hours';
 import { ROOMS } from './data/rooms';
 import { HOME } from './data/home';
+import { CREDIT } from './data/credit';
 import { POLICE } from './data/police';
 import { DEALING } from './data/dealing';
 import type { PoliceView } from './engine/police';
@@ -335,14 +336,23 @@ const bank = new Bank(
     onChips: () => atTheCounter(() => game.bankChips()),
     onToggleWithdraw: () => {
       withdrawOpen = !withdrawOpen;
+      loanOpen = false;
       showBank();
     },
+    onToggleLoan: () => {
+      loanOpen = !loanOpen;
+      withdrawOpen = false;
+      showBank();
+    },
+    onBorrow: (amount) => atTheCounter(() => game.borrow(amount, Date.now())),
+    onRepay: () => atTheCounter(() => game.repayLoan(Date.now())),
   },
   reducedMotion,
 );
 /** What the counter last said, and whether the sums to withdraw are unfolded. */
 let bankStatus = '';
 let withdrawOpen = false;
+let loanOpen = false;
 
 const rooms = new RoomsPanel(
   {
@@ -417,6 +427,7 @@ function atTheCounter(act: () => boolean): void {
   off();
   bankStatus = said.at(-1) ?? '';
   withdrawOpen = false;
+  loanOpen = false;
   showBank();
 }
 
@@ -517,6 +528,13 @@ const people = new People(
       picker = null;
       cardTab = 'talk';
       game.deal(id, option, Date.now());
+      showPeople();
+    },
+    onMoney: (id, option) => {
+      lastActivity = performance.now();
+      picker = null;
+      cardTab = 'talk';
+      game.moneyMove(id, option, Date.now());
       showPeople();
     },
     onHeart: (id, move) => {
@@ -1193,7 +1211,31 @@ function showBank(): void {
     canBankChips: carried.length > locked,
     withdrawals: (at?.withdrawals ?? []).map((amount) => ({ amount, enabled: amount <= account })),
     withdrawOpen,
+    loan: loanFigure(),
+    loans: game.credit(Date.now())?.amounts ?? [],
+    loanOpen,
+    canRepay: Boolean(game.credit(Date.now())?.loan) && account + bills + coins > 0,
   });
+}
+
+/** The bank counter's Loan figure: the loan the player has, or what the bank would lend. */
+function loanFigure(): string {
+  const credit = game.credit(Date.now());
+  if (!credit) return 'None';
+  const loan = credit.loan;
+  if (loan) return loan.defaulted ? `€$ ${loan.owed} owed · in default` : `€$ ${loan.owed} owed · €$ ${loan.installment}/wk`;
+  return credit.barred ? 'Refused: you defaulted' : credit.limit ? `Up to €$ ${credit.limit}` : 'None';
+}
+
+/** The Debts row: the bank loan, the loan shark, and what people owe the player. */
+function debtLine(now: number): string {
+  const d = game.debts(now);
+  const parts = [
+    d.bank ? `${d.bank.name} €$ ${d.bank.owed}${d.bank.defaulted ? ' in default' : ` · €$ ${d.bank.installment} in ${d.bank.dueIn} ${d.bank.dueIn === 1 ? 'day' : 'days'}`}${d.bank.missed ? ` · ${d.bank.missed} missed` : ''}` : '',
+    d.shark ? `${d.shark.gang} €$ ${d.shark.owed}${d.shark.late ? ' · they want it now' : ''}` : '',
+    d.owers ? `owed you €$ ${d.owedYou} by ${d.owers}` : '',
+  ].filter(Boolean);
+  return parts.join(' · ') || 'Nothing owed either way';
 }
 
 /** Fills the inventory: the player head to toe, or the inside of the pocket they're looking into, and what's in it. */
@@ -1492,6 +1534,7 @@ function showStatus(now: number): void {
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
     { label: 'Market', value: marketLine(market) },
     ...(market.news[0] ? [{ label: 'News', value: market.news.slice(0, 2).map((n) => `${n.text} (${n.ago})`).join(' · ') }] : []),
+    { label: 'Debts', value: debtLine(now), ...(game.debts(now).shark?.late || game.debts(now).bank?.missed ? { tone: 'bad' as const } : {}) },
     { label: 'Home', value: homeLine(home), ...(home?.behind ? { tone: home.behind >= HOME.warnAt ? ('bad' as const) : ('warn' as const) } : {}) },
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
     ...(jobs.length ? jobs.map((j) => ({ label: j.side ? 'Side gig' : 'Work', value: `${j.rung.title} at ${j.building.name} · ${formatDays(j.days)} ${j.hours[0]}–${j.hours[1]}h${j.owed ? ` · ${j.owed} €$ owed` : ''} · ${j.shifts} ${j.shifts === 1 ? 'shift' : 'shifts'}${j.next ? ` · trust ${j.trust}, ${j.next.title.toLowerCase()} at ${j.next.at}` : ' · top of the ladder'} · trade ${game.trade(j.building).health} · ${j.perks.join(', ')}` })) : [{ label: 'Work', value: 'No job' }]),
@@ -1667,6 +1710,7 @@ function showPeople(): void {
             ...(present && game.workWith(shown.id) === 'switch' ? { leaving: game.switchingFrom(shown.id) ?? undefined } : {}),
             roster: present && game.workWith(shown.id) === 'quit' ? rosterOf(shown.id, now) : [],
             deal: present ? game.dealWith(shown.id, now) : [],
+            money: present ? game.moneyWith(shown.id, now) : [],
             heart: game.romanceWith(shown.id, now),
             // Chat first, a flirt last.
             approaches: [{ id: 'chat', label: 'Chat' }, ...Object.entries(LINES.approaches).sort(([a], [b]) => Number(a === 'flirt') - Number(b === 'flirt')).map(([id, a]) => ({ id, label: a.label }))],
@@ -2006,7 +2050,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, police: POLICE, join: JOIN, dealing: DEALING }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, police: POLICE, join: JOIN, dealing: DEALING }, progress);
   wire(game);
   map.setWorld(world);
   try {

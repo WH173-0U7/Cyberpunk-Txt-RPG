@@ -1212,6 +1212,47 @@ The player can rent a unit or squat, and keep a stash there (`rules.home`, `HOME
   the unit **Vacate** (`move`, Leave for a squat), the panel's line on the rent (`homeNote`),
   the status drop-down's Home row (`homeLine`), and a house pin on the map (`CityMap.setHome`).
 
+## Borrowing and lending
+
+The player can take a bank loan, borrow from a gang's loan shark, and lend to people
+(`rules.credit`, `CREDIT` in `src/data/credit.ts`; the tests' `RULES` leave it out):
+
+- `src/engine/credit.ts` is the engine's shapes (`BankLoan`, `SharkLoan`, `Lent`, `CreditState`,
+  `CreditRules`) and the arithmetic (`creditLimit`, `loanAmounts`, `honestyOf`: loyalty less half
+  the greed). `Game` keeps the state (`creditState`, saved as `credit`, read by `creditOf` in
+  `save.ts`; a loan from a bank the city doesn't have is dropped) and moves the money.
+- A bank (`Game.credit(now)`, at a `bank` counter) lends from `bank.least` to `base` plus
+  `weeks` of what the player's jobs pay a week (`weeklyPay`), up to `most`, one loan at a time:
+  `borrow(amount, now)` puts it in the account and owes it with `interest` on top, in `term`
+  weekly installments; `repayLoan(now)` pays it off at any bank, account first. The private
+  `creditTick(now)` (from `start` and `tick`, after `homeTick`) takes each installment from the
+  account as it falls due; short, it's missed (`late` of it more), and `default` missed in a row
+  is a default: the account swept toward it every week till it's paid, and `barred` for good.
+- A loan shark is any ganger (`Game.moneyWith(id, now)`, the card's **€$** command;
+  `moneyMove(id, option, now)`): `borrow:<n>` of `shark.amounts`, cash into the wallet (as far as
+  it holds, else `noRoom`) out of the gang's chest (`LifeState.treasuries`), all owed to one gang
+  at a time up to `most`; never to a player they're cold to (`LINES.money.sharkNo`), more to one
+  past `grace` (`sharkFull`) or out of a chest short of it (`sharkDry`); it grows `interest` a
+  week up to `cap` times what was borrowed. `repay` pays any of
+  that gang back in cash, into its chest. `grace` days without a payment and the gang sends
+  someone: a `Threat` with `why: 'debt'` (`settleThreats` uses `LINES.revenge.debt`, and what it
+  takes comes off the loan and goes to the chest, the clock starting again); paid off, it's
+  called off.
+- Lending (`lend:<n>` of `lend.amounts`, to anyone but a ganger or an officer): taken by the
+  broke, behind or in debt (`meansVars`), else only by someone `lend.stances` to the player; the
+  cash goes into their account (`LifeState.savings`). On the week from the day they borrowed, an
+  honest one (`honestyOf` over `lend.honest`) pays back `share` of what they have over a week's
+  food and rent (`spareOf`, by their `Ledger`; `takeFrom` takes it, account first) into the
+  player's account; `ask` asks for it there and then (all they have over, or an excuse), and
+  asking again within `patience` days is pressing (`pressing` rapport, `LINES.notes.dunned`; a loan made is noted `lent`).
+  A borrower who dies takes the debt with them.
+- What's said: the narration is `CREDIT.lines`; what people say is `LINES.money` (`{amount}`,
+  `{owed}`, `{gang}`) and the player's `LINES.you.borrow`/`lend`/`askBack`/`payShark`; the
+  dialogue sweep checks them. Every exchange takes a snapshot and notes after, like any other.
+- The UI: the bank counter's **Loan** (the sums it lends, in the picker) and **Repay**, and its
+  Loan figure (`loanFigure` in `main.ts`); the card's **€$** command (`Picker` `money`,
+  `data-money`); the status drop-down's **Debts** row (`Game.debts(now)`, `debtLine`).
+
 ## Inebriation
 
 Drinking alcohol makes the player drunk; nothing else happens yet:

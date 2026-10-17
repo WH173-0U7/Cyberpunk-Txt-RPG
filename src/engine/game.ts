@@ -20,6 +20,7 @@ import { forgetMemories, GRIEVANCES, memoriesOf, memoryAge, memoryOf, recall, re
 import { chargesFor, freshPolice, issueWarrant, policing, warrantsAt, worstCrime, type Confrontation, type Crime, type Dispatch, type PoliceChoice, type PoliceContent, type PoliceState, type PoliceView } from './police';
 import { floorsOf, mainRoom, roomById, roomOf, roomsOn, unitOf, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
 import { stackIn, stashFits, stashLoad, type HomeKind, type HomeRules, type HomeState, type HomeView } from './home';
+import { creditLimit, honestyOf, loanAmounts, type CreditRules, type CreditState } from './credit';
 import { buildingById, GUARD_ROLE, openingHours, rotaStaff, readOf, skillsOf, walkOf, type PersonSkills, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
@@ -150,6 +151,8 @@ export interface GameRules extends TravelRules {
   rooms?: RoomsContent;
   /** The player's home: renting or squatting, the rent, the stash (missing: nowhere to live). */
   home?: HomeRules;
+  /** Borrowing and lending: a bank's loans, a gang's loan shark, lending to people (missing: none of it). */
+  credit?: CreditRules;
   /** The NCPD: who calls it in, how fast it comes, warrants. Without it (the tests' rules leave it out), nobody ever calls. */
   police?: PoliceContent;
   /** Who throws in on a fight. Without it (the tests' rules leave it out), every fight is the player and one other. */
@@ -375,6 +378,8 @@ export class Game {
   /** Where the player lives, and what they keep there: a rented home has a bed, which raises the most energy. */
   private homeState: HomeState | null;
   private stashItems: Item[];
+  /** What the player owes (a bank, a loan shark) and is owed (by the people they've lent to). */
+  private creditState: CreditState;
   private lastAmbient: AmbientLine | null = null;
   /** The scene (where, when, which mask) last looked over for someone who knows the mask; see `recognize`. */
   private noticed = '';
@@ -471,6 +476,7 @@ export class Game {
     const home = progress?.home && world.buildings.some((b) => b.id === progress.home?.building) ? progress.home : null;
     this.homeState = home ? { ...home } : null;
     this.stashItems = home ? (progress?.stash ?? []).map((item) => ({ ...item })) : [];
+    this.creditState = progress?.credit ? copyOf(progress.credit) : { bank: null, barred: false, shark: null, lent: {} };
     if (progress) {
       for (const id of progress.visited) this.visit(this.locationById(id));
       for (const id of progress.discovered) this.discovered.add(this.locationById(id).id);
@@ -7589,13 +7595,22 @@ export class Game {
       const vars = { ...(by ? this.speakerFor(by, this.stanceOf(by, now), 'killing time', now).vars : {}), ...(known ? { name: known } : {}), gang: gang?.name ?? '', take: String(take), where: this.nameOf(this.where) };
       const rng = createRng(`${this.world.seed}:threat:${threat.id}`);
       this.events.emit('fx', { effect: 'shake' });
-      const hit = finish(textOf(rng.pick(by ? lines.revenge.person : lines.revenge.gang)), vars);
+      const hit = finish(textOf(rng.pick(by ? lines.revenge.person : threat.why === 'debt' ? lines.revenge.debt : lines.revenge.gang)), vars);
       this.say(hit, 'error');
       if (by) this.logged(by.id, 'them', hit, now);
       this.money = grab.money;
       for (const chip of lost) this.items.splice(this.items.indexOf(chip), 1);
       if (lost.length) this.say(`${lost.length === 1 ? 'The credchip on you goes' : `The ${lost.length} credchips on you go`} with them.`, 'error');
       this.drainEnergy(Infinity, now);
+      // Come for a loan shark's money, what they took comes off it, and the clock starts again.
+      const shark = this.creditState.shark;
+      if (threat.why === 'debt' && shark?.gang === threat.gang) {
+        shark.owed = Math.max(0, shark.owed - take);
+        shark.paid = this.clockAt(now).day;
+        delete shark.sent;
+        if (threat.gang) this.life.treasuries[threat.gang] = (this.life.treasuries[threat.gang] ?? 0) + take;
+        if (!shark.owed) this.creditState.shark = null;
+      }
       settleThreat(this.society, threat, society, timeScale, now);
       if (by) this.remember(by.id, { kind: 'settled', at: now, amount: take }, now);
       this.events.emit('walletChanged', this.wallet);
@@ -7640,6 +7655,7 @@ export class Game {
     this.live(now);
     this.punchClock(now);
     this.homeTick(now);
+    this.creditTick(now);
     this.dealTick(now);
     this.say(this.resumed ? this.world.welcomeBack : this.world.welcome);
     if (!this.resumed) this.settle(this.where);
@@ -7719,6 +7735,7 @@ export class Game {
     this.live(now);
     this.punchClock(now);
     this.homeTick(now);
+    this.creditTick(now);
     this.soberUp(now);
     this.settleThreats(now);
     this.policeTick(now);
@@ -8107,6 +8124,373 @@ export class Game {
       }
     }
     this.events.emit('homeChanged', this.home(now));
+  }
+
+  // ───────────── Borrowing and lending ─────────────
+
+  get creditSaved(): CreditState {
+    return copyOf(this.creditState);
+  }
+
+  /** A line of the borrowing and lending, filled in. */
+  private creditLine(pool: string[], vars: Record<string, string>, key: string): void {
+    this.say(this.narration(pool, vars, createRng(`${this.world.seed}:credit:${key}`)), 'system');
+  }
+
+  /** What the player's work pays a week: each job's shift pay on its rostered days. */
+  private weeklyPay(now: number): number {
+    return this.jobsStatus(now).reduce((n, j) => n + j.pay * j.days.length, 0);
+  }
+
+  /** The bank here as a lender: what it would lend (nothing to a player it's barred, or with a loan out), its amounts, and the loan the player has, wherever it's from. */
+  credit(now: number): { limit: number; amounts: number[]; loan: { bank: string; owed: number; installment: number; dueIn: number; missed: number; defaulted: boolean } | null; barred: boolean } | null {
+    const rules = this.rules.credit;
+    if (!rules || !this.bank(now)) return null;
+    const loan = this.creditState.bank;
+    const limit = loan || this.creditState.barred ? 0 : creditLimit(this.weeklyPay(now), rules.bank);
+    return {
+      limit,
+      amounts: limit ? loanAmounts(limit, rules.bank) : [],
+      loan: loan ? { bank: this.buildingOf(loan.bank)?.name ?? 'the bank', owed: loan.owed, installment: loan.installment, dueIn: Math.max(0, loan.due - this.clockAt(now).day), missed: loan.missed, defaulted: Boolean(loan.defaulted) } : null,
+      barred: this.creditState.barred,
+    };
+  }
+
+  /** Takes a bank loan here, into the account: the interest on top, paid back a week at a time. */
+  borrow(amount: number, now: number): boolean {
+    const rules = this.rules.credit;
+    const offer = this.credit(now);
+    const bank = this.inside;
+    if (!rules || !offer || !bank || !offer.amounts.includes(amount)) return false;
+    const owed = Math.round(amount * (1 + rules.bank.interest));
+    const installment = Math.ceil(owed / rules.bank.term);
+    const today = this.clockAt(now).day;
+    this.creditState.bank = { bank: bank.id, owed, installment, due: today + 7, missed: 0, since: today };
+    this.money = { ...this.money, account: this.money.account + amount };
+    this.creditLine(rules.lines.borrowed, { bank: bank.name, amount: String(amount), owed: String(owed), installment: String(installment) }, `${bank.id}:${now}`);
+    this.events.emit('walletChanged', this.wallet);
+    return true;
+  }
+
+  /** Pays a bank loan off at a bank, as far as the account and then cash go. */
+  repayLoan(now: number): boolean {
+    const rules = this.rules.credit;
+    const loan = this.creditState.bank;
+    if (!rules || !loan || !this.bank(now)) return false;
+    const fromAccount = Math.min(this.money.account, loan.owed);
+    this.money = { ...this.money, account: this.money.account - fromAccount };
+    const { money, taken } = takeCash(this.money, loan.owed - fromAccount);
+    this.money = money;
+    const paid = fromAccount + taken;
+    if (!paid) return false;
+    loan.owed -= paid;
+    const name = this.buildingOf(loan.bank)?.name ?? 'the bank';
+    if (loan.owed <= 0) {
+      this.creditState.bank = null;
+      this.creditLine(rules.lines.cleared, { bank: name }, `${loan.bank}:clear:${now}`);
+    } else this.creditLine(rules.lines.paid, { bank: name, installment: String(paid), owed: String(loan.owed) }, `${loan.bank}:pay:${now}`);
+    this.events.emit('walletChanged', this.wallet);
+    return true;
+  }
+
+  /**
+   * What a person's €$ command offers: with a ganger, borrowing from their gang's loan shark (one
+   * gang at a time, up to what it will) and paying back what's owed it; with anyone else but an
+   * officer, lending them something, or asking for back what they owe.
+   */
+  moneyWith(id: string, now: number): Array<{ id: string; label: string; sub?: string; disabled?: boolean }> {
+    const rules = this.rules.credit;
+    const here = this.isHere(id, now);
+    if (!rules || !here) return [];
+    const { person } = here;
+    const options: Array<{ id: string; label: string; sub?: string; disabled?: boolean }> = [];
+    if (person.gang) {
+      const shark = this.creditState.shark;
+      const theirs = !shark || shark.gang === person.gang;
+      if (shark && theirs) options.push({ id: 'repay', label: 'Pay back', sub: `€$ ${shark.owed} owed`, disabled: !cash(this.money) });
+      for (const amount of rules.shark.amounts) options.push({ id: `borrow:${amount}`, label: `Borrow ${amount}`, disabled: !theirs || (shark?.owed ?? 0) + amount > rules.shark.most });
+      return options;
+    }
+    if (/NCPD/.test(person.job.role)) return [];
+    const lent = this.creditState.lent[id];
+    if (lent) return [{ id: 'ask', label: 'Ask for it back', sub: `€$ ${lent.owed}` }];
+    for (const amount of rules.lend.amounts) options.push({ id: `lend:${amount}`, label: `Lend ${amount}`, disabled: cash(this.money) < amount });
+    return options;
+  }
+
+  /** Does what a person's €$ command offered: borrow, pay back, lend, or ask for it back. */
+  moneyMove(id: string, option: string, now: number): boolean {
+    const here = this.isHere(id, now);
+    const choice = this.moneyWith(id, now).find((o) => o.id === option);
+    if (!here || !choice || choice.disabled || this.detained(now) || this.fighting) return false;
+    const [what, amount] = option.split(':');
+    if (what === 'borrow') return this.borrowFrom(here.person, Number(amount), here.stance, here.doing, now);
+    if (what === 'repay') return this.payShark(here.person, here.stance, here.doing, now);
+    if (what === 'lend') return this.lendTo(here.person, Number(amount), here.stance, here.doing, now);
+    if (what === 'ask') return this.askBack(here.person, here.stance, here.doing, now);
+    return false;
+  }
+
+  /** What someone has over a week's food and rent, as the economy sees them. */
+  private spareOf(person: Person): number {
+    const economy = this.rules.life.economy;
+    const ledger = ledgerOf(person, this.world, this.population, economy, this.tierFn, this.world.seed, this.livingStaff);
+    return person.eddies + accountOf(person, this.life, ledger, economy) - ledger.essentials;
+  }
+
+  /** Takes eddies out of someone's money as the economy keeps it: their account first, then what's on them. */
+  private takeFrom(person: Person, amount: number): number {
+    const economy = this.rules.life.economy;
+    const ledger = ledgerOf(person, this.world, this.population, economy, this.tierFn, this.world.seed, this.livingStaff);
+    const savings = (this.life.savings ??= {});
+    const account = accountOf(person, this.life, ledger, economy);
+    const fromAccount = Math.max(0, Math.min(account, amount));
+    savings[person.id] = account - fromAccount;
+    const fromCash = Math.max(0, Math.min(person.eddies, amount - fromAccount));
+    person.eddies -= fromCash;
+    this.life.eddies[person.id] = person.eddies;
+    return fromAccount + fromCash;
+  }
+
+  private borrowFrom(person: Person, amount: number, stance: Stance, doing: string, now: number): boolean {
+    const rules = this.rules.credit!;
+    const gang = person.gang as string;
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const rng = createRng(`${this.world.seed}:${person.id}:borrow:${amount}:${now}`);
+    const before = this.snapshot(person, now);
+    const shark = this.creditState.shark;
+    const today = this.clockAt(now).day;
+    // Cash, into the wallet: as much as it'll hold.
+    if (walletRoom(this.pockets, this.money, this.rules.gear) < amount) {
+      this.creditLine(rules.lines.noRoom, { amount: String(amount) }, `${person.id}:room:${now}`);
+      return false;
+    }
+    speaker.vars = { ...speaker.vars, amount: String(amount), owed: String(shark?.owed ?? 0), gang: this.rules.people.gangs[gang]?.name ?? '' };
+    this.logged(person.id, 'you', line(this.rules.lines.you.borrow, speaker, rng), now);
+    // Nothing for a player they're cold to, nor more for one behind on what they owe already, nor out of an empty chest.
+    const late = shark && today - shark.paid >= rules.shark.grace;
+    const no = stance === 'hostile' || stance === 'cold' ? this.rules.lines.money.sharkNo : late ? this.rules.lines.money.sharkFull : (this.life.treasuries[gang] ?? 0) < amount ? this.rules.lines.money.sharkDry : null;
+    if (no) {
+      this.speech(person, line(no, speaker, rng), now);
+      this.noteFeedback(person, before, now);
+      return false;
+    }
+    const loan = (this.creditState.shark ??= { gang, owed: 0, borrowed: 0, since: today, paid: today, due: today + 7 });
+    loan.owed += amount;
+    loan.borrowed += amount;
+    loan.paid = today;
+    this.life.treasuries[gang] = (this.life.treasuries[gang] ?? 0) - amount;
+    this.money = { ...this.money, bills: this.money.bills + amount };
+    this.speech(person, line(this.rules.lines.money.sharkLend, speaker, rng), now);
+    this.creditLine(rules.lines.sharkLent, { gang: speaker.vars.gang ?? '', owed: String(loan.owed) }, `${gang}:${now}`);
+    this.noteFeedback(person, before, now);
+    this.events.emit('walletChanged', this.wallet);
+    return true;
+  }
+
+  private payShark(person: Person, stance: Stance, doing: string, now: number): boolean {
+    const rules = this.rules.credit!;
+    const loan = this.creditState.shark;
+    if (!loan || loan.gang !== person.gang) return false;
+    const grab = takeCash(this.money, loan.owed);
+    if (!grab.taken) return false;
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const rng = createRng(`${this.world.seed}:${person.id}:payshark:${loan.owed}:${now}`);
+    const before = this.snapshot(person, now);
+    this.money = grab.money;
+    loan.owed -= grab.taken;
+    loan.paid = this.clockAt(now).day;
+    delete loan.sent;
+    this.life.treasuries[loan.gang] = (this.life.treasuries[loan.gang] ?? 0) + grab.taken;
+    const gang = this.rules.people.gangs[loan.gang]?.name ?? '';
+    speaker.vars = { ...speaker.vars, amount: String(grab.taken), owed: String(loan.owed), gang };
+    this.logged(person.id, 'you', line(this.rules.lines.you.payShark, speaker, rng), now);
+    if (loan.owed <= 0) {
+      this.creditState.shark = null;
+      // Square: nobody's coming for it any more.
+      this.society.threats = this.society.threats.filter((t) => !(t.why === 'debt' && t.gang === loan.gang));
+      this.speech(person, line(this.rules.lines.money.sharkSquare, speaker, rng), now);
+      this.creditLine(rules.lines.sharkCleared, { gang }, `${loan.gang}:clear:${now}`);
+    } else {
+      this.speech(person, line(this.rules.lines.money.sharkPaid, speaker, rng), now);
+      this.creditLine(rules.lines.sharkPaid, { gang, amount: String(grab.taken), owed: String(loan.owed) }, `${loan.gang}:pay:${now}`);
+    }
+    this.noteFeedback(person, before, now);
+    this.events.emit('walletChanged', this.wallet);
+    return true;
+  }
+
+  private lendTo(person: Person, amount: number, stance: Stance, doing: string, now: number): boolean {
+    const rules = this.rules.credit!;
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const rng = createRng(`${this.world.seed}:${person.id}:lend:${amount}:${now}`);
+    const before = this.snapshot(person, now);
+    speaker.vars = { ...speaker.vars, amount: String(amount) };
+    this.logged(person.id, 'you', line(this.rules.lines.you.lend, speaker, rng), now);
+    // The broke take it gladly; anyone else only from someone they're warm to.
+    const vars = this.meansVars(person);
+    const needs = Boolean(vars.broke || vars.behind || vars.inDebt);
+    if (!needs && !rules.lend.stances.includes(stance)) {
+      this.speech(person, line(this.rules.lines.money.refuse, speaker, rng), now);
+      this.noteFeedback(person, before, now);
+      return false;
+    }
+    const grab = takeCash(this.money, amount);
+    if (grab.taken < amount) return false;
+    this.money = grab.money;
+    const economy = this.rules.life.economy;
+    const ledger = ledgerOf(person, this.world, this.population, economy, this.tierFn, this.world.seed, this.livingStaff);
+    (this.life.savings ??= {})[person.id] = accountOf(person, this.life, ledger, economy) + amount;
+    const today = this.clockAt(now).day;
+    this.creditState.lent[person.id] = { owed: amount, since: today, paid: today, due: today + 7 };
+    changeStanding(this.society, person.id, { rapport: needs ? 4 : 2 }, this.rules.society, this.rules.timeScale, now);
+    this.speech(person, line(this.rules.lines.money.lend, speaker, rng), now);
+    this.creditLine(rules.lines.lent, { who: this.describe(person.id, now)?.name ?? 'them', amount: String(amount) }, `${person.id}:${now}`);
+    this.noteFeedback(person, before, now, this.rules.lines.notes.lent);
+    this.events.emit('walletChanged', this.wallet);
+    this.events.emit('societyChanged', { people: [person.id] });
+    return true;
+  }
+
+  private askBack(person: Person, stance: Stance, doing: string, now: number): boolean {
+    const rules = this.rules.credit!;
+    const lent = this.creditState.lent[person.id];
+    if (!lent) return false;
+    const speaker = this.speakerFor(person, stance, doing, now);
+    const today = this.clockAt(now).day;
+    const rng = createRng(`${this.world.seed}:${person.id}:askback:${lent.owed}:${today}:${lent.asked ?? -1}`);
+    const before = this.snapshot(person, now);
+    speaker.vars = { ...speaker.vars, owed: String(lent.owed) };
+    this.logged(person.id, 'you', line(this.rules.lines.you.askBack, speaker, rng), now);
+    const pressed = lent.asked !== undefined && today - lent.asked < rules.lend.patience;
+    lent.asked = today;
+    if (pressed) {
+      changeStanding(this.society, person.id, { rapport: -rules.lend.pressing }, this.rules.society, this.rules.timeScale, now);
+      this.speech(person, line(this.rules.lines.money.pressed, speaker, rng), now);
+      this.noteFeedback(person, before, now, this.rules.lines.notes.dunned);
+      return true;
+    }
+    const can = honestyOf(person) >= rules.lend.honest ? Math.min(lent.owed, Math.floor(this.spareOf(person))) : 0;
+    if (can <= 0) {
+      this.speech(person, line(this.rules.lines.money.excuse, speaker, rng), now);
+      this.noteFeedback(person, before, now);
+      return true;
+    }
+    const paid = this.takeFrom(person, can);
+    this.money = { ...this.money, account: this.money.account + paid };
+    lent.owed -= paid;
+    lent.paid = today;
+    speaker.vars = { ...speaker.vars, amount: String(paid), owed: String(lent.owed) };
+    this.speech(person, line(this.rules.lines.money.payBack, speaker, rng), now);
+    if (lent.owed <= 0) delete this.creditState.lent[person.id];
+    this.noteFeedback(person, before, now);
+    this.events.emit('walletChanged', this.wallet);
+    return true;
+  }
+
+  /**
+   * The weeks of what the player owes and is owed, as each falls due: a bank loan's installment
+   * out of the account (missed, a fee; too many missed, default, and the account swept every week);
+   * a loan shark's interest, and someone sent to collect when nothing's been paid back in too long;
+   * and whoever owes the player paying back what they can, if they're the kind who does.
+   */
+  private creditTick(now: number): void {
+    const rules = this.rules.credit;
+    if (!rules) return;
+    const today = this.clockAt(now).day;
+    const loan = this.creditState.bank;
+    let changed = false;
+    while (this.creditState.bank === loan && loan && loan.due <= today) {
+      changed = true;
+      const day = loan.due;
+      loan.due += 7;
+      const name = this.buildingOf(loan.bank)?.name ?? 'the bank';
+      const key = `${loan.bank}:${day}`;
+      if (loan.defaulted) {
+        const swept = Math.min(this.money.account, loan.owed);
+        this.money = { ...this.money, account: this.money.account - swept };
+        loan.owed -= swept;
+        if (swept) this.creditLine(rules.lines.swept, { bank: name, amount: String(swept), owed: String(loan.owed) }, key);
+      } else {
+        const want = Math.min(loan.installment, loan.owed);
+        const pay = Math.min(this.money.account, want);
+        this.money = { ...this.money, account: this.money.account - pay };
+        loan.owed -= pay;
+        if (pay < want) {
+          loan.missed += 1;
+          loan.owed += Math.ceil((want - pay) * rules.bank.late);
+          if (loan.missed >= rules.bank.default) {
+            loan.defaulted = true;
+            this.creditState.barred = true;
+            const swept = Math.min(this.money.account, loan.owed);
+            this.money = { ...this.money, account: this.money.account - swept };
+            loan.owed -= swept;
+            this.creditLine(rules.lines.defaulted, { bank: name, owed: String(loan.owed) }, key);
+          } else this.creditLine(rules.lines.missed, { bank: name, installment: String(want), owed: String(loan.owed) }, key);
+        } else {
+          loan.missed = 0;
+          if (loan.owed > 0) this.creditLine(rules.lines.paid, { bank: name, installment: String(pay), owed: String(loan.owed) }, key);
+        }
+      }
+      if (loan.owed <= 0) {
+        this.creditState.bank = null;
+        this.creditLine(rules.lines.cleared, { bank: name }, `${key}:clear`);
+      }
+    }
+    const shark = this.creditState.shark;
+    if (shark) {
+      while (shark.due <= today) {
+        shark.due += 7;
+        shark.owed = Math.min(Math.ceil(shark.borrowed * rules.shark.cap), Math.ceil(shark.owed * (1 + rules.shark.interest)));
+        changed = true;
+      }
+      // Nothing paid back in too long: the gang sends someone for it.
+      if (!shark.sent && today - shark.paid >= rules.shark.grace) {
+        shark.sent = true;
+        changed = true;
+        const rng = createRng(`${this.world.seed}:shark:${shark.gang}:${today}`);
+        this.society.threats = this.society.threats.filter((t) => !(t.why === 'debt' && t.gang === shark.gang));
+        this.society.threats.push({ id: this.society.nextId++, due: now + (rng.range(rules.shark.hours[0], rules.shark.hours[1]) * HOUR) / this.rules.timeScale, by: null, gang: shark.gang, incident: 0, amount: shark.owed, why: 'debt' });
+      }
+    }
+    for (const [id, lent] of Object.entries(this.creditState.lent)) {
+      const person = this.person(id);
+      if (!person || person.diedOn !== undefined) {
+        delete this.creditState.lent[id];
+        changed = true;
+        continue;
+      }
+      while (lent.due <= today && lent.owed > 0) {
+        lent.due += 7;
+        if (honestyOf(person) < rules.lend.honest) continue;
+        const spare = Math.floor(this.spareOf(person) * rules.lend.share);
+        const pay = Math.min(lent.owed, spare);
+        if (pay <= 0) continue;
+        const paid = this.takeFrom(person, pay);
+        this.money = { ...this.money, account: this.money.account + paid };
+        lent.owed -= paid;
+        lent.paid = lent.due - 7;
+        changed = true;
+        const who = this.describe(id, now)?.name ?? 'Someone';
+        this.creditLine(lent.owed > 0 ? rules.lines.repaid : rules.lines.repaidAll, { who, amount: String(paid), owed: String(lent.owed) }, `${id}:${lent.due}`);
+      }
+      if (lent.owed <= 0) delete this.creditState.lent[id];
+    }
+    if (changed) this.events.emit('walletChanged', this.wallet);
+  }
+
+  /** Everything the player owes and is owed, for the status: the bank loan, the loan shark, and who owes them. */
+  debts(now: number): { bank: { name: string; owed: number; installment: number; dueIn: number; missed: number; defaulted: boolean } | null; shark: { gang: string; owed: number; late: boolean } | null; owedYou: number; owers: number } {
+    const loan = this.creditState.bank;
+    const shark = this.creditState.shark;
+    const today = this.clockAt(now).day;
+    const lent = Object.values(this.creditState.lent);
+    return {
+      bank: loan ? { name: this.buildingOf(loan.bank)?.name ?? 'the bank', owed: loan.owed, installment: loan.installment, dueIn: Math.max(0, loan.due - today), missed: loan.missed, defaulted: Boolean(loan.defaulted) } : null,
+      shark: shark ? { gang: this.rules.people.gangs[shark.gang]?.name ?? shark.gang, owed: shark.owed, late: today - shark.paid >= (this.rules.credit?.shark.grace ?? Infinity) } : null,
+      owedYou: lent.reduce((n, l) => n + l.owed, 0),
+      owers: lent.length,
+    };
   }
 
   /** Whether the player is where a building's counter is (the room you walk into); anywhere but inside a building, they are. */
