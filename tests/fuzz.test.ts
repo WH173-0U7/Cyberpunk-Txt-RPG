@@ -12,6 +12,7 @@ import { INEBRIATION } from '../src/data/inebriation';
 import { LINES } from '../src/data/dialogue';
 import { MONEY } from '../src/data/money';
 import { PEOPLE } from '../src/data/people';
+import { ROBBERY } from '../src/data/robbery';
 import { SOCIETY } from '../src/data/society';
 import { TRAVEL } from '../src/data/travel';
 import { outfit } from '../src/engine/carry';
@@ -57,6 +58,7 @@ const RULES: GameRules = {
   credit: CREDIT,
   trade: TRADE,
   needs: NEEDS,
+  robbery: ROBBERY,
   // Anyone will run for the player, so the crew gets put through its paces.
   dealing: { ...DEALING, crew: { ...DEALING.crew, stances: ['cold', 'wary', 'neutral', 'warm', 'friend'], keen: { gang: 3, user: 3, straight: 3 } } },
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
@@ -342,7 +344,12 @@ describe('playing badly', () => {
               else if (move === 'official') game.makeOfficial(who, now);
               else if (move === 'end') game.endRomance(now);
             }
-            else if (what < 0.45) game.rob(who, now);
+            else if (what < 0.45) {
+              game.rob(who, now);
+              // A robbery by fear can turn into a fight; and what they kept back, gone after.
+              if (game.fighting) playOut();
+              else if (rng.chance(0.5) && game.canSearch(who, now) && game.search(who, now) && game.fighting) playOut();
+            }
             else if (what < 0.55 && game.attack(who, now)) {
               // To kill, now and then; to wound, mostly.
               game.setLethal(rng.chance(0.3));

@@ -437,7 +437,7 @@ describe('dialogue', () => {
         }
         // A counter that won't serve the player is always named.
         check(line(LINES.barred, { ...speaker, vars: { ...vars, work: 'El Pinche Grill' } }, rng), `${about} barred`);
-        for (const pool of [LINES.brushOff, LINES.grudge, LINES.hostile, LINES.asleep, LINES.talkedOut, LINES.refuse, LINES.pressed, LINES.gift.thanks, LINES.gift.favorite, LINES.gift.refuse, LINES.insult.reply, LINES.insult.shove, LINES.rob.done, LINES.rob.nothing, LINES.rob.fought, LINES.rob.cold, LINES.rob.coldNothing, LINES.chop.done, LINES.chop.refuse]) {
+        for (const pool of [LINES.brushOff, LINES.grudge, LINES.hostile, LINES.asleep, LINES.talkedOut, LINES.refuse, LINES.pressed, LINES.gift.thanks, LINES.gift.favorite, LINES.gift.refuse, LINES.insult.reply, LINES.insult.shove, LINES.rob.done, LINES.rob.nothing, LINES.rob.fought, LINES.rob.cold, LINES.rob.coldNothing, LINES.rob.refused, LINES.rob.bluff, LINES.rob.holdBack, LINES.rob.fightBack, LINES.rob.searched, LINES.rob.searchEmpty, LINES.rob.searchFail, LINES.rob.searchFight, LINES.chop.done, LINES.chop.refuse]) {
           check(line(pool, speaker, rng), `${about} pool`);
         }
         // Every way into a chat, from the player in every way with words, and every way it can land.
@@ -545,7 +545,7 @@ describe('dialogue', () => {
         // With a mask on the player, and without: the pools that care either way, and the ones only a mask brings up.
         for (const mask of ['balaclava', '']) {
           const masked: Speaker = { ...speaker, vars: { ...vars, mask, work: 'The Afterlife' } };
-          for (const pool of [LINES.greeting, LINES.rob.done, LINES.rob.fought, ...(mask ? [LINES.masked.barred, LINES.masked.recognized] : [])]) {
+          for (const pool of [LINES.greeting, LINES.rob.done, LINES.rob.fought, LINES.rob.refused, LINES.rob.holdBack, ...(mask ? [LINES.masked.barred, LINES.masked.recognized] : [])]) {
             const said = line(pool, masked, rng);
             check(said, `${about} ${mask ? 'masked' : 'bare'} pool`);
             if (mask && /your face|friendly face|new face/i.test(said)) problems.push(`${about} masked pool: ${JSON.stringify(said)}`);
@@ -553,7 +553,7 @@ describe('dialogue', () => {
           lines += 3;
         }
         for (const eloquence of eloquences) {
-          for (const pool of [LINES.you.talk, LINES.you.gift, LINES.you.insult, LINES.you.rob, LINES.you.robCold, LINES.you.chop]) check(line(pool, { ...speaker, eloquence }, rng), `${about} you ${eloquence}`);
+          for (const pool of [LINES.you.talk, LINES.you.gift, LINES.you.insult, LINES.you.rob, LINES.you.robCold, LINES.you.search, LINES.you.chop]) check(line(pool, { ...speaker, eloquence }, rng), `${about} you ${eloquence}`);
         }
         lines += 30;
       }

@@ -288,9 +288,11 @@ export function purseOf(amount: number, means: Quality, rules: MoneyRules, rng: 
 
 /**
  * About `amount` out of someone's pocket: the smallest first (what they hand over, keeping the
- * big ones back), or the biggest first (going through their pockets). What's taken, and what's left.
+ * big ones back), or the biggest first (going through their pockets). With `under`, never a note
+ * that takes it past `amount` (handing over what they mean to, and not a note more). What's
+ * taken, and what's left.
  */
-export function takeFrom(purse: Cash, amount: number, smallestFirst: boolean): { taken: Cash; left: Cash } {
+export function takeFrom(purse: Cash, amount: number, smallestFirst: boolean, under = false): { taken: Cash; left: Cash } {
   const want = Math.max(0, Math.round(amount));
   const taken: Notes = {};
   let got = 0;
@@ -299,7 +301,8 @@ export function takeFrom(purse: Cash, amount: number, smallestFirst: boolean): {
   got += coins;
   const order = Object.keys(purse.notes).map(Number).sort((a, b) => (smallestFirst ? a - b : b - a));
   for (const d of order) {
-    for (let i = 0; i < (purse.notes[String(d)] ?? 0) && got < want; i++) {
+    if (under && got + d > want) continue;
+    for (let i = 0; i < (purse.notes[String(d)] ?? 0) && got < want && !(under && got + d > want); i++) {
       taken[String(d)] = (taken[String(d)] ?? 0) + 1;
       got += d;
     }

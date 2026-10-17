@@ -11,7 +11,7 @@ export interface PersonRowView {
   stanceLabel: string;
 }
 
-export type PersonAction = 'talk' | 'insult' | 'rob' | 'attack' | 'hire' | 'quit';
+export type PersonAction = 'talk' | 'insult' | 'rob' | 'search' | 'attack' | 'hire' | 'quit';
 
 /** Someone the player knows a person to be connected to. */
 export interface WebNodeView {
@@ -60,6 +60,10 @@ export interface PersonCardView {
   here: boolean;
   /** Here, but knocked out: nothing to do with them but rob them, or kill them. */
   cold: boolean;
+  /** How afraid of the player they look ("Scared"), on the Rob command; empty when it isn't read. */
+  fear: string;
+  /** Just robbed (or turned the player down): their pockets can be gone through for what they kept back. */
+  search: boolean;
   /** The ways to kill someone lying out cold, by what the player has to do it with. */
   finishes: Array<{ id: string; label: string }>;
   /** Who the player knows them to be connected to: on the profile, under the rest. */
@@ -327,7 +331,12 @@ export class People {
     } else if (card.cold && card.picker === 'more') {
       picker.push(chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'), ...card.finishes.map((f) => chip(f.label, { id: card.id, kill: f.id }, 'person-chip is-danger')));
     } else if (card.here && card.picker === 'more') {
-      picker.push(chip('Insult', { id: card.id, action: 'insult' }, 'person-chip is-danger'), chip('Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'), chip('Attack', { id: card.id, action: 'attack' }, 'person-chip is-danger'));
+      picker.push(
+        chip('Insult', { id: card.id, action: 'insult' }, 'person-chip is-danger'),
+        chip(card.fear ? `Rob · ${card.fear}` : 'Rob', { id: card.id, action: 'rob' }, 'person-chip is-danger'),
+        ...(card.search ? [chip('Search', { id: card.id, action: 'search' }, 'person-chip is-danger')] : []),
+        chip('Attack', { id: card.id, action: 'attack' }, 'person-chip is-danger'),
+      );
     }
     els.cardPicker.hidden = picker.length === 0;
     els.cardPicker.replaceChildren(...picker);
@@ -356,7 +365,7 @@ export class People {
         button.type = 'button';
         button.dataset.cmd = c.cmd;
         button.dataset.id = card.id;
-        if (c.cmd === 'more') button.setAttribute('aria-label', card.cold ? `More: rob${card.finishes.map((f) => `, ${f.label.toLowerCase()}`).join('')}` : 'More: insult, rob, attack');
+        if (c.cmd === 'more') button.setAttribute('aria-label', card.cold ? `More: rob${card.finishes.map((f) => `, ${f.label.toLowerCase()}`).join('')}` : `More: insult, rob${card.search ? ', search' : ''}, attack`);
         if (c.cmd === 'heart') button.setAttribute('aria-label', `Heart: ${card.heart.map((m) => HEART_LABEL[m]).join(', ')}`);
         if (c.cmd === 'money') button.setAttribute('aria-label', `Money: ${card.money.map((m) => m.label).join(', ')}`);
         if (c.active !== undefined) button.setAttribute('aria-pressed', String(c.active));

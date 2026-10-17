@@ -14,6 +14,7 @@ import { LIFE } from '../src/data/life';
 import { MONEY } from '../src/data/money';
 import { NEEDS } from '../src/data/needs';
 import { PEOPLE } from '../src/data/people';
+import { ROBBERY } from '../src/data/robbery';
 import { CHARISMA } from '../src/data/skills';
 import { SOCIETY } from '../src/data/society';
 import { TRADE } from '../src/data/trade';
@@ -23,6 +24,8 @@ import { fillOf } from '../src/engine/needs';
 import { Game, streetSpot, type GameRules } from '../src/engine/game';
 import { generateWorld } from '../src/engine/generate';
 import { generatePeople, whereIs, type Clock } from '../src/engine/people';
+import { createRng } from '../src/engine/rng';
+import { fearOf, respond, searchOdds } from '../src/engine/robbery';
 import type { Progress } from '../src/engine/save';
 
 /**
@@ -67,14 +70,23 @@ describe('the balance of what the player earns and spends', () => {
 
   it("takes energy to rob someone, so what a mugging hauls an energy is no better than the top of an everyday ladder", () => {
     expect(MONEY.rob?.awake).toBeGreaterThanOrEqual(2);
-    // What an awake robbery takes on the average, over a city: a share of the cash, the chip once chopped, and a valuable fenced.
+    // What an awake robbery takes on the average, over a city, at its best by fear (a gun drawn, a mask on, every level that counts, nobody about):
+    // what they hand over (the cash by their share, the chip once chopped, a valuable fenced), and with a search after, what's left by its odds.
     const world = generateWorld('a1b2c3d4', CITY);
-    const people = generatePeople(world, PEOPLE, FOOD.dishes).people;
+    const people = generatePeople(world, PEOPLE, FOOD.dishes).people.filter((p) => !/^NCPD/.test(p.job.role));
     const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
-    const cash = mean(people.map((p) => p.eddies)) * 0.6;
-    const chip = mean(people.map((p) => p.chip)) * (1 - MONEY.chopCut);
+    const chipOf = (p: (typeof people)[number]) => p.chip * (1 - MONEY.chopCut);
     const valuable = TRADE.carry.chance.everyday * mean(Object.values(VALUABLES).map((v) => v.price));
-    expect(perEnergy(cash + chip + valuable, MONEY.rob!.awake)).toBeLessThanOrEqual(topWork);
+    const rng = createRng('balance:rob');
+    const takes = people.map((p) => {
+      const fear = fearOf({ drawn: 'gun', chrome: false, edge: ROBBERY.fear.levels, armed: false, masked: true, dread: null, courage: p.traits.courage, backup: 0, watching: 0, turf: false, officer: false, hurt: false, drunk: false }, ROBBERY);
+      const r = respond(fear, p.traits, false, ROBBERY, rng);
+      const all = p.eddies + chipOf(p) + valuable;
+      const handed = p.eddies * r.share + (r.chip ? chipOf(p) : 0) + (r.valuable ? valuable : 0);
+      return { handed, searched: handed + (all - handed) * searchOdds(fear, p.traits.courage, ROBBERY) };
+    });
+    expect(perEnergy(mean(takes.map((t) => t.handed)), MONEY.rob!.awake)).toBeLessThanOrEqual(topWork);
+    expect(perEnergy(mean(takes.map((t) => t.searched)), MONEY.rob!.awake + ROBBERY.search.energy)).toBeLessThanOrEqual(topWork);
   });
 
   it("refuses a robbery when the player hasn't the energy for it", () => {
