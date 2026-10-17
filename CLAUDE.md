@@ -84,6 +84,12 @@ them, about where they are on the real map, with different places, streets and w
   closest zoom is as close as it was on a smaller map (`MAX_ZOOM`). While it moves it draws at
   one pixel a pixel. A district's name goes in the middle of its places, or on its own
   neighborhood nearest it when that middle is someone else's ground (the Badlands').
+- The map looks straight down (`src/ui/draw-city.ts`): a building is its roof on its own
+  footprint, nothing leaning over what's behind it, and how tall it stands shows only in how
+  bright its district's tint is (`TINT_LOW` to `TINT_TALL`) and a second frame on a high-rise
+  (`TALL` floors and up). Keep it plain: a neon edge, a shop's sign along its south side, a
+  tower's warning light, flat parks, plazas and lots. A tap and the pick outline go by the
+  footprint (`BuildingHit`).
 
 ## Inside buildings
 
