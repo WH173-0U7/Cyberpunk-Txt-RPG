@@ -36,6 +36,8 @@ export interface MoneyRules {
   tradeXp?: number;
   /** A netrunner's cut for chopping a stolen credchip (0.25: a quarter of what's on it). */
   chopCut: number;
+  /** The energy a robbery takes: going for someone awake, going through the pockets of someone out cold (missing: none). */
+  rob?: { awake: number; cold: number };
 }
 
 export function freshMoney(bills: number): Money {
