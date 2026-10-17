@@ -1,6 +1,6 @@
 import { districtAt, fromCoastFrame, shoreline, WORLD } from '../engine/geography';
 import { createRng, hashSeed } from '../engine/rng';
-import type { Building, BuildingKind, CityLayout, District, Point, World } from '../engine/types';
+import type { Building, CityLayout, District, Point, World } from '../engine/types';
 
 export type Px = { x: number; y: number };
 
@@ -22,67 +22,30 @@ export interface View {
   project(p: Point): Px;
 }
 
-/** Where a building ended up on screen, for tapping. */
+/** Where a building ended up on screen, for tapping: its footprint, which is all of it, seen from straight above. */
 export interface BuildingHit {
   id: string;
   footprint: Box;
-  /** Screen offset from the footprint up to the roof; zero for open ground. */
-  rise: Px;
 }
 
 const ASPHALT = '#06070d';
 const PAVEMENT = '#0a0d17';
 const SEA = '#040914';
 const ROOF = '#111628';
-const WALL_SOUTH = '#0b0e1c';
-const WALL_WEST = '#07090f';
-const WARM_LIGHT = '#ffd9a0';
 const NEONS = ['#ff2bd6', '#00f0ff', '#39ff88', '#ffd84d', '#ff3b3b', '#a46bff'];
 
-/** Px per map unit from which windows, signs and lane markings appear. */
-const DETAIL_SCALE = 6;
-/** How tall buildings stand, in map units per square-rooted floor. The root keeps skyscrapers in check. */
-const LIFT = 0.42;
-/** Where roofs sit relative to their footprint: up and to the right, as if seen from the south-west. */
-const RISE_X = 0.32;
-const RISE_Y = -0.95;
-
-/** How a kind of building's lit windows look. */
-interface Facade {
-  /** Chance a window is lit. */
-  lit: number;
-  /** Of the lit windows, the share glowing in the district's color rather than plain light. */
-  neon: number;
-  /** Windows per map unit along a wall, and rows per map unit of height. */
-  cols: number;
-  rows: number;
-  /** How much of each window's cell is glass, across and up. */
-  glassW: number;
-  glassH: number;
-  light: string;
-}
-
-const FACADES: Record<BuildingKind, Facade | null> = {
-  // Wide panes of cool light.
-  tower: { lit: 0.5, neon: 0.12, cols: 1.5, rows: 3, glassW: 0.8, glassH: 0.55, light: '#d4ecff' },
-  apartments: { lit: 0.4, neon: 0.28, cols: 1.1, rows: 2.5, glassW: 0.56, glassH: 0.44, light: WARM_LIGHT },
-  megabuilding: { lit: 0.45, neon: 0.22, cols: 1.5, rows: 3, glassW: 0.5, glassH: 0.4, light: WARM_LIGHT },
-  shops: { lit: 0.6, neon: 0.35, cols: 1, rows: 2.5, glassW: 0.6, glassH: 0.45, light: WARM_LIGHT },
-  // A strip of windows high up under the roof line.
-  warehouse: { lit: 0.12, neon: 0, cols: 0.6, rows: 1, glassW: 0.8, glassH: 0.2, light: '#ffe6b8' },
-  factory: { lit: 0.2, neon: 0, cols: 0.8, rows: 1, glassW: 0.7, glassH: 0.25, light: '#ffb070' },
-  derelict: { lit: 0.03, neon: 0, cols: 1, rows: 2.5, glassW: 0.56, glassH: 0.44, light: '#ff9a5a' },
-  shack: { lit: 0.4, neon: 0, cols: 0.6, rows: 2.5, glassW: 0.4, glassH: 0.4, light: WARM_LIGHT },
-  park: null,
-  plaza: null,
-  lot: null,
-  container: null,
-};
+/** How bright a roof's tint is by how tall the building stands, so height still reads from straight above. */
+const TINT_LOW = 0.08;
+const TINT_TALL = 0.2;
+/** Floors from which a building counts as a high-rise (the towers and the megabuildings): a second neon frame inside its edge. */
+const TALL = 40;
 
 /**
- * Draws the ground, the sea and every building onto the canvas. Buildings stand up off the
- * map, drawn back to front, kept simple: walls, lit windows and neon. Returns where each
- * building landed, for tapping.
+ * Draws the ground, the sea and every building onto the canvas, seen from straight above:
+ * every building is its roof on its own footprint, so none hides what's behind it. Kept
+ * simple: dark roofs tinted and edged in the district's neon, brighter the taller they stand,
+ * a sign on a storefront and a warning light on a tower. Returns where each building is, for
+ * tapping.
  */
 export function drawCity(ctx: CanvasRenderingContext2D, world: World, view: View, knownDistricts: Set<string>): BuildingHit[] {
   ctx.fillStyle = ASPHALT;
@@ -94,28 +57,18 @@ export function drawCity(ctx: CanvasRenderingContext2D, world: World, view: View
   return drawBuildings(ctx, world, view, knownDistricts);
 }
 
-/** The first building under a screen point, front to back. A near miss still counts on small buildings. */
+/** The building under a screen point. A near miss still counts on small buildings. */
 export function buildingAt(hits: BuildingHit[], q: Px): string | null {
   for (const slop of [0, 6]) {
-    for (let i = hits.length - 1; i >= 0; i--) {
-      const hit = hits[i];
-      if (hit && covers(hit, q, slop)) return hit.id;
-    }
+    for (const hit of hits) if (covers(hit.footprint, q, slop)) return hit.id;
   }
   return null;
 }
 
-/** The picked building's outline, as SVG path data: its whole silhouette, then the roof's front edges and the near corner. */
+/** The picked building's outline, as SVG path data: its footprint. */
 export function selectionOutline(hit: BuildingHit): string {
-  const { footprint: r, rise: d } = hit;
-  const roof = { x: r.x + d.x, y: r.y + d.y };
-  const p = (x: number, y: number) => `${x.toFixed(1)} ${y.toFixed(1)}`;
-  if (d.x === 0 && d.y === 0) return `M${p(r.x, r.y)}H${(r.x + r.w).toFixed(1)}V${(r.y + r.h).toFixed(1)}H${r.x.toFixed(1)}Z`;
-  return [
-    `M${p(r.x, r.y)}L${p(r.x, r.y + r.h)}L${p(r.x + r.w, r.y + r.h)}L${p(roof.x + r.w, roof.y + r.h)}L${p(roof.x + r.w, roof.y)}L${p(roof.x, roof.y)}Z`,
-    `M${p(roof.x, roof.y)}L${p(roof.x, roof.y + r.h)}L${p(roof.x + r.w, roof.y + r.h)}`,
-    `M${p(r.x, r.y + r.h)}L${p(roof.x, roof.y + r.h)}`,
-  ].join('');
+  const r = hit.footprint;
+  return `M${r.x.toFixed(1)} ${r.y.toFixed(1)}H${(r.x + r.w).toFixed(1)}V${(r.y + r.h).toFixed(1)}H${r.x.toFixed(1)}Z`;
 }
 
 export function hexToRgba(hex: string, alpha: number): string {
@@ -182,7 +135,6 @@ function drawBlocks(ctx: CanvasRenderingContext2D, world: World, view: View, kno
   const byBlock = districtsOfBlocks(world);
   const xs = [0, ...world.layout.avenues, WORLD];
   const ys = [0, ...world.layout.streets, WORLD];
-  const curb = view.scale >= DETAIL_SCALE;
   for (let i = 0; i < xs.length - 1; i++) {
     for (let j = 0; j < ys.length - 1; j++) {
       const x0 = xs[i] ?? 0;
@@ -200,11 +152,6 @@ function drawBlocks(ctx: CanvasRenderingContext2D, world: World, view: View, kno
         if (!onScreen(cell, view)) continue;
         ctx.fillStyle = `rgba(255, 158, 61, ${lit ? 0.06 : 0.025})`;
         ctx.fillRect(cell.x, cell.y, cell.w + 0.5, cell.h + 0.5);
-        // Scrub and rocks.
-        const rng = createRng(`${world.seed}:sand:${i}:${j}`);
-        ctx.fillStyle = `rgba(255, 190, 120, ${lit ? 0.22 : 0.07})`;
-        const size = Math.max(1, view.scale * 0.3);
-        for (let n = rng.int(2, 5); n > 0; n--) ctx.fillRect(cell.x + rng.range(0, cell.w), cell.y + rng.range(0, cell.h), size, size);
         continue;
       }
 
@@ -219,16 +166,11 @@ function drawBlocks(ctx: CanvasRenderingContext2D, world: World, view: View, kno
         ctx.fillStyle = rgba(district.theme.primary, 0.025);
         ctx.fillRect(pad.x, pad.y, pad.w, pad.h);
       }
-      if (curb) {
-        ctx.strokeStyle = `rgba(150, 170, 220, ${lit ? 0.12 : 0.05})`;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(pad.x + 0.5, pad.y + 0.5, pad.w - 1, pad.h - 1);
-      }
     }
   }
 }
 
-/** Main roads glow faintly; closer in, every street gets a dashed center line. */
+/** Main roads glow faintly. */
 function drawStreets(ctx: CanvasRenderingContext2D, layout: CityLayout, view: View): void {
   const vertical = (x: number) => {
     const p = view.project({ x, y: 0 });
@@ -247,19 +189,9 @@ function drawStreets(ctx: CanvasRenderingContext2D, layout: CityLayout, view: Vi
   layout.avenues.forEach((x, i) => i % 3 === 1 && vertical(x));
   layout.streets.forEach((y, i) => i % 3 === 1 && horizontal(y));
   ctx.stroke();
-
-  if (view.scale < DETAIL_SCALE) return;
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = 'rgba(255, 216, 120, 0.16)';
-  ctx.setLineDash([view.scale * 0.5, view.scale * 0.8]);
-  ctx.beginPath();
-  layout.avenues.forEach(vertical);
-  layout.streets.forEach(horizontal);
-  ctx.stroke();
-  ctx.setLineDash([]);
 }
 
-/** Water from the map edge to a wavy shoreline, with a few swell lines. */
+/** Water from the map edge to a wavy shoreline, with one swell line off it. */
 function drawSea(ctx: CanvasRenderingContext2D, coast: NonNullable<CityLayout['coast']>, seed: string, view: View): void {
   const shore = shoreline(coast, seed);
   // Stretch well past the frame so the water reaches the canvas edge at any zoom.
@@ -287,11 +219,7 @@ function drawSea(ctx: CanvasRenderingContext2D, coast: NonNullable<CityLayout['c
 
   ctx.lineWidth = 1;
   ctx.setLineDash([6, 10]);
-  for (const [offset, alpha] of [
-    [1.6, 0.22],
-    [3.4, 0.14],
-    [5.4, 0.08],
-  ] as const) {
+  for (const [offset, alpha] of [[1.6, 0.18]] as const) {
     if (offset >= coast.depth) continue;
     ctx.strokeStyle = `rgba(90, 150, 255, ${alpha})`;
     ctx.beginPath();
@@ -305,32 +233,14 @@ function drawSea(ctx: CanvasRenderingContext2D, coast: NonNullable<CityLayout['c
 
 function drawBuildings(ctx: CanvasRenderingContext2D, world: World, view: View, known: Set<string>): BuildingHit[] {
   const hits: BuildingHit[] = [];
-  const raised: Array<{ b: Building; r: Box; rise: Px }> = [];
-
   for (const b of world.buildings) {
     const r = footprint(b, view);
-    if (b.floors === 0) {
-      if (!onScreen(r, view)) continue;
-      drawOpenGround(ctx, b, r, view, world.districts[b.district], known.has(b.district));
-      hits.push({ id: b.id, footprint: r, rise: { x: 0, y: 0 } });
-      continue;
-    }
-    const rise = riseOf(b, view);
-    if (onScreen({ x: r.x, y: r.y + rise.y, w: r.w + rise.x, h: r.h - rise.y }, view)) raised.push({ b, r, rise });
-  }
-
-  // South in front of north; within a row, west in front of east.
-  raised.sort((p, q) => p.b.y + p.b.h - (q.b.y + q.b.h) || q.b.x - p.b.x);
-
-  // Shadows first, so none falls across a roof.
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
-  ctx.beginPath();
-  for (const { r, rise } of raised) ctx.rect(r.x + rise.x * 0.7, r.y - rise.y * 0.12, r.w, r.h);
-  ctx.fill();
-
-  for (const { b, r, rise } of raised) {
-    drawRaised(ctx, b, r, rise, view, world.districts[b.district], known.has(b.district));
-    hits.push({ id: b.id, footprint: r, rise });
+    if (!onScreen(r, view)) continue;
+    const district = world.districts[b.district];
+    const lit = known.has(b.district);
+    if (b.floors === 0) drawOpenGround(ctx, b, r, district, lit);
+    else drawRoof(ctx, b, r, view, district, lit);
+    hits.push({ id: b.id, footprint: r });
   }
   return hits;
 }
@@ -341,63 +251,26 @@ function footprint(b: Building, view: View): Box {
   return { x: a.x, y: a.y, w: c.x - a.x, h: c.y - a.y };
 }
 
-function riseOf(b: Building, view: View): Px {
-  const lift = Math.sqrt(b.floors) * LIFT * view.scale;
-  return { x: lift * RISE_X, y: lift * RISE_Y };
-}
-
 function onScreen(b: Box, view: View): boolean {
   return b.x + b.w >= -4 && b.y + b.h >= -4 && b.x <= view.width + 4 && b.y <= view.height + 4;
 }
 
-/** Whether a point is on a building: its footprint swept up to its roof. */
-function covers(hit: BuildingHit, q: Px, slop: number): boolean {
-  const { footprint: r, rise: d } = hit;
-  // Some t in [0, 1] must put q - t·rise inside the footprint.
-  let lo = 0;
-  let hi = 1;
-  for (const [min, max, step] of [
-    [q.x - r.x - r.w - slop, q.x - r.x + slop, d.x],
-    [q.y - r.y - r.h - slop, q.y - r.y + slop, d.y],
-  ] as const) {
-    if (Math.abs(step) < 1e-6) {
-      if (min > 0 || max < 0) return false;
-      continue;
-    }
-    const t1 = min / step;
-    const t2 = max / step;
-    lo = Math.max(lo, Math.min(t1, t2));
-    hi = Math.min(hi, Math.max(t1, t2));
-  }
-  return lo <= hi;
+/** Whether a point is on a footprint, or within `slop` of it. */
+function covers(r: Box, q: Px, slop: number): boolean {
+  return q.x >= r.x - slop && q.x <= r.x + r.w + slop && q.y >= r.y - slop && q.y <= r.y + r.h + slop;
 }
 
-/** Parks, plazas and parking lots: open ground with a pattern. */
-function drawOpenGround(ctx: CanvasRenderingContext2D, b: Building, r: Box, view: View, district: District | undefined, lit: boolean): void {
+/** Parks, plazas and parking lots: open ground, flat. */
+function drawOpenGround(ctx: CanvasRenderingContext2D, b: Building, r: Box, district: District | undefined, lit: boolean): void {
   switch (b.kind) {
-    case 'park': {
-      // A few clumps of trees on green.
-      const rng = createRng(b.id);
-      const trees = Array.from({ length: Math.min(12, Math.max(3, Math.round(b.w * b.h * 0.3))) }, () => ({
-        u: rng.range(0.15, 0.85),
-        v: rng.range(0.15, 0.85),
-        size: rng.range(0.45, 0.8),
-      }));
+    case 'park':
       ctx.fillStyle = `rgba(57, 255, 136, ${lit ? 0.08 : 0.03})`;
       ctx.fillRect(r.x, r.y, r.w, r.h);
-      ctx.fillStyle = `rgba(57, 255, 136, ${lit ? 0.2 : 0.07})`;
-      ctx.beginPath();
-      for (const tree of trees) {
-        const x = r.x + r.w * tree.u;
-        const y = r.y + r.h * tree.v;
-        const radius = Math.max(1, tree.size * view.scale);
-        ctx.moveTo(x + radius, y);
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-      }
-      ctx.fill();
+      ctx.strokeStyle = `rgba(57, 255, 136, ${lit ? 0.25 : 0.08})`;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
       break;
-    }
-    case 'plaza': {
+    case 'plaza':
       // Open paving around a glowing holo-statue.
       ctx.fillStyle = `rgba(200, 210, 240, ${lit ? 0.07 : 0.03})`;
       ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -407,7 +280,6 @@ function drawOpenGround(ctx: CanvasRenderingContext2D, b: Building, r: Box, view
       ctx.arc(r.x + r.w / 2, r.y + r.h / 2, Math.min(r.w, r.h) * 0.16, 0, Math.PI * 2);
       ctx.stroke();
       break;
-    }
     default:
       // Parking lot.
       ctx.fillStyle = `rgba(120, 130, 160, ${lit ? 0.07 : 0.03})`;
@@ -415,72 +287,42 @@ function drawOpenGround(ctx: CanvasRenderingContext2D, b: Building, r: Box, view
   }
 }
 
-/** A building with height: shadowed walls with lit windows, then a roof edged in the district's neon. */
-function drawRaised(
-  ctx: CanvasRenderingContext2D,
-  b: Building,
-  r: Box,
-  rise: Px,
-  view: View,
-  district: District | undefined,
-  lit: boolean,
-): void {
+/**
+ * A building's roof, seen from straight above: dark, tinted in the district's color the more
+ * the taller it stands, edged in its neon (a second frame inside for anything tall); a
+ * storefront's sign along its street edge, a tower's warning light.
+ */
+function drawRoof(ctx: CanvasRenderingContext2D, b: Building, r: Box, view: View, district: District | undefined, lit: boolean): void {
   const color = district?.theme.primary ?? '#00f0ff';
   const tint = lit ? 1 : 0.35;
-  const roof = { x: r.x + rise.x, y: r.y + rise.y, w: r.w, h: r.h };
-  const facade = FACADES[b.kind];
-  const litChance = (facade?.lit ?? 0) * tint;
-  const corner = { x: r.x, y: r.y + r.h };
-  const roofCorner = { x: roof.x, y: roof.y + roof.h };
-  const detail = view.scale >= DETAIL_SCALE;
-
-  // The south face (toward the bottom of the screen) and the west face are the ones you see.
-  const south = [corner, { x: r.x + r.w, y: r.y + r.h }, { x: roof.x + roof.w, y: roof.y + roof.h }, roofCorner];
-  const west = [{ x: r.x, y: r.y }, corner, roofCorner, { x: roof.x, y: roof.y }];
-  polygon(ctx, south, WALL_SOUTH);
-  polygon(ctx, south, rgba(color, 0.07 * tint));
-  polygon(ctx, west, WALL_WEST);
-
-  if (facade && detail && -rise.y >= 4) {
-    windows(ctx, b, facade, 'south', corner, { x: r.w, y: 0 }, rise, b.w, litChance, color);
-    windows(ctx, b, facade, 'west', { x: r.x, y: r.y }, { x: 0, y: r.h }, rise, b.h, litChance * 0.7, color);
-  } else if (litChance > 0) {
-    // Too small for windows: a warm haze where they would be.
-    polygon(ctx, south, `rgba(255, 210, 150, ${litChance * 0.12})`);
-  }
-
-  // Storefronts light up the street and wear a neon sign.
-  const neon = b.kind === 'shops' ? neonOf(b, district) : null;
-  if (neon && lit && detail) {
-    const spill = view.scale * 0.7;
-    const glow = ctx.createLinearGradient(0, corner.y, 0, corner.y + spill);
-    glow.addColorStop(0, rgba(neon, 0.3));
-    glow.addColorStop(1, rgba(neon, 0));
-    ctx.fillStyle = glow;
-    ctx.fillRect(r.x, corner.y, r.w, spill);
-  }
-
-  // Roof.
   const derelict = b.kind === 'derelict';
+  const dim = derelict || b.kind === 'shack' || b.kind === 'warehouse' || b.kind === 'factory' || b.kind === 'container';
+  const height = Math.min(1, Math.sqrt(b.floors / 60));
   ctx.fillStyle = ROOF;
-  ctx.fillRect(roof.x, roof.y, roof.w, roof.h);
-  ctx.fillStyle = rgba(color, (derelict ? 0.04 : 0.12) * tint);
-  ctx.fillRect(roof.x, roof.y, roof.w, roof.h);
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = rgba(color, (derelict ? 0.03 : TINT_LOW + (TINT_TALL - TINT_LOW) * height) * tint);
+  ctx.fillRect(r.x, r.y, r.w, r.h);
   ctx.fillStyle = roofShade(b);
-  ctx.fillRect(roof.x, roof.y, roof.w, roof.h);
-  ctx.strokeStyle = rgba(color, (derelict ? 0.18 : 0.5) * tint);
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.strokeStyle = rgba(color, (derelict ? 0.15 : dim ? 0.3 : 0.55) * tint);
   ctx.lineWidth = 1;
-  ctx.strokeRect(roof.x + 0.5, roof.y + 0.5, roof.w - 1, roof.h - 1);
+  ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
 
-  const small = Math.min(roof.w, roof.h);
-  if (neon && small >= 5) {
-    // The sign along the front edge of the roof.
+  const small = Math.min(r.w, r.h);
+  if (b.floors >= TALL && small >= 10) {
+    const inset = Math.max(2.5, small * 0.14);
+    ctx.strokeStyle = rgba(color, 0.35 * tint);
+    ctx.strokeRect(r.x + inset + 0.5, r.y + inset + 0.5, r.w - inset * 2 - 1, r.h - inset * 2 - 1);
+  }
+  if (b.kind === 'shops' && small >= 5) {
+    // The sign, along the edge on the street.
+    const neon = neonOf(b, district);
     ctx.strokeStyle = rgba(neon, 0.9 * tint);
-    ctx.lineWidth = Math.max(1.5, Math.min(4, view.scale * 0.14));
-    glow(ctx, neon, lit && !view.fast ? 8 : 0);
+    ctx.lineWidth = Math.max(1.5, Math.min(3, view.scale * 0.12));
+    glow(ctx, neon, lit && !view.fast ? 6 : 0);
     ctx.beginPath();
-    ctx.moveTo(roof.x + roof.w * 0.12, roof.y + roof.h - 1.5);
-    ctx.lineTo(roof.x + roof.w * 0.88, roof.y + roof.h - 1.5);
+    ctx.moveTo(r.x + r.w * 0.15, r.y + r.h - 2);
+    ctx.lineTo(r.x + r.w * 0.85, r.y + r.h - 2);
     ctx.stroke();
     ctx.shadowBlur = 0;
     ctx.lineWidth = 1;
@@ -488,85 +330,12 @@ function drawRaised(
   if (b.kind === 'tower' && small >= 5) {
     // Aviation warning light.
     ctx.fillStyle = `rgba(255, 51, 85, ${0.95 * tint})`;
-    glow(ctx, '#ff3355', lit && !view.fast ? 6 : 0);
+    glow(ctx, '#ff3355', lit && !view.fast ? 5 : 0);
     ctx.beginPath();
-    ctx.arc(roof.x + roof.w / 2, roof.y + roof.h / 2, Math.max(1.2, small * 0.05), 0, Math.PI * 2);
+    ctx.arc(r.x + r.w / 2, r.y + r.h / 2, Math.max(1.2, small * 0.05), 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
   }
-  if (b.kind === 'megabuilding' && detail) holoAd(ctx, b, corner, { x: r.w, y: 0 }, rise, view, lit);
-}
-
-/**
- * Lit windows on a wall, given its bottom corner, the vector along its base and the vector up
- * to the roof. The grid depends only on the building, so the same windows stay lit as you zoom.
- */
-function windows(
-  ctx: CanvasRenderingContext2D,
-  b: Building,
-  facade: Facade,
-  face: 'south' | 'west',
-  base: Px,
-  along: Px,
-  up: Px,
-  length: number,
-  litChance: number,
-  color: string,
-): void {
-  const height = Math.sqrt(b.floors) * LIFT;
-  const rows = Math.max(1, Math.min(b.floors, Math.round(height * facade.rows)));
-  const cols = Math.max(1, Math.round(length * facade.cols));
-  const seed = hashSeed(`${b.id}:${face}`);
-  const warm = new Path2D();
-  const neon = new Path2D();
-  const at = (u: number, v: number) => ({ x: base.x + along.x * u + up.x * v, y: base.y + along.y * u + up.y * v });
-
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const roll = hash01(seed, row, col);
-      if (roll >= litChance) continue;
-      const path = roll < litChance * (1 - facade.neon) ? warm : neon;
-      const u0 = (col + 0.5 - facade.glassW / 2) / cols;
-      const u1 = (col + 0.5 + facade.glassW / 2) / cols;
-      // Short windows sit near the top of their floor.
-      const v1 = (row + 0.5 + Math.max(facade.glassH / 2, 0.42 - facade.glassH / 2)) / rows;
-      const v0 = v1 - facade.glassH / rows;
-      const p = at(u0, v0);
-      path.moveTo(p.x, p.y);
-      const q = at(u1, v0);
-      path.lineTo(q.x, q.y);
-      const s = at(u1, v1);
-      path.lineTo(s.x, s.y);
-      const t = at(u0, v1);
-      path.lineTo(t.x, t.y);
-      path.closePath();
-    }
-  }
-  ctx.fillStyle = rgba(facade.light, 0.75);
-  ctx.fill(warm);
-  ctx.fillStyle = rgba(color, 0.85);
-  ctx.fill(neon);
-}
-
-/** Megabuildings carry a giant holo-ad on their front. */
-function holoAd(ctx: CanvasRenderingContext2D, b: Building, base: Px, along: Px, up: Px, view: View, lit: boolean): void {
-  const rng = createRng(`${b.id}:ad`);
-  if (!rng.chance(0.6)) return;
-  const color = rng.pick(NEONS);
-  const u = rng.range(0.1, 0.45);
-  const w = rng.range(0.25, 0.45);
-  const at = (s: number, v: number) => ({ x: base.x + along.x * s + up.x * v, y: base.y + along.y * s + up.y * v });
-  const band = [at(u, 0.55), at(u + w, 0.55), at(u + w, 0.85), at(u, 0.85)];
-  ctx.save();
-  glow(ctx, color, lit && !view.fast ? 14 : 0);
-  polygon(ctx, band, rgba(color, lit ? 0.38 : 0.12));
-  ctx.restore();
-  ctx.strokeStyle = rgba(color, lit ? 0.9 : 0.3);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  band.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-  ctx.closePath();
-  ctx.stroke();
 }
 
 /** The color a storefront glows in: its district's, or any neon going. */
@@ -578,14 +347,6 @@ function neonOf(b: Building, district: District | undefined): string {
 function glow(ctx: CanvasRenderingContext2D, color: string, blur: number): void {
   ctx.shadowColor = color;
   ctx.shadowBlur = blur;
-}
-
-function polygon(ctx: CanvasRenderingContext2D, points: Px[], fill: string): void {
-  ctx.fillStyle = fill;
-  ctx.beginPath();
-  points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-  ctx.closePath();
-  ctx.fill();
 }
 
 /** A stable number in [0, 1) for one cell of a grid. */
