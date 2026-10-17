@@ -4,7 +4,7 @@ import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
-import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
+import { accountOf, ledgerOf, ownersOf, tillOf, tradeAt, turfFrom, weekdayOf, type Health, type Vice } from './economy';
 import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, runnerShort, settle, writeOff, type Runner, type RunnerView } from './crew';
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
 import { cutShare, foundOdds, harmOdds, mixedShare, sickOdds } from './cutting';
@@ -389,6 +389,8 @@ export class Game {
     // way a save is read (JSON): a structured clone of a record with a key per person makes
     // every first write to it slow in V8, which stalled the first day lived after loading for seconds.
     this.life = progress?.life ? { ...freshLife(), ...copyOf(progress.life) } : freshLife();
+    // Who owns what is the city's as it was made, so it's worked out before the days are put back.
+    ownersOf(world, this.population, rules.life.economy, world.seed);
     applyLife(this.population, this.life);
     // The storefronts' rotas, with the jobs as the days have left them.
     if (rules.people.shifts) rotaStaff(this.population, this.world, rules.people.shifts);
@@ -3228,6 +3230,22 @@ export class Game {
     return habit;
   }
 
+  /** What someone's habit costs them a day, and the gang that sells it where they live: worked out once a person. */
+  private readonly vices = new Map<string, Vice | null>();
+  private viceOf(person: Person): Vice | null {
+    const dealing = this.rules.dealing;
+    if (!dealing) return null;
+    let vice = this.vices.get(person.id);
+    if (vice === undefined) {
+      const habit = this.habitFor(person);
+      const drug = habit ? dealing.drugs[habit.drug] : undefined;
+      const gang = habit && drug ? turfFrom(this.rules.people.turf)(person.district).find(([g, share]) => share > 0 && dealing.gangs[g]?.drugs.includes(habit.drug))?.[0] : undefined;
+      vice = habit && drug && gang ? { gang, perDay: Math.round((drug.price * habit.need * this.rules.life.economy.vice) / 7) } : null;
+      this.vices.set(person.id, vice);
+    }
+    return vice;
+  }
+
   /** Everyone living in a district with a habit for a drug: found once a city, since nobody's habit changes. */
   private usersOf(drug: string, district: string): Person[] {
     if (!this.userIndex) {
@@ -6019,7 +6037,8 @@ export class Game {
     this.staffCache.clear();
     // Whoever the player is seeing is no one else's to fall for.
     const spokenFor = new Set(this.society.romance ? [this.society.romance.with] : []);
-    const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed, (spot) => this.tierOfSpot(spot), turfFrom(this.rules.people.turf), this.rules.people, spokenFor);
+    const vice = this.rules.dealing ? (p: Person) => this.viceOf(p) : undefined;
+    const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed, this.tierFn, turfFrom(this.rules.people.turf), this.rules.people, spokenFor, vice);
     this.cornerWars(happened, now);
     this.crewDays(today, now);
     this.badBatches(today, now);
@@ -6033,8 +6052,9 @@ export class Game {
     if (happened.length || partner?.diedOn !== undefined) this.events.emit('societyChanged', { people: partner ? [partner.id] : [] });
   }
 
-  /** The tier a place runs at, for what an evening there costs, remembered per place. */
+  /** The tier a place runs at, for what an evening there costs, remembered per place; and the same as a function that stays the same one, for the economy to remember by. */
   private readonly tiers: Record<Spot['kind'], Map<string, Quality>> = { building: new Map(), location: new Map() };
+  private readonly tierFn = (spot: Spot): Quality => this.tierOfSpot(spot);
   private tierOfSpot(spot: Spot): Quality {
     const known = this.tiers[spot.kind].get(spot.id);
     if (known) return known;
@@ -6808,14 +6828,35 @@ export class Game {
     };
   }
 
-  /** How someone is fixed (`broke`, `flush`: against what they started with) and how the place they work is doing (`slow`, `brisk`), as line variables. */
+  /**
+   * How someone is fixed, as line variables: `broke` (what they have in all won't see out the
+   * week's food and rent), `flush` (it would see out months of them), `behind` on the rent;
+   * whose their home is (`landlordName`, a person's; `corpRent`, a corp's; `squat`, nobody's) and
+   * what they own (`landlord` of a block or more, `ownsPlace` the walls of the storefront they
+   * run); how the place they work is doing (`slow`, `brisk`) and whether it paid them short
+   * (`shortPaid`).
+   */
   private meansVars(person: Person): Record<string, string> {
-    const base = this.baseEddies.get(person.id) ?? person.eddies;
-    const work = person.job.building ? this.world.buildings.find((b) => b.id === person.job.building) : undefined;
+    const economy = this.rules.life.economy;
+    const ledger = ledgerOf(person, this.world, this.population, economy, this.tierFn, this.world.seed);
+    const money = person.eddies + accountOf(person, this.life, ledger, economy);
+    const work = person.job.building ? buildingById(this.world, person.job.building) : undefined;
     const health = work?.business ? this.trade(work).health : 'steady';
+    const owners = ownersOf(this.world, this.population, economy, this.world.seed);
+    const holds = owners.holdings.get(person.id) ?? [];
+    const landlord = ledger.landlord ? this.person(ledger.landlord) : undefined;
+    const home = person.home ? buildingById(this.world, person.home) : undefined;
+    const boss = work?.business ? bossOf(work, this.population, this.staffOf(work).filter((p) => p.diedOn === undefined)) : null;
     return {
-      broke: person.eddies < base * 0.3 ? 'yes' : '',
-      flush: person.eddies > base * 1.6 ? 'yes' : '',
+      broke: money < ledger.essentials ? 'yes' : '',
+      flush: money > ledger.essentials * 10 ? 'yes' : '',
+      behind: (this.life.arrears?.[person.id] ?? 0) > 0 ? 'yes' : '',
+      landlordName: landlord && landlord !== person && landlord.diedOn === undefined ? (landlord.given === person.given ? landlord.name : landlord.given) : '',
+      corpRent: ledger.landlord === null && ledger.rent > 0 ? 'yes' : '',
+      squat: home?.kind === 'shack' ? 'yes' : '',
+      landlord: holds.some((id) => buildingById(this.world, id)?.category === 'residential') ? 'yes' : '',
+      ownsPlace: work && boss === person && holds.includes(work.id) ? 'yes' : '',
+      shortPaid: work?.business && boss !== person && (this.life.tills[work.id]?.short ?? 0) > 0 ? 'yes' : '',
       slow: health === 'struggling' ? 'yes' : '',
       brisk: health === 'thriving' ? 'yes' : '',
     };

@@ -131,15 +131,28 @@ own.
   their sex (plain to see), everything you know about them (work, age, home, what they eat and drink, who they hate,
   their type, what they want, their nature), what's still unknown, what they remember of you
   ("Gift: Ramen ×2 · last week", "You walked out · today") and their web.
-- **An economy**: the eddies move while you're away. Payday is Friday, when everyone draws a
-  week's money (a gang's members from the gang's chest, filled by the cut it takes from the
-  storefronts on its turf), and every day living takes some back; most evenings the chatty go
-  out and spend at their hangouts, so people are flush on Friday night and short by Thursday,
-  and a robbery pays accordingly. Every storefront keeps books: walk-in trade, its regulars,
-  what you buy there, against rent, staff and the gang's cut. A week in the red and the place
-  is struggling (the boss won't hire, a shift pays a quarter less); a good week and it's
-  thriving (a quarter more). The panel inside says how trade is, and people talk about being
-  broke, flush, run off their feet or standing in an empty shop.
+- **An economy**, a closed loop: every eddie someone spends lands somewhere, and every eddie
+  they're paid comes from somewhere. On Friday a storefront's people are paid **out of its
+  till** (only what it holds: the workers first, the boss out of what's left; a chain's or a
+  hospital's corp makes up its own short), the corps' people, the NCPD and the freelancers
+  with clients across the city from **outside it**, the street vendors, buskers, joytoys and
+  delivery drivers out of what's spent at the city's markets and stalls, a gang's members
+  from its **chest** (filled by its cut of the takings on its turf and its users' habits), the
+  retired a small pension, and the jobless nothing. Once a week, each on a day of their own,
+  people buy the week's food at one of the counters **nearest home** (lunch near work), go out
+  to their hangout when there's money to spare, now and then buy clothes, meds, chrome or a
+  gun at a real store in their district, feed a habit, and pay the **rent** to whoever owns
+  their home: one of the neighborhood's **landlords** (small blocks) or a **corp** (the tall
+  ones and the megabuildings), whose rent leaves the city; what they can't pay, they owe. Laid
+  up, they're billed for the hospital bed. A storefront takes what's spent there and a little
+  trade from outside (downtown and Westbrook the most), and pays its suppliers, the gang's
+  cut, its rent (its boss owns about one building in three) and its people; what's over a few
+  weeks of costs goes to its owner. People carry about what they started with (a robbery
+  takes what it did) and keep the rest in an account; someone who can't make the week gets a
+  hand from family. A week in the red and the place is struggling (the boss won't hire, a
+  shift pays a quarter less); a good week and it's thriving (a quarter more). The panel inside
+  says how trade is, and people talk about it: broke, flush, behind on the rent, a landlord
+  who fixes nothing, the corp that owns the block, a till that paid them short.
 - **Getting on with people**: **Talk** unfolds the ways in: **Chat** (safe: nobody minds,
   the chatty like it), **Compliment**, **Joke**, **Gossip** or **How are you?**, and each
   lands by who they are. A compliment pleases the warm and the young and falls flat with the
