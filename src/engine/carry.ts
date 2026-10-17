@@ -81,6 +81,8 @@ export interface GearContent {
   medical: MedicalContent;
   /** Street drugs, by item id: what a dose weighs (src/data/drugs.ts). */
   drugs: Record<string, DrugKind>;
+  /** Components, by item id: what each weighs, how many share a slot, its price and the stores (by business id) that rack it. */
+  components: Record<string, { name: string; note: string; grams: number; perSlot: number; price: number; stores: string[] }>;
   /** Grams by kind of dish, unless the dish says its own. */
   dish: Record<Dish['kind'], number>;
   kinds: Record<string, PocketKind>;
@@ -151,6 +153,10 @@ export function itemGrams(item: Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | '
       return weaponGrams(weapon, gear.arms) + (item.loaded ?? 0) * (ammo?.grams ?? 0);
     }
   }
+  if (item.kind === 'component') {
+    const part = gear.components[item.id];
+    if (part) return part.grams;
+  }
   if (item.kind === 'ammo') {
     const ammo = gear.arms.ammo[item.id];
     if (ammo) return ammo.grams;
@@ -177,7 +183,8 @@ export function outfit(pockets: PocketState[], gear: GearContent): { worn: Parti
 export function stackSlots(item: Pick<Item, 'id' | 'kind'>, count: number, gear: GearContent): number {
   const ammo = item.kind === 'ammo' ? gear.arms.ammo[item.id] : undefined;
   const drug = item.kind === 'consumable' ? gear.drugs[item.id] : undefined;
-  const perSlot = Math.max(1, ammo?.perSlot ?? drug?.perSlot ?? gear.items[item.kind]?.perSlot ?? 1);
+  const part = item.kind === 'component' ? gear.components[item.id] : undefined;
+  const perSlot = Math.max(1, ammo?.perSlot ?? drug?.perSlot ?? part?.perSlot ?? gear.items[item.kind]?.perSlot ?? 1);
   return Math.ceil(Math.max(0, count) / perSlot);
 }
 

@@ -183,6 +183,8 @@ export interface Item {
   weapon?: string;
   /** For a gun: the rounds in its magazine, which weigh with it. */
   loaded?: number;
+  /** For a stack of a drug: the share of it that's cutting agent, mixed all through (src/engine/cutting.ts). */
+  cut?: number;
 }
 
 /** Flavor text that plays while the player is idle, optionally firing an effect. */
@@ -311,7 +313,7 @@ export type GameEvents = {
   /** Charisma earned experience or a level. */
   charismaChanged: SkillStatus;
   /** A fighting skill gained experience or a level: Street Brawler, or Toughness. */
-  skillChanged: { skill: 'brawler' | 'toughness' | 'weapon' | 'trading'; status: SkillStatus };
+  skillChanged: { skill: 'brawler' | 'toughness' | 'weapon' | 'trading' | 'dealing' | 'cutting'; status: SkillStatus };
   /** The player walked into another room of the building they're in. */
   roomChanged: Room;
   /** The player got a job, worked a shift, moved up, quit or was let go (null: no job now). */

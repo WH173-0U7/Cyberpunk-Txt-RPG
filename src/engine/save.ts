@@ -51,6 +51,9 @@ export interface Progress {
   brawler?: SkillState | null;
   /** Trading (null or missing: an older save, level 1). */
   trading?: SkillState | null;
+  /** The Dealing and Cutting skills. */
+  dealer?: SkillState | null;
+  cutter?: SkillState | null;
   toughness?: SkillState | null;
   /** How well the player knows each kind of weapon and each weapon. */
   arms?: Arms | null;
@@ -99,6 +102,8 @@ export interface SaveSource {
   readonly charismaSaved: SkillState;
   readonly brawlerSaved: SkillState;
   readonly tradingSaved: SkillState;
+  readonly dealerSaved: SkillState;
+  readonly cutterSaved: SkillState;
   readonly toughnessSaved: SkillState;
   readonly armsSaved: Arms;
   readonly roomSaved: string | null;
@@ -151,6 +156,8 @@ export function createSave(seed: string, game: SaveSource, generator: number, no
     charisma: { ...game.charismaSaved },
     brawler: { ...game.brawlerSaved },
     trading: { ...game.tradingSaved },
+    dealer: { ...game.dealerSaved },
+    cutter: { ...game.cutterSaved },
     toughness: { ...game.toughnessSaved },
     arms: game.armsSaved,
     room: game.roomSaved,
@@ -223,6 +230,8 @@ export function readSave(raw: unknown): SaveData | null {
     charisma: isSkill(save.charisma) ? save.charisma : null,
     brawler: isSkill(save.brawler) ? save.brawler : null,
     trading: isSkill(save.trading) ? save.trading : null,
+    dealer: isSkill(save.dealer) ? save.dealer : null,
+    cutter: isSkill(save.cutter) ? save.cutter : null,
     toughness: isSkill(save.toughness) ? save.toughness : null,
     arms: armsOf(save.arms),
     room: typeof save.room === 'string' ? save.room : null,
@@ -267,13 +276,13 @@ export function resume(world: World, save: SaveData): Progress | null {
   if (save.seed !== world.seed || !fits(save.where) || (save.trip && !fits(save.trip.to))) return null;
   if (!save.visited.every(known) || !save.discovered.every(known)) return null;
   if (!save.explored.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < CELLS * CELLS)) return null;
-  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, trading, toughness, arms, room, lodging, job, jobs, career, life, you, chrome, health, police, lethal, coverage, dealing, habit } = save;
+  const { where, visited, discovered, explored, eddies, passUntil, trip, items, gear, money, energy, inebriation, society, charisma, brawler, trading, dealer, cutter, toughness, arms, room, lodging, job, jobs, career, life, you, chrome, health, police, lethal, coverage, dealing, habit } = save;
   const exists = (j: JobState) => world.buildings.some((b) => b.id === j.building);
   const here = where.place && !trip && !visited.includes(where.place) ? [where.place] : [];
   // Only ever inside the building the player stands at, and never mid-trip.
   const inside = !trip && save.inside && save.inside === where.building ? save.inside : null;
   // A job at a building this city doesn't have is no job.
-  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, trading: trading ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, police: police ?? null, lethal: lethal ?? null, coverage: coverage ?? null, dealing: dealing ?? null, habit: habit ?? null };
+  return { where, visited: [...visited, ...here], discovered, explored, eddies, passUntil, trip, inside, items, gear, money, energy, inebriation, society, charisma, brawler: brawler ?? null, trading: trading ?? null, dealer: dealer ?? null, cutter: cutter ?? null, toughness: toughness ?? null, arms: arms ?? null, room: room ?? null, lodging: lodging ?? null, job: job && exists(job) ? job : null, ...(jobs ? { jobs: jobs.filter(exists) } : {}), career: career ?? null, life, you: you ?? null, chrome: chrome ?? null, health: health ?? null, police: police ?? null, lethal: lethal ?? null, coverage: coverage ?? null, dealing: dealing ?? null, habit: habit ?? null };
 }
 
 const CRIMES: ReadonlySet<string> = new Set<Crime>(['assault', 'robbery', 'murder', 'possession', 'dealing']);
@@ -330,7 +339,8 @@ function dealingOf(value: unknown): DealingState | null {
     };
   };
   const crew = isObject(value.crew) ? Object.fromEntries(Object.entries(value.crew).flatMap(([k, v]) => { const r = runner(v); return r ? [[k, r]] : []; })) : {};
-  return { current: deal(value.current), vouched: strings(value.vouched), past, burned: numbers(value.burned), corners: strings(value.corners), crew, dealt: numbers(value.dealt) };
+  const harms = Array.isArray(value.harms) ? value.harms.filter((h): h is DealingState['harms'][number] => isObject(h) && typeof h.id === 'string' && typeof h.drug === 'string' && isNumber(h.day) && typeof h.deadly === 'boolean' && typeof h.knew === 'boolean') : [];
+  return { current: deal(value.current), vouched: strings(value.vouched), past, burned: numbers(value.burned), corners: strings(value.corners), crew, dealt: numbers(value.dealt), harms };
 }
 
 /** The player's habit, as far as a save's record of it is one. */
@@ -364,7 +374,8 @@ function isItem(value: unknown): value is Item {
     (item.locked === undefined || typeof item.locked === 'boolean') &&
     (item.gear === undefined || typeof item.gear === 'string') &&
     (item.weapon === undefined || typeof item.weapon === 'string') &&
-    (item.loaded === undefined || (Number.isInteger(item.loaded) && (item.loaded as number) >= 0))
+    (item.loaded === undefined || (Number.isInteger(item.loaded) && (item.loaded as number) >= 0)) &&
+    (item.cut === undefined || (isNumber(item.cut) && item.cut >= 0 && item.cut <= 1))
   );
 }
 

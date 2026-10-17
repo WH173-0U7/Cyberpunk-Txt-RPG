@@ -655,6 +655,9 @@ export interface PersonSkills {
   charisma: number;
   /** Buying and selling: what they let a thing go for, and what they'll pay. */
   trading: number;
+  /** Knowing the drug trade, and cutting product: a ganger's rackets, a runner's days. */
+  dealing: number;
+  cutting: number;
 }
 
 /**
@@ -681,7 +684,7 @@ export interface SkillProfiles {
 /** Someone's own levels, drawn on their own stream, so they're the same every time; everyone ordinary without the profiles. */
 export function skillsOf(person: Person, world: World, content: PeopleContent): PersonSkills {
   const profile = content.skills;
-  if (!profile) return { brawler: 4, toughness: 4, arms: 4, charisma: 4, trading: 4 };
+  if (!profile) return { brawler: 4, toughness: 4, arms: 4, charisma: 4, trading: 4, dealing: 4, cutting: 4 };
   const ranges = profile.walks[walkOf(person, world)];
   const rng = createRng(`${person.id}:skills`);
   const t = person.traits;
@@ -695,6 +698,9 @@ export function skillsOf(person: Person, world: World, content: PeopleContent): 
     arms: draw('arms', t.courage - 0.5),
     charisma: draw('charisma', t.warmth + t.chatty - 1),
     trading: draw('trading', t.greed + t.chatty - 1),
+    // Drawn after the rest, so nobody's other levels move.
+    dealing: draw('dealing', t.greed + t.courage - 1),
+    cutting: draw('cutting', t.greed - t.warmth),
   };
 }
 

@@ -14,7 +14,7 @@ import { PEOPLE } from '../src/data/people';
 import { CHARISMA, TRADING } from '../src/data/skills';
 import { SOCIETY } from '../src/data/society';
 import { TRAVEL } from '../src/data/travel';
-import { askOf, blockOf, buyersIn, canMoveUp, freshDealing, habitOf, owedFor, pushOdds, streetPrice, withInterest, type DealingState, type DealState } from '../src/engine/dealing';
+import { askOf, blockOf, buyersIn, canMoveUp, drugLevel, freshDealing, habitOf, owedFor, pushOdds, streetPrice, withInterest, type DealingState, type DealState } from '../src/engine/dealing';
 import { line, type Speaker } from '../src/engine/dialogue';
 import { Game, streetSpot, type GameRules } from '../src/engine/game';
 import { generateWorld } from '../src/engine/generate';
@@ -431,14 +431,38 @@ describe('the lines of dealing', () => {
 });
 
 describe('a canon check on the drugs', () => {
-  it('has the 2077 drugs with the wiki\'s names and the gangs that move them, and the older two for the Valentinos', () => {
+  it('has the 2077 drugs with the wiki\'s names and the gangs that move them, and older ones filling out each line', () => {
     expect(Object.values(DEALING.drugs).filter((d) => d.from === '2077').map((d) => d.name).sort()).toEqual(['Black Lace', 'Deep Dive', 'Glitter', 'Juice', 'Phant']);
-    expect(DEALING.gangs.tyger_claws!.drugs).toEqual(['glitter']);
-    expect(DEALING.gangs.animals!.drugs).toEqual(['juice']);
-    expect(DEALING.gangs.scavengers!.drugs).toEqual(['deep-dive', 'phant']);
-    expect(DEALING.gangs.valentinos!.drugs.map((id) => DEALING.drugs[id]!.from)).toEqual(['2020', '2020']);
-    // Illegal to carry at all: the combat drug, Glitter and the Animals' Juice.
-    expect(Object.entries(DEALING.drugs).filter(([, d]) => d.illegal).map(([id]) => id).sort()).toEqual(['black-lace', 'glitter', 'juice']);
+    // Each gang fronts anyone its own canon product first; the Scavengers' Phant, four or five times Deep Dive, is the top of theirs.
+    expect(DEALING.gangs.tyger_claws!.drugs[0]).toBe('glitter');
+    expect(DEALING.gangs.maelstrom!.drugs[0]).toBe('black-lace');
+    expect(DEALING.gangs.animals!.drugs[0]).toBe('juice');
+    expect(DEALING.gangs.scavengers!.drugs[0]).toBe('deep-dive');
+    expect(DEALING.gangs.scavengers!.drugs.at(-1)).toBe('phant');
+    expect(DEALING.gangs.valentinos!.drugs.map((id) => DEALING.drugs[id]!.from)).toEqual(['2020', '2020', '2020']);
+    // The older ones are the wiki's own (2020 and RED), by the names it gives them.
+    expect(Object.values(DEALING.drugs).filter((d) => d.from !== '2077').map((d) => d.name).sort()).toEqual(["'Dorph", 'Berserker', 'Blue Glass', 'Boost', 'Prime Time', 'Red Lace', 'Speedheal', 'Stim', 'SynthCoke', 'Timewarp']);
+    // Illegal to carry at all: the combat-rated drugs (Black Lace, Berserker, Prime Time, and Red Lace, Black Lace's offensive counterpart), Glitter and the Animals' Juice.
+    expect(Object.entries(DEALING.drugs).filter(([, d]) => d.illegal).map(([id]) => id).sort()).toEqual(['berserker', 'black-lace', 'glitter', 'juice', 'prime-time', 'red-lace']);
     expect(canMoveUp({ rung: 0, trust: 100, fronts: 100 } as DealState, DEALING)).toBe(true);
+  });
+
+  it('opens each gang\'s line a step at a time, the better product dearer and at a higher Dealing level', () => {
+    const fronted = new Set<string>();
+    for (const [id, gang] of Object.entries(DEALING.gangs)) {
+      expect(gang.drugs.length, id).toBeGreaterThanOrEqual(3);
+      const levels = gang.drugs.map((drug) => drugLevel(gang, drug));
+      const prices = gang.drugs.map((drug) => DEALING.drugs[drug]!.price);
+      expect(levels[0], id).toBe(1);
+      for (let n = 1; n < gang.drugs.length; n++) {
+        expect(levels[n]!, `${id} ${gang.drugs[n]}`).toBeGreaterThan(levels[n - 1]!);
+        expect(prices[n]!, `${id} ${gang.drugs[n]}`).toBeGreaterThan(prices[n - 1]!);
+      }
+      for (const drug of gang.drugs) {
+        expect(DEALING.drugs[drug], drug).toBeDefined();
+        expect(fronted.has(drug), `${drug} fronted by two gangs`).toBe(false);
+        fronted.add(drug);
+      }
+    }
   });
 });

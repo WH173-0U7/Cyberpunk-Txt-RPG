@@ -136,6 +136,8 @@ function check(game: Game, about: string): void {
   expect(again.habitSaved, `${about}: the habit after a save`).toEqual(game.habitSaved);
   expect(again.roomSaved, `${about}: the room after a save`).toEqual(game.roomSaved);
   expect(again.lodgingSaved, `${about}: the rented room after a save`).toEqual(game.lodgingSaved);
+  // A stack is some share filler, never all of it, nor less than none.
+  for (const item of game.inventory) if (item.cut !== undefined) expect(item.cut >= 0 && item.cut <= 1, `${about}: ${item.name} cut ${item.cut}`).toBe(true);
   // A runner never holds less than nothing, nor owes it.
   for (const r of game.crew(Date.now())) {
     expect(r.stock, `${about}: ${r.name}'s stock`).toBeGreaterThanOrEqual(0);
@@ -195,7 +197,7 @@ describe('playing badly', () => {
         trip: null,
         inside: null,
         // Something to sell, to pitch whoever's about, or front a runner.
-        items: [{ id: 'glitter', kind: 'consumable', name: 'Glitter', count: 12, in: 'jacket' }],
+        items: [{ id: 'glitter', kind: 'consumable', name: 'Glitter', count: 12, in: 'jacket' }, { id: 'cutting-agent', kind: 'component', name: 'Cutting agent', count: 6, in: 'jacket' }],
         // A supplier for the Tyger Claws, who can take on runners.
         dealing: { ...freshDealing(), current: { gang: 'tyger_claws', connect: generatePeople(world, PEOPLE, FOOD.dishes).people.find((p) => p.gang === 'tyger_claws' && DEALING.gangs.tyger_claws!.connects.includes(p.job.role))!.id, rung: DEALING.crew.from, trust: 40, corner: null, front: null, debt: 0, debtAt: 0, collectAt: null, collections: 0, fronts: 6, sold: 60, take: 900, customers: {}, block: { key: -1, served: 0 } } },
         gear: null,
@@ -280,7 +282,10 @@ describe('playing badly', () => {
             if (gun) rng.chance(0.7) ? game.load(gun.id) : game.unload(gun.id);
           } else if (roll < 0.66) {
             const food = game.inventory.filter((i) => i.kind === 'consumable');
-            if (food.length) game.consume(rng.pick(food)!.id, now);
+            const pick = food.length ? rng.pick(food)! : null;
+            // Now and then a drug's cut first, with an agent if there's one on hand.
+            if (pick && game.canCut(pick.id, pick.in) === null && rng.chance(0.5)) game.cut(pick.id, pick.in);
+            else if (pick) game.consume(pick.id, now);
           } else if (roll < 0.8 && people.length) {
             const who = rng.pick(people)!.person.id;
             const what = rng.next();

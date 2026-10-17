@@ -75,9 +75,9 @@ export interface CrewRules {
   sizes: number[];
   owe: number;
   days: number;
-  /** A day's selling: doses for every so many users of it round where they live, and for being out at all; a Trading level past an ordinary one sells `perLevel` more; never past `most`. */
+  /** A day's selling: doses for every so many users of it round where they live, and for being out at all; a Dealing level past an ordinary one sells `perLevel` more; never past `most`. */
   sell: { base: number; perUsers: number; perLevel: number; most: number };
-  /** Trading XP a dose sold, for the runner. */
+  /** Trading and Dealing XP a dose sold, for the runner. */
   practice: number;
   /** A day's odds of: the NCPD picking them up (times the district's call), naming the player then (less for one who likes them), days held; being robbed (times how rough it is), the share of stock and cash taken, the odds they're hurt and for how long; skimming (only someone greedier than `greed`), the share of a day's take; using it (if it's their habit), doses. */
   bust: { base: number; name: number; loyal: number; hold: [number, number] };
@@ -122,8 +122,8 @@ export interface RunnerDay {
   day: number;
   /** Users of what they carry round where they live. */
   users: number;
-  /** Their Trading level, and what it does to the price against an ordinary seller's. */
-  trading: number;
+  /** Their Dealing level (how fast it sells), and what their Trading does to the price against an ordinary seller's. */
+  dealing: number;
   priceFactor: number;
   /** A dose's street price where they sell. */
   street: number;
@@ -183,7 +183,7 @@ export function runnerDay(runner: Runner, ctx: RunnerDay, rules: CrewRules, rng:
         r.stock -= used;
         r.hidden = (r.hidden ?? 0) + used * ctx.street;
       }
-      const pace = (rules.sell.base + ctx.users / rules.sell.perUsers) * Math.max(0.3, 1 + rules.sell.perLevel * (ctx.trading - 4));
+      const pace = (rules.sell.base + ctx.users / rules.sell.perUsers) * Math.max(0.3, 1 + rules.sell.perLevel * (ctx.dealing - 4));
       const sold = Math.min(r.stock, Math.min(rules.sell.most, Math.round(pace * rng.range(0.5, 1.5))));
       if (sold > 0) {
         const take = Math.round(sold * ctx.street * ctx.priceFactor);

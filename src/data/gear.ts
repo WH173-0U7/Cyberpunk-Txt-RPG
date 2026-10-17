@@ -40,6 +40,11 @@ export const GEAR: GearContent = {
   hacks: HACKS,
   medical: MEDICAL,
   drugs: DRUGS,
+  // Something to cut product with: ours, since the wiki names no cutting agent. A pharmacy, a
+  // general store or a bodega sells it as if it were for something else.
+  components: {
+    'cutting-agent': { name: 'Cutting agent', note: 'A fine white powder that is sold for something else, and bought for this. A dose of it stretches a package by a dose.', grams: 4, perSlot: 20, price: 3, stores: ['pharmacy', 'general-store', 'bodega'] },
+  },
   dish: { food: 250, drink: 350, alcohol: 650 },
   kinds: {
     wallet: { name: 'Wallet', slots: 0, maxGrams: 0, grams: 40, holds: 1000, chips: 4 },

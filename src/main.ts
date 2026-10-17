@@ -180,6 +180,10 @@ const inventory = new Inventory(
     },
     onUse: (id, pocket) => use(id, pocket),
     onUnload: (id) => unload(id),
+    onCut: (id, pocket) => {
+      lastActivity = performance.now();
+      game.cut(id, pocket || undefined);
+    },
     onDrop: (id, pocket) => drop(id, pocket),
     onWear: (id, pocket) => wear(id, pocket),
     onTakeOff: (id) => {
@@ -728,7 +732,8 @@ function dealLine(deal: DealView, now: number): string {
   const day = (ms: number) => `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(ms).getDay()]} ${formatClock(ms)}`;
   const owing = deal.debt ? `debt ${deal.debt} €$${deal.collectAt ? `, collectors in ${formatMinutes(Math.max(0, deal.collectAt - now) / 60_000)}` : ''}` : deal.front ? `owe ${deal.front.left} €$ by ${day(deal.front.due)}` : 'nothing owed';
   const next = deal.next ? `trust ${deal.trust}, ${deal.next.title.toLowerCase()} at ${deal.next.trust} and ${deal.next.fronts} paid` : 'top of the ladder';
-  return [`${deal.title} for the ${deal.gangName}`, deal.carried ? `${deal.carried} on you` : '', owing, deal.corner ? `corner: ${deal.corner.name}` : '', `${deal.sold} sold`, next].filter(Boolean).join(' · ');
+  const shut = deal.line.find((d) => !d.open);
+  return [`${deal.title} for the ${deal.gangName}`, deal.carried ? `${deal.carried} on you` : '', owing, deal.corner ? `corner: ${deal.corner.name}` : '', `${deal.sold} sold`, next, shut ? `${shut.name} at Dealing Lv ${shut.at}` : ''].filter(Boolean).join(' · ');
 }
 
 /** The player's runners, as the status says them: what each has out and owes, and anyone held, short, gone or run off. */
@@ -1130,6 +1135,7 @@ function showInventory(): void {
     use: useLabel(item),
     unload: item.kind === 'weapon' && game.canLoad(item.id).load && game.canLoad(item.id).unload,
     wear: item.kind === 'clothing' && Boolean(item.gear),
+    cut: Boolean(GEAR.drugs[item.id]) && item.kind === 'consumable' && game.canCut(item.id, item.in) === null,
     weight: formatGrams(item.count * itemGrams(item, GEAR, FOOD.dishes)),
     detail: itemDetail(item, tier),
   });
@@ -1259,6 +1265,8 @@ function itemDetail(item: Item, tier: (p: { brand?: string; style?: PocketLoad['
   if (implant) return implantDetail(implant, CHROME);
   const hack = item.kind === 'quickhack' ? HACKS.hacks[item.id] : undefined;
   if (hack) return `${hack.type} · ${hack.ram} RAM`;
+  // A drug, by how much of it is cutting agent.
+  if (item.kind === 'consumable' && GEAR.drugs[item.id] && item.cut) return `${Math.round(item.cut * 100)}% cut`;
   const med = item.kind === 'consumable' ? MEDICAL.meds[item.id] : undefined;
   if (med) return medDetail(med);
   return undefined;
@@ -1339,6 +1347,8 @@ function showStatus(now: number): void {
   const ncpd = police.held ? `Held · ${formatCountdown(police.held - now)}` : police.dispatch ? `NCPD · ${formatCountdown(police.dispatch.arriveAt - now)}` : police.warrants.length ? 'Wanted' : '';
   const heart = game.romance(now);
   const deal = game.dealing(now);
+  const dealer = game.dealingSkill();
+  const cutter = game.cuttingSkill();
   const crew = game.crew(now);
   const habit = game.habit(now);
   // What's working, else the worst of a craving or withdrawal, on the line.
@@ -1373,7 +1383,9 @@ function showStatus(now: number): void {
     { label: 'NCART', value: pass ? `Pass until ${formatDay(wallet.passUntil)}` : 'No pass' },
     { label: 'Heart', value: heart ? `${heart.stage === 'together' ? 'Together with' : 'Seeing'} ${heart.name} · ${heart.dates} ${heart.dates === 1 ? 'date' : 'dates'} · ♥ ${heart.spark}` : 'Seeing no one' },
     ...(jobs.length ? jobs.map((j) => ({ label: j.side ? 'Side gig' : 'Work', value: `${j.rung.title} at ${j.building.name} · ${formatDays(j.days)} ${j.hours[0]}–${j.hours[1]}h${j.owed ? ` · ${j.owed} €$ owed` : ''} · ${j.shifts} ${j.shifts === 1 ? 'shift' : 'shifts'}${j.next ? ` · trust ${j.trust}, ${j.next.title.toLowerCase()} at ${j.next.at}` : ' · top of the ladder'} · trade ${game.trade(j.building).health} · ${j.perks.join(', ')}` })) : [{ label: 'Work', value: 'No job' }]),
-    ...(deal ? [{ label: 'Dealing', value: dealLine(deal, now), ...(deal.debt ? { tone: 'bad' as const } : {}) }] : []),
+    ...(dealer && (deal || dealer.level > 1 || dealer.xp > 0) ? [{ label: 'Dealing', value: `Lv ${dealer.level} · ${dealer.xp}/${dealer.xpToNext} XP` }] : []),
+    ...(cutter && (cutter.level > 1 || cutter.xp > 0) ? [{ label: 'Cutting', value: `Lv ${cutter.level} · ${cutter.xp}/${cutter.xpToNext} XP` }] : []),
+    ...(deal ? [{ label: 'Gang', value: dealLine(deal, now), ...(deal.debt ? { tone: 'bad' as const } : {}) }] : []),
     ...(crew.length || deal?.crewMost ? [{ label: 'Crew', value: crewLine(crew, deal?.crewMost ?? crew.length), ...(crew.some((r) => r.short || r.ran) ? { tone: 'warn' as const } : {}) }] : []),
     ...(habit && (habit.drugs.length || habit.active.length || habit.edge || habit.nerve) ? [{ label: 'Habit', value: habitLine(habit, now), ...(habit.stage || habit.numb ? { tone: 'bad' as const } : {}) }] : []),
     ...(condition ? [{ label: 'Condition', value: condition, tone: 'warn' as const }] : []),

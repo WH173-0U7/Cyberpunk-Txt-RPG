@@ -7,7 +7,8 @@ import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRan
 import { tillOf, tradeAt, turfFrom, weekdayOf, type Health } from './economy';
 import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, runnerShort, settle, writeOff, type Runner, type RunnerView } from './crew';
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
-import { askOf, blockOf, buyersIn, canMoveUp, dealRungOf, freshDealing, habitOf, heatAt, owedFor, pushOdds, streetPrice, withInterest, type CollectorView, type DealChoice, type DealingRules, type DealingState, type DealMomentView, type DealOption, type DealState, type DealView, type Front, type Habit } from './dealing';
+import { cutShare, foundOdds, harmOdds, mixedShare, sickOdds } from './cutting';
+import { askOf, blockOf, buyersIn, canMoveUp, dealRungOf, drugLevel, freshDealing, habitOf, heatAt, owedFor, pushOdds, streetPrice, withInterest, type CollectorView, type DealChoice, type DealingRules, type DealingState, type DealMomentView, type DealOption, type DealState, type DealView, type Front, type Habit } from './dealing';
 import { cash, changeCoins as coinsToBills, chipCut, deposit as toAccount, freshMoney, payCash, splitLoot, takeCash, withdraw as fromAccount, type Money, type MoneyRules } from './money';
 import { drawQuality, menuFor, priceFor, type FoodContent, type Menu, type MenuItem, type Quality, type Venue } from './food';
 import { medDetail, medTotal, TREATMENT, type Coverage, type CoverageStatus, type MedicalStock, type MedKind } from './medical';
@@ -307,6 +308,9 @@ export class Game {
   private brawlerState: SkillState;
   /** Trading: buying and selling. */
   private tradingState: SkillState;
+  /** The Dealing and Cutting skills. */
+  private dealerState: SkillState;
+  private cutterState: SkillState;
   private toughnessState: SkillState;
   /** How well the player knows each kind of weapon, and each weapon. */
   private armsState: Arms;
@@ -388,6 +392,8 @@ export class Game {
     this.charismaState = progress?.charisma ? { ...progress.charisma } : freshSkill();
     this.brawlerState = progress?.brawler ? { ...progress.brawler } : freshSkill();
     this.tradingState = progress?.trading ? { ...progress.trading } : freshSkill();
+    this.dealerState = progress?.dealer ? { ...progress.dealer } : freshSkill();
+    this.cutterState = progress?.cutter ? { ...progress.cutter } : freshSkill();
     this.toughnessState = progress?.toughness ? { ...progress.toughness } : freshSkill();
     this.armsState = { types: { ...progress?.arms?.types }, models: { ...progress?.arms?.models } };
     // Before anything works out the player's health: a dose can change the most of it.
@@ -761,7 +767,9 @@ export class Game {
     const care = chromeKey ? gear.medical.stores[chromeKey] : undefined;
     // A motel's or a capsule hotel's desk rents its rooms by the night.
     const rent = business && this.rules.rooms ? this.rules.rooms.rent[business] : undefined;
-    if (!key && !chrome && !hackStock && !care && !rent) return null;
+    // Components a store racks, the cutting agent among them (only where there's dealing).
+    const parts = business && this.rules.dealing ? Object.entries(gear.components).filter(([, c]) => c.stores.includes(business)) : [];
+    if (!key && !chrome && !hackStock && !care && !rent && !parts.length) return null;
     const ids = key ? (gear.racks[key] ?? []) : [];
     const stock = key ? gear.arms.stores[key] : undefined;
     // A clothing store sells at its tier; a store with only bags on the rack prices them the way its district eats.
@@ -815,7 +823,8 @@ export class Game {
     const plans = care?.plans ? Object.entries(gear.medical.plans).map(([id, p]): MenuItem => ({ id, name: p.name, note: p.note, kind: 'plan', price: p.price, detail: `Trauma Team · ${p.days} days` })) : [];
     const room = rent && 'block' in at ? this.roomToRent(at) : null;
     const lodging: MenuItem[] = rent && room ? [{ id: ROOM_FOR_THE_NIGHT, name: rent.name, note: rent.note, kind: 'room', price: priceFor(rent.price, quality, food), detail: `${room.name} · till noon` }] : [];
-    const all = [...lodging, ...treatment, ...ware, ...meds, ...plans, ...programs, ...weapons, ...ammo, ...items];
+    const components = parts.map(([id, c]): MenuItem => ({ id, name: c.name, note: c.note, kind: 'component', price: priceFor(c.price, quality, food) }));
+    const all = [...lodging, ...treatment, ...ware, ...meds, ...plans, ...programs, ...weapons, ...ammo, ...items, ...components];
     return all.length ? { venue, items: all, kind: 'gear' } : null;
   }
 
@@ -853,6 +862,7 @@ export class Game {
     if (item.kind === 'ammo') return { id: item.id, kind: 'ammo' };
     if (item.kind === 'cyberware') return { id: item.id, kind: 'cyberware' };
     if (item.kind === 'quickhack') return { id: item.id, kind: 'quickhack' };
+    if (item.kind === 'component') return { id: item.id, kind: 'component' };
     return { id: item.id, kind: 'consumable' };
   }
 
@@ -1421,14 +1431,14 @@ export class Game {
     const work = person.job.building ? buildingById(this.world, person.job.building) : undefined;
     const staff = Boolean(work?.business) && !person.gang;
     const { combat } = this.rules;
-    const curves: Record<keyof PersonSkills, SkillRules | undefined> = { brawler: combat.skills.brawler, toughness: combat.skills.toughness, arms: combat.mastery.types, charisma: this.rules.charisma, trading: this.rules.trading };
+    const curves: Record<keyof PersonSkills, SkillRules | undefined> = { brawler: combat.skills.brawler, toughness: combat.skills.toughness, arms: combat.mastery.types, charisma: this.rules.charisma, trading: this.rules.trading, dealing: this.rules.dealing?.skill, cutting: this.rules.dealing?.cut.skill };
     const out = { ...base };
     for (const skill of Object.keys(curves) as Array<keyof PersonSkills>) {
       const curve = curves[skill];
       if (!curve) continue;
       let xp = days * ((practice.walks[walk][skill] ?? 0) + (staff ? (practice.staff[skill] ?? 0) : 0)) + fights * (practice.fight[skill] ?? 0);
-      // Selling for the player is practice at trading.
-      if (skill === 'trading') xp += (this.dealState?.dealt?.[person.id] ?? 0) * (this.rules.dealing?.crew.practice ?? 0);
+      // Selling for the player is practice at trading, and at dealing.
+      if (skill === 'trading' || skill === 'dealing') xp += (this.dealState?.dealt?.[person.id] ?? 0) * (this.rules.dealing?.crew.practice ?? 0);
       let level = base[skill];
       while (level < most && xp >= xpToNext(curve, level)) {
         xp -= xpToNext(curve, level);
@@ -3320,6 +3330,7 @@ export class Game {
       for (; n > 0; n--) if ((pocket = placeFor(this.pockets, items, this.money, { id: drug, kind: 'consumable' }, n, gear, food.dishes))) break;
       if (!pocket) return false;
       const stack = items.find((i) => i.id === drug && i.kind === 'consumable' && i.in === pocket);
+      if (stack?.cut) stack.cut = mixedShare(stack.count, stack.cut, n);
       if (stack) stack.count += n;
       else items.push({ id: drug, kind: 'consumable', name, count: n, in: pocket });
       left -= n;
@@ -3403,6 +3414,7 @@ export class Game {
       sold: d.sold,
       take: d.take,
       crewMost: crewSize(d.rung, dealing.crew),
+      line: (gang?.drugs ?? []).map((id) => ({ drug: id, name: dealing.drugs[id]?.name ?? id, at: drugLevel(gang!, id), open: drugLevel(gang!, id) <= this.dealerState.level })),
     };
   }
 
@@ -3419,9 +3431,17 @@ export class Game {
       if (left > 0) options.push({ id: 'pay', label: 'Pay up', sub: `${Math.min(cash, left)} of ${left} €$`, disabled: cash <= 0 });
       else {
         const rung = dealRungOf(d, dealing);
-        for (const drug of dealing.gangs[d.gang]?.drugs ?? []) {
+        const gang = dealing.gangs[d.gang];
+        // What the player knows the trade well enough to be fronted, and the next of the line, shut till they do.
+        let shown = false;
+        for (const drug of gang?.drugs ?? []) {
           const kind = dealing.drugs[drug]!;
-          options.push({ id: `front:${drug}`, label: `${kind.name} ×${rung.front}`, sub: `Owe ${owedFor(kind, rung)} €$ in ${rung.days} days` });
+          const at = drugLevel(gang!, drug);
+          if (at <= this.dealerState.level) options.push({ id: `front:${drug}`, label: `${kind.name} ×${rung.front}`, sub: `Owe ${owedFor(kind, rung)} €$ in ${rung.days} days` });
+          else if (!shown) {
+            shown = true;
+            options.push({ id: `front:${drug}`, label: kind.name, sub: `At Dealing Lv ${at}`, disabled: true });
+          }
         }
         options.push({ id: 'walk', label: 'Walk away', danger: true });
       }
@@ -3578,7 +3598,8 @@ export class Game {
     const d = this.dealState.current;
     const dealing = this.rules.dealing!;
     const here = this.isHere(person.id, now);
-    if (!d || !here || !dealing.gangs[d.gang]?.drugs.includes(drug)) return false;
+    const gang = d ? dealing.gangs[d.gang] : undefined;
+    if (!d || !here || !gang?.drugs.includes(drug) || drugLevel(gang, drug) > this.dealerState.level) return false;
     d.connect = person.id;
     const speaker = this.speakerFor(person, here.stance, here.doing, now);
     const rng = createRng(`${this.world.seed}:${person.id}:front:${d.fronts}:${d.sold}`);
@@ -3640,6 +3661,7 @@ export class Game {
         d.trust += dealing.trust.paid + (early ? dealing.trust.early : 0);
         d.fronts += 1;
         d.front = null;
+        this.trainDealing(dealing.xp.front);
       }
     }
     const still = (d.front ? d.front.owed - d.front.paid : 0) + d.debt;
@@ -3648,6 +3670,7 @@ export class Game {
     if (still <= 0 && canMoveUp(d, dealing)) {
       d.rung += 1;
       moved = true;
+      this.trainDealing(dealing.xp.rung);
       const title = dealing.gangs[d.gang]?.titles[d.rung] ?? '';
       speaker.vars = { ...speaker.vars, title: title.toLowerCase() };
       this.speech(person, compose(lines.deal.promote, speaker, lines, rng, { opener: false }), now);
@@ -3692,6 +3715,7 @@ export class Game {
     }
     const item = this.items.find((i) => i.kind === 'consumable' && i.id === drug);
     if (!item) return false;
+    const share = item.cut ?? 0;
     this.takeOne(item);
     const got = this.pocketCash(price);
     buyer.eddies = Math.max(0, buyer.eddies - got);
@@ -3705,14 +3729,74 @@ export class Game {
       const was = d.customers[buyer.id];
       d.customers[buyer.id] = { bought: (was?.bought ?? 0) + 1, last: now };
     }
+    const knew = Boolean(this.society.known[buyer.id]?.met);
     learnOf(this.society, buyer.id, 'met');
     changeStanding(this.society, buyer.id, { met: true, rapport: dealing.corner.rapport }, this.rules.society, this.rules.timeScale, now);
     this.trainTrading(this.rules.money.tradeXp ?? 0);
+    this.trainDealing(dealing.xp.sale);
+    if (share > 0) this.soldCut(buyer, drug, share, knew, now);
     this.dealingSeen(buyer, now);
     this.events.emit('walletChanged', this.wallet);
     this.events.emit('inventoryChanged', this.inventory);
     this.events.emit('dealChanged', this.dealing(now));
     return true;
+  }
+
+  /**
+   * A cut dose sold: a bad batch may get to the buyer (told the next day lived, `badBatches`),
+   * and a cut of the gang's own product may get back to the connect, which costs trust. Both
+   * likelier the heavier the cut, and the cruder the player's Cutting.
+   */
+  private soldCut(buyer: Person, drug: string, share: number, knew: boolean, now: number): void {
+    const dealing = this.rules.dealing!;
+    const rules = dealing.cut;
+    const bonus = skillBonus(rules.skill, this.cutterState.level);
+    const rng = createRng(`${this.world.seed}:cut-sold:${buyer.id}:${now}`);
+    if (rng.chance(harmOdds(share, bonus, rules))) this.dealState.harms.push({ id: buyer.id, drug, day: this.clockAt(now).day, deadly: rng.chance(rules.harm.deadly), knew });
+    const d = this.dealState.current;
+    if (d && dealing.gangs[d.gang]?.drugs.includes(drug) && rng.chance(foundOdds(share, bonus, rules))) {
+      d.trust -= rules.found.trust;
+      this.say(this.narration(rules.lines.found, { connect: this.person(d.connect)?.given ?? 'your connect', gang: this.rules.people.gangs[d.gang]?.name ?? d.gang, drug: dealing.drugs[drug]?.name ?? drug }, rng), 'error');
+      if (d.trust <= dealing.trust.cutOff) this.cutOff(d, now);
+    }
+  }
+
+  /**
+   * Bad batches getting to whoever bought them, a day on: laid up, or dead. Word reaches the
+   * player; whoever it was won't buy again and holds it against them; a death the NCPD hears
+   * of, with the player's name if the buyer's people knew whose product it was.
+   */
+  private badBatches(today: number, now: number): void {
+    const dealing = this.rules.dealing;
+    if (!dealing || !this.dealState.harms.length) return;
+    const rules = dealing.cut;
+    const due = this.dealState.harms.filter((h) => h.day < today);
+    if (!due.length) return;
+    this.dealState.harms = this.dealState.harms.filter((h) => h.day >= today);
+    for (const harm of due) {
+      const person = this.person(harm.id);
+      if (!person || person.diedOn !== undefined) continue;
+      const rng = createRng(`${this.world.seed}:bad-batch:${harm.id}:${harm.day}`);
+      const vars = this.dealVars(person, now, { drug: dealing.drugs[harm.drug]?.name ?? harm.drug });
+      if (harm.deadly) {
+        this.life.dead[person.id] = today;
+        person.diedOn = today;
+        delete this.life.hurt[person.id];
+        delete person.hurtUntil;
+        if (this.society.romance?.with === person.id) this.society.romance = null;
+        this.say(this.narration(rules.lines.killed, vars, rng), 'error');
+        this.onRecord('dealing', person.district, harm.knew, 'a bad batch', 'whose product it was', now);
+      } else {
+        const until = today + rng.int(rules.harm.days[0], rules.harm.days[1]);
+        this.life.hurt[person.id] = until;
+        person.hurtUntil = until;
+        this.say(this.narration(rules.lines.harmed, vars, rng), 'error');
+        changeStanding(this.society, person.id, { grudge: 20, rapport: -10 }, this.rules.society, this.rules.timeScale, now);
+      }
+      if (this.dealState.current) delete this.dealState.current.customers[person.id];
+    }
+    this.events.emit('societyChanged', { people: due.map((h) => h.id) });
+    this.events.emit('dealChanged', this.dealing(now));
   }
 
   /** Whoever here saw a sale may call it in as dealing: only some of them notice a hand-off, and nothing's said when nobody calls. */
@@ -3899,7 +3983,7 @@ export class Game {
       const ask = this.askFor(officer, drug, now);
       const vars = this.dealVars(officer, now, { drug: drugName(drug), price: String(ask) });
       // An eye for a deal or a face may catch what's wrong with this one.
-      const eye = Math.max(this.tradingState.level, this.charismaState.level);
+      const eye = Math.max(this.tradingState.level, this.charismaState.level, this.dealerState.level);
       const spotted = rng.chance(Math.max(0, Math.min(bad.read.most, bad.read.base + bad.read.perLevel * (eye - 4))));
       const text = [this.narration(dealing.lines.walkUp, vars, rng), spotted ? this.narration(dealing.lines.tell, vars, rng) : ''].filter(Boolean).join(' ');
       this.dealMomentState = { kind: 'buy', person: officer.id, drug, ask, pay: ask, short: false, regular: false, undercover: true, at: now, text };
@@ -4722,7 +4806,7 @@ export class Game {
           continue;
         }
         const drug = r.drug ? dealing.drugs[r.drug] : undefined;
-        const trading = this.skillsFor(person, now).trading;
+        const { trading, dealing: knows } = this.skillsFor(person, now);
         const power = this.rules.money.haggle ?? 0;
         const priceFactor = this.rules.trading && power ? Math.pow(skillBonus(this.rules.trading, trading) / skillBonus(this.rules.trading, 4), power) : 1;
         const rapport = standingOf(this.society, id, this.rules.society, timeScale, now).rapport;
@@ -4730,7 +4814,7 @@ export class Game {
         const res = runnerDay(r, {
           day,
           users: r.drug ? this.usersOf(r.drug, person.district).length : 0,
-          trading,
+          dealing: knows,
           priceFactor,
           street: drug && r.drug ? this.runnerStreet(person, r.drug) : 0,
           call: police ? (policing(person.district, null, police)?.call ?? 0) : 0,
@@ -4741,7 +4825,10 @@ export class Game {
         }, rules, rng);
         const fresh = res.runner.news.filter((n) => n.day === day);
         r = res.runner;
-        if (res.sold) this.dealState.dealt[id] = (this.dealState.dealt[id] ?? 0) + res.sold;
+        if (res.sold) {
+          this.dealState.dealt[id] = (this.dealState.dealt[id] ?? 0) + res.sold;
+          this.trainDealing(res.sold * dealing.xp.runner);
+        }
         if (res.skimmed) {
           person.eddies += res.skimmed;
           this.life.eddies[id] = person.eddies;
@@ -4786,12 +4873,17 @@ export class Game {
 
   /** A runner gave the NCPD the player's name: on record, and a warrant for dealing. */
   private namedBy(runner: Person, now: number): void {
+    this.onRecord('dealing', runner.district, true, 'a cell', "a runner's word", now);
+  }
+
+  /** Something the NCPD hears of with nobody calling it in from the scene: a report, and a warrant when it names the player. */
+  private onRecord(crime: Crime, district: string, named: boolean, place: string, seen: string, now: number): void {
     const police = this.rules.police;
     if (!police) return;
     const p = this.policeState;
-    p.reports.push({ id: p.nextId++, crime: 'dealing', at: now, district: runner.district, place: 'a cell', named: true, seen: 'a runner\'s word' });
+    p.reports.push({ id: p.nextId++, crime, at: now, district, place, named, seen });
     if (p.reports.length > police.keep) p.reports.splice(0, p.reports.length - police.keep);
-    issueWarrant(p, 'dealing', runner.district, now, police, this.rules.timeScale);
+    if (named) issueWarrant(p, crime, district, now, police, this.rules.timeScale);
     this.events.emit('policeChanged', this.police(now));
   }
 
@@ -4842,7 +4934,9 @@ export class Game {
     const health = this.health(now);
     const energy = this.energy(now);
     const edge = edgeAt(this.habitState, now, rules, timeScale);
-    const { state, strength, nerve } = takeDose(this.habitState, item.id, drug.hook, now, rules, timeScale, rng);
+    // A cut dose is weaker by its filler, and a bad cut can make the player sick.
+    const share = item.cut ?? 0;
+    const { state, strength, nerve } = takeDose(this.habitState, item.id, drug.hook, now, rules, timeScale, rng, 1 - share);
     this.habitState = { ...state, told: undefined };
     this.takeOne(item);
     const effect = rules.effects[item.id];
@@ -4852,6 +4946,11 @@ export class Game {
     else this.healthState = { value: Math.min(this.maxHealth(now), health.current), at: now };
     if (effect?.energy) this.energyState = { ...this.energyState, current: Math.min(energy.max, energy.current + Math.round(effect.energy * strength)), updatedAt: now };
     if (nerve) this.say(this.narration(rules.lines.nerve, {}, rng), 'error');
+    if (share > 0 && rng.chance(sickOdds(share, skillBonus(dealing.cut.skill, this.cutterState.level), dealing.cut))) {
+      this.events.emit('fx', { effect: 'shake' });
+      this.healthState = { value: Math.max(1, this.health(now).current - Math.round(this.maxHealth(now) * dealing.cut.sick.health)), at: now };
+      this.say(this.narration(dealing.cut.lines.sick, { drug: drug.name }, rng), 'error');
+    }
     if (strength < 0.7) this.say(this.narration(rules.lines.tolerant, { drug: drug.name }, rng), 'system');
     if (edge < rules.edge.numb && edgeAt(this.habitState, now, rules, timeScale) >= rules.edge.numb) this.say(this.narration(rules.lines.numb, {}, rng), 'error');
     this.events.emit('inventoryChanged', this.inventory);
@@ -5883,6 +5982,7 @@ export class Game {
     const happened = liveUntil(this.world, this.population, this.life, this.rules.life, this.baseEddies, today, this.world.seed, (spot) => this.tierOfSpot(spot), turfFrom(this.rules.people.turf), this.rules.people, spokenFor);
     this.cornerWars(happened, now);
     this.crewDays(today, now);
+    this.badBatches(today, now);
     // Seeing someone who has died: word reaches the player, and it's over.
     const partner = this.society.romance ? this.person(this.society.romance.with) : undefined;
     if (partner?.diedOn !== undefined) {
@@ -6257,6 +6357,99 @@ export class Game {
 
   get tradingSaved(): SkillState {
     return { ...this.tradingState };
+  }
+
+  /** Dealing: knowing the trade, which decides what a gang fronts the player. Null without dealing's rules. */
+  dealingSkill(): SkillStatus | null {
+    return this.rules.dealing ? skillStatus(this.dealerState, this.rules.dealing.skill) : null;
+  }
+
+  /** Cutting: how clean the player's cuts are. Null without dealing's rules. */
+  cuttingSkill(): SkillStatus | null {
+    return this.rules.dealing ? skillStatus(this.cutterState, this.rules.dealing.cut.skill) : null;
+  }
+
+  get dealerSaved(): SkillState {
+    return { ...this.dealerState };
+  }
+
+  get cutterSaved(): SkillState {
+    return { ...this.cutterState };
+  }
+
+  /** Dealing experience: a sale, a package paid off, a rung, a runner's sale. A level that opens more of the gang's line says so. */
+  private trainDealing(amount: number): void {
+    const dealing = this.rules.dealing;
+    if (!dealing || amount <= 0) return;
+    const before = this.dealerState.level;
+    const { state, levels } = gainXp(this.dealerState, amount, dealing.skill);
+    this.dealerState = state;
+    if (levels) {
+      this.say(fill(dealing.skill.levelLine, { level: String(state.level), standing: this.standingLine(dealing.skill, state.level) }), 'system');
+      const d = this.dealState.current;
+      const gang = d ? dealing.gangs[d.gang] : undefined;
+      const opened = gang ? gang.drugs.filter((drug) => drugLevel(gang, drug) > before && drugLevel(gang, drug) <= state.level) : [];
+      for (const drug of opened) this.say(`The ${this.rules.people.gangs[d!.gang]?.name ?? d!.gang} will front you ${dealing.drugs[drug]?.name ?? drug} now. Ask your connect.`, 'system');
+    }
+    this.events.emit('skillChanged', { skill: 'dealing', status: this.dealingSkill()! });
+  }
+
+  /** Cutting experience: a dose cut. */
+  private trainCutting(amount: number): void {
+    const dealing = this.rules.dealing;
+    if (!dealing || amount <= 0) return;
+    const { state, levels } = gainXp(this.cutterState, amount, dealing.cut.skill);
+    this.cutterState = state;
+    if (levels) this.say(fill(dealing.cut.skill.levelLine, { level: String(state.level), standing: this.standingLine(dealing.cut.skill, state.level) }), 'system');
+    this.events.emit('skillChanged', { skill: 'cutting', status: this.cuttingSkill()! });
+  }
+
+  /** Whether the player can cut a stack of a drug they carry (in the pocket it was tapped in) with a dose of agent: null if so, else why not. */
+  canCut(id: string, from?: string): string | null {
+    const dealing = this.rules.dealing;
+    if (!dealing) return 'Nothing to cut with.';
+    const stack = this.items.find((i) => i.kind === 'consumable' && i.id === id && (!from || i.in === from));
+    if (!stack || !this.rules.gear.drugs[id]) return 'Nothing to cut.';
+    if (this.fighting || this.detained(Date.now())) return 'Not now.';
+    if (!this.items.some((i) => i.kind === 'component' && i.id === dealing.cut.agent)) return 'No cutting agent on you.';
+    if ((stack.cut ?? 0) >= dealing.cut.most) return 'As cut as it gets.';
+    if (!this.cutItems(stack)) return 'No room in there for another dose.';
+    return null;
+  }
+
+  /** What the player would carry with a dose of agent out and a dose more in this stack, or null if its pocket has no room for it. */
+  private cutItems(stack: Item): Item[] | null {
+    const agentId = this.rules.dealing!.cut.agent;
+    const items = this.items.map((i) => ({ ...i }));
+    const agent = items.find((i) => i.kind === 'component' && i.id === agentId);
+    if (!agent) return null;
+    agent.count -= 1;
+    const without = items.filter((i) => i.count > 0);
+    if (placeFor(this.pockets, without, this.money, { id: stack.id, kind: 'consumable' }, 1, this.rules.gear, this.rules.food.dishes) !== stack.in) return null;
+    const held = without.find((i) => i.kind === 'consumable' && i.id === stack.id && i.in === stack.in)!;
+    held.cut = cutShare(held.count, held.cut ?? 0, 1);
+    held.count += 1;
+    return without;
+  }
+
+  /**
+   * Cuts a stack of a drug with a dose of agent: a dose more in the stack, mixed all through
+   * (its filler share up), as long as there's room for it there; Cutting experience.
+   */
+  cut(id: string, from?: string): boolean {
+    const dealing = this.rules.dealing;
+    if (!dealing || this.canCut(id, from)) return false;
+    const rules = dealing.cut;
+    const stack = this.items.find((i) => i.kind === 'consumable' && i.id === id && (!from || i.in === from))!;
+    const name = this.rules.gear.drugs[id]?.name ?? id;
+    const rng = createRng(`${this.world.seed}:cut:${id}:${stack.count}:${stack.cut ?? 0}`);
+    const after = this.cutItems(stack)!;
+    const share = after.find((i) => i.kind === 'consumable' && i.id === id && i.in === stack.in)!.cut ?? 0;
+    this.items.splice(0, this.items.length, ...after);
+    this.say(this.narration(share >= rules.most ? rules.lines.full : rules.lines.cut, { drug: name, share: String(Math.round(share * 100)) }, rng), 'system');
+    this.trainCutting(rules.xp);
+    this.events.emit('inventoryChanged', this.inventory);
+    return true;
   }
 
   /** Trading experience: every purchase, every sale. */
