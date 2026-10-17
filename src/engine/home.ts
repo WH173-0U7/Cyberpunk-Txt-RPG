@@ -61,9 +61,9 @@ export interface HomeRules {
    * (`warn`), put out (`evicted`), a squat gone through (`raided`), handing back the keys
    * (`movedOut`, `left`: an old home given up for a new one), a full stash (`full`), and a
    * stash with things in it in the way (`clear`). `{place}`, `{room}`, `{rent}`, `{owed}`,
-   * `{weeks}`, `{what}`.
+   * `{weeks}`, `{what}`. The landlord putting the rent up (`raised`) or down (`lowered`), `{was}` what it was.
    */
-  lines: Record<'rented' | 'squatted' | 'masked' | 'short' | 'paid' | 'behind' | 'warn' | 'evicted' | 'raided' | 'movedOut' | 'left' | 'full' | 'clear', string[]>;
+  lines: Record<'rented' | 'squatted' | 'masked' | 'short' | 'paid' | 'behind' | 'warn' | 'evicted' | 'raided' | 'movedOut' | 'left' | 'full' | 'clear' | 'raised' | 'lowered', string[]>;
 }
 
 /** What a stash holds now: its stacks' slots and their weight. */

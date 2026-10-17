@@ -32,5 +32,7 @@ export const HOME: HomeRules = {
     left: ['You give up {place} for the new place.', 'You hand back the keys to {place}: the new place is home now.'],
     full: ['No room left in the stash.', 'The stash is full: something has to come out first.'],
     clear: ['Take your things out of the stash at {place} first.', "Your stash at {place} isn't empty. Clear it out before you go."],
+    raised: ['The rent at {place} goes up: {rent} €$ a week, from {was}.', 'A note under the door of {room}: {rent} €$ a week from now on, up from {was}. Everyone pays, so everyone pays more.', "{place}'s landlord has noticed nobody's late. The rent's {rent} €$ a week now, not {was}."],
+    lowered: ['The rent at {place} comes down to {rent} €$ a week, from {was}. Too many doors with notices on them.', 'Rent at {place} is {rent} €$ a week now, down from {was}. The landlord would rather have something than nothing.', 'A note under the door of {room}: {rent} €$ a week from now on, down from {was}.'],
   },
 };

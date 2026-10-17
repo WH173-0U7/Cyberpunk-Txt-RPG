@@ -1,4 +1,4 @@
-import { economyDay, headlineIn, healthOf, holderOf, homeKind, ledgerOf, staffCostOf, type Closure, type Debt, type EconomyRules, type Ledger, type MarketState, type Owned, type Till, type Vice } from './economy';
+import { economyDay, headlineIn, healthOf, holderOf, homeKind, ledgerOf, staffCostOf, wageOf, type Closure, type Debt, type EconomyRules, type Ledger, type Let, type MarketState, type Owned, type Till, type Vice } from './economy';
 import type { Quality } from './food';
 import { bossOf, runsIt } from './jobs';
 import { buildingById, drawnTo, heartOf, INVERSE, leastStaff, personById, rolesFor, seatRota, tiesOf, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
@@ -158,6 +158,8 @@ export interface LifeState {
   closed?: Record<string, Closure>;
   /** The storefronts the player owns: kept with the people's days, since the economy pays them what's theirs. */
   owned?: Record<string, Owned>;
+  /** Every block's rent where it isn't the usual, and how its tenants paid this week. */
+  lets?: Record<string, Let>;
   /** Where someone lives now, where it isn't where they started (null: nowhere, sleeping rough), since when, where from, and why. */
   homes?: Record<string, Moved>;
   /** The job someone has now, where it isn't what they started with (taken on somewhere, let go, a gang's), and the day it changed; let go when a storefront went under, which one (`was`), and whether they ran it (`ran`). */
@@ -613,7 +615,7 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
   const healthAt = (b: Building) => {
     const tier = ctx.tier(at(b));
     const staff = staffAt(b.id);
-    return healthOf(state.tills[b.id], staffCostOf(staff, bossOf(b, population, staff), tier, rules.economy) + rules.economy.rent[tier] * 7, rules.economy);
+    return healthOf(state.tills[b.id], staffCostOf(staff, bossOf(b, population, staff), tier, rules.economy, wageOf(state.tills[b.id])) + rules.economy.rent[tier] * 7, rules.economy);
   };
   const together = (p: Person) => tiesFrom(p.id).some((t) => (t.kind === 'spouse' || t.kind === 'partner') && alive(byId.get(t.to)));
   /**
@@ -936,8 +938,10 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
   // A place short of the hands its shifts want, else a busy one, takes on someone from the neighborhood who's looking for work.
   if (room() && rng.chance(rules.chances.hired)) {
     const looking = civilians.filter((p) => !p.job.building && rules.jobless.includes(p.job.role));
-    const short = looking.length ? storefronts.filter((b) => staffAt(b.id).length < least(b)) : [];
-    const busy = short.length ? short : looking.length ? storefronts.filter((b) => staffAt(b.id).length < Math.max(rules.maxStaff, least(b) + 1) && healthAt(b) === 'thriving') : [];
+    // A place gone under hires nobody: it's taken on whole when it reopens.
+    const open = state.closed ? storefronts.filter((b) => !state.closed?.[b.id]) : storefronts;
+    const short = looking.length ? open.filter((b) => staffAt(b.id).length < least(b)) : [];
+    const busy = short.length ? short : looking.length ? open.filter((b) => staffAt(b.id).length < Math.max(rules.maxStaff, least(b) + 1) && healthAt(b) === 'thriving') : [];
     if (busy.length) {
       const b = rng.pick(busy);
       const hire = rng.pick(looking);
@@ -955,7 +959,7 @@ function liveDay(population: Population, state: LifeState, rules: LifeRules, dis
   }
   // A struggling place lets someone go: the last taken on first, never the boss, and never below the hands its shifts want.
   if (room() && rng.chance(rules.chances.laidOff)) {
-    const failing = storefronts.filter((b) => staffAt(b.id).length >= Math.max(2, least(b) + 1) && healthAt(b) === 'struggling');
+    const failing = storefronts.filter((b) => !state.closed?.[b.id] && staffAt(b.id).length >= Math.max(2, least(b) + 1) && healthAt(b) === 'struggling');
     if (failing.length) {
       const b = rng.pick(failing);
       const boss = bossOf(b, population, staffAt(b.id));

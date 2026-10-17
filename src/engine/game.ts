@@ -4,7 +4,7 @@ import { EventBus } from './events';
 import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, pocketGrams, totalGrams, walletRoom, type GearContent, type PocketLoad, type PocketState, type Style } from './carry';
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
-import { accountOf, holderOf as ownerNow, homeKind as blockKind, leftOf, ledgerOf, ownersOf, priceFactor, staffCostOf, stockOf, tillOf, tradeAt, turfFrom, weekdayOf, type BusinessView, type Health, type MarketNews, type PriceLevel, type Vice } from './economy';
+import { accountOf, holderOf as ownerNow, homeKind as blockKind, leftOf, ledgerOf, ownersOf, priceFactor, rentLevelOf, staffCostOf, stockOf, tillOf, tradeAt, turfFrom, wageOf, weekdayOf, type BusinessView, type Health, type MarketNews, type PriceLevel, type Vice } from './economy';
 import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, runnerShort, settle, writeOff, type Runner, type RunnerView } from './crew';
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
 import { cutShare, foundOdds, harmOdds, mixedShare, sickOdds } from './cutting';
@@ -122,6 +122,9 @@ export function streetSpot(p: Point): Whereabouts {
 export interface MarketView {
   district: string;
   prices: Array<{ goods: string; change: number }>;
+  /** What the district's storefronts pay their people, and its blocks charge, against the usual (0: as usual). */
+  pay: number;
+  rent: number;
   news: Array<{ text: string; ago: string }>;
 }
 
@@ -302,6 +305,11 @@ function copyOf<T>(data: T): T {
  * sees or feels is driven by the events it emits. Time comes in as `now`
  * (ms since 1970) from the phone's clock, so trips run in real time.
  */
+/** How many weeks of rent the player owes, to the nearest: the weeks owed were at what the rent was then, and it moves. */
+function weeksBehind(home: HomeState): number {
+  return home.rent > 0 ? Math.round(home.owed / home.rent) : 0;
+}
+
 export class Game {
   readonly events = new EventBus<GameEvents>();
   private where: Whereabouts;
@@ -6269,8 +6277,19 @@ export class Game {
     const key = `${district?.id ?? ''}|${this.life.day}|${this.clockAt(now).day}`;
     if (this.marketCache?.key === key) return this.marketCache.view;
     const by = new Map<BuildingCategory, { sum: number; n: number }>();
+    const pay = { sum: 0, n: 0 };
+    const rent = { sum: 0, n: 0 };
     for (const b of this.world.buildings) {
-      if (!b.business || b.district !== district?.id || this.rules.food.fixed[b.business] || b.business === 'hospital' || this.life.closed?.[b.id]) continue;
+      if (b.district !== district?.id) continue;
+      if (blockKind(b, economy)) {
+        rent.sum += rentLevelOf(this.life.lets, b.id);
+        rent.n++;
+      }
+      if (b.business && !economy.owners.corp.includes(b.business) && !this.life.closed?.[b.id]) {
+        pay.sum += wageOf(this.life.tills[b.id]);
+        pay.n++;
+      }
+      if (!b.business || this.rules.food.fixed[b.business] || b.business === 'hospital' || this.life.closed?.[b.id]) continue;
       const level = by.get(b.category) ?? { sum: 0, n: 0 };
       level.sum += priceFactor(stockOf(this.life.tills[b.id]), this.trade(b).health, economy);
       level.n++;
@@ -6283,7 +6302,8 @@ export class Game {
       .slice(0, 3);
     const today = this.clockAt(now).day;
     const news = [...(this.life.market?.news ?? [])].reverse().slice(0, 4).map((n) => ({ text: this.headline(n), ago: this.agoWord(today - n.day) }));
-    const view = { district: district?.name ?? '', prices, news };
+    const change = ({ sum, n }: { sum: number; n: number }) => (n ? Math.round((sum / n - 1) * 100) / 100 : 0);
+    const view = { district: district?.name ?? '', prices, pay: change(pay), rent: change(rent), news };
     this.marketCache = { key, view };
     return view;
   }
@@ -6302,7 +6322,7 @@ export class Game {
 
   /** What a shift pays the player at a storefront: its rung by its tier, and more or less by how the place is doing. */
   private shiftPayAt(rung: Rung, building: Building, raise = 0): number {
-    return Math.max(1, Math.round(shiftPay(rung, this.tierOf(building), this.rules.jobs) * this.rules.life.economy.pay[this.trade(building).health] * (1 + raise)));
+    return Math.max(1, Math.round(shiftPay(rung, this.tierOf(building), this.rules.jobs) * this.rules.life.economy.pay[this.trade(building).health] * wageOf(this.life.tills[building.id]) * (1 + raise)));
   }
 
   /** How long ago something was, said the way people say it, from a number of days. */
@@ -7119,6 +7139,11 @@ export class Game {
       closedPlace: closedAt?.name ?? '',
       closedRan: closedAt && was?.ran ? 'yes' : '',
       lifted: work?.business && (this.life.tills[work.id]?.lifted ?? 0) > 0 ? 'yes' : '',
+      // Pay and rent that have moved a good way: what the till pays its hands, what the block charges.
+      payRaised: work?.business && boss !== person && wageOf(this.life.tills[work.id]) >= 1.05 ? 'yes' : '',
+      payCut: work?.business && boss !== person && wageOf(this.life.tills[work.id]) <= 0.95 ? 'yes' : '',
+      rentUp: home && ledger.rent > 0 && ledger.landlord !== person.id && rentLevelOf(this.life.lets, home.id) >= 1.05 ? 'yes' : '',
+      rentDown: home && ledger.rent > 0 && ledger.landlord !== person.id && rentLevelOf(this.life.lets, home.id) <= 0.95 ? 'yes' : '',
     };
   }
 
@@ -7966,7 +7991,7 @@ export class Game {
   private homeRentOf(building: Building): number {
     const economy = this.rules.life.economy;
     const kind = blockKind(building, economy);
-    return kind ? Math.round(economy.homes[kind][this.tierFn({ kind: 'building', id: building.id })] * (this.rules.home?.unit ?? 1)) : 0;
+    return kind ? Math.round(economy.homes[kind][this.tierFn({ kind: 'building', id: building.id })] * (this.rules.home?.unit ?? 1) * rentLevelOf(this.life.lets, building.id)) : 0;
   }
 
   /** Whether the player is home: in their own unit (or anywhere in their squat, or their building, without rooms). */
@@ -8105,7 +8130,7 @@ export class Game {
       room: this.homeRoomName(home, building),
       rent: home.rent,
       owed: home.owed,
-      behind: home.rent > 0 ? Math.floor(home.owed / home.rent) : 0,
+      behind: weeksBehind(home),
       dueIn: Math.max(0, home.due - this.clockAt(now).day),
       squat: home.squat,
       bed: !home.squat,
@@ -8220,6 +8245,12 @@ export class Game {
         if (gone.length) this.homeLine(rules.lines.raided, { ...vars, what: gone.join(', ') }, key);
         continue;
       }
+      // The landlord sets the week's rent by how the block's paying.
+      const rent = this.homeRentOf(building);
+      if (rent > 0 && rent !== home.rent) {
+        this.homeLine(rent > home.rent ? rules.lines.raised : rules.lines.lowered, { ...vars, rent: String(rent), was: String(home.rent) }, `${key}:rent`);
+        home.rent = rent;
+      }
       const due = home.owed + home.rent;
       const paid = this.payRent(due, building);
       home.owed = due - paid;
@@ -8229,14 +8260,14 @@ export class Game {
         continue;
       }
       this.homeLine(rules.lines.behind, { ...vars, owed: String(home.owed) }, key);
-      if (home.owed >= rules.evictAt * home.rent) {
-        this.homeLine(rules.lines.evicted, { ...vars, weeks: String(Math.floor(home.owed / home.rent)) }, `${key}:out`);
+      if (weeksBehind(home) >= rules.evictAt) {
+        this.homeLine(rules.lines.evicted, { ...vars, weeks: String(weeksBehind(home)) }, `${key}:out`);
         this.homeState = null;
         this.stashItems = [];
         // Out of the unit, if they're in it: the locks have changed.
         if (this.inside?.id === building.id && this.rules.rooms && this.roomState !== 'main') this.moveTo(mainRoom(building, this.rules.rooms), now);
         this.events.emit('energyChanged', this.energy(now));
-      } else if (home.owed >= rules.warnAt * home.rent && home.warned === undefined) {
+      } else if (weeksBehind(home) >= rules.warnAt && home.warned === undefined) {
         home.warned = day;
         this.homeLine(rules.lines.warn, { ...vars, owed: String(home.owed) }, `${key}:warn`);
       }
@@ -8644,7 +8675,7 @@ export class Game {
     const rent = economy.rent[tier] * 7;
     if (this.life.closed?.[building.id]) return economy.staff[tier] * (2 + economy.boss) + rent;
     const staff = this.livingStaff(building.id);
-    return staffCostOf(staff, bossOf(building, this.population, staff), tier, economy) + rent;
+    return staffCostOf(staff, bossOf(building, this.population, staff), tier, economy, wageOf(this.life.tills[building.id])) + rent;
   }
 
   /** What a storefront goes for: weeks of its costs and of what it cleared last week, or as one gone under, to the nearest fifty. */
