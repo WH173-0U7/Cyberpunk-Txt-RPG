@@ -321,7 +321,7 @@ describe('dialogue', () => {
   });
 
   it('keeps every piece of news to its own kind and side, and every memory to its own kind', () => {
-    const kinds = ['Shakedown', 'Robbery', 'Fight', 'Friends', 'Fallout', 'Makeup', 'Romance', 'Wedding', 'Breakup', 'Hired', 'LaidOff', 'Death', 'Joined'];
+    const kinds = ['Shakedown', 'Robbery', 'Fight', 'Friends', 'Fallout', 'Makeup', 'Romance', 'Wedding', 'Breakup', 'Hired', 'LaidOff', 'Death', 'Joined', 'Mugging', 'Collected', 'Evicted', 'Closed', 'Reopened'];
     const roles = ['Mine', 'Kin', 'Ours', 'Heard'];
     const needs = (l: (typeof LINES.memory)[number]) => (typeof l === 'string' ? [] : (l.when?.needs ?? []));
     const text = (l: (typeof LINES.memory)[number]) => (typeof l === 'string' ? l : l.text);
@@ -386,6 +386,11 @@ describe('dialogue', () => {
           flush: rng.chance(0.2) ? 'yes' : '',
           slow: rng.chance(0.2) ? 'yes' : '',
           brisk: rng.chance(0.2) ? 'yes' : '',
+          // Hard times: owing a gang, put out of a home, a workplace gone under, things walking out of the shop.
+          ...(rng.chance(0.2) ? { inDebt: 'yes', debtGang: 'Tyger Claws', debtLate: rng.chance(0.5) ? 'yes' : '' } : {}),
+          ...(rng.chance(0.2) ? { evicted: 'yes', evictedFrom: rng.chance(0.7) ? 'Kabuki Block 4' : '', evictedBy: rng.chance(0.5) ? 'Raul' : '', rough: rng.chance(0.3) ? 'yes' : '', squat: rng.chance(0.3) ? 'yes' : '' } : {}),
+          ...(rng.chance(0.15) ? { closedPlace: 'Noodle Hut', closedRan: rng.chance(0.3) ? 'yes' : '' } : {}),
+          lifted: rng.chance(0.15) ? 'yes' : '',
           kinDead: kin && rng.chance(0.3) ? 'yes' : '',
           again: rng.chance(0.3) ? 'yes' : '',
           // The moment: the player drunk, grief, the gang they hate here, questions piling up, a question they're touchy about or glad of.
@@ -470,13 +475,13 @@ describe('dialogue', () => {
         }
         lines += 32;
         // What they hold against someone else, every kind of it.
-        for (const kind of ['Robbed', 'Shook', 'Beaten', 'Dumped', 'Fallout', 'LaidOff', 'Killed']) {
+        for (const kind of ['Robbed', 'Shook', 'Beaten', 'Dumped', 'Fallout', 'LaidOff', 'Killed', 'Evicted']) {
           for (const word of ['cousin', '']) {
             const holding: Speaker = { ...speaker, vars: { ...vars, grudgeWho: 'Raul', [`grudge${kind}`]: 'yes', grudgeAgo: 'last week', grudgeKin: kind === 'Killed' ? 'Ana' : '', grudgeWord: kind === 'Killed' ? word : '' } };
             check(compose(LINES.topics.life, holding, LINES, rng, { opener: false }), `${about} grudge ${kind} ${word}`);
           }
         }
-        lines += 14;
+        lines += 16;
         // The news of people's hearts, work and deaths, and what they remember of the player: every other speaker is plenty of voices.
         const deep = population.people.indexOf(p) % 2 === 0;
         const told = (kind: string, role: string, extra: Record<string, string>) => {
@@ -485,7 +490,9 @@ describe('dialogue', () => {
           check(compose(LINES.topics.news, telling, LINES, rng, { opener: false }), `${about} news ${kind} ${role} ${JSON.stringify(extra)}`);
           lines += 1;
         };
-        const sides: Record<string, string[]> = { Makeup: ['Mine', 'Kin'], Romance: ['Mine', 'Kin', 'Heard'], Wedding: ['Mine', 'Kin', 'Heard'], Breakup: ['Mine', 'Kin', 'Heard'], Hired: ['Mine', 'Kin', 'Heard'], LaidOff: ['Mine', 'Kin', 'Heard'], Joined: ['Mine', 'Kin', 'Ours', 'Heard'] };
+        const sides: Record<string, string[]> = { Makeup: ['Mine', 'Kin'], Romance: ['Mine', 'Kin', 'Heard'], Wedding: ['Mine', 'Kin', 'Heard'], Breakup: ['Mine', 'Kin', 'Heard'], Hired: ['Mine', 'Kin', 'Heard'], LaidOff: ['Mine', 'Kin', 'Heard'], Joined: ['Mine', 'Kin', 'Ours', 'Heard'], Mugging: ['Mine', 'Kin', 'Heard'], Collected: ['Mine', 'Kin', 'Ours', 'Heard'], Evicted: ['Mine', 'Kin', 'Heard'], Closed: ['Mine', 'Kin', 'Heard'], Reopened: ['Mine', 'Kin', 'Heard'] };
+        // A mugging somewhere in particular, or nowhere.
+        for (const won of ['yes', '']) told('Mugging', 'Mine', { newsWon: won, newsWhere: '' });
         for (const [kind, roles] of Object.entries(sides)) for (const role of roles) for (const won of ['yes', '']) for (const withWho of ['Jun', '']) told(kind, role, { newsWon: won, newsWith: withWho });
         // A death: a killer telling it, their people, the dead's people (killed, or of their years), the killer's gang, and the district.
         told('Death', 'Mine', { newsWon: 'yes', newsKilled: 'yes' });

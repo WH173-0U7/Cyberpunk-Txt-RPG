@@ -37,6 +37,14 @@ import { CITY } from './city';
  * up to two doses a week, to the gang that deals it. A week half clear of its costs is thriving;
  * a week in the red, struggling; thriving pays the player's shift a quarter more, struggling a
  * quarter less, and a struggling boss won't hire.
+ * Hard times: someone bold or greedy enough who can't pay for the week's food walks out with half
+ * of what they're short. Whoever still can't make the week on payday goes to the loan shark, the
+ * gang with the most of their district's turf: up to two weeks of their food and rent, at a tenth a
+ * week, which grows to no more than six weeks of it; whatever they have over a week's worth goes
+ * on paying it back. Three weeks behind on the rent, they're put out. A storefront that can't pay
+ * its people three paydays running goes under, unless it's a corp's, a bank, a hospital or a real
+ * place, and new management takes it on one to three weeks later (twice, three times, four times
+ * that for a place that went under before).
  */
 export const ECONOMY: EconomyRules = {
   payday: 5,
@@ -126,6 +134,8 @@ export const ECONOMY: EconomyRules = {
       shock: ["No deliveries of {goods} into {district}: the trucks aren't coming.", "{district}'s {goods} suppliers have stopped sending. Stock up while you can.", "The {goods} trucks skipped {district} today, and they'll skip it tomorrow."],
       short: ['{Goods} short in {district}: bare shelves, and prices up.', "Can't find {goods} in {district} for love or eddies.", "{Goods} gone scarce in {district}. What's left costs more."],
       back: ['{Goods} back on the shelves in {district}.', 'The {goods} shortage in {district} is over.', "{district}'s shelves are full of {goods} again."],
+      closed: ['{place} in {district} has gone under. Shutters down, staff out.', "{place} couldn't make payroll, and now it's closed. {district} has one shop fewer.", 'Another one gone in {district}: {place} has shut its doors.'],
+      reopened: ['{place} is open again in {district}, under new management.', 'New faces behind the counter at {place}: the {district} shop is back in business.', "{place} has reopened. Somebody in {district} thinks they can make it pay."],
     },
   },
   rent: { luxury: 48, everyday: 21, poverty: 9 },
@@ -138,6 +148,12 @@ export const ECONOMY: EconomyRules = {
   chestWeeks: 4,
   thrivingAt: 0.5,
   pay: { thriving: 1.25, steady: 1, struggling: 0.75 },
+  hard: {
+    lift: { nerve: 1.1, share: 0.5 },
+    loan: { weeks: 2, interest: 0.1, most: 6, keep: 1 },
+    evict: 3,
+    close: { weeks: 3, days: [7, 21], again: 3, never: { businesses: ['bank', 'hospital'], names: (CITY.buildings.landmarks ?? []).map((l) => l.name) } },
+  },
   trade: {
     thriving: "Packed; the till hasn't stopped all week.",
     steady: 'Trade is steady.',

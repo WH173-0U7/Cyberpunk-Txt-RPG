@@ -797,7 +797,7 @@ function targetView(t: Target, to: Whereabouts, plans: { foot: TripPlan | null; 
     // A storefront's hours, and whether it's shut right now.
     const hours = b ? signOf(b) : '';
     const shut = b && game.locked(b, now);
-    description = b ? [hours ? `${hours}${shut ? `, shut till ${shut.opensAt ? formatClock(shut.opensAt) : 'who knows'}` : ''}.` : '', categoryOf(b).description].filter(Boolean).join(' ') : undefined;
+    description = b ? [shut?.down ? 'Closed down: it went under.' : hours ? `${hours}${shut ? `, shut till ${shut.opensAt ? formatClock(shut.opensAt) : 'who knows'}` : ''}.` : '', categoryOf(b).description].filter(Boolean).join(' ') : undefined;
   } else {
     const block = blockAt(world.layout, to);
     kicker = block ? `Block ${block.address} · ${district}` : district;
@@ -901,13 +901,14 @@ function hereView(now: number): PanelView {
   const door = game.door;
   // A storefront's door says its hours, and when it's shut, when someone's next in.
   const locked = door ? game.locked(door, now) : null;
-  const open = door ? signOf(door) : '';
-  const enter: PanelAction | null = !door ? null : locked ? { id: 'enter', label: 'Closed', sub: locked.opensAt ? `Opens ${formatClock(locked.opensAt)}` : 'Shut for good', disabled: true } : { id: 'enter', label: 'Go inside', sub: door.kindLabel };
+  // Gone under, its hours mean nothing.
+  const open = door && !locked?.down ? signOf(door) : '';
+  const enter: PanelAction | null = !door ? null : locked ? { id: 'enter', label: locked.down ? 'Closed down' : 'Closed', sub: locked.down ? 'Gone under' : locked.opensAt ? `Opens ${formatClock(locked.opensAt)}` : 'Shut for good', disabled: true } : { id: 'enter', label: 'Go inside', sub: door.kindLabel };
   return {
     mode: 'here',
     kicker: `You are here${building ? ` · Block ${building.block}` : ''}`,
     ...(open ? { meta: open } : {}),
-    description: building ? `${categoryOf(building).label} · ${[building.kindLabel, heightOf(building)].filter(Boolean).join(', ')}. ${locked ? 'The shutters are down. ' : ''}${mood}` : mood,
+    description: building ? `${categoryOf(building).label} · ${[building.kindLabel, heightOf(building)].filter(Boolean).join(', ')}. ${locked?.down ? "It's gone under: the shutters are chained, with a notice on them. " : locked ? 'The shutters are down. ' : ''}${mood}` : mood,
     actions: enter ? [enter] : [],
     closable: false,
     announce: `${name}. ${open ? `${open}. ` : ''}${locked ? 'Closed. ' : ''}${mood}`,
@@ -981,7 +982,7 @@ function insideView(building: Building): PanelView {
   // Shut: nobody who works here is in. The sign says when someone will be.
   const closed = game.closed(now);
   const opens = closed?.opensAt ? `Opens ${formatClock(closed.opensAt)}` : 'Shut for good';
-  const shut = closed ? `Closed. The shutters are half down and nobody's behind the counter. ${closed.opensAt ? `Someone's in again at ${formatClock(closed.opensAt)}.` : 'Nobody works here any more.'}` : '';
+  const shut = closed ? (closed.down ? 'Closed down. The place has gone under, and nobody works here any more.' : `Closed. The shutters are half down and nobody's behind the counter. ${closed.opensAt ? `Someone's in again at ${formatClock(closed.opensAt)}.` : 'Nobody works here any more.'}`) : '';
   // How the place is doing on its books, after what it sells.
   const trade = menu || closed ? ` ${game.trade(building).line}` : '';
   const description = (barred ?? (shut || (menu ? menuBlurb(menu) : game.bank() ? 'A counter, a teller, and a vault somewhere behind. Cash goes in, bills come out, coins get counted for a cut, and a credchip in your name is banked.' : here ? 'People live and work in here.' : 'Nobody around right now.'))) + trade;
