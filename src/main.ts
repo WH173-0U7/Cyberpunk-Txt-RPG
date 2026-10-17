@@ -49,6 +49,7 @@ import { TRADE } from './data/trade';
 import { NEEDS } from './data/needs';
 import { POLICE } from './data/police';
 import { DEALING } from './data/dealing';
+import { ROBBERY } from './data/robbery';
 import type { PoliceView } from './engine/police';
 import type { RunnerView } from './engine/crew';
 import type { DealView } from './engine/dealing';
@@ -768,6 +769,7 @@ function actOn(action: PersonAction, id: string): void {
   if (action === 'talk') game.talk(id, now);
   else if (action === 'insult') game.insult(id, now);
   else if (action === 'rob') game.rob(id, now);
+  else if (action === 'search') game.search(id, now);
   else if (action === 'attack') game.attack(id, now);
   else if (action === 'hire') game.askForWork(id, now);
   else if (action === 'quit') game.quit(now, id);
@@ -1771,6 +1773,7 @@ function showPeople(): void {
   const shown = present?.person ?? (personShown ? known.find((p) => p.id === personShown) : undefined);
   if (personShown && !shown) personShown = null;
   const standing = shown ? game.standingWith(shown.id, now) : null;
+  const fear = present ? game.fear(present.person.id, now) : null;
   const gifts = game.inventory.filter((item) => item.kind === 'consumable' && FOOD.dishes.some((d) => d.id === item.id));
   const hot = game.inventory.filter((item) => item.kind === 'credchip' && item.locked);
   const gangOf = (id: string | null) => (id ? PEOPLE.gangs[id]?.name : undefined);
@@ -1822,7 +1825,10 @@ function showPeople(): void {
             kicker: [gangOf(shown.gang) && described.named ? `${gangOf(shown.gang)} colors` : undefined, present ? withCompany(present.doing, present.scene) : described.facts.dead ? 'Dead' : 'Not here'].filter(Boolean).join(' · '),
             facts: described.lines.length ? described.lines.join(' · ') : described.named ? 'That\'s all you know.' : 'Nothing known yet. Talk, watch, ask.',
             tab: cardTab,
-            profile: profileOf(standing, described),
+            // How afraid of the player they are, by what they'd see if robbed now: on the profile, and on the Rob command.
+            profile: [...profileOf(standing, described), ...(fear ? [{ label: 'Fear', value: fear.label }] : [])],
+            fear: fear?.label ?? '',
+            search: present ? game.canSearch(shown.id, now) : false,
             // What's still to find out: the questions not yet answered.
             unknown: (Object.entries(LINES.questions) as Array<[Question, { label: string }]>).filter(([fact]) => !standing.knowledge.facts.includes(fact)).map(([, q]) => q.label),
             between: game.between(shown.id, now),
@@ -2212,7 +2218,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, needs: NEEDS, police: POLICE, join: JOIN, dealing: DEALING }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, needs: NEEDS, police: POLICE, join: JOIN, dealing: DEALING, robbery: ROBBERY }, progress);
   wire(game);
   map.setWorld(world);
   try {

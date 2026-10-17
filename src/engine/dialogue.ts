@@ -97,8 +97,13 @@ export interface DialogueLines {
   /** Asked whether they know someone: they do (`{other}`, `{word}`), they don't, or they've said already; they did, and `{other}` is dead (`{otherAgo}`); they did, and they're done with them (an ex, a friend fallen out with). */
   gift: { thanks: Line[]; favorite: Line[]; refuse: Line[] };
   insult: { reply: Line[]; shove: Line[] };
-  /** Robbing someone: what comes of it, and (`cold`, `coldNothing`) of going through the pockets of someone out cold. */
-  rob: { done: Line[]; nothing: Line[]; fought: Line[]; cold: Line[]; coldNothing: Line[] };
+  /**
+   * Robbing someone: what comes of it, and (`cold`, `coldNothing`) of going through the pockets of someone out cold.
+   * By fear: unafraid, they say no (`refused`) or fight (`fightBack`, the fight's first beat); afraid enough, they hand over
+   * some and swear it's all (`holdBack`), or nothing and swear they've none (`bluff`). Searching them after: what was kept
+   * (`searched`), nothing (`searchEmpty`), pulled free (`searchFail`), or a swing (`searchFight`).
+   */
+  rob: { done: Line[]; nothing: Line[]; fought: Line[]; cold: Line[]; coldNothing: Line[]; refused: Line[]; bluff: Line[]; holdBack: Line[]; fightBack: Line[]; searched: Line[]; searchEmpty: Line[]; searchFail: Line[]; searchFight: Line[] };
   /** A netrunner asked to chop a stolen credchip (`{balance}` on it, `{cut}` theirs, `{left}` after): they do, or they won't. */
   chop: { done: Line[]; refuse: Line[] };
   /** A boss asked for work (`{title}` the bottom rung, `{work}` the place, `{pay}` a shift): taken on, turned down, or not in a mask; a word after a shift; moved up (`{title}` the new rung); told the player quits. */
@@ -160,7 +165,7 @@ export interface DialogueLines {
     notLooking: string;
   };
   /** The player's own lines, for the record, by eloquence. */
-  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; robCold: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[]; deal: Line[]; pitch: Line[]; payUp: Line[]; walkAway: Line[]; recruit: Line[]; frontRunner: Line[]; collect: Line[]; lean: Line[]; slide: Line[]; letGo: Line[]; borrow: Line[]; lend: Line[]; askBack: Line[]; payShark: Line[]; buyPlace: Line[] };
+  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; robCold: Line[]; search: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[]; deal: Line[]; pitch: Line[]; payUp: Line[]; walkAway: Line[]; recruit: Line[]; frontRunner: Line[]; collect: Line[]; lean: Line[]; slide: Line[]; letGo: Line[]; borrow: Line[]; lend: Line[]; askBack: Line[]; payShark: Line[]; buyPlace: Line[] };
 }
 
 /** Everything a line can be picked and filled by; `vars.mask` is the word for the mask the player has on, or nothing. */

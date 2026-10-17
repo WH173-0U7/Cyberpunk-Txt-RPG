@@ -26,6 +26,7 @@ import { buildingById, GUARD_ROLE, openingHours, rotaStaff, readOf, skillsOf, wa
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
 import { ammoFor, drawWeapon, isGun, isLong, newWeaponId, stockFor, weaponDetail, weaponOf } from './weapons';
+import { fearBand, fearOf as fearLevel, respond, searchOdds, type Drawn, type FearContext, type RobberyRules } from './robbery';
 import { freshSkill, gainXp, skillBonus, skillEdge, skillStatus, xpToNext, type SkillRules, type SkillState, type SkillStatus } from './skills';
 import {
   applyIncident,
@@ -168,6 +169,8 @@ export interface GameRules extends TravelRules {
   join?: JoinRules;
   /** Dealing for a gang: the drugs, who fronts them, the rungs, the corner, debts. Without it, nobody deals and nobody has a habit. */
   dealing?: DealingRules;
+  /** Robbery by fear: what someone hands over is what they fear the player into, and the rest can be gone after. Without it (the tests' rules leave it out), a robbery takes a share of what they carry, as it always did. */
+  robbery?: RobberyRules;
 }
 
 /** Whether counters keep the hours of whoever works them, and how many hours ahead to look for when one opens. */
@@ -381,6 +384,8 @@ export class Game {
   private dealMomentState: { kind: 'buy' | 'robber' | 'rivals'; gang?: string; person: string; drug: string; ask: number; pay: number; short: boolean; regular: boolean; tab?: boolean; undercover?: boolean; at: number; text: string } | null = null;
   /** A collector on the player, waiting on an answer (not saved: they come back for it). */
   private collectState: { by: string; gang: string; at: number } | null = null;
+  /** Someone just robbed (or who wouldn't be): how afraid they were, and whether they kept a valuable back, for going through their pockets after (`search`). Not saved. */
+  private robbingState: { id: string; at: number; fear: number; valuable: boolean } | null = null;
   /** The drugs dealt in each district, everyone's habit, and who has one by district and drug: worked out once a city. */
   private readonly dealtCache = new Map<string, Set<string>>();
   private readonly habitCache = new Map<string, Habit | null>();
@@ -7465,7 +7470,10 @@ export class Game {
   /**
    * Robs someone here of what they carry. They won't forget it, nor will their family, friends,
    * crew and coworkers, nor anyone who saw; their workplace stops serving the player, their gang
-   * takes note, and someone with a grudge and the nerve for it will come to collect.
+   * takes note, and someone with a grudge and the nerve for it will come to collect. By fear
+   * (`rules.robbery`): what they hand over is what they're afraid enough to (the small notes
+   * first, and swearing it's all), the unafraid say no or fight, and what's kept back can be gone
+   * after (`search`). Out cold, nobody holds anything back.
    */
   rob(id: string, now: number): boolean {
     if (this.detained(now)) return false;
@@ -7484,66 +7492,53 @@ export class Game {
     // What the player pulls on them: fewer fight back against a gun (loaded or not; they can't tell), more against a blade, most against bare hands. Out cold, nobody fights, and the pockets come out near enough empty.
     const arms = this.rules.gear.arms;
     const drawn = drawWeapon(this.items, arms);
-    const fought = !cold && !emptied && rng.chance(person.traits.courage * (drawn ? (drawn.gun ? arms.rob.gun : arms.rob.melee) : arms.rob.bare));
-    const wanted = emptied ? 0 : Math.round(person.eddies * (cold ? rng.range(0.8, 1) : rng.range(0.4, 0.8)) * (fought ? 0.5 : 1));
-    // What's in their pocket, note by note: awake, they hand over the small ones first and keep the big ones back; out cold, the big ones come first.
-    const purse = this.purseOn(person);
-    const handed = takeFrom(purse, wanted, !cold).taken;
-    // Their credchip too, if they carry one and there's a slot for it: it comes locked, and wants chopping before any of it is yours.
-    const chipWanted = emptied ? 0 : person.chip;
-    const chipPocket = chipWanted ? this.pocketFor({ id: 'credchip', kind: 'credchip' }) : null;
-    const chipItem: Item | null = chipPocket ? { id: newChipId(this.items), kind: 'credchip', name: 'CredChip', count: 1, in: chipPocket, balance: chipWanted, locked: true } : null;
-    const chip = chipItem ? chipWanted : 0;
-    // And whatever of worth they have on them, if there's room for it: only a fence will buy it.
+    // By fear, awake and not already cleaned out: what they make of the player decides what they hand over, if anything.
+    const robbery = !cold && !emptied ? this.rules.robbery : undefined;
+    const fought = !robbery && !cold && !emptied && rng.chance(person.traits.courage * (drawn ? (drawn.gun ? arms.rob.gun : arms.rob.melee) : arms.rob.bare));
     const valuableId = emptied ? null : this.valuableOn(person, now);
-    const valuable = valuableId ? this.rules.gear.valuables?.[valuableId] : undefined;
-    const valuablePocket = valuableId && valuable ? this.pocketFor({ id: valuableId, kind: 'junk' }) : null;
-    const taken: Item | null = valuableId && valuable && valuablePocket ? { id: valuableId, kind: 'junk', name: valuable.name, count: 1, in: valuablePocket } : null;
-    // Cash is cash: the notes as far as the wallet holds them, the coins as far as the pocket will (with the chip and the rest in it).
-    const space = this.cashSpace([...(chipItem ? [chipItem] : []), ...(taken ? [taken] : [])]);
-    const fitted = pocket(this.money, handed, this.rules.money, space);
-    const take = sumNotes(fitted.got.notes) + fitted.got.coins;
-    const handedAll = sumNotes(handed.notes) + handed.coins;
+    const fear = robbery ? fearLevel(this.fearContext(here, now), robbery) : 0;
+    const answer = robbery ? respond(fear, person.traits, Boolean(valuableId && this.rules.gear.valuables?.[valuableId]?.jewellery), robbery, rng) : null;
     const speaker = this.speakerFor(person, stance, doing, now);
-    // A valuable by whose it was ("her Cufflinks", "his Omamori"): no article fits them all.
-    const haul = [take ? `${take} €$` : '', chip ? `a credchip with ${chip} €$ on it` : '', taken ? `${speaker.vars.his ?? 'their'} ${taken.name}` : ''].filter(Boolean).join(' and ');
-    const cut = drawn && !drawn.gun ? arms.classes[drawn.weapon.class]?.cut : undefined;
-    // A thrown weapon (a knife, an axe) is a blade in the hand.
-    speaker.vars = { ...speaker.vars, take: String(take), haul, weapon: drawn?.weapon.short ?? '', gun: drawn?.gun ? 'yes' : '', blade: cut === 'blade' || cut === 'thrown' ? 'yes' : '', blunt: cut === 'blunt' ? 'yes' : '' };
+    speaker.vars = { ...speaker.vars, ...this.robVars() };
+    if (answer?.kind === 'fight') return this.foughtBack(here, speaker, rng, now);
+    const wanted = emptied || answer?.kind === 'refuse' ? 0 : Math.round(person.eddies * (answer ? answer.share : (cold ? rng.range(0.8, 1) : rng.range(0.4, 0.8)) * (fought ? 0.5 : 1)));
+    // What's in their pocket, note by note: awake, they hand over the small ones first and keep the big ones back (by fear, not a note past what they mean to give); out cold, the big ones come first.
+    const handed = takeFrom(this.purseOn(person), wanted, !cold, Boolean(answer)).taken;
+    // Their credchip too, if they carry one (and, by fear, are afraid enough to give it up) and there's a slot for it: it comes locked, and wants chopping before any of it is yours.
+    const chipWanted = emptied || answer?.kind === 'refuse' || (answer && !answer.chip) ? 0 : person.chip;
+    // And whatever of worth they have on them, if there's room for it: only a fence will buy it.
+    const valuableGiven = answer ? answer.kind === 'hand' && answer.valuable : true;
+    const haul = this.haulOf(handed, chipWanted, valuableGiven ? valuableId : null, speaker.vars.his ?? 'their');
+    const { take, chip, taken } = haul;
+    speaker.vars = { ...speaker.vars, take: String(take), haul: haul.haul };
+    // What they kept back: cash past what they handed over, the chip, the valuable.
+    const keptBack = answer?.kind === 'hand' && (haul.handedAll < person.eddies || (person.chip > 0 && !answer.chip) || (Boolean(valuableId) && !answer.valuable));
     const mask = this.masked();
     const before = this.snapshot(person, now);
     // Who could name the player, before this makes them known to the victim.
     const knew = this.facesHere(now);
     const fallout = this.incident('robbery', person, take + chip, now);
     learnOf(this.society, id, 'met');
-    // Robbed is robbed, mask or not: their pockets stay empty a while. Whose doing it was, they know only with the face.
-    changeStanding(this.society, id, mask ? { robbedAt: now } : { met: true, robbedAt: now }, society, timeScale, now);
+    // Robbed is robbed, mask or not: their pockets stay empty a while (but for what they wouldn't hand over). Whose doing it was, they know only with the face.
+    const robbed = answer?.kind !== 'refuse';
+    changeStanding(this.society, id, { ...(mask ? {} : { met: true }), ...(robbed ? { robbedAt: now } : {}) }, society, timeScale, now);
+    if (answer) this.robbingState = { id, at: now, fear, valuable: Boolean(valuableId) && !(valuableGiven && taken) };
     this.logged(id, 'you', line(cold ? lines.you.robCold : lines.you.rob, speaker, rng), now);
     const got = take > 0 || chip > 0 || Boolean(taken);
+    const offered = haul.handedAll > 0 || chipWanted > 0 || (valuableGiven && Boolean(valuableId));
     const outcome =
-      (wanted || chipWanted) && !got
-        ? `No room on you for the eddies. ${person.given} keeps ${speaker.vars.his}${mask || cold ? '.' : ', and remembers your face.'}`
-        : line(cold ? (got ? lines.rob.cold : lines.rob.coldNothing) : got ? (fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
+      answer?.kind === 'refuse'
+        ? line(lines.rob.refused, speaker, rng)
+        : offered && !got
+          ? `No room on you for the eddies. ${person.given} keeps ${speaker.vars.his}${mask || cold ? '.' : ', and remembers your face.'}`
+          : answer && !got
+            ? line(lines.rob.bluff, speaker, rng)
+            : line(cold ? (got ? lines.rob.cold : lines.rob.coldNothing) : got ? (keptBack ? lines.rob.holdBack : fought ? lines.rob.fought : lines.rob.done) : lines.rob.nothing, speaker, rng);
     this.logged(id, 'them', outcome, now);
     if (got) {
-      this.money = fitted.money;
-      // What's taken is gone from them: less in their pockets, and their chip in yours.
-      person.eddies = Math.max(0, person.eddies - take);
-      this.life.eddies[person.id] = person.eddies;
-      if (chipItem) {
-        person.chip = 0;
-        this.life.chips[person.id] = 0;
-        this.items.push(chipItem);
-      }
-      if (taken) this.putAway(this.items, (this.items.push(taken), taken), taken.in);
       this.say(outcome, 'system');
-      if (take) this.say(`You pocket ${[notesLine(fitted.got.notes), fitted.got.coins ? `${fitted.got.coins} €$ in coins` : ''].filter(Boolean).join(' and ')}.`, 'system');
-      if (handedAll > take) this.say(`Your pockets won't hold the rest: ${handedAll - take} €$ stays with ${person.given}.`, 'system');
-      if (chipWanted && !chip) this.say(`No room on you for ${speaker.vars.his} credchip: it stays in ${speaker.vars.his} hand.`, 'system');
-      if (chip) this.say(`The chip is locked to ${person.given}. A netrunner will have to chop it before any of it is yours.`, 'system');
+      this.pocketHaul(person, haul, chipWanted);
       if (fought) this.drainEnergy(2, now);
-      this.events.emit('walletChanged', this.wallet);
-      if (chipItem || taken) this.events.emit('inventoryChanged', this.inventory);
     } else {
       this.say(outcome);
     }
@@ -7558,6 +7553,189 @@ export class Game {
     this.noteFeedback(person, before, now, mask ? lines.notes.masked : '', speaker.vars);
     this.checkFired(now);
     this.events.emit('societyChanged', { people: fallout });
+    return true;
+  }
+
+  /** What the player pulls on someone, for the lines: the weapon's name, and whether it's a gun, a blade or something blunt (a thrown knife or axe is a blade in the hand). */
+  private robVars(): Record<string, string> {
+    const arms = this.rules.gear.arms;
+    const drawn = drawWeapon(this.items, arms);
+    const cut = drawn && !drawn.gun ? arms.classes[drawn.weapon.class]?.cut : undefined;
+    return { weapon: drawn?.weapon.short ?? '', gun: drawn?.gun ? 'yes' : '', blade: cut === 'blade' || cut === 'thrown' ? 'yes' : '', blunt: cut === 'blunt' ? 'yes' : '' };
+  }
+
+  /**
+   * Someone robbed who isn't afraid enough to hand anything over, and has the nerve to do
+   * something about it: the robbery is on record all the same, and it's a fight they started.
+   */
+  private foughtBack(here: Presence, speaker: Speaker, rng: Rng, now: number): boolean {
+    const { person } = here;
+    const { society, timeScale, lines } = this.rules;
+    const mask = this.masked();
+    const before = this.snapshot(person, now);
+    const knew = this.facesHere(now);
+    const fallout = this.incident('robbery', person, 0, now);
+    learnOf(this.society, person.id, 'met');
+    if (!mask) changeStanding(this.society, person.id, { met: true }, society, timeScale, now);
+    this.logged(person.id, 'you', line(lines.you.rob, speaker, rng), now);
+    const text = line(lines.rob.fightBack, speaker, rng);
+    this.logged(person.id, 'them', text, now);
+    this.crime('robbery', person, now, knew, 'all');
+    this.noteFeedback(person, before, now, mask ? lines.notes.masked : '', speaker.vars);
+    this.checkFired(now);
+    this.events.emit('societyChanged', { people: fallout });
+    this.openFight(here, now, text);
+    return true;
+  }
+
+  /**
+   * What comes off someone robbed, before any of it changes hands: the cash handed over (or
+   * found), as far as the wallet and the change pocket take it, their chip and a valuable if
+   * there's a pocket for them, and the haul in words ("40 €$ and her Cufflinks").
+   */
+  private haulOf(cash: Cash, chipWanted: number, valuableId: string | null, his: string) {
+    const chipPocket = chipWanted ? this.pocketFor({ id: 'credchip', kind: 'credchip' }) : null;
+    const chipItem: Item | null = chipPocket ? { id: newChipId(this.items), kind: 'credchip', name: 'CredChip', count: 1, in: chipPocket, balance: chipWanted, locked: true } : null;
+    const chip = chipItem ? chipWanted : 0;
+    const valuable = valuableId ? this.rules.gear.valuables?.[valuableId] : undefined;
+    const valuablePocket = valuableId && valuable ? this.pocketFor({ id: valuableId, kind: 'junk' }) : null;
+    const taken: Item | null = valuableId && valuable && valuablePocket ? { id: valuableId, kind: 'junk', name: valuable.name, count: 1, in: valuablePocket } : null;
+    // Cash is cash: the notes as far as the wallet holds them, the coins as far as the pocket will (with the chip and the rest in it).
+    const space = this.cashSpace([...(chipItem ? [chipItem] : []), ...(taken ? [taken] : [])]);
+    const fitted = pocket(this.money, cash, this.rules.money, space);
+    const take = sumNotes(fitted.got.notes) + fitted.got.coins;
+    // A valuable by whose it was ("her Cufflinks", "his Omamori"): no article fits them all.
+    const haul = [take ? `${take} €$` : '', chip ? `a credchip with ${chip} €$ on it` : '', taken ? `${his} ${taken.name}` : ''].filter(Boolean).join(' and ');
+    return { fitted, take, handedAll: sumNotes(cash.notes) + cash.coins, chipItem, chip, taken, haul };
+  }
+
+  /** A haul changing hands: off them (for good) and into the player's pockets, saying what came and what didn't fit. */
+  private pocketHaul(person: Person, haul: ReturnType<Game['haulOf']>, chipWanted: number): void {
+    const { fitted, take, chip, chipItem, taken } = haul;
+    const his = pronounsOf(person).his;
+    this.money = fitted.money;
+    // What's taken is gone from them: less in their pockets, and their chip in yours.
+    person.eddies = Math.max(0, person.eddies - take);
+    this.life.eddies[person.id] = person.eddies;
+    if (chipItem) {
+      person.chip = 0;
+      this.life.chips[person.id] = 0;
+      this.items.push(chipItem);
+    }
+    if (taken) this.putAway(this.items, (this.items.push(taken), taken), taken.in);
+    if (take) this.say(`You pocket ${[notesLine(fitted.got.notes), fitted.got.coins ? `${fitted.got.coins} €$ in coins` : ''].filter(Boolean).join(' and ')}.`, 'system');
+    if (haul.handedAll > take) this.say(`Your pockets won't hold the rest: ${haul.handedAll - take} €$ stays with ${person.given}.`, 'system');
+    if (chipWanted && !chip) this.say(`No room on you for ${his} credchip: it stays in ${his} hand.`, 'system');
+    if (chip) this.say(`The chip is locked to ${person.given}. A netrunner will have to chop it before any of it is yours.`, 'system');
+    this.events.emit('walletChanged', this.wallet);
+    if (chipItem || taken) this.events.emit('inventoryChanged', this.inventory);
+  }
+
+  /**
+   * How someone here sees the player, for a robbery: what they'd pull (a gun, a blade, something
+   * blunt; chrome in the arms), how good the player is with it against them, a mask, what they
+   * know the player for (a killing, a beating, a robbery: by face only), their own nerve and
+   * weapon, their people here and anyone watching, their gang's turf, a badge, and how the
+   * player looks (hurt, drunk).
+   */
+  private fearContext(here: Presence, now: number): FearContext {
+    const { person } = here;
+    const { gear, combat, society, timeScale } = this.rules;
+    const drawn = drawWeapon(this.items, gear.arms);
+    const cut = drawn && !drawn.gun ? gear.arms.classes[drawn.weapon.class]?.cut : undefined;
+    const kind: Drawn = drawn?.gun ? 'gun' : cut === 'blunt' ? 'blunt' : drawn ? 'blade' : 'none';
+    const chrome = this.fitted.map((f) => combat.chrome[f.id]?.arm).find((cls) => cls !== undefined && cls !== 'launcher');
+    const yours = drawn ? this.weaponType(drawn.weapon.class).level : chrome ? this.weaponType(chrome).level : this.brawler().level;
+    const arm = this.armOf(person);
+    const skills = this.skillsFor(person, now);
+    const theirs = arm.cls === 'fists' ? skills.brawler : skills.arms;
+    const masked = Boolean(this.masked());
+    const known = masked ? [] : memoriesOf(this.society, person.id, society.memory, timeScale, now).filter((m) => m.kind === 'wronged' || m.kind === 'saw' || m.kind === 'heard').map((m) => m.what);
+    const dread = known.includes('murder') ? 'murder' : known.includes('assault') ? 'assault' : known.includes('robbery') ? 'robbed' : null;
+    const ties = new Set(tiesOf(this.population, person.id).map((t) => t.to));
+    const others = this.peopleHere(now).filter((p) => p.person.id !== person.id && p.doing !== 'out cold');
+    const backup = others.filter((p) => ties.has(p.person.id) || (person.gang && p.person.gang === person.gang)).length;
+    const district = this.districtOf(this.where);
+    const health = this.health(now);
+    return {
+      drawn: kind,
+      chrome: Boolean(chrome),
+      edge: yours - theirs,
+      armed: arm.cls !== 'fists',
+      masked,
+      dread,
+      courage: person.traits.courage,
+      backup,
+      watching: others.length - backup,
+      turf: Boolean(person.gang && district && (this.rules.people.turf[district.id] ?? []).some(([g]) => g === person.gang)),
+      officer: NCPD.test(person.job.role),
+      hurt: health.current < health.max / 2,
+      drunk: this.inebriation(now).severity >= 0.4,
+    };
+  }
+
+  /** How much someone here fears the player (0 to 1) and how it shows on them ("Scared"); null without robbery by fear, or with nobody here to read. */
+  fear(id: string, now: number): { value: number; label: string } | null {
+    const rules = this.rules.robbery;
+    const here = rules ? this.isHere(id, now) : undefined;
+    if (!rules || !here) return null;
+    const value = fearLevel(this.fearContext(here, now), rules);
+    return { value, label: fearBand(value, rules) };
+  }
+
+  /** Whether the player can go through the pockets of someone they've just robbed, or who wouldn't hand anything over: here, awake, and within the minutes after. */
+  canSearch(id: string, now: number): boolean {
+    const rules = this.rules.robbery;
+    const r = this.robbingState;
+    return Boolean(rules && r && r.id === id && now - r.at <= (rules.search.minutes * 60_000) / this.rules.timeScale && !this.detained(now) && !this.fighting && this.isHere(id, now));
+  }
+
+  /**
+   * Goes through the pockets of someone just robbed for what they kept back (`searchOdds`: their
+   * fear then, less their nerve). Found, it's everything left on them, the big notes first;
+   * failing, the hot-tempered swing and the rest pull free. Once a robbery, for a point of energy.
+   */
+  search(id: string, now: number): boolean {
+    if (!this.canSearch(id, now)) return false;
+    const rules = this.rules.robbery!;
+    const r = this.robbingState!;
+    if (!this.spendEnergy(rules.search.energy, now)) return false;
+    this.robbingState = null;
+    const here = this.isHere(id, now)!;
+    const { person, stance, doing } = here;
+    const { society, timeScale, lines } = this.rules;
+    const rng = createRng(`${this.world.seed}:${id}:search:${now}`);
+    const speaker = this.speakerFor(person, stance, doing, now);
+    speaker.vars = { ...speaker.vars, ...this.robVars() };
+    const before = this.snapshot(person, now);
+    this.logged(id, 'you', line(lines.you.search, speaker, rng), now);
+    if (!rng.chance(searchOdds(r.fear, person.traits.courage, rules))) {
+      const swings = rng.chance(person.traits.temper * rules.search.temper);
+      const text = line(swings ? lines.rob.searchFight : lines.rob.searchFail, speaker, rng);
+      this.logged(id, 'them', text, now);
+      this.noteFeedback(person, before, now, '', speaker.vars);
+      if (swings) this.openFight(here, now, text);
+      else this.say(text);
+      this.events.emit('societyChanged', { people: [id] });
+      return true;
+    }
+    // Everything left on them: the cash the big notes first, the chip, the valuable they kept.
+    const found = takeFrom(this.purseOn(person), person.eddies, false).taken;
+    const valuableId = r.valuable ? this.valuableOn(person, now) : null;
+    const chipWanted = person.chip;
+    const haul = this.haulOf(found, chipWanted, valuableId, speaker.vars.his ?? 'their');
+    const got = haul.take > 0 || haul.chip > 0 || Boolean(haul.taken);
+    const offered = haul.handedAll > 0 || chipWanted > 0 || Boolean(valuableId);
+    speaker.vars = { ...speaker.vars, take: String(haul.take), haul: haul.haul };
+    const text = got ? line(lines.rob.searched, speaker, rng) : offered ? `No room on you for what ${person.given} kept back.` : line(lines.rob.searchEmpty, speaker, rng);
+    this.logged(id, 'them', text, now);
+    this.say(text, got ? 'system' : undefined);
+    if (got) {
+      this.pocketHaul(person, haul, chipWanted);
+      changeStanding(this.society, id, { robbedAt: now }, society, timeScale, now);
+    }
+    this.noteFeedback(person, before, now, '', speaker.vars);
+    this.events.emit('societyChanged', { people: [id] });
     return true;
   }
 

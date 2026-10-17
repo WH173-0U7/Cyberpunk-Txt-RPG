@@ -196,8 +196,9 @@ off people, for a fence: see Selling and fencing) are the items so far:
   thief takes the biggest notes first (`grabCash`, no change). People carry eddies as a number;
   how it's made up is `purseOf` (`MONEY.purse`: a few coins, notes no bigger than their means
   allow, drawn on `seed:purse:<id>:<eddies>`, so the same sum is the same notes), which a robbery
-  takes from (`takeFrom`: the smallest first when they hand it over, the biggest first going
-  through someone out cold). A bank is a building whose business is `bank` (the `EuroBank`
+  takes from (`takeFrom`: the smallest first when they hand it over, and by fear not a note past
+  what they mean to give, `under`; the biggest first going through someone out cold, or a
+  search). A bank is a building whose business is `bank` (the `EuroBank`
   chain and the Asukaga & Finch landmark in `src/data/city.ts`, both canon names):
   `Game.bank()`, `deposit()`, `withdraw(amount)` (the teller's notes, up to a hundred),
   `exchange()` (coins for notes), with the numbers in `src/data/money.ts`; `src/ui/bank.ts` is
@@ -243,7 +244,8 @@ off people, for a fence: see Selling and fencing) are the items so far:
   then `GEAR.racks`. `Game.canLoad(id)`, `load(id)` and `unload(id)` move rounds between
   the stacks and a magazine (a `disposable` gun is sold loaded and sealed); `Game.armed()`
   is what `drawWeapon` would pull (a loaded gun, then any gun, then a blade), which `rob`
-  uses (`ARMS.rob`, the share of courage it takes to fight back against each) and names in
+  uses (`ARMS.rob`, the share of courage it takes to fight back against each, without robbery by
+  fear; with it, what's pulled goes into their fear: see People) and names in
   its lines (`weapon`, `gun`, `blade`, `blunt` in the vars). Shooting, damage, attachments
   and people's own weapons hang off the same pieces when they come.
 - Cyberware: `src/engine/cyberware.ts` is the engine, `src/data/cyberware.ts` the canon and
@@ -522,6 +524,30 @@ it needs no generator bump. The pieces:
   `masked.barred` lines), and `attitude` takes `masked` for `SOCIETY.mask.turf` against the
   player with anyone in a gang. The speaker's `vars.mask` is the word for it, so lines fit
   with `needs`/`lacks: ['mask']` (`masked.recognized`, the greetings, the robbery lines).
+- Robbery by fear (`rules.robbery`, `ROBBERY` in `src/data/robbery.ts`; the tests' `RULES` leave
+  it out, so their robberies take a share as they always did): `src/engine/robbery.ts` is the
+  engine, pure. `fearOf` is how much someone fears the player, 0 to 1, from a `FearContext`
+  (`Game`'s private `fearContext`): what the player would pull (`drawWeapon`: a gun, a blade,
+  something blunt), chrome in the arms that fights, the player's levels with it against theirs
+  (`weaponType`, else Street Brawler; theirs by `armOf`), a weapon of their own, a mask, what
+  they know the player for (`dread`, from their memories, by face only: a killing, a beating, a
+  robbery), their nerve, their people here (ties and gang) and anyone else watching, their gang's
+  turf, a badge, and the player hurt or drunk. `fearBand` is the word for it ("Scared"), which
+  `Game.fear(id, now)` gives the card (the Rob command, "Rob · Scared", and a Fear row on the
+  Profile). `respond` is what they do: under `fight.below` the brave and the hot-tempered fight
+  (`foughtBack`: the robbery is on record and the fight is theirs, `openFight` with
+  `LINES.rob.fightBack`), under `refuse.below` they hand over nothing (`refused`, not robbed for
+  it), else a `share` of their cash climbing with fear (`hand`, the greedy keeping back more),
+  the smallest notes first and not a note past it, the chip from `chip.at` and a valuable from
+  `valuable.at` (the greedy, and jewellery, needing more). Whatever comes off them is `haulOf`
+  and `pocketHaul`; holding back, they swear it's all (`holdBack`), or that they've none
+  (`bluff`). Out cold or already robbed this week, it's as it always was. What they kept back is
+  `Game`'s private `robbingState` (who, when, their fear, a valuable kept; not saved), which
+  `canSearch`/`search(id, now)` go after once, within `search.minutes`, for `search.energy`, at
+  `searchOdds` (their fear then, less their nerve): found, everything left on them, the big notes
+  first (`searched`, or `searchEmpty` when they told the truth); failing, the hot-tempered swing
+  (`search.temper`, `searchFight`, a fight) and the rest pull free (`searchFail`). The card's `⋯`
+  has **Search** while it can be done. The player's line is `LINES.you.search`.
 - The people have days of their own (`src/engine/life.ts`, numbers in `src/data/life.ts`):
   `liveUntil` lives each clock day since the last one lived (at most `catchUpDays`), rolling
   a few `LifeEvent`s per district from the seed and the day (a `shakedown`, a `robbery`, a
@@ -1367,7 +1393,8 @@ What the player earns is held against what it takes and what living costs
 (`tests/balance.test.ts`): work by the energy a shift takes (a few eddies an energy at the bottom
 of a ladder, a few dozen at the top, the middle ladder's top between 20 and 45); the corner, at a
 gang's top rung with its dearest drug, no more an energy than the top of work at a luxury place;
-an awake robbery's average haul (a share of the cash, the chip once chopped, a valuable fenced) no
+an awake robbery's average haul at its best by fear (a gun drawn, a mask on, every level that
+counts: what they hand over, and with a search after for its energy, what's left by its odds) no
 more an energy than the top of an everyday ladder; and a week at the bottom of work enough for
 cheap food and a cheap unit, but not for eating out and living up the hill. Work is gated by the
 day (a shift a job), the corner and robbery only by energy and their risks, which is why they're

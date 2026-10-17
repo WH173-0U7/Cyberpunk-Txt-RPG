@@ -146,7 +146,7 @@ You start with 50 €$ and the clothes you're wearing.
 |---|---|---|---|
 | **A job** | Ask a boss for work; a shift a day in the job's hours, for its energy | 22–110 €$ a shift by rung, more at a luxury place | Gated by the day; miss four rostered days and you're let go |
 | **Dealing** | A gang fronts you a package to sell at a corner | A share of each sale, more up the rungs and up the gang's line of drugs | Searches, busts, robbers, rivals, collectors |
-| **Robbery** | **Rob** under **⋯** on someone's card, 3 energy | Their cash, their credchip, and anything worth fencing | Grudges, the NCPD, their gang, people coming to collect |
+| **Robbery** | **Rob** under **⋯** on someone's card, 3 energy; **Search** them after, 1 more | What they're scared into handing over: cash, their credchip, anything worth fencing | They may say no or fight; grudges, the NCPD, their gang, people coming to collect |
 | **A business** | Buy a storefront off its boss, or one gone under | What it makes over its reserve, every payday | It can still go under |
 
 - **Work.** Every storefront hires, each kind on a ladder of its own (the dish pit up to line
@@ -197,6 +197,16 @@ You start with 50 €$ and the clothes you're wearing.
 - **Crossing people.** **Insult**, **Rob** or **Attack** someone (under **⋯** on their card) and
   it spreads: the victim holds a grudge, so do their family, friends, crew and gang, and anyone
   who saw it talks. Whoever has the grudge and the nerve comes to collect, hours or a day later.
+- **Robbery runs on fear.** Their card shows how afraid of you they look (Unafraid up to
+  Terrified). A gun scares more than a blade, a blade more than a club, and chrome, a mask, being
+  good with what you hold and a name for violence all add to it; their own nerve, a weapon of
+  their own, their friends or gang nearby, a crowd, their home turf, and you looking hurt or drunk
+  all take it away. An officer is never afraid of you. Unafraid, they say no, and the brave or
+  hot-tempered fight. Afraid, they hand over what they think they can get away with: the small
+  notes first, swearing that's all, the greedy keeping back more, and the chip and their valuables
+  only when they're really scared. For a few minutes after, **Search** them for the rest. The
+  more scared they are, the likelier they let you. If not, they pull away, or a hot-tempered one
+  swings at you.
 - **Masks.** A gas mask, a ballistic mask, a balaclava or a menpō hides your face: what you do
   in it is nobody's doing, until someone who saw it sees the same mask on you again. No counter
   serves a mask, and gangers on their turf don't like one.
