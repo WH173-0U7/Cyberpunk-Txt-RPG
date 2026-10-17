@@ -29,6 +29,7 @@ import { DEALING } from '../src/data/dealing';
 import { CREDIT } from '../src/data/credit';
 import { TRADE } from '../src/data/trade';
 import { NEEDS } from '../src/data/needs';
+import { PHONE } from '../src/data/phone';
 import { freshDealing } from '../src/engine/dealing';
 import { generatePeople } from '../src/engine/people';
 
@@ -61,6 +62,7 @@ const RULES: GameRules = {
   needs: NEEDS,
   robbery: ROBBERY,
   downed: DOWNED,
+  phone: PHONE,
   // Anyone will run for the player, so the crew gets put through its paces.
   dealing: { ...DEALING, crew: { ...DEALING.crew, stances: ['cold', 'wary', 'neutral', 'warm', 'friend'], keen: { gang: 3, user: 3, straight: 3 } } },
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
@@ -90,6 +92,11 @@ function digest(ties: Array<{ from: string; to: string; kind: string }>): string
 }
 
 function check(game: Game, about: string): void {
+  // Everyone in the holo is someone the city has, and no text has a hole in it.
+  for (const c of game.contacts(0)) {
+    expect(game.person(c.id), `${about}: a contact`).toBeDefined();
+    for (const t of game.textsWith(c.id)?.texts ?? []) expect(t.text, `${about}: a text`).not.toMatch(/[{}]|undefined|NaN/);
+  }
   // The NCPD: held is never inside anywhere, a unit is two officers at most, one warrant a crime.
   const ncpd = game.policeSaved;
   if (ncpd.held !== null) expect(game.interior, `${about}: inside while held`).toBeNull();
@@ -244,6 +251,13 @@ describe('playing badly', () => {
         const game = new Game(world, RULES, { ...progress, where: { ...streetSpot({ x: at.x + at.w / 2, y: at.y - 0.5 }), building: at.id }, inside: at.id, trip: null });
         game.start(now);
         const about = `${seed} step ${step} at ${at.name} (${at.business})`;
+        // The holo now and then: a text to anyone in it, or a call, kept going a reply or two.
+        const contacts = game.contacts(now);
+        if (contacts.length && rng.chance(0.3)) {
+          const id = rng.pick(contacts)!.id;
+          if (rng.chance(0.5)) game.text(id, rng.pick(game.textsWith(id)!.kinds)!.id, now);
+          else if (game.call(id, now) === 'answered') for (let i = 0; i < 3 && game.chatWith(id, now); i++) game.reply(id, rng.pick(game.chatWith(id, now)!.moves)!.id, now);
+        }
         /** A fight, played badly to the end: any move there is, or none in time. */
         const playOut = () => {
           for (let beat = 0; beat < 40 && game.fighting; beat++) {
@@ -339,7 +353,11 @@ describe('playing badly', () => {
             else if (ways.length && rng.chance(0.5)) {
               game.killCold(who, rng.pick(ways)!.id, now);
               playOut();
-            } else if (what < 0.22) game.talk(who, now);
+            } else if (what < 0.22) {
+              game.talk(who, now);
+              // A conversation kept going with any reply there is, a few times over.
+              for (let i = 0; i < 4 && game.chatWith(who, now); i++) game.reply(who, rng.pick(game.chatWith(who, now)!.moves)!.id, now);
+            }
             else if (what < 0.26) game.talk(who, now, 'flirt');
             else if (what < 0.3) {
               const moves = game.romanceWith(who, now);

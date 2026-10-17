@@ -24,6 +24,8 @@ export interface SettingsElements extends OverlayElements {
   confirmNo: HTMLButtonElement;
   /** The pronoun choices, a button each with `data-pronouns`. */
   pronouns: HTMLElement;
+  /** Back to the title screen. */
+  menu: HTMLButtonElement;
 }
 
 export interface SettingsHandlers {
@@ -33,6 +35,8 @@ export interface SettingsHandlers {
   onErase(): void;
   /** The player picked the pronouns they go by. */
   onPronouns(pronouns: Pronouns): void;
+  /** Back to the title screen, the game kept as it is. */
+  onMenu(): void;
 }
 
 type Danger = 'restart' | 'erase';
@@ -43,15 +47,15 @@ const ASK: Record<Danger, { text: string; yes: string }> = {
     yes: 'Yes, restart',
   },
   erase: {
-    text: 'Erase your save? This city and everything you’ve done in it are deleted from this device, and a new city starts. This can’t be undone.',
+    text: 'Erase your save? This city and everything you’ve done in it are deleted from this device, and you go back to the main menu to make someone new. This can’t be undone.',
     yes: 'Yes, erase',
   },
 };
 
 /**
  * Settings, over the map: who the player is (the pronouns they go by, which decides who's
- * drawn to them), and the save: start this city over, or erase the save and start a new one.
- * Both of those ask first, and nothing happens until the second tap.
+ * drawn to them), and the save: back to the main menu, start this city over, or erase the save
+ * and make someone new. The last two ask first, and nothing happens until the second tap.
  */
 export class Settings {
   readonly overlay: MapOverlay;
@@ -67,6 +71,7 @@ export class Settings {
     this.overlay = new MapOverlay(els, onOpen, () => this.ask(null), reducedMotion);
     els.restart.addEventListener('click', () => this.ask('restart'));
     els.erase.addEventListener('click', () => this.ask('erase'));
+    els.menu.addEventListener('click', () => handlers.onMenu());
     els.confirmNo.addEventListener('click', () => this.ask(null, true));
     els.pronouns.addEventListener('click', (e) => {
       const button = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('[data-pronouns]') : null;

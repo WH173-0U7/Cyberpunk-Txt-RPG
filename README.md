@@ -40,6 +40,10 @@ keeps its own save, so it never touches the stable game's.
 
 ## Your first ten minutes
 
+0. **Make yourself.** The main menu's **New game** opens the character builder: a lifepath
+   (Streetkid, Nomad or Corpo: where you start, what you have, who already knows you and how
+   people take to you), a name and the pronouns you go by, a look (hair color, length and style,
+   eyes, a mark) and a body (build, chest, genitals). **Continue** picks up a saved game.
 1. **Look around.** The map opens on you. Tap a place, a station or a building to see it on the
    panel under the map.
 2. **Walk somewhere.** Tap **Walk** (or tap the same thing again). Walking takes real minutes,
@@ -48,13 +52,15 @@ keeps its own save, so it never touches the stable game's.
    eat, open the **Inventory** (the button in the map's header, or **I**) and **Eat** it: you get
    hungry, and hungry means less energy.
 4. **Meet people.** Inside, **People** lists who's there. Tap someone to open their card,
-   **Talk** to them, and **Ask** about them. They tell you more as they get to know you.
+   **Talk** to them and keep the conversation going, and **Ask** about them. They tell you more
+   as they get to know you, and someone who enjoys talking may give you their holo.
 5. **Get a job.** Find the boss of a place (their card has a **Work** command) and ask for work.
    Shifts pay on Friday.
 6. **Check yourself.** The line under the energy bar says what matters right now. Tap it for
    everything else: skills, money, job, home, reputation, the market.
 
-You start with 50 €$ and the clothes you're wearing.
+You start with what your lifepath gives you: a Streetkid 50 €$, a Nomad 35 €$, a Corpo 40 €$ and
+300 €$ in the bank, and the clothes for it.
 
 ## The screen
 
@@ -62,10 +68,10 @@ You start with 50 €$ and the clothes you're wearing.
 |---|---|
 | **The sign** | Where you are. The address above it is the neighborhood and district (`NCNET://kabuki.watson`), and the clock the time of day. |
 | **The energy bar** | Your energy. The line under it gives the figure, your level, when the next point comes, and anything the matter: hungry, resting, drunk, masked, a debt, a shift waiting. Tap it for the **status drop-down**. |
-| **The map** | The city, under fog until you've walked it. Pins mark your work, your home and your corner. Drag to pan; pinch or scroll to zoom. |
+| **The map** | The city from straight above, under fog until you've walked it. Pins mark your work, your home and your corner. Drag to pan; pinch or scroll to zoom. Its header has your **holo** (with what's unread on it) and your **inventory** (with your cash on it). |
 | **The feed** | The city's chatter, and what happens to you, types across the top of the map. |
 | **The panel** | Under the map: where you are or what you've picked, and the actions (**Walk**, **Go inside**, **Menu**, **People**, **Work**…). Inside a building, the corner button leaves. |
-| **Overlays** | The inventory, people, menus, the bank, settings and fights open over the map. **×** or **Esc** closes them. |
+| **Overlays** | The inventory, the holo, people, menus, the bank, settings and fights open over the map. **×** or **Esc** closes them. |
 
 ## Playing
 
@@ -175,10 +181,17 @@ You start with 50 €$ and the clothes you're wearing.
   Talking gets you their name; **Ask** gets you the rest (work, age, home, tastes, enemies, what
   they want, their type) if they'll tell you, by how they feel about you, your charisma and the
   moment. Their card's **Profile** tab keeps everything you know, and their web of the people you
-  know they know.
+  know they know. Everyone has a look of their own (hair, eyes, a mark, build, chest), plain to see
+  from the first time you lay eyes on them; what's under their clothes you know only once you're
+  together.
 - **Talking.** **Talk** unfolds the ways in: Chat, Compliment, Joke, Gossip, How are you?, and
   Flirt. Each lands by who they are, and a note under every exchange says how it went and why.
   Every line is put together on the spot, in the speaker's own voice and their gang's slang.
+- **Conversations.** If the way in goes down well, they keep talking, and your replies come up
+  under it: **Go on**, **Agree**, **About you** (your story, by your lifepath), another joke or
+  flirt, **Comfort** when they need it, **Holo** to ask for their number, and **Goodbye**. Every
+  reply they like keeps them interested longer; the same thing again wears thin, and when their
+  interest runs out they wrap it up. Leave on a good talk and they may give you their holo.
 - **Where you stand**: Stranger, Wary, Warm, Friend, Cold, Hostile. Rapport grows with talk and
   gifts (their favorite counts double) and fades if you're gone.
 - **They remember.** A robbery, a gift, a joke that landed, the shift you covered, the day you
@@ -191,6 +204,19 @@ You start with 50 €$ and the clothes you're wearing.
 - **Romance.** Everyone has a heart: whom they're drawn to, the way in that wins them over, the
   look they go for. Flirt, ask them out, take them on dates, make it official. Flirt with someone
   else in front of them and it stings. Set the pronouns you go by in **Settings**.
+
+### The holo
+
+- **Your holophone** is the button in the map's header. It lists everyone whose holo you have
+  (the latest word first, with what's unread), and your texts with each.
+- **Text** them: Hey, How are you?, What's the word?, a joke, or Miss you to the one you're
+  seeing. They answer when they get to it, by how they feel about you, and someone asleep
+  answers in the morning. Pile up texts nobody answers and you're pestering them.
+- **Call** them: they pick up by how they feel about you and what they're doing (not asleep,
+  less at work or late, less again if you just called), and then it's a conversation over the
+  holo. Rung out, they may text back.
+- **They text you** too: friends now and then, the one you're seeing most of all, someone with
+  news, and a warning when someone's coming for you.
 
 ### Trouble
 
@@ -296,20 +322,25 @@ old lady the other way round.
   where you were, and the city has lived the days you were away (up to a month of them).
 - Every city has a **seed**, shown in the page address (`#7f3a29c1`). The same seed always builds
   the same city; open a link with a seed and a new player starts there.
-- **Settings** (the last row of the status drop-down) has your pronouns, **Restart this city**,
-  and **Erase save** for a brand new city.
+- **The main menu** comes up first: **Continue** goes back to your game, **New game** makes
+  someone new in a new city (in the city of a shared link if you opened one), replacing the save.
+- **Settings** (the last row of the status drop-down) has your pronouns, **Main menu**, **Restart
+  this city** (the same you, from the start), and **Erase save**, which goes back to the menu.
+- **Dying is the end.** Killed in a fight or by an overdose, your save is gone and the menu says
+  how; make someone new.
 - If an update changes how cities are built, an older save can't line up with its city any more:
-  the game starts that city over and says so.
+  the menu says so, and a new game starts in the same city.
 
 ## Controls
 
-It's all taps; there's no typing. On a keyboard:
+It's all taps; the only typing is your name. On a keyboard:
 
 | Key | Does |
 |---|---|
 | **Tab** / **Enter** | Move between places on the map / pick one (again: walk there) |
 | **+** / **−** | Zoom |
 | **I** | Inventory |
+| **H** | Holo |
 | **Esc** | Close what's open, or clear the pick |
 
 Effects that move the screen are toned down when the system's "reduce motion" setting is on.
@@ -349,7 +380,7 @@ decides how that looks.
 |---|---|
 | `src/engine/` | The rules and the state: the city generator, travel, the people and their days, the economy, dialogue, fighting, the NCPD, work, dealing, saves. No DOM, unit-tested. |
 | `src/data/` | The content and the numbers: districts and places, food, clothing, weapons, cyberware, drugs, dialogue, prices and tuning. |
-| `src/ui/` | The map and its renderer, the fog, the overlays (inventory, people, shop, bank, books, fight, settings), the panel, the status bar. |
+| `src/ui/` | The main menu and the character builder, the map and its renderer, the fog, the overlays (inventory, holo, people, shop, bank, books, fight, settings), the panel, the status bar. |
 | `src/fx/` | Weather particles, glitches, shakes and flashes, district colors. |
 | `src/main.ts` | Wires the engine's events to the screen. |
 | `tests/` | Vitest tests. |
@@ -366,8 +397,11 @@ and what to keep true when changing it.
 - **The city**: districts, neighborhoods, real places (`landmarks`), kinds of place and buildings
   are in `src/data/city.ts`; made-up shop names in `src/data/storefronts.ts`.
 - **People**: name pools, gangs and turf, jobs and hours in `src/data/people.ts`; everything they
-  say in `src/data/dialogue.ts`; how they react and remember in `src/data/society.ts`; their days
-  in `src/data/life.ts`.
+  say in `src/data/dialogue.ts` (a conversation's replies and the holo's lines in
+  `src/data/chat.ts`); how they react and remember, and how long they'll talk, in
+  `src/data/society.ts`; their days in `src/data/life.ts`; the holo's numbers in
+  `src/data/phone.ts`.
+- **You**: the lifepaths and the looks in `src/data/character.ts`.
 - **Things**: food in `src/data/food.ts`, clothing in `src/data/clothing.ts`, weapons in
   `src/data/weapons.ts`, cyberware in `src/data/cyberware.ts`, drugs in `src/data/drugs.ts`.
 - **The economy's numbers**: `src/data/economy.ts`, `src/data/money.ts`, `src/data/jobs.ts`.

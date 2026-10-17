@@ -23,10 +23,13 @@ import { hasRooms, type RoomAccess } from './engine/rooms';
 import type { JobStatus } from './engine/jobs';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu, Quality } from './engine/food';
+import type { ChatMove } from './engine/chat';
+import type { TextKind } from './engine/phone';
+import { lookWords, nameFor, type Character } from './engine/character';
 import { kinWord, type Approach, type Question } from './engine/dialogue';
 import type { InebriationStatus } from './engine/inebriation';
 import type { HungerStatus } from './engine/needs';
-import { randomSeed } from './engine/rng';
+import { createRng, randomSeed } from './engine/rng';
 import { createSave, progressFor, readSave, savedSeed, type Progress } from './engine/save';
 import { snapToStreet } from './engine/streets';
 import { tripProgress } from './engine/travel';
@@ -51,6 +54,8 @@ import { POLICE } from './data/police';
 import { DEALING } from './data/dealing';
 import { ROBBERY } from './data/robbery';
 import { DOWNED } from './data/downed';
+import { PHONE } from './data/phone';
+import { CHARACTER } from './data/character';
 import type { PoliceView } from './engine/police';
 import type { RunnerView } from './engine/crew';
 import type { DealView } from './engine/dealing';
@@ -72,6 +77,9 @@ import { MapOverlay } from './ui/overlay';
 import { stripMarkup } from './ui/markup';
 import { CityMap, type Target } from './ui/map';
 import { People, STANCE_LABEL, type CardTab, type PeopleTab, type PersonAction, type Picker } from './ui/people';
+import { Phone } from './ui/phone';
+import { MainMenu } from './ui/menu';
+import { Builder } from './ui/builder';
 import { PlacePanel, type ActionId, type PanelAction, type PanelView } from './ui/place';
 import { saveSlot } from './ui/save-slot';
 import { Settings } from './ui/settings';
@@ -246,6 +254,7 @@ const settings = new Settings(
     confirmYes: $<HTMLButtonElement>('#settings-confirm-yes'),
     confirmNo: $<HTMLButtonElement>('#settings-confirm-no'),
     pronouns: $('#settings-pronouns'),
+    menu: $<HTMLButtonElement>('#settings-menu'),
   },
   () => showSettings(),
   {
@@ -253,14 +262,18 @@ const settings = new Settings(
     onRestart: () => startOver(game.world.seed, 'Progress reset. This city starts over from the beginning.'),
     onErase: () => {
       saveSlot.clear();
-      startOver(randomSeed(), 'Save erased. A new Night City boots up.');
+      gameOver('Save erased. Make someone new for a new Night City.');
+    },
+    onMenu: () => {
+      settings.overlay.close();
+      showMenu();
     },
   },
   reducedMotion,
 );
 
 /** The header's buttons, which rest while a fight is on: there's no looking away. */
-const HEADER = [$('#status-toggle'), $('#inventory-toggle')];
+const HEADER = [$('#status-toggle'), $('#inventory-toggle'), $('#phone-toggle')];
 
 const fight = new FightPanel(
   {
@@ -567,6 +580,13 @@ const people = new People(
       cardTab = 'talk';
       game.talk(id, Date.now(), approach as Approach);
     },
+    onReply: (id, move) => {
+      lastActivity = performance.now();
+      picker = null;
+      cardTab = 'talk';
+      game.reply(id, move as ChatMove, Date.now());
+      showPeople();
+    },
     onGift: (id, itemId) => {
       lastActivity = performance.now();
       picker = null;
@@ -619,6 +639,72 @@ let peopleTab: PeopleTab = 'here';
 let cardTab: CardTab = 'talk';
 let picker: Picker = null;
 
+/** The contact whose texts are open on the holo, if any, and what came of the last call to them. */
+let phoneShown: string | null = null;
+let phoneStatus = '';
+const phoneToggle = $<HTMLButtonElement>('#phone-toggle');
+const phone = new Phone(
+  {
+    root: $('#phone'),
+    toggle: phoneToggle,
+    close: $<HTMLButtonElement>('#phone-close'),
+    count: $('#phone-count'),
+    list: $('#phone-list'),
+    empty: $('#phone-empty'),
+    thread: $('#phone-thread'),
+    name: $('#phone-name'),
+    stance: $('#phone-stance'),
+    kicker: $('#phone-kicker'),
+    texts: $('#phone-texts'),
+    status: $('#phone-status'),
+    picker: $('#phone-picker'),
+    commands: $('#phone-commands'),
+    back: $<HTMLButtonElement>('#phone-back'),
+  },
+  () => {
+    phoneStatus = '';
+    showPhone();
+  },
+  {
+    onOpen: (id) => {
+      phoneShown = id;
+      phoneStatus = '';
+      showPhone();
+    },
+    onText: (id, kind) => {
+      lastActivity = performance.now();
+      phoneStatus = '';
+      game.text(id, kind as TextKind, Date.now());
+      showPhone();
+    },
+    onCall: (id) => {
+      lastActivity = performance.now();
+      // What came of it (rang out, turned down) is the thread's line; picked up, the call is their card.
+      const said: string[] = [];
+      const off = game.events.on('output', ({ text }) => said.push(text));
+      const result = game.call(id, Date.now());
+      off();
+      if (result === 'answered') openCard(id, phoneToggle);
+      else {
+        phoneStatus = said.slice(1).join(' ') || said.join(' ');
+        showPhone();
+      }
+    },
+    onCard: (id) => openCard(id, phoneToggle),
+  },
+  reducedMotion,
+);
+
+/** Someone's card in the People overlay, from wherever: the holo, a call. */
+function openCard(id: string, opener: HTMLElement): void {
+  MapOverlay.open?.close();
+  personShown = id;
+  peopleTab = 'known';
+  cardTab = 'talk';
+  picker = null;
+  people.overlay.show(opener);
+}
+
 const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill') });
 const statusPanel = new StatusPanel({ toggle: $<HTMLButtonElement>('#status-toggle'), summary: $('#status-summary'), list: $('#status'), foot: $('#status-foot') });
 // Settings opens from the bottom of the drop-down, which folds away as it does: closed, it hands focus back to the drop-down's toggle.
@@ -628,6 +714,91 @@ $('#settings-toggle').addEventListener('click', () => {
 });
 
 let game: Game;
+/** Whether the game in hand is over (the player dead, or the save erased): nothing to continue, and nothing to save. */
+let over = false;
+/** The city the next new game starts in, when there's a reason for it (a shared link, the city of a save that can't go on); else a brand new one. */
+let freshSeed: string | null = null;
+
+// The title screen and the builder put the whole game out of reach while they're up.
+const APP = [$('#app')];
+const menu = new MainMenu(
+  {
+    root: $('#menu'),
+    behind: APP,
+    notice: $('#menu-notice'),
+    continueButton: $<HTMLButtonElement>('#menu-continue'),
+    continueSub: $('#menu-continue-sub'),
+    newButton: $<HTMLButtonElement>('#menu-new'),
+    newSub: $('#menu-new-sub'),
+    build: $('#menu-build'),
+  },
+  {
+    onContinue: () => {
+      menu.hide();
+      if (!game) return;
+      lastActivity = performance.now();
+      refresh();
+      showStatus(Date.now());
+    },
+    onNew: () => {
+      menu.hide();
+      builder.show(Boolean(game) && !over);
+    },
+  },
+);
+const districtName = (id: string) => CITY.districts.find((d) => d.id === id)?.name ?? 'Night City';
+const builder = new Builder(
+  { root: $('#builder'), behind: APP, step: $('#builder-step'), body: $('#builder-body'), back: $<HTMLButtonElement>('#builder-back'), next: $<HTMLButtonElement>('#builder-next') },
+  {
+    rules: CHARACTER,
+    name: (path, pronouns) => nameFor(path, pronouns, CHARACTER, PEOPLE, createRng(`${Math.random()}`)),
+    startsAt: (path) => {
+      const p = CHARACTER.lifepaths[path];
+      return `${p.place}, ${districtName(p.district)} · €$ ${p.cash}${p.account ? ` and €$ ${p.account} banked` : ''} · knows ${p.known.count}`;
+    },
+  },
+  {
+    onCancel: () => {
+      builder.hide();
+      showMenu();
+    },
+    onDone: (character) => {
+      builder.hide();
+      const seed = freshSeed ?? randomSeed();
+      freshSeed = null;
+      startOver(seed, '', character);
+    },
+  },
+);
+
+/** The title screen: the game behind it to go back to, if there's one, and what a new game would be. */
+function showMenu(notice = ''): void {
+  MapOverlay.open?.close();
+  const live = Boolean(game) && !over;
+  menu.show({
+    saved: live ? savedLine() : null,
+    fresh: live ? 'A new city and a new you. Replaces your save.' : freshSeed ? `A new you, in Night City ${freshSeed.toUpperCase()}.` : 'A new Night City, and a new you in it.',
+    notice,
+    build: `${__CHANNEL__ === 'beta' ? 'Beta' : 'Stable'} build ${__BUILD__}`,
+  });
+}
+
+/** The saved game, as the menu puts it: who, where from, and where they are now. */
+function savedLine(): string {
+  const c = game.character;
+  const where = game.whereabouts;
+  const place = [game.neighborhoodOf(where), game.districtOf(where)?.name].filter(Boolean).join(', ');
+  return [c?.name, c ? CHARACTER.lifepaths[c.lifepath].name : '', place].filter(Boolean).join(' · ');
+}
+
+/** Who the player made themselves, for the status drop-down: their name, lifepath and looks, and their body. */
+function youLine(c: Character): string {
+  return [c.name, CHARACTER.lifepaths[c.lifepath].name, game.looksOf(c.look, true).looks].filter(Boolean).join(' · ');
+}
+function bodyLine(c: Character): string {
+  const body = lookWords(c.look, CHARACTER);
+  return [body.build, body.chest, body.genitals].filter(Boolean).join(' · ').replace(/^\p{Ll}/u, (m) => m.toUpperCase());
+}
 /** What the player has picked to go to, if anything. */
 let target: Target | null = null;
 let lastActivity = performance.now();
@@ -1640,7 +1811,9 @@ function showStatus(now: number): void {
   const summary = [`${energy.current}/${energy.max} · Lv ${energy.level} · ${refill}`, hurt ? `HP ${health.current}` : '', ncpd, deal?.debt ? `Debt ${deal.debt} €$` : '', high, hunger?.stage?.label, game.resting(now) ? 'Resting' : '', drunk.stage?.label, mask ? 'Masked' : '', due ? `Shift on · ${formatMinutes(away)}` : job ? job.rung.title : ''].filter(Boolean).join(' · ');
   const today = new Date(now);
   const pad = (n: number) => String(n).padStart(2, '0');
+  const you = game.character;
   const rows: StatusRow[] = [
+    ...(you ? [{ label: 'You', value: youLine(you) }, { label: 'Body', value: bodyLine(you) }] : []),
     { label: 'Energy', value: `Lv ${energy.level} · ${energy.xp}/${energy.xpToNext} XP · ${refill}` },
     { label: 'Health', value: `${health.current}/${health.max}${health.fullAt ? ` · full in ${formatCountdown(health.fullAt - now)}` : ''}`, ...(health.current < health.max / 2 ? { tone: 'warn' as const } : {}) },
     ...(hunger ? [{ label: 'Hunger', value: hungerLine(hunger, now), ...(hunger.stage && hunger.stage.energy * hunger.stage.health < 1 ? { tone: hunger.stage.health < 1 ? ('bad' as const) : ('warn' as const) } : {}) }] : []),
@@ -1823,11 +1996,11 @@ function showPeople(): void {
             name: described.name,
             stance: standing.stance,
             stanceLabel: STANCE_LABEL[standing.stance],
-            kicker: [gangOf(shown.gang) && described.named ? `${gangOf(shown.gang)} colors` : undefined, present ? withCompany(present.doing, present.scene) : described.facts.dead ? 'Dead' : 'Not here'].filter(Boolean).join(' · '),
+            kicker: [gangOf(shown.gang) && described.named ? `${gangOf(shown.gang)} colors` : undefined, game.chatWith(shown.id, now)?.remote ? 'On a holocall' : present ? withCompany(present.doing, present.scene) : described.facts.dead ? 'Dead' : 'Not here'].filter(Boolean).join(' · '),
             facts: described.lines.length ? described.lines.join(' · ') : described.named ? 'That\'s all you know.' : 'Nothing known yet. Talk, watch, ask.',
             tab: cardTab,
             // How afraid of the player they are, by what they'd see if robbed now: on the profile, and on the Rob command.
-            profile: [...profileOf(standing, described), ...(fear ? [{ label: 'Fear', value: fear.label }] : [])],
+            profile: [...profileOf(standing, described), ...(game.hasHolo(shown.id) ? [{ label: 'Holo', value: 'In your holo' }] : []), ...(fear ? [{ label: 'Fear', value: fear.label }] : [])],
             fear: fear?.label ?? '',
             search: present ? game.canSearch(shown.id, now) : false,
             // What's still to find out: the questions not yet answered.
@@ -1855,9 +2028,53 @@ function showPeople(): void {
             // Chat first, a flirt last.
             approaches: [{ id: 'chat', label: 'Chat' }, ...Object.entries(LINES.approaches).sort(([a], [b]) => Number(a === 'flirt') - Number(b === 'flirt')).map(([id, a]) => ({ id, label: a.label }))],
             log: game.conversation(shown.id).map((line) => ({ who: line.who, text: line.text, ...(line.tone ? { tone: line.tone } : {}) })),
+            chat: game.chatWith(shown.id, now),
           }
         : null,
   });
+}
+
+/** Fills the holo: everyone in it, or one contact's texts. Opening a thread reads it. */
+let phoneRendering = false;
+function showPhone(): void {
+  if (phoneRendering) return;
+  phoneRendering = true;
+  const now = Date.now();
+  if (phoneShown) game.readTexts(phoneShown);
+  const contacts = game.contacts(now);
+  const shown = phoneShown ? contacts.find((c) => c.id === phoneShown) : undefined;
+  if (phoneShown && !shown) phoneShown = null;
+  const thread = shown ? game.textsWith(shown.id) : null;
+  phone.render({
+    count: `${contacts.length} ${contacts.length === 1 ? 'contact' : 'contacts'}`,
+    contacts: contacts.map((c) => ({ id: c.id, name: c.name, stance: c.stance, stanceLabel: STANCE_LABEL[c.stance], last: c.dead ? 'Dead' : c.last || `Added ${agoText(now - c.at)}`, unread: c.unread })),
+    empty: "Nobody's holo yet. Get talking: someone who enjoys the conversation may give you theirs, and you can always ask.",
+    thread:
+      shown && thread
+        ? {
+            id: shown.id,
+            name: shown.name,
+            stance: shown.stance,
+            stanceLabel: STANCE_LABEL[shown.stance],
+            kicker: shown.dead ? 'Dead' : shown.seeing ? 'Seeing you' : '',
+            texts: thread.texts.map((t) => ({ from: t.from, text: t.text, ago: agoText(now - t.at) })),
+            kinds: shown.dead ? [] : thread.kinds,
+            status: phoneStatus,
+            canCall: !game.fighting,
+          }
+        : null,
+  });
+  phoneRendering = false;
+  showUnread();
+}
+
+/** What's unread on the holo, on its button. */
+function showUnread(): void {
+  const unread = game.unreadTexts();
+  const badge = $('#phone-unread');
+  badge.hidden = unread === 0;
+  badge.textContent = String(unread);
+  phoneToggle.setAttribute('aria-label', unread ? `Holo, ${unread} unread` : 'Holo');
 }
 
 /** A person's profile, label and value: how they stand with the player, how much has passed, and each thing known of them. */
@@ -1889,6 +2106,10 @@ function profileOf(standing: PersonStanding, described: Description): Array<{ la
     // Plain to see, from the first look: their sex, and how they'd be in a fight; how they talk once they have.
     if (fact === 'age') {
       rows.push({ label: 'Sex', value: described.sex });
+      if (described.looks) rows.push({ label: 'Looks', value: described.looks });
+      if (described.build) rows.push({ label: 'Build', value: described.build });
+      if (described.chest) rows.push({ label: 'Chest', value: described.chest });
+      if (described.genitals) rows.push({ label: 'Genitals', value: described.genitals });
       if (described.fight) rows.push({ label: 'Fighting', value: described.fight });
       if (described.talk) rows.push({ label: 'Talking', value: described.talk });
     }
@@ -1977,12 +2198,21 @@ function showSettings(): void {
   });
 }
 
-/** Throws away the game in progress and starts a city from the beginning. The new game saves over the old one. */
-function startOver(seed: string, notice: string): void {
+/** Throws away the game in progress and starts a city from the beginning, as the same person. The new game saves over the old one. */
+function startOver(seed: string, notice: string, character = game?.character ?? undefined): void {
   MapOverlay.open?.close();
   target = null;
   transmissions.clear();
-  begin(generateWorld(seed, CITY), undefined, notice);
+  begin(generateWorld(seed, CITY), undefined, notice, character);
+}
+
+/** The game is over (the player is dead, or the save erased): nothing to go back to, and the menu says why. */
+function gameOver(notice: string): void {
+  over = true;
+  MapOverlay.open?.close();
+  saveSlot.clear();
+  freshSeed = null;
+  showMenu(notice);
 }
 
 // ───────────── Saving ─────────────
@@ -1991,10 +2221,11 @@ let savePending = false;
 let lastFlash = 0;
 /** Saves once after whatever just changed, and lets the player see that it did (now and then: walking saves constantly). */
 function queueSave(): void {
-  if (savePending) return;
+  if (savePending || over || !game) return;
   savePending = true;
   queueMicrotask(() => {
     savePending = false;
+    if (over) return;
     const saved = saveSlot.write(createSave(game.world.seed, game, GENERATOR_VERSION));
     saveStatus.textContent = saved ? '' : 'Not saved';
     saveStatus.classList.toggle('is-failed', !saved);
@@ -2156,7 +2387,7 @@ function wire(g: Game): void {
   // An overdose with nobody to help, or someone finishing the player off: the end, and the city starts over without them.
   g.events.on('flatlined', ({ text }) => {
     if (g !== game) return;
-    setTimeout(() => startOver(g.world.seed, `${text} Night City starts over.`), 0);
+    setTimeout(() => gameOver(`${text} You're gone; Night City goes on without you.`), 0);
   });
 
   g.events.on('chromeChanged', () => {
@@ -2201,6 +2432,12 @@ function wire(g: Game): void {
     queueSave();
   });
 
+  g.events.on('phoneChanged', () => {
+    if (phone.overlay.isOpen) showPhone();
+    else showUnread();
+    queueSave();
+  });
+
   g.events.on('youChanged', () => {
     if (settings.overlay.isOpen) showSettings();
     queueSave();
@@ -2217,9 +2454,10 @@ function wire(g: Game): void {
   });
 }
 
-/** Drops the player into a city: a new game, or a saved one picking up where it left off. */
-function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, needs: NEEDS, police: POLICE, join: JOIN, dealing: DEALING, robbery: ROBBERY, downed: DOWNED }, progress);
+/** Drops the player into a city: a new game (as who they made themselves), or a saved one picking up where it left off. */
+function begin(world: World, progress?: Progress, notice?: string, character?: Character): void {
+  over = false;
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, needs: NEEDS, police: POLICE, join: JOIN, dealing: DEALING, robbery: ROBBERY, downed: DOWNED, phone: PHONE, character: CHARACTER }, progress, character);
   wire(game);
   map.setWorld(world);
   try {
@@ -2231,11 +2469,14 @@ function begin(world: World, progress?: Progress, notice?: string): void {
   if (notice) game.say(notice, 'system');
   game.start(Date.now());
   energyMeter.update(game.energy(Date.now()), Date.now());
+  showUnread();
 }
 
 /**
- * Picks up the saved game on this device if there is one. Otherwise starts the city in the
- * address (a shared link) or a brand new one.
+ * The title screen first. Behind it, the saved game on this device if there is one (Continue
+ * goes back to it); without one, a new game starts from the builder, in the city of a shared
+ * link if the address has one, or a brand new one. A save that won't play, or one from before
+ * the city changed, leaves its city for the next new game.
  */
 function boot(): void {
   const raw = saveSlot.load();
@@ -2245,27 +2486,32 @@ function boot(): void {
     const progress = saved && world ? progressFor(world, saved, GENERATOR_VERSION) : null;
     if (world && progress) {
       begin(world, progress);
+      showMenu();
       return;
     }
   } catch (error) {
     // A save that reads but won't play is no reason never to start again: the same city, from the top.
     console.error('The save would not load:', error);
-    begin(generateWorld(savedSeed(raw) ?? randomSeed(), CITY), undefined, "Your save wouldn't load. Night City starts over for you.");
+    freshSeed = savedSeed(raw);
+    showMenu("Your save wouldn't load. Start again, in the same city.");
     return;
   }
-  // A save from before the game changed how cities (or saves) work: keep the city, start the map over.
+  // A save from before the game changed how cities (or saves) work: keep the city for the new game.
   const oldSeed = savedSeed(raw);
   if (oldSeed) {
-    begin(generateWorld(oldSeed, CITY), undefined, 'Night City has changed since you were last here. You start over in it.');
+    freshSeed = oldSeed;
+    showMenu('Night City has changed since you were last here. Start again, in the same city.');
     return;
   }
   const seedInAddress = location.hash.slice(1).toLowerCase();
-  begin(generateWorld(/^[0-9a-f]{8}$/.test(seedInAddress) ? seedInAddress : randomSeed(), CITY));
+  freshSeed = /^[0-9a-f]{8}$/.test(seedInAddress) ? seedInAddress : null;
+  showMenu();
 }
 
 let lastHour = -1;
 /** The clock: lands trips that are due, moves the trip panel on, and lets people come and go on the hour. */
 function tick(): void {
+  if (!game || over) return;
   const now = Date.now();
   game.tick(now);
   if (fight.overlay.isOpen) fight.clock(now);
@@ -2292,9 +2538,12 @@ function tick(): void {
 // Escape drops the current pick; + and - zoom.
 document.addEventListener('keydown', (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
+  // The title screen and the builder take their own keys; the city's rest till there is one.
+  if (!game || over || menu.isOpen || builder.isOpen) return;
   // In a fight there's no looking away: the keys rest until it's over.
   if (game.fighting) return;
   if (event.key === 'i' || event.key === 'I') inventory.overlay.toggle();
+  else if ((event.key === 'h' || event.key === 'H') && !(event.target instanceof HTMLInputElement)) phone.overlay.toggle();
   // Escape backs out of a person's card to the list, then closes whatever covers the map, then the status drop-down, then lets go of whatever's picked.
   else if (event.key === 'Escape' && people.overlay.isOpen && personShown) {
     const was = personShown;
@@ -2328,7 +2577,7 @@ function scheduleAmbient(): void {
   setTimeout(
     () => {
       const idleFor = performance.now() - lastActivity;
-      if (idleFor > 12_000 && transmissions.idle && game.currentTrip?.mode !== 'ncart' && !document.hidden) game.ambient();
+      if (game && !over && !menu.isOpen && idleFor > 12_000 && transmissions.idle && game.currentTrip?.mode !== 'ncart' && !document.hidden) game.ambient();
       scheduleAmbient();
     },
     18_000 + Math.random() * 22_000,

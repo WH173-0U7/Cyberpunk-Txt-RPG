@@ -406,6 +406,12 @@ describe('dialogue', () => {
           ...(rng.chance(0.2) ? { withYou: 'yes', together: rng.chance(0.5) ? 'yes' : '' } : {}),
           sweet: rng.chance(0.3) ? 'yes' : '',
           yourType: rng.chance(0.2) ? 'yes' : '',
+          // Who the player made themselves: where they come from, their look; on a holocall or face to face; a goodbye after a talk that went well.
+          ...(Object.fromEntries([[rng.pick(['youNone', 'youStreetkid', 'youNomad', 'youCorpo']), 'yes']]) as Record<string, string>),
+          yourHair: rng.chance(0.4) ? rng.pick(['cyan mohawk', 'long platinum hair', 'shaved head']) : '',
+          yourMark: rng.chance(0.3) ? 'scar' : '',
+          holo: rng.chance(0.3) ? 'yes' : '',
+          good: rng.chance(0.5) ? 'yes' : '',
         };
         const speaker: Speaker = {
           person: p,
@@ -446,6 +452,19 @@ describe('dialogue', () => {
           for (const pool of [how.liked, how.flat, how.disliked]) check(compose(pool, speaker, LINES, rng, { opener: false }), `${about} approach ${how.label}`);
           lines += 6;
         }
+        // A conversation's replies, from the player in every way with words and from every lifepath, face to face and over the holo, and how each lands.
+        const froms: Array<Record<string, string>> = [{}, { youStreetkid: 'yes' }, { youNomad: 'yes' }, { youCorpo: 'yes' }];
+        for (const move of Object.values(LINES.chat.moves)) {
+          for (const eloquence of eloquences) for (const from of froms) for (const holo of ['yes', '']) check(line(move.you, { ...speaker, eloquence, vars: { ...vars, youStreetkid: '', youNomad: '', youCorpo: '', ...from, holo } }, rng), `${about} chat ${move.label} ${eloquence} ${JSON.stringify(from)} ${holo}`);
+          lines += 24;
+        }
+        for (const taken of [LINES.chat.agree, LINES.chat.share, LINES.chat.comfort]) for (const pool of [taken.liked, taken.flat, taken.disliked]) check(compose(pool, speaker, LINES, rng, { opener: false, tail: false }), `${about} chat reply`);
+        for (const holo of ['yes', '']) for (const pool of [LINES.chat.dry, LINES.chat.wrap, LINES.chat.bye, LINES.chat.offer]) check(line(pool, { ...speaker, vars: { ...vars, holo } }, rng), `${about} chat end ${holo}`);
+        // The holophone: their side of it, over the holo, and the player's texts.
+        for (const pool of [LINES.phone.give, LINES.phone.deflect, LINES.phone.refuse, LINES.phone.pickup, LINES.phone.checkIn, LINES.phone.sweet, LINES.phone.missed, LINES.phone.heyBack, LINES.phone.fine, LINES.phone.noWord, LINES.phone.miss]) check(line(pool, { ...speaker, vars: { ...vars, holo: 'yes', here: '' } }, rng), `${about} phone`);
+        check(line(LINES.phone.masked, { ...speaker, vars: { ...vars, mask: 'balaclava' } }, rng), `${about} phone masked`);
+        for (const text of Object.values(LINES.phone.texts)) for (const eloquence of eloquences) check(line(text.you, { ...speaker, eloquence }, rng), `${about} text ${text.label} ${eloquence}`);
+        lines += 40;
         // Romance: every answer to being asked out, a date (their favorite or not), making it official, being dumped, ending it, jealousy.
         const romance = LINES.romance;
         for (const pool of [romance.ask.yes, romance.ask.notDrawn, romance.ask.taken, romance.ask.notYet, romance.official.yes, romance.official.notYet, romance.dumped]) {

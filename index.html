@@ -38,7 +38,11 @@
       <section id="map" class="map panel" aria-label="City map">
         <div class="map-head">
           <span id="save-status" class="save-status" title="Your progress saves on this device as you go."></span>
-          <!-- The one button up here: your pockets, with your cash on it. -->
+          <!-- The two buttons up here: your holo, with what's unread on it, and your pockets, with your cash on it. -->
+          <button id="phone-toggle" class="head-button is-holo" type="button" aria-controls="phone" aria-expanded="false" aria-label="Holo" title="Holo (H)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 1.5h6v13H5zM7 12.5h2" /><path d="M2.5 5.5a4 4 0 0 0 0 5M13.5 5.5a4 4 0 0 1 0 5" /></svg>
+            <span id="phone-unread" class="head-count" hidden></span>
+          </button>
           <button id="inventory-toggle" class="head-button" type="button" aria-controls="inventory" aria-expanded="false" aria-label="Inventory" title="Inventory (I)">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z" /></svg>
             <span id="wallet" class="wallet"></span>
@@ -71,6 +75,32 @@
             <ul id="inventory-sections" class="inventory-sections"></ul>
           </div>
         </div>
+        <div id="phone" class="overlay phone" role="dialog" aria-labelledby="phone-title" hidden>
+          <div class="overlay-strip">
+            <span class="overlay-barcode" aria-hidden="true"></span>
+            <span id="phone-title" class="overlay-label">NCNET//HOLO</span>
+            <span id="phone-count" class="overlay-detail"></span>
+            <button id="phone-close" class="icon-btn overlay-close" type="button" aria-label="Close holo" title="Close (Esc)"></button>
+          </div>
+          <div class="overlay-body">
+            <p id="phone-empty" class="people-empty" hidden></p>
+            <ul id="phone-list" class="people-list"></ul>
+            <div id="phone-thread" class="person-card phone-thread" hidden>
+              <div class="person-head">
+                <button id="phone-back" class="person-back" type="button" aria-label="Everyone in your holo" title="Everyone in your holo">‹</button>
+                <div class="person-head-row">
+                  <h3 id="phone-name" class="person-name"></h3>
+                  <span id="phone-stance" class="stance"></span>
+                </div>
+                <p id="phone-kicker" class="person-kicker"></p>
+              </div>
+              <ol id="phone-texts" class="phone-texts" aria-label="Texts" aria-live="polite"></ol>
+              <p id="phone-status" class="phone-status" hidden></p>
+              <div id="phone-picker" class="person-picker" aria-label="Text them"></div>
+              <div id="phone-commands" class="person-commands" role="toolbar" aria-label="What to do"></div>
+            </div>
+          </div>
+        </div>
         <div id="settings" class="overlay settings" role="dialog" aria-labelledby="settings-title" hidden>
           <div class="overlay-strip">
             <span class="overlay-barcode" aria-hidden="true"></span>
@@ -93,13 +123,17 @@
               <p class="settings-note">Your progress saves on this device as you play. <span id="settings-progress"></span></p>
               <p id="settings-build" class="settings-build"></p>
               <div class="settings-actions">
+                <button id="settings-menu" class="menu-button" type="button">
+                  <span class="menu-label">Main menu</span>
+                  <span class="menu-sub">Your game is kept, right where it is</span>
+                </button>
                 <button id="settings-restart" class="danger-button" type="button" aria-controls="settings-confirm" aria-expanded="false">
                   <span class="danger-label">Restart this city</span>
                   <span class="danger-sub">Same city, all progress back to the start</span>
                 </button>
                 <button id="settings-erase" class="danger-button" type="button" aria-controls="settings-confirm" aria-expanded="false">
                   <span class="danger-label">Erase save</span>
-                  <span class="danger-sub">Delete it from this device and start a new city</span>
+                  <span class="danger-sub">Delete it from this device and make someone new</span>
                 </button>
               </div>
               <div id="settings-confirm" class="settings-confirm" role="group" aria-labelledby="settings-confirm-text" hidden>
@@ -269,6 +303,38 @@
       </section>
 
       <div id="announcer" class="sr-only" aria-live="polite"></div>
+    </div>
+
+    <!-- The title screen, before the city: the saved game, or a new one. -->
+    <div id="menu" class="menu" role="dialog" aria-modal="true" aria-labelledby="menu-title" hidden>
+      <div class="menu-frame">
+        <p class="menu-kicker">NCNET://NIGHT-CITY</p>
+        <h1 id="menu-title" class="sign menu-sign">Night City Terminal</h1>
+        <p class="menu-tag">A city of millions, and you somewhere in it.</p>
+        <p id="menu-notice" class="menu-notice" hidden></p>
+        <div class="menu-actions">
+          <button id="menu-continue" class="menu-button" type="button"><span class="menu-label">Continue</span><span id="menu-continue-sub" class="menu-sub"></span></button>
+          <button id="menu-new" class="menu-button is-new" type="button"><span class="menu-label">New game</span><span id="menu-new-sub" class="menu-sub"></span></button>
+        </div>
+        <span class="menu-barcode" aria-hidden="true"></span>
+        <p id="menu-build" class="menu-build"></p>
+      </div>
+    </div>
+
+    <!-- The character builder: lifepath, you, look, attributes, and a last look. -->
+    <div id="builder" class="menu builder" role="dialog" aria-modal="true" aria-labelledby="builder-head" hidden>
+      <div class="menu-frame builder-frame">
+        <div class="overlay-strip">
+          <span class="overlay-barcode" aria-hidden="true"></span>
+          <span id="builder-head" class="overlay-label">NCNET//NEW-ID</span>
+          <span id="builder-step" class="overlay-detail"></span>
+        </div>
+        <div id="builder-body" class="builder-body"></div>
+        <div class="builder-nav">
+          <button id="builder-back" class="menu-button is-back" type="button"></button>
+          <button id="builder-next" class="menu-button is-new" type="button"></button>
+        </div>
+      </div>
     </div>
 
     <div id="flash" aria-hidden="true"></div>

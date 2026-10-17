@@ -1,3 +1,4 @@
+import type { Lifepath, Look } from './character';
 import type { Pronouns } from './people';
 import type { Stance } from './society';
 
@@ -19,6 +20,10 @@ export type RomanceStage = 'dating' | 'together';
 /** The player, as the people see them: the pronouns they go by (Settings), which decides who's drawn to them. */
 export interface You {
   pronouns: Pronouns;
+  /** Who they made themselves at the start (character.ts): a save from before the builder has none of it. */
+  name?: string;
+  lifepath?: Lifepath;
+  look?: Look;
 }
 
 /** Who the player is seeing, since when, and how many dates so far. */

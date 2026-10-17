@@ -343,5 +343,7 @@ export type GameEvents = {
   habitChanged: HabitView | null;
   /** The player is dead (an overdose with nobody to help): the city goes on without them. */
   flatlined: { text: string };
+  /** Something on the holophone: a holo given, a text in or out, a call. */
+  phoneChanged: { with: string | null };
   fx: { effect: FxName };
 };
