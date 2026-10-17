@@ -1,3 +1,4 @@
+import { VALUABLES } from './valuables';
 import type { GearContent } from '../engine/carry';
 import { GARMENTS, SLOTS, STORE_QUALITY, STORES, STYLES } from './clothing';
 import { CHROME } from './cyberware';
@@ -64,6 +65,7 @@ export const GEAR: GearContent = {
     { id: 'high-tops', kind: 'high-tops', in: null },
     { id: 'wallet', kind: 'wallet', in: 'pants' },
   ],
+  valuables: VALUABLES,
   racks: {
     'general-store': ['belt-pouch', 'duffel-bag', 'backpack'],
     'thrift-shop': [...STORES['thrift-shop'], 'belt-pouch', 'messenger-bag', 'duffel-bag'],

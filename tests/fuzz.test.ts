@@ -25,6 +25,7 @@ import { ROOMS } from '../src/data/rooms';
 import { POLICE } from '../src/data/police';
 import { DEALING } from '../src/data/dealing';
 import { CREDIT } from '../src/data/credit';
+import { TRADE } from '../src/data/trade';
 import { freshDealing } from '../src/engine/dealing';
 import { generatePeople } from '../src/engine/people';
 
@@ -53,6 +54,7 @@ const RULES: GameRules = {
   police: POLICE,
   join: JOIN,
   credit: CREDIT,
+  trade: TRADE,
   // Anyone will run for the player, so the crew gets put through its paces.
   dealing: { ...DEALING, crew: { ...DEALING.crew, stances: ['cold', 'wary', 'neutral', 'warm', 'friend'], keen: { gang: 3, user: 3, straight: 3 } } },
   clock: (now) => ({ hour: new Date(now).getUTCHours(), weekday: new Date(now).getUTCDay(), day: Math.floor(now / 86_400_000) }),
@@ -275,6 +277,12 @@ describe('playing badly', () => {
           if (menu && roll < 0.35) {
             const item = rng.pick(menu.items);
             if (item && !game.canBuy(item.id, now)) game.buy(item.id, now);
+            // And now and then something sold back, to a counter that deals in it (a fence for what was taken off someone).
+            const sells = game.sellables(now)?.items.filter((i) => !i.why) ?? [];
+            if (sells.length && rng.chance(0.3)) {
+              const sale = rng.pick(sells)!;
+              game.sell(sale.id, sale.from, now);
+            }
           } else if (roll < 0.47) {
             const clothes = game.inventory.filter((i) => i.kind === 'clothing');
             if (clothes.length) game.wear(rng.pick(clothes)!.id);
@@ -369,6 +377,10 @@ describe('playing badly', () => {
             else if (what < 0.6) game.takeOut(now);
             else if (what < 0.9) game.setPrices(rng.pick(['low', 'fair', 'high'] as const)!, now);
             else game.sellBusiness(now);
+          } else if (!menu && game.sellables(now)?.items.some((i) => !i.why)) {
+            // A fence: whatever it takes.
+            const sale = rng.pick(game.sellables(now)!.items.filter((i) => !i.why))!;
+            game.sell(sale.id, sale.from, now);
           } else if (game.forSale() && rng.chance(0.5)) game.buyClosed(now);
           else if (game.bank()) {
             const what = rng.next();

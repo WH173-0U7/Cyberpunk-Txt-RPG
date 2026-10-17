@@ -21,6 +21,7 @@ import { chargesFor, freshPolice, issueWarrant, policing, warrantsAt, worstCrime
 import { floorsOf, mainRoom, roomById, roomOf, roomsOn, unitOf, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
 import { stackIn, stashFits, stashLoad, type HomeKind, type HomeRules, type HomeState, type HomeView } from './home';
 import { creditLimit, honestyOf, loanAmounts, type CreditRules, type CreditState } from './credit';
+import { tradeKindOf, valuableOf, worthOf, type TradeKind, type TradeRules } from './trade';
 import { buildingById, GUARD_ROLE, openingHours, rotaStaff, readOf, skillsOf, walkOf, type PersonSkills, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
 import { dateHour, freshRomance, type RomanceMove, type RomanceStage, type You } from './romance';
 import { createRng, type Rng } from './rng';
@@ -153,6 +154,8 @@ export interface GameRules extends TravelRules {
   home?: HomeRules;
   /** Borrowing and lending: a bank's loans, a gang's loan shark, lending to people (missing: none of it). */
   credit?: CreditRules;
+  /** Selling to the stores and fencing valuables (missing: nobody buys off the player). */
+  trade?: TradeRules;
   /** The NCPD: who calls it in, how fast it comes, warrants. Without it (the tests' rules leave it out), nobody ever calls. */
   police?: PoliceContent;
   /** Who throws in on a fight. Without it (the tests' rules leave it out), every fight is the player and one other. */
@@ -741,10 +744,20 @@ export class Game {
    * chain's prices are set, and so are a hospital's, Trauma Team's and a room for the night.
    */
   private haggled(menu: Menu, at: Building | Location, now: number): Menu {
+    const building = 'block' in at ? at : null;
+    if ((building?.business && this.rules.food.fixed[building.business]) || building?.business === 'hospital') return menu;
+    const factor = this.haggleFactor(at, now);
+    if (Math.abs(factor - 1) < 0.005) return menu;
+    const fixed = new Set(['plan', 'treatment', 'room']);
+    return { ...menu, haggle: factor - 1, items: menu.items.map((i) => (fixed.has(i.kind) ? i : { ...i, price: Math.max(1, Math.round(i.price * factor)) })) };
+  }
+
+  /** What a counter's Trading against the player's does to its prices (over 1, dearer), and what the hands in remember of them; 1 without Trading. */
+  private haggleFactor(at: Building | Location, now: number): number {
     const rules = this.rules.trading;
     const power = this.rules.money.haggle ?? 0;
+    if (!rules || !power) return 1;
     const building = 'block' in at ? at : null;
-    if (!rules || !power || (building?.business && this.rules.food.fixed[building.business]) || building?.business === 'hospital') return menu;
     const staff = building ? this.staffOf(building) : [];
     const seller = staff.reduce((best, p) => Math.max(best, this.skillsFor(p, now).trading), staff.length ? 1 : rules.average);
     // And what the hands in remember of the player: a friend's price from the fondest, a sore one's from the sorest.
@@ -752,10 +765,7 @@ export class Game {
     const ins = staff.filter((p) => whereIs(p, this.world, clock, this.rules.food.dishes, this.rules.people.out)?.spot.id === building?.id);
     const regards = ins.map((p) => this.regardOf(p.id, now));
     const lean = (this.rules.money.regard ?? 0) * (Math.max(0, ...regards) - Math.max(0, ...regards.map((r) => -r)));
-    const factor = Math.pow(skillBonus(rules, seller) / skillBonus(rules, this.tradingState.level), power) * (1 - lean);
-    if (Math.abs(factor - 1) < 0.005) return menu;
-    const fixed = new Set(['plan', 'treatment', 'room']);
-    return { ...menu, haggle: factor - 1, items: menu.items.map((i) => (fixed.has(i.kind) ? i : { ...i, price: Math.max(1, Math.round(i.price * factor)) })) };
+    return Math.pow(skillBonus(rules, seller) / skillBonus(rules, this.tradingState.level), power) * (1 - lean);
   }
 
   /** What a counter sells, open or not. */
@@ -7338,13 +7348,19 @@ export class Game {
     const chipPocket = chipWanted ? this.pocketFor({ id: 'credchip', kind: 'credchip' }) : null;
     const chipItem: Item | null = chipPocket ? { id: newChipId(this.items), kind: 'credchip', name: 'CredChip', count: 1, in: chipPocket, balance: chipWanted, locked: true } : null;
     const chip = chipItem ? chipWanted : 0;
+    // And whatever of worth they have on them, if there's room for it: only a fence will buy it.
+    const valuableId = emptied ? null : this.valuableOn(person, now);
+    const valuable = valuableId ? this.rules.gear.valuables?.[valuableId] : undefined;
+    const valuablePocket = valuableId && valuable ? this.pocketFor({ id: valuableId, kind: 'junk' }) : null;
+    const taken: Item | null = valuableId && valuable && valuablePocket ? { id: valuableId, kind: 'junk', name: valuable.name, count: 1, in: valuablePocket } : null;
     // Cash is cash: bills as far as the wallet will hold them, coins as far as the pocket will (with the chip in it).
     const loot = splitLoot(wanted, this.rules.money);
     const bills = Math.min(loot.bills, walletRoom(this.pockets, this.money, this.rules.gear));
-    const coins = Math.min(loot.coins, changeRoom(this.pockets, chipItem ? [...this.items, chipItem] : this.items, this.money, this.rules.gear, this.rules.food.dishes));
+    const coins = Math.min(loot.coins, changeRoom(this.pockets, [...this.items, ...(chipItem ? [chipItem] : []), ...(taken ? [taken] : [])], this.money, this.rules.gear, this.rules.food.dishes));
     const take = bills + coins;
     const speaker = this.speakerFor(person, stance, doing, now);
-    const haul = [take ? `${take} €$` : '', chip ? `a credchip with ${chip} €$ on it` : ''].filter(Boolean).join(' and ');
+    // A valuable by whose it was ("her Cufflinks", "his Omamori"): no article fits them all.
+    const haul = [take ? `${take} €$` : '', chip ? `a credchip with ${chip} €$ on it` : '', taken ? `${speaker.vars.his ?? 'their'} ${taken.name}` : ''].filter(Boolean).join(' and ');
     const cut = drawn && !drawn.gun ? arms.classes[drawn.weapon.class]?.cut : undefined;
     // A thrown weapon (a knife, an axe) is a blade in the hand.
     speaker.vars = { ...speaker.vars, take: String(take), haul, weapon: drawn?.weapon.short ?? '', gun: drawn?.gun ? 'yes' : '', blade: cut === 'blade' || cut === 'thrown' ? 'yes' : '', blunt: cut === 'blunt' ? 'yes' : '' };
@@ -7357,7 +7373,7 @@ export class Game {
     // Robbed is robbed, mask or not: their pockets stay empty a while. Whose doing it was, they know only with the face.
     changeStanding(this.society, id, mask ? { robbedAt: now } : { met: true, robbedAt: now }, society, timeScale, now);
     this.logged(id, 'you', line(cold ? lines.you.robCold : lines.you.rob, speaker, rng), now);
-    const got = take > 0 || chip > 0;
+    const got = take > 0 || chip > 0 || Boolean(taken);
     const outcome =
       (wanted || chipWanted) && !got
         ? `No room on you for the eddies. ${person.given} keeps ${speaker.vars.his}${mask || cold ? '.' : ', and remembers your face.'}`
@@ -7373,13 +7389,14 @@ export class Game {
         this.life.chips[person.id] = 0;
         this.items.push(chipItem);
       }
+      if (taken) this.putAway(this.items, (this.items.push(taken), taken), taken.in);
       this.say(outcome, 'system');
       if (wanted > take) this.say(`Your pockets won't hold the rest: ${wanted - take} €$ stays with ${person.given}.`, 'system');
       if (chipWanted && !chip) this.say(`No room on you for ${speaker.vars.his} credchip: it stays in ${speaker.vars.his} hand.`, 'system');
       if (chip) this.say(`The chip is locked to ${person.given}. A netrunner will have to chop it before any of it is yours.`, 'system');
       if (fought) this.drainEnergy(2, now);
       this.events.emit('walletChanged', this.wallet);
-      if (chipItem) this.events.emit('inventoryChanged', this.inventory);
+      if (chipItem || taken) this.events.emit('inventoryChanged', this.inventory);
     } else {
       this.say(outcome);
     }
@@ -8765,6 +8782,125 @@ export class Game {
       this.events.emit('walletChanged', this.wallet);
       this.events.emit('businessChanged', null);
     }
+  }
+
+  // ───────────── Trade ─────────────
+
+  /** The counter here as a buyer: what it deals in, its share, its tier, what's in its till, its shelves' factor, and the haggling (null: nobody buys here, it's shut, or the player is barred). */
+  private buyerHere(now: number): { building: Building; buys: TradeKind[]; share: number; fence: number; tier: Quality; till: number; factor: number; haggle: number } | null {
+    const rules = this.rules.trade;
+    const at = this.inside;
+    if (!rules || !at?.business || !this.atCounter() || this.detained(now) || this.fighting) return null;
+    const buys = rules.buys[at.business];
+    if (!buys || !this.counterOpen(at, now) || this.barred(now)) return null;
+    const till = this.life.tills[at.id];
+    return {
+      building: at,
+      buys,
+      share: rules.shares[at.business] ?? rules.share,
+      fence: rules.fences[at.business] ?? 0,
+      tier: this.tierOf(at),
+      till: Math.max(0, Math.floor(till?.cash ?? 0)),
+      factor: priceFactor(stockOf(till), this.trade(at).health, this.rules.life.economy),
+      haggle: this.haggleFactor(at, now),
+    };
+  }
+
+  /** What the counter here would give for one of a thing (a box's worth of rounds, or what's left of one), and how many that is; null if it doesn't deal in it. */
+  private offerFor(item: Item, buyer: NonNullable<ReturnType<Game['buyerHere']>>): { amount: number; units: number; kind: TradeKind } | null {
+    const rules = this.rules.trade;
+    const valuables = this.rules.gear.valuables ?? {};
+    const kind = rules ? tradeKindOf(item, this.rules.gear, this.rules.food.dishes, valuables) : null;
+    if (!rules || !kind || !buyer.buys.includes(kind)) return null;
+    const units = kind === 'ammo' ? Math.min(item.count, this.rules.gear.arms.ammo[item.id]?.box ?? 1) : 1;
+    const worth = worthOf(item, this.rules.gear, this.rules.food.dishes, valuables) * units;
+    // A fence gives a valuable its price; a store, a share of what a thing is worth, more while its shelves are short.
+    // And never more than a share of what it would charge for it itself, however the haggling goes.
+    const amount = kind === 'valuable' ? (worth * buyer.fence * rules.tier[buyer.tier]) / buyer.haggle : Math.min((worth * buyer.share * rules.tier[buyer.tier] * buyer.factor) / buyer.haggle, worth * buyer.factor * buyer.haggle * rules.resale);
+    return { amount: Math.max(1, Math.round(amount)), units, kind };
+  }
+
+  /**
+   * What the player could sell at the counter here: each thing they carry that it deals in, at
+   * its offer, or why not (a gun still loaded, more than the till holds); and a valuable, which
+   * only a fence takes. Null where nobody buys.
+   */
+  sellables(now: number): { name: string; till: number; fence: boolean; items: Array<{ id: string; from: string | undefined; name: string; kind: TradeKind; count: number; units: number; offer: number; why?: string }> } | null {
+    const buyer = this.buyerHere(now);
+    if (!buyer) return null;
+    const valuables = this.rules.gear.valuables ?? {};
+    const items: Array<{ id: string; from: string | undefined; name: string; kind: TradeKind; count: number; units: number; offer: number; why?: string }> = [];
+    for (const item of this.items) {
+      const offer = this.offerFor(item, buyer);
+      if (!offer) {
+        // A valuable anywhere but a fence: shown, so the player knows where to take it.
+        if (tradeKindOf(item, this.rules.gear, this.rules.food.dishes, valuables) === 'valuable') items.push({ id: item.id, from: item.in, name: item.name, kind: 'valuable', count: item.count, units: 1, offer: 0, why: 'Only a fence' });
+        continue;
+      }
+      const why = item.kind === 'weapon' && item.loaded ? 'Unload it first' : offer.amount > buyer.till ? 'Till too light' : undefined;
+      items.push({ id: item.id, from: item.in, name: item.name, kind: offer.kind, count: item.count, units: offer.units, offer: offer.amount, ...(why ? { why } : {}) });
+    }
+    return { name: buyer.building.name, till: buyer.till, fence: buyer.fence > 0, items };
+  }
+
+  /** A line of the player's trade, filled in. */
+  private tradeLine(pool: string[], vars: Record<string, string>, key: string, tone?: 'error'): void {
+    this.say(this.narration(pool, vars, createRng(`${this.world.seed}:trade:${key}`)), tone ?? 'system');
+  }
+
+  /**
+   * Sells one of a thing the player carries (a box's worth of rounds) to the counter here, out of
+   * its till, in cash: onto its shelves, and Trading for the deal. A valuable only to a fence.
+   */
+  sell(id: string, from: string | undefined, now: number): boolean {
+    const rules = this.rules.trade;
+    const buyer = this.buyerHere(now);
+    const item = this.items.find((i) => i.id === id && (from === undefined || i.in === from));
+    if (!rules || !buyer || !item) return false;
+    const place = buyer.building.name;
+    const offer = this.offerFor(item, buyer);
+    if (!offer) {
+      if (tradeKindOf(item, this.rules.gear, this.rules.food.dishes, this.rules.gear.valuables ?? {}) === 'valuable') this.tradeLine(rules.lines.hot, { item: item.name, place }, `${buyer.building.id}:hot:${now}`, 'error');
+      return false;
+    }
+    if (item.kind === 'weapon' && item.loaded) return false;
+    const vars = { item: item.name, amount: String(offer.amount), place };
+    if (offer.amount > buyer.till) {
+      this.tradeLine(rules.lines.broke, vars, `${buyer.building.id}:broke:${now}`, 'error');
+      return false;
+    }
+    // The cash, as far as the wallet and the change pocket hold it, with the thing gone from the pocket.
+    const left = this.items.map((i) => (i === item ? { ...i, count: i.count - offer.units } : i)).filter((i) => i.count > 0);
+    const loot = splitLoot(offer.amount, this.rules.money);
+    if (loot.bills > walletRoom(this.pockets, this.money, this.rules.gear) || loot.coins > changeRoom(this.pockets, left, this.money, this.rules.gear, this.rules.food.dishes)) {
+      this.tradeLine(rules.lines.noRoom, vars, `${buyer.building.id}:room:${now}`, 'error');
+      return false;
+    }
+    item.count -= offer.units;
+    if (item.count <= 0) this.items.splice(this.items.indexOf(item), 1);
+    this.money = { ...this.money, bills: this.money.bills + loot.bills, coins: this.money.coins + loot.coins };
+    // Out of its till, and onto its shelves.
+    const till = tillOf(this.life.tills, buyer.building.id);
+    till.cash = (till.cash ?? 0) - offer.amount;
+    const worth = worthOf(item, this.rules.gear, this.rules.food.dishes, this.rules.gear.valuables ?? {}) * offer.units;
+    const shelves = Math.max(1, this.rules.life.economy.stock.weeks * this.weekCostOf(buyer.building));
+    till.stock = Math.min(1, stockOf(till) + worth / shelves);
+    this.tradeCache.delete(buyer.building.id);
+    this.trainTrading(this.rules.money.tradeXp ?? 0);
+    this.tradeLine(offer.kind === 'valuable' ? rules.lines.fenced : rules.lines.sold, vars, `${buyer.building.id}:${item.id}:${now}`);
+    this.events.emit('inventoryChanged', this.inventory);
+    this.events.emit('walletChanged', this.wallet);
+    return true;
+  }
+
+  /** The valuable someone has on them this week, if any (none without trade). */
+  private valuableOn(person: Person, now: number): string | null {
+    const rules = this.rules.trade;
+    const valuables = this.rules.gear.valuables;
+    if (!rules || !valuables) return null;
+    const economy = this.rules.life.economy;
+    const ledger = ledgerOf(person, this.world, this.population, economy, this.tierFn, this.world.seed, this.livingStaff);
+    return valuableOf(person, walkOf(person, this.world), ledger.means, Math.floor(this.clockAt(now).day / 7), valuables, rules, this.world.seed);
   }
 
   /** Whether the player is where a building's counter is (the room you walk into); anywhere but inside a building, they are. */

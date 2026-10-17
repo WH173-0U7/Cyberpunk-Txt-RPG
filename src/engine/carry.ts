@@ -1,3 +1,4 @@
+import type { Valuable } from './trade';
 import { implantGrams, implantOf, type ChromeContent } from './cyberware';
 import type { HackContent } from './combat';
 import type { DrugKind } from './dealing';
@@ -83,6 +84,8 @@ export interface GearContent {
   drugs: Record<string, DrugKind>;
   /** Components, by item id: what each weighs, how many share a slot, its price and the stores (by business id) that rack it. */
   components: Record<string, { name: string; note: string; grams: number; perSlot: number; price: number; stores: string[] }>;
+  /** Valuables people carry and a fence buys, by item id: what one weighs (src/data/valuables.ts). */
+  valuables?: Record<string, Valuable>;
   /** Grams by kind of dish, unless the dish says its own. */
   dish: Record<Dish['kind'], number>;
   kinds: Record<string, PocketKind>;
@@ -156,6 +159,10 @@ export function itemGrams(item: Pick<Item, 'id' | 'kind' | 'gear' | 'weapon' | '
   if (item.kind === 'component') {
     const part = gear.components[item.id];
     if (part) return part.grams;
+  }
+  if (item.kind === 'junk') {
+    const valuable = gear.valuables?.[item.id];
+    if (valuable) return valuable.grams;
   }
   if (item.kind === 'ammo') {
     const ammo = gear.arms.ammo[item.id];

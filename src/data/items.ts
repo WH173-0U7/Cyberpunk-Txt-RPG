@@ -14,6 +14,6 @@ export const ITEM_KINDS: Record<ItemKind, { label: string; hint: string }> = {
   consumable: { label: 'Consumables', hint: 'Meds, food, drinks and booze.' },
   shard: { label: 'Shards', hint: 'Datashards: notes, articles and recordings.' },
   credchip: { label: 'CredChips', hint: 'Eddies on a chip: spent where transfers are taken, or banked. A stolen one wants chopping first.' },
-  junk: { label: 'Junk', hint: 'Worth a few eddies to a vendor or a drop point.' },
+  junk: { label: 'Junk', hint: "Taken off someone: only a fence (a pawn shop, a junk shop) will buy it, and it doesn't ask." },
   component: { label: 'Components', hint: 'Parts for crafting.' },
 };
