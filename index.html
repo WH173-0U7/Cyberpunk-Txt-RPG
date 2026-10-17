@@ -216,6 +216,20 @@
             <div id="bank-commands" class="person-commands" role="toolbar" aria-label="The counter"></div>
           </div>
         </div>
+        <div id="books" class="overlay bank books" role="dialog" aria-labelledby="books-title" hidden>
+          <div class="overlay-strip">
+            <span class="overlay-barcode" aria-hidden="true"></span>
+            <span id="books-title" class="overlay-label">NCNET//BOOKS</span>
+            <span id="books-name" class="overlay-detail"></span>
+            <button id="books-close" class="icon-btn overlay-close" type="button" aria-label="Close the books" title="Close (Esc)"></button>
+          </div>
+          <div class="overlay-body bank-body books-body">
+            <div id="books-figures" class="bank-figures"></div>
+            <p id="books-status" class="shop-status" role="status"></p>
+            <div id="books-picker" class="person-picker" hidden></div>
+            <div id="books-commands" class="person-commands" role="toolbar" aria-label="The books"></div>
+          </div>
+        </div>
         <div id="place" class="place">
           <div class="scan-clip" aria-hidden="true"><div id="scan-beam" class="scan-beam"></div></div>
           <div class="place-text">
@@ -240,6 +254,8 @@
             <button id="act-deal" class="action is-deal" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-home" class="action is-home" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-move" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-buy" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
+            <button id="act-books" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-pick-1" class="action is-work" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-pick-2" class="action" type="button"><span class="action-label"></span><span class="action-sub"></span></button>
             <button id="act-pick-3" class="action is-stop" type="button"><span class="action-label"></span><span class="action-sub"></span></button>

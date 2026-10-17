@@ -6,6 +6,7 @@ import type { Runner, RunnerNews } from './crew';
 import type { HabitState } from './habit';
 import type { HomeState } from './home';
 import type { CreditState } from './credit';
+import type { Owned } from './economy';
 import type { Arms, Meter } from './combat';
 import type { Lodging } from './rooms';
 import type { Confrontation, Crime, Dispatch, PendingCall, PoliceState, Report, Warrant } from './police';
@@ -254,7 +255,7 @@ export function readSave(raw: unknown): SaveData | null {
     jobs: Array.isArray(save.jobs) ? save.jobs.filter(isJob).map(jobOf) : null,
     career: isObject(save.career) ? Object.fromEntries(Object.entries(save.career).filter(([, n]) => isNumber(n) && n >= 0)) as Record<string, number> : null,
     // And before the people had days of their own, none had passed.
-    life: isLife(save.life) ? { ...save.life, events: save.life.events.filter((e) => isObject(e) && Array.isArray(e.who)) } : null,
+    life: isLife(save.life) ? { ...save.life, events: save.life.events.filter((e) => isObject(e) && Array.isArray(e.who)), ...(save.life.owned !== undefined ? { owned: ownedOf(save.life.owned) } : {}) } : null,
     // And before the player said who they are, they went by they.
     you: isYou(save.you) ? save.you : null,
     // And before there was chrome, the player had none; an implant that isn't one is dropped.
@@ -525,6 +526,16 @@ function creditOf(value: unknown): CreditState | null {
   const lent: CreditState['lent'] = {};
   if (isObject(value.lent)) for (const [id, l] of Object.entries(value.lent)) if (isObject(l) && isNumber(l.owed) && isNumber(l.since) && isNumber(l.paid) && isNumber(l.due)) lent[id] = l as unknown as CreditState['lent'][string];
   return { bank, barred: value.barred === true, shark, lent };
+}
+
+/** The storefronts the player owns, as saved: one that isn't one is dropped. */
+function ownedOf(value: unknown): Record<string, Owned> {
+  const owned: Record<string, Owned> = {};
+  if (!isObject(value)) return owned;
+  for (const [id, o] of Object.entries(value)) {
+    if (isObject(o) && isNumber(o.since) && isNumber(o.due) && (o.prices === 'low' || o.prices === 'fair' || o.prices === 'high') && (o.lost === undefined || isNumber(o.lost)) && (o.told === undefined || isNumber(o.told))) owned[id] = o as unknown as Owned;
+  }
+  return owned;
 }
 
 function isHome(value: unknown): value is HomeState {

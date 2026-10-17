@@ -125,6 +125,7 @@ function check(game: Game, about: string): void {
   if (credit.shark) expect(credit.shark.owed, `${about}: a loan shark`).toBeGreaterThan(0);
   if (credit.shark) expect(credit.shark.owed, `${about}: a loan shark's cap`).toBeLessThanOrEqual(Math.ceil(credit.shark.borrowed * CREDIT.shark.cap));
   for (const [id, lent] of Object.entries(credit.lent)) expect(lent.owed, `${about}: lent to ${id}`).toBeGreaterThan(0);
+  for (const view of game.businesses()) expect(view.till, `${about}: the till at ${view.building.name}`).toBeGreaterThanOrEqual(0);
   // A save brings all of it back.
   const save = readSave(JSON.parse(JSON.stringify(createSave(game.world.seed, game, GENERATOR_VERSION))));
   const progress = save && resume(game.world, save);
@@ -361,7 +362,15 @@ describe('playing badly', () => {
             else if (what < 0.75) game.knock(room.id, now);
             else game.goFloor(rng.int(1, view.floors), now);
             expect(game.room(), `${about}: a room`).not.toBeNull();
-          } else if (game.bank()) {
+          } else if (game.books()) {
+            // The books of a place of the player's: money in and out, its prices, selling it.
+            const what = rng.next();
+            if (what < 0.3) game.putIn(rng.pick([100, 500, 1000])!, now);
+            else if (what < 0.6) game.takeOut(now);
+            else if (what < 0.9) game.setPrices(rng.pick(['low', 'fair', 'high'] as const)!, now);
+            else game.sellBusiness(now);
+          } else if (game.forSale() && rng.chance(0.5)) game.buyClosed(now);
+          else if (game.bank()) {
             const what = rng.next();
             if (what < 0.3) game.deposit();
             else if (what < 0.6) game.withdraw(rng.pick(MONEY.withdrawals) ?? 20);

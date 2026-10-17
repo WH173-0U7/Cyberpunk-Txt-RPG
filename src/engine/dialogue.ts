@@ -125,7 +125,7 @@ export interface DialogueLines {
    * paying (`payBack`), putting it off (`excuse`) or snapping at being asked again so soon
    * (`pressed`). `{amount}`, `{owed}`, `{gang}`.
    */
-  money: { sharkLend: Line[]; sharkNo: Line[]; sharkFull: Line[]; sharkDry: Line[]; sharkPaid: Line[]; sharkSquare: Line[]; lend: Line[]; refuse: Line[]; payBack: Line[]; excuse: Line[]; pressed: Line[] };
+  money: { sellYes: Line[]; sharkLend: Line[]; sharkNo: Line[]; sharkFull: Line[]; sharkDry: Line[]; sharkPaid: Line[]; sharkSquare: Line[]; lend: Line[]; refuse: Line[]; payBack: Line[]; excuse: Line[]; pressed: Line[] };
   deal: { join: Line[]; notYet: Line[]; refer: Line[]; front: Line[]; owing: Line[]; paid: Line[]; some: Line[]; promote: Line[]; masked: Line[]; burned: Line[]; leave: Line[]; buy: Line[]; wary: Line[]; pass: Line[]; offended: Line[]; rival: Line[]; recruit: Line[]; recruitNo: Line[]; runnerFront: Line[]; runnerPaid: Line[]; runnerKept: Line[]; runnerSome: Line[]; runnerNothing: Line[]; runnerShort: Line[]; leanPaid: Line[]; leanFailed: Line[]; slide: Line[]; runnerQuit: Line[]; letGo: Line[] };
   /** What someone brings up of what the player did, as they remember it (memory.ts): `mem` and `mem<Kind>` say which, with `{memWho}`, `{memWord}`, `{memAgo}`, `{memItem}`, `{memTook}`, `{memTitle}` and `memTwice`, `memAgain` (brought up before), `memRobbery`, `memInsult`, `memAssault`, `memMurder`, `memFavorite`. */
   memory: Line[];
@@ -160,7 +160,7 @@ export interface DialogueLines {
     notLooking: string;
   };
   /** The player's own lines, for the record, by eloquence. */
-  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; robCold: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[]; deal: Line[]; pitch: Line[]; payUp: Line[]; walkAway: Line[]; recruit: Line[]; frontRunner: Line[]; collect: Line[]; lean: Line[]; slide: Line[]; letGo: Line[]; borrow: Line[]; lend: Line[]; askBack: Line[]; payShark: Line[] };
+  you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; robCold: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[]; deal: Line[]; pitch: Line[]; payUp: Line[]; walkAway: Line[]; recruit: Line[]; frontRunner: Line[]; collect: Line[]; lean: Line[]; slide: Line[]; letGo: Line[]; borrow: Line[]; lend: Line[]; askBack: Line[]; payShark: Line[]; buyPlace: Line[] };
 }
 
 /** Everything a line can be picked and filled by; `vars.mask` is the word for the mask the player has on, or nothing. */

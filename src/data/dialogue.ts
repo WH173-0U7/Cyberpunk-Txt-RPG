@@ -1717,6 +1717,15 @@ export const LINES: DialogueLines = {
   },
 
   money: {
+    sellYes: [
+      "{amount}? It's yours. I'll keep the lights on.",
+      'Done. Somebody else can lie awake over the books for a change.',
+      "Deal. Same counter, same hours. The worry's yours now.",
+      only("Fine. You've no idea what you're buying, but fine.", hard),
+      only('You mean it? Thank you. I was about to lose it anyway.', both(kind, { needs: ['slow'] })),
+      only("At {amount} I'd be a fool to say no, the way it's been going. It's yours.", { needs: ['slow'] }),
+      only("It's doing well, you know. But {amount} is {amount}. Deal.", { needs: ['brisk'] }),
+    ],
     sharkLend: [
       '{amount} {eddies}. A tenth on top every week till it comes back. You know how this works.',
       'Here. {amount}. It grows while you sleep, so don\'t sleep long.',
@@ -2864,6 +2873,17 @@ export const LINES: DialogueLines = {
       only('"{amount}, on time, like I said."', smooth),
       only('"Here\'s {amount}. Tell them I\'m good for the rest."', smooth),
       only('"{amount} toward it, with my compliments."', smooth),
+    ],
+    buyPlace: [
+      only('"I\'ll buy this place off you. {amount}."', blunt),
+      only('"{amount} for the place. Deal?"', blunt),
+      only('"Sell me {work}. {amount}."', blunt),
+      only('"{amount} for {work}, and you keep running it. What do you say?"', easy),
+      only('"I want to buy in. {amount} for the place, you stay on."', easy),
+      only('"How about {amount} for {work}? You keep the counter."', easy),
+      only('"{amount}, and {work} is mine on paper; yours to run, same as ever."', smooth),
+      only('"Let me take the worry off you: {amount} for {work}, and you keep your place behind the counter."', smooth),
+      only('"I\'d like to own a piece of the street. {amount} for {work}, and nothing changes but who gets the profit."', smooth),
     ],
   },
 };

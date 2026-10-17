@@ -1253,6 +1253,44 @@ The player can take a bank loan, borrow from a gang's loan shark, and lend to pe
   Loan figure (`loanFigure` in `main.ts`); the card's **€$** command (`Picker` `money`,
   `data-money`); the status drop-down's **Debts** row (`Game.debts(now)`, `debtLine`).
 
+## The player's business
+
+The player can own storefronts (`ECONOMY.business`, `BusinessRules` in `src/engine/economy.ts`,
+the numbers and narration in `src/data/economy.ts`; missing, nobody sells):
+
+- What's theirs is `LifeState.owned` (`Owned`: since, `prices`, `due`, `lost`, `told`), kept with
+  the people's days since the economy pays it: `economyDay` puts what's over a till's `reserve` on
+  payday on `due` instead of the boss (a `Flows.out`, the player being outside the city's money),
+  and a place of theirs that goes under is `lost`, its till's cash on `due` too. `Game`'s private
+  `businessDays` (from `live`, after the days) pays `due` into the account, drops a lost place,
+  and says when a till came up short of its wages, once each payday running (`told`, by
+  `Till.lean`). `readSave` keeps only owned records that read right (`ownedOf`).
+- What can be bought (`Game`'s private `sellable`): a storefront that isn't a corp's
+  (`owners.corp`), a bank, a hospital or a real place (`hard.close.never`). Its price
+  (`priceOfPlace`): `price.costs` weeks of its costs (`weekCostOf`: its living staff's wages and
+  its rent) and `price.profits` weeks of what it cleared last week; gone under, `price.closed`
+  weeks of costs as if two hands and a boss. A going one is bought off its boss
+  (`Game.moneyWith`'s `buy`, on the card's **€$**, from `placeOffer`: only at the `sellers` stances
+  for how it's doing; `buyFrom` pays into their account, `LINES.money.sellYes`,
+  `LINES.you.buyPlace`), who stays on to run it. One gone under is bought at its door
+  (`Game.forSale()`, `buyClosed(now)`: paid to its building's owner, `ownersOf`/`holderOf`), and
+  the next day lived `liveDay`'s `reopen` takes on its people as for any.
+- Owning it: its counter is open to the player whoever's in and at the staff price (`counterOpen`,
+  `menu`), the back is open to them (`accessTo`), and the books are out back (`Game.books()`, or
+  anywhere inside without rooms; a `BusinessView`): `putIn(amount, now)` (`amounts`, the account
+  first), `takeOut(now)` (what's over its `float`), `setPrices(level, now)` and
+  `sellBusiness(now)` (`sell` of its price, into the account; its boss runs it for themselves
+  again). A price level (`levels`: `low`, `fair`, `high`) is a share on its prices (`price`: on the
+  menu, `marketPriced`, and on what its shelves give for the money, so dearer costs less to
+  restock), on its trade from outside the city (`walkIn`), on the residents it keeps (`keep`: the
+  rest go to another of its kind in the district) and on what it draws from its rivals (`draw`, a
+  share of one place's trade taken from them all alike, `economyDay`'s `priced`).
+- The UI: at the door of one gone under, the panel's **Buy it** (`ActionId` `buy`); out back,
+  **Books** (`books`), the books overlay (`src/ui/books.ts`, after the bank's: Put in, Take out,
+  Prices, Sell, each with its picker); the status drop-down's **Business** row
+  (`businessLine`); and a work pin with a coin on the map for each (`WorkPin.owned`). Lines are
+  `ECONOMY.business.lines` (`{place}`, `{amount}`, `{weeks}`, `{under}`, `{level}`).
+
 ## Inebriation
 
 Drinking alcohol makes the player drunk; nothing else happens yet:

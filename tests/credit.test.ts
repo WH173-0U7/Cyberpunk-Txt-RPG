@@ -15,6 +15,7 @@ import { CHARISMA } from '../src/data/skills';
 import { SOCIETY } from '../src/data/society';
 import { TRAVEL } from '../src/data/travel';
 import { creditLimit, honestyOf, loanAmounts } from '../src/engine/credit';
+import { bossAt } from '../src/engine/jobs';
 import type { Money } from '../src/engine/money';
 import { Game, streetSpot, type GameRules } from '../src/engine/game';
 import { generateWorld, GENERATOR_VERSION } from '../src/engine/generate';
@@ -246,7 +247,8 @@ describe('a loan shark', () => {
 });
 
 describe('lending to people', () => {
-  const civilian = (p: Person) => !p.gang && !officer(p) && p.age >= 18;
+  // Not a boss either, who'd also have their place to sell.
+  const civilian = (p: Person) => !p.gang && !officer(p) && p.age >= 18 && !bossAt(p, world, population, JOBS);
 
   it('is taken by the broke, or by someone warm to the player, and paid back as the honest can', () => {
     const { g, person } = beside(civilian, { money: { bills: 500, coins: 0, account: 0 } });
@@ -278,15 +280,15 @@ describe('lending to people', () => {
     person.traits.loyalty = 0;
     person.traits.greed = 1;
     expect(g.moneyMove(person.id, 'lend:100', NOON)).toBe(true);
-    g.tick(NOON + 14 * DAY);
-    expect(g.creditSaved.lent[person.id]?.owed, 'not a cent').toBe(100);
-    const here = g.peopleHere(NOON + 14 * DAY).some((p) => p.person.id === person.id);
-    expect(here, 'still about two weeks on').toBe(true);
-    expect(g.moneyMove(person.id, 'ask', NOON + 14 * DAY)).toBe(true);
+    // Asked, an excuse; asked again so soon, it costs.
+    expect(g.moneyMove(person.id, 'ask', NOON + 60_000)).toBe(true);
     expect(g.creditSaved.lent[person.id]?.owed).toBe(100);
     const rapport = inner(g).society.standings[person.id]!.rapport;
-    expect(g.moneyMove(person.id, 'ask', NOON + 14 * DAY + 60_000)).toBe(true);
+    expect(g.moneyMove(person.id, 'ask', NOON + 120_000)).toBe(true);
     expect(inner(g).society.standings[person.id]!.rapport).toBeLessThan(rapport);
+    // And the weeks go by without a cent.
+    g.tick(NOON + 14 * DAY);
+    expect(g.creditSaved.lent[person.id]?.owed, 'not a cent').toBe(100);
   });
 
   it('is paid back when asked by the honest, as far as they have money over their week', () => {

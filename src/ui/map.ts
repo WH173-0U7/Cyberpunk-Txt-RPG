@@ -14,6 +14,8 @@ export interface WorkPin {
   id: string;
   name: string;
   open: boolean;
+  /** A storefront the player owns (worked there or not). */
+  owned?: boolean;
 }
 
 /** The work badge's color: the yellow of the signs. */
@@ -946,11 +948,11 @@ export class CityMap {
       const building = this.buildings.get(pin.id);
       if (!building) continue;
       const picked = this.target?.kind === 'building' && this.target.id === pin.id;
-      const node = this.marker(`work:${pin.id}`, pin.name, this.project({ x: building.x + building.w / 2, y: building.y + building.h / 2 }), WORK_COLOR, ['is-work', pin.open ? 'is-due' : '', picked ? 'is-selected' : ''], undefined, () => {
+      const node = this.marker(`work:${pin.id}`, pin.name, this.project({ x: building.x + building.w / 2, y: building.y + building.h / 2 }), WORK_COLOR, ['is-work', pin.open ? 'is-due' : '', pin.owned ? 'is-owned' : '', picked ? 'is-selected' : ''], undefined, () => {
         if (picked) this.handlers.onGo();
         else this.handlers.onSelect({ kind: 'building', id: pin.id });
       });
-      node.setAttribute('aria-label', `Work: ${pin.name}${pin.open ? ', a shift is on' : ''}`);
+      node.setAttribute('aria-label', `${pin.owned ? 'Yours' : 'Work'}: ${pin.name}${pin.open ? ', a shift is on' : ''}`);
       node.setAttribute('aria-pressed', String(picked));
       markers.push(node);
     }

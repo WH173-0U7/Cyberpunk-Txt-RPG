@@ -355,6 +355,35 @@ describe('the economy', () => {
     expect(stockOf(till)).toBeGreaterThan(0);
   });
 
+  it("pays the player what their own storefronts make over their reserve, out of the city's money, and loses one that goes under", () => {
+    const c = city(seeds[0] as string);
+    const owners = ownersOf(c.world, c.population, ECONOMY, c.seed);
+    const shops = c.world.buildings.filter((b) => b.business && !owners.corp.has(b.business));
+    const levels = ['low', 'fair', 'high'] as const;
+    const mine = shops.filter((_, i) => i % 9 === 0).slice(0, 30);
+    c.state.owned = Object.fromEntries(mine.map((b, i) => [b.id, { since: T, prices: levels[i % 3] as (typeof levels)[number], due: 0 }]));
+    // The loop still closes: what's theirs leaves the city.
+    for (let d = T; d < T + 14; d++) {
+      const before = total(c);
+      const flows = day(c, d);
+      expect(total(c), `day ${d}`).toBe(before + flows.in - flows.out + flows.opened);
+    }
+    const owned = c.state.owned;
+    expect(mine.some((b) => (owned[b.id]?.due ?? 0) > 0), 'some of it made money').toBe(true);
+    // Short of its wages too many paydays running, it goes under like any, and what was in the till is theirs.
+    const failing = mine.find((b) => c.population.people.some((p) => p.job.building === b.id)) as { id: string };
+    const till = tillOf(c.state.tills, failing.id);
+    const payday = nextDay(T + 15, ECONOMY.payday);
+    for (let d = T + 14; d < payday; d++) day(c, d);
+    till.lean = ECONOMY.hard!.close.weeks - 1;
+    till.cash = 0;
+    const due = owned[failing.id]?.due ?? 0;
+    day(c, payday);
+    expect(c.state.closed?.[failing.id]).toBeDefined();
+    expect(owned[failing.id]?.lost).toBe(payday);
+    expect(owned[failing.id]?.due).toBeGreaterThanOrEqual(due);
+  });
+
   it('counts how often something comes off in a week by one roll', () => {
     expect(timesIn(7, 0, 0.99)).toBe(0);
     expect(timesIn(7, 1, 0)).toBe(7);
