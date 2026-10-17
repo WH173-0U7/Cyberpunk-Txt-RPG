@@ -93,6 +93,8 @@ export interface PersonCardView {
   heart: HeartMove[];
   /** What has passed between them, oldest first. */
   log: LogLineView[];
+  /** A conversation going on with them: the replies there are, and whether it's over the holo. Its replies stand in for the commands' choices while nothing else is unfolded. */
+  chat: { moves: Array<{ id: string; label: string }>; remote: boolean } | null;
 }
 
 /** The People overlay's two lists: who's here, and everyone the player has met or knows by name. */
@@ -137,6 +139,8 @@ export interface PeopleHandlers {
   onAction(action: PersonAction, id: string): void;
   /** The player started a chat a particular way. */
   onTalk(id: string, approach: string): void;
+  /** The player kept a conversation going with a reply. */
+  onReply(id: string, move: string): void;
   onGift(id: string, itemId: string): void;
   /** The player asked a person to chop a locked credchip. */
   onChop(id: string, chipId: string): void;
@@ -195,14 +199,15 @@ export class People {
     // Everything on the card goes through one listener: commands, the choices they unfold, names in the web.
     els.card.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
-      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-fact], [data-item], [data-chip], [data-action], [data-kill], [data-heart], [data-deal], [data-money], [data-open], [data-day]');
+      const button = target?.closest<HTMLElement>('[data-cmd], [data-approach], [data-reply], [data-fact], [data-item], [data-chip], [data-action], [data-kill], [data-heart], [data-deal], [data-money], [data-open], [data-day]');
       if (!button) return;
-      const { cmd, approach, fact, item, chip, action, kill, heart, deal, money, open, id, day } = button.dataset;
+      const { cmd, approach, reply, fact, item, chip, action, kill, heart, deal, money, open, id, day } = button.dataset;
       if (cmd === 'talk' || cmd === 'ask' || cmd === 'give' || cmd === 'chop' || cmd === 'work' || cmd === 'deal' || cmd === 'money' || cmd === 'heart' || cmd === 'more') handlers.onPicker(cmd);
       else if (deal && id && !(button as HTMLButtonElement).disabled) handlers.onDeal(id, deal);
       else if (money && id && !(button as HTMLButtonElement).disabled) handlers.onMoney(id, money);
       else if (heart && id) handlers.onHeart(id, heart as HeartMove);
       else if (approach && id) handlers.onTalk(id, approach);
+      else if (reply && id) handlers.onReply(id, reply);
       else if (fact && id) handlers.onQuestion(id, fact);
       else if (item && id) handlers.onGift(id, item);
       else if (chip && id) handlers.onChop(id, chip);
@@ -219,7 +224,7 @@ export class People {
     els.reputation.replaceChildren(...view.reputation.map((line) => el('span', 'people-rep-item', line)));
     els.reputation.hidden = view.reputation.length === 0;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'approach', 'fact', 'about', 'item', 'chip', 'action', 'heart', 'deal', 'money', 'open', 'id', 'tab', 'cardtab'].includes(key)) : undefined;
+    const focused = active ? Object.entries(active.dataset).find(([key]) => ['cmd', 'approach', 'reply', 'fact', 'about', 'item', 'chip', 'action', 'heart', 'deal', 'money', 'open', 'id', 'tab', 'cardtab'].includes(key)) : undefined;
     const focusedId = active?.dataset.id;
     // The two lists' tabs, over the list; a card has its own.
     els.tabs.hidden = Boolean(view.card);
@@ -290,9 +295,11 @@ export class People {
     );
     cardLog.scrollTop = cardLog.scrollHeight;
 
-    // The choices the open command unfolds, if any.
+    // The choices the open command unfolds, if any; with nothing unfolded, a conversation's replies.
     const picker: HTMLElement[] = [];
-    if (card.here && card.picker === 'talk') {
+    if (card.chat && (card.picker === null || card.chat.remote)) {
+      picker.push(...card.chat.moves.map((m) => chip(m.label, { id: card.id, reply: m.id }, `person-chip${m.id === 'bye' ? ' is-quiet' : m.id === 'flirt' ? ' is-heart' : ''}`)));
+    } else if (card.here && card.picker === 'talk') {
       picker.push(...card.approaches.map((a) => chip(a.label, { id: card.id, approach: a.id }, 'person-chip')));
     } else if (card.here && card.picker === 'ask') {
       picker.push(...card.questions.map((q) => chip(q.label, { id: card.id, fact: q.fact }, 'person-chip')));
@@ -343,9 +350,12 @@ export class People {
 
     // One row of commands; what isn't possible isn't shown, and someone who isn't here gets none but the heart's (ending it, by message).
     const heart = card.heart.length ? [{ cmd: 'heart', label: '♥', active: card.picker === 'heart' }] : [];
-    const commands: Array<{ cmd: string; label: string; active?: boolean; quiet?: boolean }> = card.here
+    // On a holocall, the replies are all there is to do.
+    const commands: Array<{ cmd: string; label: string; active?: boolean; quiet?: boolean }> = card.chat?.remote
+      ? []
+      : card.here
       ? [
-          { cmd: 'talk', label: 'Talk', active: card.picker === 'talk' },
+          { cmd: 'talk', label: 'Talk', active: card.picker === 'talk' || (Boolean(card.chat) && card.picker === null) },
           ...(card.questions.length ? [{ cmd: 'ask', label: 'Ask', active: card.picker === 'ask' }] : []),
           ...(card.gifts.length ? [{ cmd: 'give', label: 'Give', active: card.picker === 'give' }] : []),
           ...(card.chops.length ? [{ cmd: 'chop', label: 'Chop', active: card.picker === 'chop' }] : []),

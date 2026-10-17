@@ -5,6 +5,7 @@ import { changeRoom, loadOf, loads, newChipId, newPocketId, outfit, placeFor, po
 import { chromeStatus, chromeStockFor, fitCheck, implantDetail, implantOf, type ChromeStatus, type Fitted } from './cyberware';
 import { NO_EDGE, perkFamily, perksAt, trainedEdge, RANGES, resolveBeat, stepRange, talkOdds, theirMove, worth, type Arm, type Arms, type BeatEvent, type ClassRules, type CombatContent, type Edge, type FightClass, type Fighter, type FightOutcome, type FightState, type FightView, type FinishKind, type FinishRules, type JoinRules, type HealthStatus, type Meter, type Move, type Perk, type Range, type WeaponMastery } from './combat';
 import { accountOf, holderOf as ownerNow, homeKind as blockKind, leftOf, ledgerOf, ownersOf, priceFactor, rentLevelOf, staffCostOf, stockOf, tillOf, tradeAt, turfFrom, wageOf, weekdayOf, type BusinessView, type Health, type MarketNews, type PriceLevel, type Vice } from './economy';
+import { interestAfter, interestOf, movesFor, replyRapport, samePenalty, type Chat, type ChatMove } from './chat';
 import { crewSize, freshRunner, frontRunner, leanOdds, runnerDay, runnerLeft, runnerShort, settle, writeOff, type Runner, type RunnerView } from './crew';
 import { dependenceAt, edgeAt, effectsAt, freshHabit, overdoseOdds, stageAt, takeDose, type HabitState, type HabitView } from './habit';
 import { cutShare, foundOdds, harmOdds, mixedShare, sickOdds } from './cutting';
@@ -20,6 +21,7 @@ import { forgetMemories, GRIEVANCES, memoriesOf, memoryAge, memoryOf, recall, re
 import { chargesFor, freshPolice, issueWarrant, policing, warrantsAt, worstCrime, type Confrontation, type Crime, type Dispatch, type PoliceChoice, type PoliceContent, type PoliceState, type PoliceView } from './police';
 import { floorsOf, mainRoom, roomById, roomOf, roomsOn, unitOf, walkableFloors, type Lodging, type Room, type RoomAccess, type RoomsContent, type RoomsView } from './rooms';
 import { stackIn, stashFits, stashLoad, type HomeKind, type HomeRules, type HomeState, type HomeView } from './home';
+import { answerOdds, freshPhone, reachOdds, replyOdds, thread, type Due, type PhoneRules, type PhoneState, type Text, type TextKind } from './phone';
 import { creditLimit, honestyOf, loanAmounts, type CreditRules, type CreditState } from './credit';
 import { tradeKindOf, valuableOf, worthOf, type TradeKind, type TradeRules } from './trade';
 import { buildingById, GUARD_ROLE, openingHours, rotaStaff, readOf, skillsOf, walkOf, type PersonSkills, dreamOf, drawnTo, generatePeople, handleOf, heartOf, hospitalOf, hospitalsOf, isCorpo, nearestHospital, isNetrunner, localClock, peopleAt, personById, pronounsOf, sexOf, tiesOf, whereIs, type Clock, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Spot, type Tie, type TieKind } from './people';
@@ -175,7 +177,24 @@ export interface GameRules extends TravelRules {
   robbery?: RobberyRules;
   /** The player at someone's mercy: robbed of everything, maybe finished, by why they fought and who they are; and revenge come as a fight. Without it (the tests' rules leave it out), the player put down loses a share of the cash, and revenge is a beating. */
   downed?: DownedRules;
+  /** The holophone: holos to ask for, calls, texts. Without it (the tests' rules leave it out), nobody gives a holo and nothing comes in. */
+  phone?: PhoneRules;
 }
+
+/** Someone in the player's holo, as the phone lists them: the last word between them, what's unread, whether the player knows they're dead. */
+export interface ContactView {
+  id: string;
+  name: string;
+  stance: Stance;
+  last: string;
+  at: number;
+  unread: number;
+  dead: boolean;
+  seeing: boolean;
+}
+
+/** What a holocall came to: picked up, rang out, turned down, or a dead number. */
+export type CallResult = 'answered' | 'missed' | 'declined' | 'dead';
 
 /** Whether counters keep the hours of whoever works them, and how many hours ahead to look for when one opens. */
 export interface HoursRules {
@@ -400,6 +419,10 @@ export class Game {
   private userIndex: Map<string, Person[]> | null = null;
   /** The fight the player is in, or has just finished. */
   private fightState: Fight | null = null;
+  /** The conversation going on, face to face or over the holo (not saved: one left when the game closes is over). */
+  private chatState: Chat | null = null;
+  /** The holophone: whose holo the player has, the texts with each, what's on its way. */
+  private phoneState: PhoneState;
   /** Whether the player fights to kill; they don't unless they say so. */
   private lethalOn: boolean;
   /** The Trauma Team plan the player is on, if any (it may have run out). */
@@ -510,6 +533,11 @@ export class Game {
     this.homeState = home ? { ...home } : null;
     this.stashItems = home ? (progress?.stash ?? []).map((item) => ({ ...item })) : [];
     this.creditState = progress?.credit ? copyOf(progress.credit) : { bank: null, barred: false, shark: null, lent: {} };
+    // The holos of people this city doesn't have are gone, and their texts with them.
+    this.phoneState = progress?.phone ? { ...freshPhone(), ...copyOf(progress.phone) } : freshPhone();
+    for (const id of Object.keys(this.phoneState.contacts)) if (!known.has(id)) delete this.phoneState.contacts[id];
+    for (const id of Object.keys(this.phoneState.threads)) if (!this.phoneState.contacts[id]) delete this.phoneState.threads[id];
+    this.phoneState.due = this.phoneState.due.filter((d) => this.phoneState.contacts[d.from]);
     if (progress) {
       for (const id of progress.visited) this.visit(this.locationById(id));
       for (const id of progress.discovered) this.discovered.add(this.locationById(id).id);
@@ -6171,6 +6199,8 @@ export class Game {
       if (yes) {
         this.society.romance = freshRomance(id, now);
         spark = rules.ask.yes;
+        // Going out with someone, the player has their holo.
+        this.addContact(id, now);
         this.say(`You're seeing ${person.given} now. Take ${pronounsOf(person).him} out of an evening: ♥ on ${pronounsOf(person).his} card, somewhere with a menu.`, 'system');
       } else if (!masked) {
         // A no to a mask is a no to the mask: asked again bare-faced, it isn't pressing.
@@ -7321,6 +7351,8 @@ export class Game {
   talk(id: string, now: number, approach: Approach = 'chat'): boolean {
     const here = this.isHere(id, now);
     if (!here) return false;
+    // Starting again ends whatever conversation was going.
+    this.chatState = null;
     const { person, stance, doing } = here;
     const { society, timeScale, lines } = this.rules;
     const standing = standingOf(this.society, id, society, timeScale, now);
@@ -7374,10 +7406,12 @@ export class Game {
       const pool = reaction.score > 0 ? how.liked : reaction.score < 0 ? how.disliked : how.flat;
       this.speech(person, compose(pool, speaker, lines, rng, { opener: false, tail: false }), now);
     }
+    let brushed = false;
     if (aired || (how && reaction.score < 0)) {
       // Said their piece, or put off: nothing more out of them this time.
     } else if (standing.grudge >= 10 && rng.chance(0.6)) {
       this.speech(person, line(lines.grudge, speaker, rng), now);
+      brushed = true;
     } else {
       // They bring up what they're open about with this player: the neighborhood and their lot for a stranger, their life and their people for a friend; asked for the word, the news; asked how they are, their lot.
       const topics = openTopics(speaker, this.charismaEdge, society.openness, rng, standing.rapport >= society.talk.revealAt);
@@ -7386,8 +7420,48 @@ export class Game {
       // Come at a way they took, and with nothing more to say, they leave it at their answer to it.
       if (chat.topic || !how) this.speech(person, chat.said, now);
       topic = chat.topic;
+      // Just talking, and all they'd give was a brush-off: there's no conversation in them today.
+      if (!chat.topic && !how) brushed = true;
     }
-    // What they talk about, the player now knows, from them; a few chats, and the player has their measure.
+    this.learnTopic(person, speaker, topic, kin, news, now, learned);
+    if (standing.talks + 1 >= 3) learnFact(this.society, id, 'nature');
+    // A chat is worth a little, by their warmth (less with the cold), and more or less by how they took the way it started; put off, it's worth nothing but the offense.
+    const base = Math.round(society.talk.base * (0.6 + person.traits.warmth * 0.8) * (stance === 'cold' ? 0.4 : 1) * this.charisma().bonus);
+    const gain = (how && reaction.score < 0 ? 0 : base) + Math.round(reaction.score * society.reactions.rapport);
+    // A flirt that lands with someone drawn to the player, and free, sparks something (one that doesn't, puts it out a little); so does the way in they fall for.
+    const free = !speaker.vars.taken || speaker.vars.withYou;
+    const drawn = Boolean(speaker.vars.drawn) && free && !aired;
+    const romance = society.romance;
+    const spark = !drawn ? 0 : approach === 'flirt' ? (reaction.score > 0 ? reaction.score * romance.flirt : -romance.miss) : approach === this.heartOf(person).wants && reaction.score > 0 ? romance.wants : 0;
+    changeStanding(this.society, id, { met: true, rapport: gain, spark, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
+    // A way in they liked, or didn't, they remember (a plain chat, they don't).
+    if (approach !== 'chat' && reaction.score) this.remember(id, { kind: reaction.score > 0 ? 'chat' : 'rebuffed', at: now, what: approach }, now);
+    // Flirting in front of the one the player is seeing.
+    if (approach === 'flirt') this.jealous(person, now);
+    // Getting on with someone counts for a little with their people.
+    if (person.gang) changeRep(this.society, `gang:${person.gang}`, 1, society, timeScale, now);
+    changeRep(this.society, `district:${person.district}`, 0.5, society, timeScale, now);
+    // Practice: a little more for what landed, a little less for what didn't.
+    this.gainCharisma(2 + Math.sign(reaction.score));
+    // A way in that went down well enough, with them in the mood, and the conversation goes on (chat.ts).
+    const chat = society.chat;
+    if (chat && !aired && !brushed && !(how && reaction.score < 0)) {
+      const interest = interestOf(person.traits, stance, speaker.mood, reaction.score, chat);
+      const comfort = approach === 'care' || Boolean(speaker.vars.grief || speaker.vars.broke);
+      if (interest > 0) this.chatState = { with: id, approach, topic, interest, turns: 0, at: now, remote: false, where: this.chatWhere(), used: {}, warmth: Math.max(0, reaction.score), comfort };
+    }
+    this.noteFeedback(person, before, now, reaction.why);
+    this.events.emit('societyChanged', { people: learned });
+    return true;
+  }
+
+  /**
+   * What they talked about, the player now knows, from them: their work, their tastes, who
+   * they hate, what they want; a grudge, and the name of whoever it's against; a relative, and
+   * the tie; the news, and the names in it, and what's changed between people because of it.
+   */
+  private learnTopic(person: Person, speaker: Speaker, topic: Topic | null, kin: Tie | undefined, news: ReturnType<typeof newsFor>, now: number, learned: string[]): void {
+    const id = person.id;
     if (topic === 'job') heardFrom(this.society, id, 'job');
     if (topic === 'likes') {
       heardFrom(this.society, id, 'likes');
@@ -7399,7 +7473,6 @@ export class Game {
     const grudge = topic === 'life' ? this.grudgeOf(person, now) : null;
     const against = grudge ? this.person(grudge.by) : undefined;
     if (against && knowledgeOf(this.society, id).log.at(-1)?.text.includes(speaker.vars.grudgeWho ?? '\u0000') && learnOf(this.society, against.id, 'told')) learned.push(against.id);
-    if (standing.talks + 1 >= 3) learnFact(this.society, id, 'nature');
     if (topic === 'kin' && kin) {
       learnLink(this.society, id, kin.to, kin.kind, 'told', now);
       learnOf(this.society, kin.to, 'told');
@@ -7421,27 +7494,450 @@ export class Game {
       if (changed && a !== b) relearnLink(this.society, a, b, changed, 'told', now);
       if (news.event.kind === 'death') learnFact(this.society, b, 'dead');
     }
-    // A chat is worth a little, by their warmth (less with the cold), and more or less by how they took the way it started; put off, it's worth nothing but the offense.
-    const base = Math.round(society.talk.base * (0.6 + person.traits.warmth * 0.8) * (stance === 'cold' ? 0.4 : 1) * this.charisma().bonus);
-    const gain = (how && reaction.score < 0 ? 0 : base) + Math.round(reaction.score * society.reactions.rapport);
-    // A flirt that lands with someone drawn to the player, and free, sparks something (one that doesn't, puts it out a little); so does the way in they fall for.
-    const free = !speaker.vars.taken || speaker.vars.withYou;
-    const drawn = Boolean(speaker.vars.drawn) && free && !aired;
+  }
+
+  // ───────────── Conversations ─────────────
+
+  /** Where the player is, for a conversation face to face: the spot, and the room inside. */
+  private chatWhere(): string {
+    const spot = this.spot;
+    return spot ? `${spot.kind}:${spot.id}:${this.inside ? this.roomState : ''}` : '';
+  }
+
+  /** The conversation going on, if it still is: not left too long, not walked away from, not with the dead, nor in a fight or with officers on the player. */
+  private chatOpen(now: number): Chat | null {
+    const chat = this.chatState;
+    const rules = this.rules.society.chat;
+    if (!chat || !rules) return null;
+    const idle = now - chat.at > (rules.idleMinutes * 60_000) / this.rules.timeScale;
+    const left = !chat.remote && (chat.where !== this.chatWhere() || Boolean(this.trip));
+    if (idle || left || this.person(chat.with)?.diedOn !== undefined || this.fighting || this.detained(now)) {
+      this.chatState = null;
+      return null;
+    }
+    return chat;
+  }
+
+  /** What there is to say next in the conversation with someone, if one is going: each reply and its label, and whether it's over the holo. */
+  chatWith(id: string, now: number): { moves: Array<{ id: ChatMove; label: string }>; remote: boolean } | null {
+    const chat = this.chatOpen(now);
+    if (!chat || chat.with !== id) return null;
+    const { chat: words } = this.rules.lines;
+    const label = (m: ChatMove) => (m === 'joke' ? words.again.joke : m === 'flirt' ? words.again.flirt : m === 'bye' && chat.remote ? words.again.hangUp : words.moves[m].label);
+    return { moves: this.chatMoves(chat).map((m) => ({ id: m, label: label(m) })), remote: chat.remote };
+  }
+
+  private chatMoves(chat: Chat): ChatMove[] {
+    return movesFor(chat, Boolean(this.rules.phone) && !this.phoneState.contacts[chat.with]);
+  }
+
+  /** Someone on the other end of the holo, by what they're doing wherever they are (out cold, they're as good as asleep); nobody, for the dead. */
+  private onTheHolo(person: Person, now: number): { person: Person; stance: Stance; doing: string } | null {
+    if (person.diedOn !== undefined) return null;
+    const where = this.outCold(person.id, now) ? { doing: 'asleep' } : whereIs(person, this.world, this.clockAt(now), this.rules.food.dishes, this.rules.people.out);
+    return { person, stance: this.stanceOf(person, now), doing: where?.doing ?? 'out and about' };
+  }
+
+  /** A speaker for a conversation: the news on their mind, and over the holo, nothing of where the player is. */
+  private chatSpeaker(person: Person, stance: Stance, doing: string, now: number, remote: boolean, kin?: Tie): Speaker {
+    const speaker = this.speakerFor(person, stance, doing, now, kin);
+    speaker.vars = { ...speaker.vars, ...this.newsVars(person, now), ...(remote ? { holo: 'yes', here: '', atWork: '', atHome: '', enemyHere: '' } : {}) };
+    // A conversation runs long: they steer clear of anything said in all of it, not just the last few lines.
+    speaker.recent = [...knowledgeOf(this.society, person.id).log.filter((e) => e.who !== 'note').slice(-24).map((e) => e.text), ...this.saidLately];
+    return speaker;
+  }
+
+  /**
+   * Keeps a conversation going with a reply (chat.ts): more of what they were saying, agreeing,
+   * the player's own story, another joke or flirt, comfort, asking for their holo, or goodbye.
+   * How they take it moves their interest, and the rapport, a little less each turn; with their
+   * interest gone, they wrap it up.
+   */
+  reply(id: string, move: ChatMove, now: number): boolean {
+    const chat = this.chatOpen(now);
+    const rules = this.rules.society.chat;
+    const person = this.person(id);
+    if (!chat || !rules || !person || chat.with !== id || !this.chatMoves(chat).includes(move)) return false;
+    const at = chat.remote ? this.onTheHolo(person, now) : this.isHere(id, now);
+    if (!at) {
+      this.chatState = null;
+      this.events.emit('societyChanged', { people: [id] });
+      return false;
+    }
+    const { society, timeScale, lines } = this.rules;
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const before = this.snapshot(person, now);
+    const rng = createRng(`${this.world.seed}:${id}:chat:${standing.talks}:${chat.turns}:${move}`);
+    const family = tiesOf(this.population, id).filter((t) => FAMILY.includes(t.kind));
+    const untold = family.filter((t) => !linkOf(this.society, id, t.to)?.kind);
+    const kin = untold.length ? rng.pick(untold) : family.length ? rng.pick(family) : undefined;
+    const speaker = this.chatSpeaker(person, at.stance, at.doing, now, chat.remote, kin);
+    const how = move === 'joke' || move === 'flirt' ? lines.approaches[move] : null;
+    this.logged(id, 'you', line(how ? how.you : lines.chat.moves[move as Exclude<ChatMove, 'joke' | 'flirt'>].you, speaker, rng), now);
+    if (move === 'bye') return this.goodbye(person, speaker, chat, before, rng, now);
+    if (move === 'holo') return this.askHolo(person, speaker, chat, standing, before, rng, now);
+    // How they take it, less for saying the same thing again.
+    const took = reactionTo(how ? society.reactions.approach[move as 'joke' | 'flirt'] : society.reactions.reply?.[move], speaker);
+    const penalty = samePenalty(move, chat.used[move] ?? 0, rules);
+    const score = took.score - penalty;
+    // Worn thin by the same thing again, that's what they make of it.
+    const why = penalty && score <= 0 ? lines.notes.again : took.why;
+    const news = newsFor(person, this.population, this.life, this.rules.life, this.clockAt(now).day);
+    const learned = [id];
+    const topics = () => openTopics(speaker, this.charismaEdge, society.openness, rng, standing.rapport >= society.talk.revealAt);
+    let topic = chat.topic;
+    if (move === 'more') {
+      // More of what they were on about, if they'll say it; said all of that lately, something else; pushed, or with nothing left, that's all.
+      const open = score < 0 ? [] : topics();
+      const fresh = (said: { said: string; topic: Topic | null } | null) => (said?.topic && !saidIn(speaker.recent ?? [], said.said) ? said : null);
+      const said = fresh(open.length ? smallTalk(speaker, open, lines, rng, topic ? [topic] : []) : null) ?? fresh(open.some((t) => t !== topic) ? smallTalk(speaker, open.filter((t) => t !== topic), lines, rng) : null);
+      if (said?.topic) {
+        this.speech(person, said.said, now);
+        topic = said.topic;
+        this.learnTopic(person, speaker, topic, kin, news, now, learned);
+      } else this.speech(person, line(lines.chat.dry, speaker, rng), now);
+    } else {
+      const taken = how ?? lines.chat[move as 'agree' | 'share' | 'comfort'];
+      this.speech(person, compose(score > 0 ? taken.liked : score < 0 ? taken.disliked : taken.flat, speaker, lines, rng, { opener: false, tail: false }), now);
+      // Glad of the player's story, or of the comfort, they open up in turn now and then.
+      if (score > 0 && (move === 'share' || move === 'comfort') && rng.chance(0.5)) {
+        const back = smallTalk(speaker, topics(), lines, rng, move === 'share' ? ['life', 'dream', 'district'] : ['life', 'kin']);
+        if (back.topic) {
+          this.speech(person, back.said, now);
+          topic = back.topic;
+          this.learnTopic(person, speaker, topic, kin, news, now, learned);
+        }
+      }
+    }
+    // A flirt that lands with someone drawn to the player, and free, sparks something; one that doesn't puts it out a little.
     const romance = society.romance;
-    const spark = !drawn ? 0 : approach === 'flirt' ? (reaction.score > 0 ? reaction.score * romance.flirt : -romance.miss) : approach === this.heartOf(person).wants && reaction.score > 0 ? romance.wants : 0;
-    changeStanding(this.society, id, { met: true, rapport: gain, spark, talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
-    // A way in they liked, or didn't, they remember (a plain chat, they don't).
-    if (approach !== 'chat' && reaction.score) this.remember(id, { kind: reaction.score > 0 ? 'chat' : 'rebuffed', at: now, what: approach }, now);
-    // Flirting in front of the one the player is seeing.
-    if (approach === 'flirt') this.jealous(person, now);
-    // Getting on with someone counts for a little with their people.
-    if (person.gang) changeRep(this.society, `gang:${person.gang}`, 1, society, timeScale, now);
-    changeRep(this.society, `district:${person.district}`, 0.5, society, timeScale, now);
-    // Practice: a little more for what landed, a little less for what didn't.
-    this.gainCharisma(2 + Math.sign(reaction.score));
-    this.noteFeedback(person, before, now, reaction.why);
+    const drawn = Boolean(speaker.vars.drawn) && (!speaker.vars.taken || Boolean(speaker.vars.withYou));
+    const spark = move === 'flirt' && drawn ? (score > 0 ? score * romance.flirt : -romance.miss) : 0;
+    changeStanding(this.society, id, { met: true, rapport: replyRapport(score, chat.turns, society.reactions.rapport, rules), spark }, society, timeScale, now);
+    if (move === 'flirt') this.jealous(person, now);
+    this.gainCharisma(1 + Math.sign(score));
+    chat.turns += 1;
+    chat.used[move] = (chat.used[move] ?? 0) + 1;
+    chat.at = now;
+    chat.topic = topic;
+    chat.warmth += score;
+    chat.interest = interestAfter(chat.interest, score, rules);
+    this.windDown(person, speaker, chat, rng, now);
+    this.noteFeedback(person, before, now, why);
     this.events.emit('societyChanged', { people: learned });
     return true;
+  }
+
+  /** Out of interest, or gone on as long as anyone does, they wrap it up (and over the holo, hang up). */
+  private windDown(person: Person, speaker: Speaker, chat: Chat, rng: Rng, now: number): void {
+    const rules = this.rules.society.chat;
+    if (!rules || (chat.interest > 0 && chat.turns < rules.interest.turns)) return;
+    this.speech(person, line(this.rules.lines.chat.wrap, speaker, rng), now);
+    if (chat.remote && this.rules.phone) this.narrate(person, this.narration(this.rules.phone.lines.hangUp, { who: person.given, Who: person.given }, rng), now);
+    this.chatState = null;
+  }
+
+  /** The player says goodbye; so do they, warmly after a talk that went well, and leaving on one, they may give their holo unasked. */
+  private goodbye(person: Person, speaker: Speaker, chat: Chat, before: Snapshot, rng: Rng, now: number): boolean {
+    const { lines, society, timeScale } = this.rules;
+    const good = chat.warmth > 0;
+    this.speech(person, line(lines.chat.bye, { ...speaker, vars: { ...speaker.vars, good: good ? 'yes' : '' } }, rng), now);
+    const offer = society.chat?.holo.offerAt ?? Infinity;
+    if (!chat.remote && this.rules.phone && !this.phoneState.contacts[person.id] && chat.warmth >= offer && !this.masked() && this.holoScore(person, speaker, chat, now) >= society.openness.answerAt) {
+      this.speech(person, line(lines.chat.offer, speaker, rng), now);
+      this.addContact(person.id, now);
+    }
+    if (good) changeStanding(this.society, person.id, { rapport: 1 }, society, timeScale, now);
+    this.chatState = null;
+    this.noteFeedback(person, before, now);
+    this.events.emit('societyChanged', { people: [person.id] });
+    return true;
+  }
+
+  /** Asks for their holo, mid-conversation: an ask like any other, easier the more interested they still are; never to a mask, and the one the player is seeing always. */
+  private askHolo(person: Person, speaker: Speaker, chat: Chat, standing: Standing, before: Snapshot, rng: Rng, now: number): boolean {
+    const { lines, society, timeScale } = this.rules;
+    const refused = { ...standing.refused };
+    let pressed = false;
+    let given = false;
+    if (this.masked()) this.speech(person, line(lines.phone.masked, speaker, rng), now);
+    else if (this.pressing(standing, 'holo', now)) {
+      pressed = true;
+      this.speech(person, line(lines.pressed, speaker, rng), now);
+    } else {
+      const reply = replyTo(this.holoScore(person, speaker, chat, now), society.openness, rng);
+      if (reply === 'answer') {
+        this.speech(person, compose(lines.phone.give, speaker, lines, rng, { opener: false }), now);
+        this.addContact(person.id, now);
+        given = true;
+      } else {
+        this.speech(person, line(reply === 'deflect' ? lines.phone.deflect : lines.phone.refuse, speaker, rng), now);
+        refused.holo = now;
+        chat.interest = Math.max(0, chat.interest - 1);
+      }
+    }
+    changeStanding(this.society, person.id, { refused, ...(pressed ? { rapport: -society.openness.press } : {}) }, society, timeScale, now);
+    chat.turns += 1;
+    chat.used.holo = (chat.used.holo ?? 0) + 1;
+    chat.at = now;
+    this.windDown(person, speaker, chat, rng, now);
+    this.noteFeedback(person, before, now, pressed ? lines.notes.pressed : given ? lines.notes.holo : '');
+    this.events.emit('societyChanged', { people: [person.id] });
+    return true;
+  }
+
+  /** How ready someone is to give the player their holo: an ask (`holo`), and every point of interest left in the conversation. */
+  private holoScore(person: Person, speaker: Speaker, chat: Chat, now: number): number {
+    const { society } = this.rules;
+    if (this.society.romance?.with === person.id) return Infinity;
+    return openness('holo', speaker.stance, this.charismaEdge, person.traits, society.openness, Boolean(this.masked()), momentOf(speaker)) + chat.interest * (society.chat?.holo.interest ?? 0) + this.leaning(person.id, now);
+  }
+
+  // ───────────── The holophone ─────────────
+
+  /** The holophone as it stands, for saving. */
+  get phoneSaved(): PhoneState {
+    return copyOf(this.phoneState);
+  }
+
+  /** Whether the player has someone's holo. */
+  hasHolo(id: string): boolean {
+    return Boolean(this.phoneState.contacts[id]);
+  }
+
+  /** Puts someone in the player's holo. A holo comes with a name on it. */
+  private addContact(id: string, now: number): void {
+    if (!this.rules.phone || this.phoneState.contacts[id]) return;
+    this.phoneState.contacts[id] = { since: now };
+    learnFact(this.society, id, 'name');
+    const person = this.person(id);
+    if (person) this.say(`${person.name} is in your holo now.`, 'system');
+    this.events.emit('phoneChanged', { with: id });
+  }
+
+  /** Everyone in the player's holo, the latest word first. */
+  contacts(now: number): ContactView[] {
+    const romance = this.society.romance?.with;
+    return Object.entries(this.phoneState.contacts)
+      .flatMap(([id, c]) => {
+        const person = this.person(id);
+        if (!person) return [];
+        const last = this.phoneState.threads[id]?.at(-1);
+        const dead = knowledgeOf(this.society, id).facts.includes('dead');
+        const at = Math.max(c.since, c.lastIn ?? 0, c.lastOut ?? 0);
+        return [{ id, name: person.name, stance: this.stanceOf(person, now), last: last ? `${last.from === 'you' ? 'You: ' : ''}${last.text}` : '', at, unread: this.phoneState.unread[id] ?? 0, dead, seeing: romance === id }];
+      })
+      .sort((a, b) => b.unread - a.unread || b.at - a.at);
+  }
+
+  /** How many texts are unread, all told. */
+  unreadTexts(): number {
+    return Object.values(this.phoneState.unread).reduce((n, k) => n + k, 0);
+  }
+
+  /** The texts with one contact, oldest first, and what can be texted to them (missing them, only to the one the player is seeing). */
+  textsWith(id: string): { texts: Text[]; kinds: Array<{ id: TextKind; label: string }> } | null {
+    if (!this.phoneState.contacts[id]) return null;
+    const words = this.rules.lines.phone.texts;
+    const kinds = (Object.keys(words) as TextKind[]).filter((k) => k !== 'miss' || this.society.romance?.with === id);
+    return { texts: [...(this.phoneState.threads[id] ?? [])], kinds: kinds.map((k) => ({ id: k, label: words[k].label })) };
+  }
+
+  /** The player has read a contact's texts. */
+  readTexts(id: string): void {
+    if (!this.phoneState.unread[id]) return;
+    delete this.phoneState.unread[id];
+    this.events.emit('phoneChanged', { with: id });
+  }
+
+  /**
+   * Holos someone: they pick up by how they feel about the player and what they're doing
+   * (`answerOdds`), and then it's a conversation, over the holo. Rung out, they may text back
+   * once they see it; calling back too soon wears on them.
+   */
+  call(id: string, now: number): CallResult | null {
+    const phone = this.rules.phone;
+    const contact = this.phoneState.contacts[id];
+    const person = this.person(id);
+    if (!phone || !contact || !person || this.fighting || this.detained(now)) return null;
+    const { society, timeScale, lines } = this.rules;
+    const rng = createRng(`${this.world.seed}:${id}:call:${now}`);
+    const vars = { who: person.given, Who: person.given };
+    this.chatState = null;
+    this.narrate(person, this.narration(phone.lines.call, vars, rng), now, 'system');
+    const at = this.onTheHolo(person, now);
+    if (!at) {
+      this.narrate(person, this.narration(phone.lines.dead, vars, rng), now, 'system');
+      this.events.emit('phoneChanged', { with: id });
+      return 'dead';
+    }
+    const before = this.snapshot(person, now);
+    const again = contact.lastCall !== undefined && now - contact.lastCall < (phone.answer.again.minutes * 60_000) / timeScale;
+    contact.lastCall = now;
+    contact.lastOut = now;
+    if (again) changeStanding(this.society, id, { rapport: -phone.answer.again.rapport }, society, timeScale, now);
+    const mood = moodOf(at.doing);
+    const hour = this.clockAt(now).hour;
+    const seeing = this.society.romance?.with === id;
+    const odds = mood === 'asleep' ? 0 : answerOdds(at.stance, { busy: mood === 'busy', late: hour < 6 || hour >= 23, seeing, again }, phone);
+    const speaker = this.chatSpeaker(person, at.stance, at.doing, now, true);
+    if (!rng.chance(odds)) {
+      // Turned down by someone who wants nothing to do with the player; otherwise it just rings out, and they may text back when they see it.
+      const declined = mood !== 'asleep' && (at.stance === 'hostile' || at.stance === 'cold');
+      this.narrate(person, this.narration(declined ? phone.lines.declined : phone.lines.noAnswer, vars, rng), now, 'system');
+      contact.missed = true;
+      if (!declined && rng.chance(replyOdds(at.stance, 0, phone) * phone.reply.missed)) {
+        this.phoneState.due.push({ from: id, text: line(lines.phone.missed, speaker, rng), at: now + this.replyDelay(rng), kind: 'missed' });
+      }
+      this.noteFeedback(person, before, now);
+      this.events.emit('phoneChanged', { with: id });
+      this.events.emit('societyChanged', { people: [id] });
+      return declined ? 'declined' : 'missed';
+    }
+    contact.missed = false;
+    contact.lastIn = now;
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    // They pick up, and say what's on their mind.
+    this.speech(person, compose(lines.phone.pickup, speaker, lines, rng, { opener: false, tail: false }), now);
+    const said = smallTalk(speaker, openTopics(speaker, this.charismaEdge, society.openness, rng, standing.rapport >= society.talk.revealAt), lines, rng);
+    const learned = [id];
+    if (said.topic) {
+      this.speech(person, said.said, now);
+      this.learnTopic(person, speaker, said.topic, undefined, newsFor(person, this.population, this.life, this.rules.life, this.clockAt(now).day), now, learned);
+    }
+    // A call is a chat: worth half of one face to face, and practice.
+    changeStanding(this.society, id, { met: true, rapport: Math.round(society.talk.base / 2), talks: standing.talks + 1, lastTalkAt: now }, society, timeScale, now);
+    this.gainCharisma(1);
+    const chat = society.chat;
+    if (chat) {
+      const interest = Math.max(1, interestOf(person.traits, at.stance, speaker.mood, 0, chat));
+      this.chatState = { with: id, approach: 'chat', topic: said.topic, interest, turns: 0, at: now, remote: true, where: '', used: {}, warmth: 0, comfort: Boolean(speaker.vars.grief || speaker.vars.broke) };
+    }
+    this.noteFeedback(person, before, now);
+    this.events.emit('phoneChanged', { with: id });
+    this.events.emit('societyChanged', { people: learned });
+    return 'answered';
+  }
+
+  /** How long a text takes to be answered: real minutes on the streets' clock. */
+  private replyDelay(rng: Rng): number {
+    const [least, most] = this.rules.phone?.reply.minutes ?? [1, 1];
+    return (rng.int(least, most) * 60_000) / this.rules.timeScale;
+  }
+
+  /**
+   * Texts someone: hello, how they're holding up, what's the word, a joke, or (to the one the
+   * player is seeing) that they're missed. Their answer comes later, as they'd put it now, by how
+   * they feel about the player; past a few texts with no answer, the player is pestering them.
+   */
+  text(id: string, kind: TextKind, now: number): boolean {
+    const phone = this.rules.phone;
+    const contact = this.phoneState.contacts[id];
+    const person = this.person(id);
+    if (!phone || !contact || !person || !this.textsWith(id)?.kinds.some((k) => k.id === kind)) return false;
+    const { society, timeScale, lines } = this.rules;
+    const rng = createRng(`${this.world.seed}:${id}:text:${this.phoneState.threads[id]?.length ?? 0}:${kind}:${now}`);
+    const at = this.onTheHolo(person, now);
+    const speaker = this.chatSpeaker(person, at?.stance ?? 'neutral', at?.doing ?? 'out and about', now, true);
+    const said = line(lines.phone.texts[kind].you, speaker, rng).replace(/^"|"$/g, '');
+    thread(this.phoneState, id, { from: 'you', text: said, at: now }, phone.keep);
+    this.heard(said);
+    contact.lastOut = now;
+    contact.waiting = (contact.waiting ?? 0) + 1;
+    this.events.emit('phoneChanged', { with: id });
+    if (!at) return true;
+    if (contact.waiting > phone.reply.waiting) {
+      changeStanding(this.society, id, { rapport: -phone.reply.pester }, society, timeScale, now);
+      this.events.emit('societyChanged', { people: [id] });
+      return true;
+    }
+    if (!rng.chance(replyOdds(at.stance, contact.waiting - 1, phone))) return true;
+    // What they'd say back, and what it does: a text is worth a share of the same face to face.
+    const way: Approach = kind === 'how' ? 'care' : kind === 'word' ? 'gossip' : kind === 'joke' ? 'joke' : kind === 'miss' ? 'flirt' : 'chat';
+    const took = reactionTo(society.reactions.approach[way], speaker);
+    const standing = standingOf(this.society, id, society, timeScale, now);
+    const topics = openTopics(speaker, this.charismaEdge, society.openness, rng, standing.rapport >= society.talk.revealAt);
+    let topic: Topic | null = null;
+    let reply: string;
+    if (kind === 'joke') reply = compose(took.score > 0 ? lines.approaches.joke.liked : took.score < 0 ? lines.approaches.joke.disliked : lines.approaches.joke.flat, speaker, lines, rng, { opener: false, tail: false });
+    else if (kind === 'miss') reply = line(lines.phone.miss, speaker, rng);
+    else {
+      const prefer: Topic[] = kind === 'how' ? ['life', 'kin'] : kind === 'word' ? ['news', 'rumor', 'district'] : [];
+      const chat = smallTalk(speaker, topics.filter((t) => !prefer.length || prefer.includes(t)), lines, rng, prefer);
+      topic = chat.topic;
+      const filler = kind === 'how' ? lines.phone.fine : kind === 'word' ? lines.phone.noWord : lines.phone.heyBack;
+      reply = kind === 'hey' ? [line(filler, speaker, rng), topic ? chat.said : ''].filter(Boolean).join(' ') : topic ? chat.said : line(filler, speaker, rng);
+    }
+    const worth = phone.reply.worth;
+    const raw = society.talk.base / 2 + took.score * society.reactions.rapport;
+    const seeing = this.society.romance?.with === id;
+    this.phoneState.due.push({ from: id, text: reply, at: now + this.replyDelay(rng), kind: 'reply', rapport: Math.round(raw > 0 ? raw * worth : raw), spark: kind === 'miss' && seeing ? Math.round(society.romance.flirt * worth) : 0, topic });
+    return true;
+  }
+
+  /**
+   * The holophone on the clock: texts on their way land (held till morning by anyone asleep,
+   * dropped by the dead), and now and then a contact texts first: the one the player is seeing,
+   * a friend with news, or just checking in.
+   */
+  private phoneTick(now: number): void {
+    const phone = this.rules.phone;
+    if (!phone) return;
+    const state = this.phoneState;
+    const { society, timeScale, lines } = this.rules;
+    const hour = 3_600_000 / timeScale;
+    let changed: string | null | undefined;
+    if (state.due.length) {
+      const waiting: Due[] = [];
+      for (const due of state.due) {
+        const person = this.person(due.from);
+        const contact = state.contacts[due.from];
+        if (!person || !contact || person.diedOn !== undefined) continue;
+        if (due.at > now) {
+          waiting.push(due);
+          continue;
+        }
+        const at = this.onTheHolo(person, now);
+        if (at && moodOf(at.doing) === 'asleep') {
+          waiting.push({ ...due, at: now + hour });
+          continue;
+        }
+        thread(state, due.from, { from: 'them', text: due.text, at: now }, phone.keep);
+        state.unread[due.from] = (state.unread[due.from] ?? 0) + 1;
+        contact.lastIn = now;
+        if (due.kind !== 'reach') contact.waiting = 0;
+        if (due.rapport || due.spark) changeStanding(this.society, due.from, { rapport: due.rapport ?? 0, spark: due.spark ?? 0 }, society, timeScale, now);
+        if (due.topic === 'job' || due.topic === 'hates' || due.topic === 'dream') heardFrom(this.society, due.from, due.topic);
+        if (due.topic === 'likes') {
+          heardFrom(this.society, due.from, 'likes');
+          heardFrom(this.society, due.from, 'drinks');
+        }
+        this.say(fill(phone.lines.text[0] ?? '{who}: {text}', { who: person.given, text: due.text }), 'system');
+        changed = due.from;
+      }
+      state.due = waiting;
+    }
+    // Contacts texting first: looked at every so often, never in a burst for the time the game was closed.
+    const every = (phone.reach.everyMinutes * 60_000) / timeScale;
+    if (now - state.checked >= every) {
+      const first = !state.checked;
+      state.checked = now;
+      const romance = this.society.romance?.with;
+      for (const [id, contact] of first ? [] : Object.entries(state.contacts)) {
+        const person = this.person(id);
+        if (!person || person.diedOn !== undefined || state.due.some((d) => d.from === id)) continue;
+        if (Math.max(contact.since, contact.lastIn ?? 0, contact.lastOut ?? 0) > now - phone.reach.quietHours * hour) continue;
+        const at = this.onTheHolo(person, now);
+        if (!at || moodOf(at.doing) === 'asleep') continue;
+        const rng = createRng(`${this.world.seed}:${id}:reach:${Math.floor(now / every)}`);
+        if (!rng.chance(reachOdds(at.stance, person.traits.chatty, romance === id, phone))) continue;
+        const speaker = this.chatSpeaker(person, at.stance, at.doing, now, true);
+        const news = Boolean(speaker.vars.news) && rng.chance(0.5);
+        const text = romance === id ? line(lines.phone.sweet, speaker, rng) : news ? compose(lines.topics.news, speaker, lines, rng, { opener: false, tail: false }) : line(lines.phone.checkIn, speaker, rng);
+        if (text) state.due.push({ from: id, text, at: now, kind: 'reach', topic: news ? 'news' : null });
+      }
+    }
+    if (changed !== undefined) this.events.emit('phoneChanged', { with: changed });
   }
 
   /**
@@ -8024,8 +8520,16 @@ export class Game {
       const name = (id: string) => this.describe(id, now)?.name ?? 'someone';
       const text = finish(rng.pick(by ? rules.lines.person : rules.lines.gang) ?? '', { who: name(warner.id), name: by ? name(by.id).replace(/^\p{Lu}/u, (c) => (this.describe(by.id, now)?.named ? c : c.toLowerCase())) : '', gang: threat.gang ? (this.rules.people.gangs[threat.gang]?.name ?? '') : '' });
       this.say(text, 'system');
-      // On their card, what they said: the message itself.
-      this.logged(warner.id, 'them', text.match(/"(.+)"/)?.[1] ?? text, now);
+      // On their card, what they said: the message itself; and from someone in the player's holo, a text.
+      const message = text.match(/"(.+)"/)?.[1] ?? text;
+      this.logged(warner.id, 'them', message, now);
+      const contact = this.phoneState.contacts[warner.id];
+      if (contact && this.rules.phone) {
+        thread(this.phoneState, warner.id, { from: 'them', text: message, at: now }, this.rules.phone.keep);
+        this.phoneState.unread[warner.id] = (this.phoneState.unread[warner.id] ?? 0) + 1;
+        contact.lastIn = now;
+        this.events.emit('phoneChanged', { with: warner.id });
+      }
       this.events.emit('societyChanged', { people: [warner.id] });
     }
   }
@@ -8267,6 +8771,7 @@ export class Game {
     this.habitTick(now);
     this.recognize(now);
     this.closingTime(now);
+    this.phoneTick(now);
     const trip = this.trip;
     if (!trip) return;
     const changed = this.exploreTrip(now);

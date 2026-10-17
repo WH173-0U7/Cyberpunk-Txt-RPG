@@ -1,5 +1,6 @@
 import { bossOf } from './jobs';
 import { dreamOf, gangOf, handleOf, heartOf, pronounsOf, type Dream, type Heart, type PeopleContent, type Person, type Population, type Pronouns, type Tie, type TieKind, type Traits, type Want } from './people';
+import type { TextKind } from './phone';
 import type { Rng } from './rng';
 import type { Asked, Fact, OpennessRules, Stance, Standing } from './society';
 import type { World } from './types';
@@ -145,7 +146,7 @@ export interface DialogueLines {
   /** What someone wants out of life, as the card says it once the player knows ("Wants out of Night City"). */
   dreams: Record<Dream, string>;
   /** Why an exchange went the way it did, on the note after it (`{given}`, `{his}`, `{item}`…): pushed after a no, one question too many, a favorite, a second gift in a day, a mask, a job, walking out, a chop. */
-  notes: { pressed: string; grilled: string; favorite: string; twice: string; masked: string; hired: string; quit: string; notice: string; chopped: string; date: string; official: string; dumped: string; ended: string; jealous: string; lent: string; dunned: string };
+  notes: { pressed: string; grilled: string; favorite: string; twice: string; masked: string; hired: string; quit: string; notice: string; chopped: string; date: string; official: string; dumped: string; ended: string; jealous: string; lent: string; dunned: string; again: string; holo: string };
   /**
    * Romance with the player (romance.ts): asked out (yes; not drawn to the player; spoken for,
    * `{taken}` their `{takenWord}`; not yet; not in a mask); a date (`{item}` ordered for two,
@@ -164,8 +165,56 @@ export interface DialogueLines {
     wants: Record<Want, string>;
     notLooking: string;
   };
+  /**
+   * A conversation, after the way in (chat.ts): the player's replies (a short label for the
+   * chip, and how they put it, by eloquence; their story by where they come from, `youStreetkid`,
+   * `youNomad`, `youCorpo`); how they take agreeing, the player's story and comfort; kept going
+   * with nothing more to say (`dry`); their interest gone (`wrap`); their goodbye (`good` after a
+   * talk that went well, `holo` on a call), and their holo offered at it (`offer`). Another joke
+   * or flirt is the way in's own lines, its chip labelled by `again`.
+   */
+  chat: {
+    moves: Record<'more' | 'agree' | 'share' | 'comfort' | 'holo' | 'bye', { label: string; you: Line[] }>;
+    again: { joke: string; flirt: string; hangUp: string };
+    agree: Taken;
+    share: Taken;
+    comfort: Taken;
+    dry: Line[];
+    wrap: Line[];
+    bye: Line[];
+    offer: Line[];
+  };
+  /**
+   * The holophone (phone.ts): asked for their holo (given; a non-answer; a no; not to a mask);
+   * picking up a holocall; texting the player first (`checkIn`; `sweet`, the one the player is
+   * seeing; `missed`, after a call they didn't pick up); answering a text (`heyBack` to a hello,
+   * `fine` and `noWord` with nothing more to say, `miss` to being missed); and the player's texts
+   * by kind, a label for the chip and the words.
+   */
+  phone: {
+    give: Line[];
+    deflect: Line[];
+    refuse: Line[];
+    masked: Line[];
+    pickup: Line[];
+    checkIn: Line[];
+    sweet: Line[];
+    missed: Line[];
+    heyBack: Line[];
+    fine: Line[];
+    noWord: Line[];
+    miss: Line[];
+    texts: Record<TextKind, { label: string; you: Line[] }>;
+  };
   /** The player's own lines, for the record, by eloquence. */
   you: { talk: Line[]; gift: Line[]; insult: Line[]; rob: Line[]; robCold: Line[]; search: Line[]; chop: Line[]; work: Line[]; quit: Line[]; notice: Line[]; askOut: Line[]; date: Line[]; official: Line[]; endIt: Line[]; deal: Line[]; pitch: Line[]; payUp: Line[]; walkAway: Line[]; recruit: Line[]; frontRunner: Line[]; collect: Line[]; lean: Line[]; slide: Line[]; letGo: Line[]; borrow: Line[]; lend: Line[]; askBack: Line[]; payShark: Line[]; buyPlace: Line[] };
+}
+
+/** How someone takes something said to them: lines for liking it, taking it in stride, and not liking it. */
+export interface Taken {
+  liked: Line[];
+  flat: Line[];
+  disliked: Line[];
 }
 
 /** Everything a line can be picked and filled by; `vars.mask` is the word for the mask the player has on, or nothing. */

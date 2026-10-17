@@ -23,6 +23,8 @@ import { hasRooms, type RoomAccess } from './engine/rooms';
 import type { JobStatus } from './engine/jobs';
 import { GENERATOR_VERSION, generateWorld } from './engine/generate';
 import type { Menu, Quality } from './engine/food';
+import type { ChatMove } from './engine/chat';
+import type { TextKind } from './engine/phone';
 import { kinWord, type Approach, type Question } from './engine/dialogue';
 import type { InebriationStatus } from './engine/inebriation';
 import type { HungerStatus } from './engine/needs';
@@ -51,6 +53,7 @@ import { POLICE } from './data/police';
 import { DEALING } from './data/dealing';
 import { ROBBERY } from './data/robbery';
 import { DOWNED } from './data/downed';
+import { PHONE } from './data/phone';
 import type { PoliceView } from './engine/police';
 import type { RunnerView } from './engine/crew';
 import type { DealView } from './engine/dealing';
@@ -72,6 +75,7 @@ import { MapOverlay } from './ui/overlay';
 import { stripMarkup } from './ui/markup';
 import { CityMap, type Target } from './ui/map';
 import { People, STANCE_LABEL, type CardTab, type PeopleTab, type PersonAction, type Picker } from './ui/people';
+import { Phone } from './ui/phone';
 import { PlacePanel, type ActionId, type PanelAction, type PanelView } from './ui/place';
 import { saveSlot } from './ui/save-slot';
 import { Settings } from './ui/settings';
@@ -260,7 +264,7 @@ const settings = new Settings(
 );
 
 /** The header's buttons, which rest while a fight is on: there's no looking away. */
-const HEADER = [$('#status-toggle'), $('#inventory-toggle')];
+const HEADER = [$('#status-toggle'), $('#inventory-toggle'), $('#phone-toggle')];
 
 const fight = new FightPanel(
   {
@@ -567,6 +571,13 @@ const people = new People(
       cardTab = 'talk';
       game.talk(id, Date.now(), approach as Approach);
     },
+    onReply: (id, move) => {
+      lastActivity = performance.now();
+      picker = null;
+      cardTab = 'talk';
+      game.reply(id, move as ChatMove, Date.now());
+      showPeople();
+    },
     onGift: (id, itemId) => {
       lastActivity = performance.now();
       picker = null;
@@ -618,6 +629,72 @@ let personShown: string | null = null;
 let peopleTab: PeopleTab = 'here';
 let cardTab: CardTab = 'talk';
 let picker: Picker = null;
+
+/** The contact whose texts are open on the holo, if any, and what came of the last call to them. */
+let phoneShown: string | null = null;
+let phoneStatus = '';
+const phoneToggle = $<HTMLButtonElement>('#phone-toggle');
+const phone = new Phone(
+  {
+    root: $('#phone'),
+    toggle: phoneToggle,
+    close: $<HTMLButtonElement>('#phone-close'),
+    count: $('#phone-count'),
+    list: $('#phone-list'),
+    empty: $('#phone-empty'),
+    thread: $('#phone-thread'),
+    name: $('#phone-name'),
+    stance: $('#phone-stance'),
+    kicker: $('#phone-kicker'),
+    texts: $('#phone-texts'),
+    status: $('#phone-status'),
+    picker: $('#phone-picker'),
+    commands: $('#phone-commands'),
+    back: $<HTMLButtonElement>('#phone-back'),
+  },
+  () => {
+    phoneStatus = '';
+    showPhone();
+  },
+  {
+    onOpen: (id) => {
+      phoneShown = id;
+      phoneStatus = '';
+      showPhone();
+    },
+    onText: (id, kind) => {
+      lastActivity = performance.now();
+      phoneStatus = '';
+      game.text(id, kind as TextKind, Date.now());
+      showPhone();
+    },
+    onCall: (id) => {
+      lastActivity = performance.now();
+      // What came of it (rang out, turned down) is the thread's line; picked up, the call is their card.
+      const said: string[] = [];
+      const off = game.events.on('output', ({ text }) => said.push(text));
+      const result = game.call(id, Date.now());
+      off();
+      if (result === 'answered') openCard(id, phoneToggle);
+      else {
+        phoneStatus = said.slice(1).join(' ') || said.join(' ');
+        showPhone();
+      }
+    },
+    onCard: (id) => openCard(id, phoneToggle),
+  },
+  reducedMotion,
+);
+
+/** Someone's card in the People overlay, from wherever: the holo, a call. */
+function openCard(id: string, opener: HTMLElement): void {
+  MapOverlay.open?.close();
+  personShown = id;
+  peopleTab = 'known';
+  cardTab = 'talk';
+  picker = null;
+  people.overlay.show(opener);
+}
 
 const energyMeter = new EnergyMeter({ root: $('#energy'), fill: $('#energy-fill') });
 const statusPanel = new StatusPanel({ toggle: $<HTMLButtonElement>('#status-toggle'), summary: $('#status-summary'), list: $('#status'), foot: $('#status-foot') });
@@ -1823,11 +1900,11 @@ function showPeople(): void {
             name: described.name,
             stance: standing.stance,
             stanceLabel: STANCE_LABEL[standing.stance],
-            kicker: [gangOf(shown.gang) && described.named ? `${gangOf(shown.gang)} colors` : undefined, present ? withCompany(present.doing, present.scene) : described.facts.dead ? 'Dead' : 'Not here'].filter(Boolean).join(' · '),
+            kicker: [gangOf(shown.gang) && described.named ? `${gangOf(shown.gang)} colors` : undefined, game.chatWith(shown.id, now)?.remote ? 'On a holocall' : present ? withCompany(present.doing, present.scene) : described.facts.dead ? 'Dead' : 'Not here'].filter(Boolean).join(' · '),
             facts: described.lines.length ? described.lines.join(' · ') : described.named ? 'That\'s all you know.' : 'Nothing known yet. Talk, watch, ask.',
             tab: cardTab,
             // How afraid of the player they are, by what they'd see if robbed now: on the profile, and on the Rob command.
-            profile: [...profileOf(standing, described), ...(fear ? [{ label: 'Fear', value: fear.label }] : [])],
+            profile: [...profileOf(standing, described), ...(game.hasHolo(shown.id) ? [{ label: 'Holo', value: 'In your holo' }] : []), ...(fear ? [{ label: 'Fear', value: fear.label }] : [])],
             fear: fear?.label ?? '',
             search: present ? game.canSearch(shown.id, now) : false,
             // What's still to find out: the questions not yet answered.
@@ -1855,9 +1932,53 @@ function showPeople(): void {
             // Chat first, a flirt last.
             approaches: [{ id: 'chat', label: 'Chat' }, ...Object.entries(LINES.approaches).sort(([a], [b]) => Number(a === 'flirt') - Number(b === 'flirt')).map(([id, a]) => ({ id, label: a.label }))],
             log: game.conversation(shown.id).map((line) => ({ who: line.who, text: line.text, ...(line.tone ? { tone: line.tone } : {}) })),
+            chat: game.chatWith(shown.id, now),
           }
         : null,
   });
+}
+
+/** Fills the holo: everyone in it, or one contact's texts. Opening a thread reads it. */
+let phoneRendering = false;
+function showPhone(): void {
+  if (phoneRendering) return;
+  phoneRendering = true;
+  const now = Date.now();
+  if (phoneShown) game.readTexts(phoneShown);
+  const contacts = game.contacts(now);
+  const shown = phoneShown ? contacts.find((c) => c.id === phoneShown) : undefined;
+  if (phoneShown && !shown) phoneShown = null;
+  const thread = shown ? game.textsWith(shown.id) : null;
+  phone.render({
+    count: `${contacts.length} ${contacts.length === 1 ? 'contact' : 'contacts'}`,
+    contacts: contacts.map((c) => ({ id: c.id, name: c.name, stance: c.stance, stanceLabel: STANCE_LABEL[c.stance], last: c.dead ? 'Dead' : c.last || `Added ${agoText(now - c.at)}`, unread: c.unread })),
+    empty: "Nobody's holo yet. Get talking: someone who enjoys the conversation may give you theirs, and you can always ask.",
+    thread:
+      shown && thread
+        ? {
+            id: shown.id,
+            name: shown.name,
+            stance: shown.stance,
+            stanceLabel: STANCE_LABEL[shown.stance],
+            kicker: shown.dead ? 'Dead' : shown.seeing ? 'Seeing you' : '',
+            texts: thread.texts.map((t) => ({ from: t.from, text: t.text, ago: agoText(now - t.at) })),
+            kinds: shown.dead ? [] : thread.kinds,
+            status: phoneStatus,
+            canCall: !game.fighting,
+          }
+        : null,
+  });
+  phoneRendering = false;
+  showUnread();
+}
+
+/** What's unread on the holo, on its button. */
+function showUnread(): void {
+  const unread = game.unreadTexts();
+  const badge = $('#phone-unread');
+  badge.hidden = unread === 0;
+  badge.textContent = String(unread);
+  phoneToggle.setAttribute('aria-label', unread ? `Holo, ${unread} unread` : 'Holo');
 }
 
 /** A person's profile, label and value: how they stand with the player, how much has passed, and each thing known of them. */
@@ -2201,6 +2322,12 @@ function wire(g: Game): void {
     queueSave();
   });
 
+  g.events.on('phoneChanged', () => {
+    if (phone.overlay.isOpen) showPhone();
+    else showUnread();
+    queueSave();
+  });
+
   g.events.on('youChanged', () => {
     if (settings.overlay.isOpen) showSettings();
     queueSave();
@@ -2219,7 +2346,7 @@ function wire(g: Game): void {
 
 /** Drops the player into a city: a new game, or a saved one picking up where it left off. */
 function begin(world: World, progress?: Progress, notice?: string): void {
-  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, needs: NEEDS, police: POLICE, join: JOIN, dealing: DEALING, robbery: ROBBERY, downed: DOWNED }, progress);
+  game = new Game(world, { ...TRAVEL, energy: ENERGY, food: FOOD, inebriation: INEBRIATION, people: PEOPLE, society: SOCIETY, lines: LINES, charisma: CHARISMA, trading: TRADING, gear: GEAR, money: MONEY, jobs: JOBS, life: LIFE, combat: COMBAT, hours: HOURS, rooms: ROOMS, home: HOME, credit: CREDIT, trade: TRADE, needs: NEEDS, police: POLICE, join: JOIN, dealing: DEALING, robbery: ROBBERY, downed: DOWNED, phone: PHONE }, progress);
   wire(game);
   map.setWorld(world);
   try {
@@ -2231,6 +2358,7 @@ function begin(world: World, progress?: Progress, notice?: string): void {
   if (notice) game.say(notice, 'system');
   game.start(Date.now());
   energyMeter.update(game.energy(Date.now()), Date.now());
+  showUnread();
 }
 
 /**
@@ -2295,6 +2423,7 @@ document.addEventListener('keydown', (event) => {
   // In a fight there's no looking away: the keys rest until it's over.
   if (game.fighting) return;
   if (event.key === 'i' || event.key === 'I') inventory.overlay.toggle();
+  else if ((event.key === 'h' || event.key === 'H') && !(event.target instanceof HTMLInputElement)) phone.overlay.toggle();
   // Escape backs out of a person's card to the list, then closes whatever covers the map, then the status drop-down, then lets go of whatever's picked.
   else if (event.key === 'Escape' && people.overlay.isOpen && personShown) {
     const was = personShown;

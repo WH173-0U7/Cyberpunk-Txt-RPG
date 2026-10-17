@@ -83,7 +83,7 @@ export const SOCIETY: SocietyRules = {
     stance: { hostile: -9, cold: -2.5, wary: -1.2, neutral: 0, warm: 1.5, friend: 3 },
     perLevel: 0.8,
     traits: { chatty: 1.2, warmth: 0.8, loyalty: 1, courage: 1, greed: 1 },
-    cost: { name: -1, job: 0, likes: 0, age: 0.6, hates: 1.2, home: 2, kin: 1.6, district: -1, life: -1, here: -1, rumor: -1, news: -1.5, dream: 0.3, views: -0.5, type: 0.8, chop: 0.4, hire: 0.6, deal: 0.9, pitch: 0.3, recruit: 1.1 },
+    cost: { name: -1, job: 0, likes: 0, age: 0.6, hates: 1.2, home: 2, kin: 1.6, district: -1, life: -1, here: -1, rumor: -1, news: -1.5, dream: 0.3, views: -0.5, type: 0.8, chop: 0.4, hire: 0.6, deal: 0.9, pitch: 0.3, recruit: 1.1, holo: 1.4 },
     mask: 1.2,
     answerAt: 1,
     deflectAt: -1,
@@ -247,5 +247,70 @@ export const SOCIETY: SocietyRules = {
         { when: { stance: ['wary', 'cold'] }, by: -1, why: 'Thinks you are prying' },
       ],
     },
+    reply: {
+      more: [
+        { when: chatty, by: 1, why: 'Loves to talk' },
+        { when: { mood: ['drinking'] }, by: 1, why: 'A drink in, and talking' },
+        { when: quiet, by: -1, why: "Doesn't like being drawn out" },
+        { when: { mood: ['busy'] }, by: -1, why: 'Trying to work' },
+        { when: { stance: ['wary', 'cold'] }, by: -1, why: "Doesn't want to say more to you" },
+      ],
+      agree: [
+        { when: hot, by: 1, why: 'Likes being agreed with' },
+        { when: { stance: ['warm', 'friend'] }, by: 1, why: 'Glad you see it the same way' },
+        { when: smooth, by: 1, why: 'You put it well' },
+        { when: hard, by: -1, why: "Can't stand a yes-man" },
+        { when: corpo, by: -1, why: 'Hears a pushover' },
+        { when: { stance: ['cold'] }, by: -1, why: "Doesn't buy it from you" },
+      ],
+      share: [
+        { when: kind, by: 1, why: 'Likes hearing about you' },
+        { when: chatty, by: 1, why: 'Glad to swap stories' },
+        { when: { needs: ['youStreetkid'], voice: ['street', 'gang', 'young'] }, by: 1, why: 'Takes you for one of {his} own' },
+        { when: { needs: ['youNomad'], voice: ['nomad'] }, by: 2, why: 'Clan folk, like {him}' },
+        { when: { needs: ['youCorpo'], voice: ['corpo'] }, by: 1, why: 'Takes you for one of {his} own' },
+        { when: { needs: ['youCorpo'], voice: ['gang'] }, by: -2, why: 'No love for corpos' },
+        { when: { needs: ['youNomad'], voice: ['corpo'] }, by: -1, why: 'Looks down on nomads' },
+        { when: { mood: ['busy'] }, by: -1, why: 'Too busy for your life story' },
+        { when: { stance: ['cold'] }, by: -1, why: "Doesn't care about your story" },
+      ],
+      comfort: [
+        { when: { needs: ['grief'] }, by: 2, why: 'Needed someone, after losing {his} {griefWord}' },
+        { when: { needs: ['broke'] }, by: 1, why: 'Glad someone cares how tight things are' },
+        { when: { needs: ['slow'] }, by: 1, why: 'Work has been rough' },
+        { when: kind, by: 1, why: 'Touched you care' },
+        { when: hard, by: -1, why: "Doesn't want your pity" },
+        { when: gang, by: -1, why: '{gang} take no pity' },
+        { when: { stance: ['wary', 'cold'] }, by: -1, why: 'Thinks you are prying' },
+      ],
+    },
+  },
+  // A conversation: an ordinary stranger is good for about four replies (one, a point and a half
+  // for being average company, half a point for being at ease, and half for not knowing you), a
+  // friend in a bar for most of a dozen, someone busy and quiet for none past the way in. Each
+  // reply they like adds most of a point, each they don't takes more than one; the same reply
+  // again is a point less welcome. A reply's rapport is a point and its reaction, the good of it
+  // fading a fifth a turn, so a long talk is worth more than a short one but not without end.
+  // Left ten minutes without a word, it's over. A holo costs about what someone's age does, and a
+  // little less for every point of interest left; leave on a warm enough talk and they may offer it.
+  chat: {
+    interest: {
+      base: 1,
+      chatty: 3,
+      warmth: 1,
+      stance: { hostile: -6, cold: -1, wary: 0, neutral: 0.5, warm: 1.5, friend: 2.5 },
+      mood: { busy: -1.5, eating: -0.5, drinking: 1, court: 1, home: 0.5, easy: 0.5 },
+      opening: 0.7,
+      perTurn: 1,
+      liked: 0.8,
+      disliked: 1.2,
+      most: 8,
+      turns: 12,
+    },
+    rapport: { turn: 1, fade: 0.8 },
+    same: 1,
+    free: { more: 2, agree: 1 },
+    idleMinutes: 10,
+    holo: { interest: 0.3, offerAt: 3 },
   },
 };

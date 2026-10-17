@@ -1,4 +1,6 @@
-import type { DialogueLines, Fragment, When } from '../engine/dialogue';
+import type { DialogueLines, When } from '../engine/dialogue';
+import { CHAT, HOLO } from './chat';
+import { only, loud, vague, ganger, corpo, nomad, elder, young, busy, eating, drinking, court, home, wary, neutral, warm, friend, cold, first, recent, regular, long, chatty, quiet, hot, kind, hard, greedy, brave, timid, loyal, masked, bare, gunDrawn, bladeDrawn, bluntDrawn, armed, unarmed, hasType, noType, spokenFor, yours, notDrawn, sloshed, grieving, grilled, touchy, keen, handled, watson, westbrook, cityCenter, heywood, santoDomingo, pacifica, badlands, blunt, easy, smooth, both } from './when';
 
 /**
  * What people say: fragments the engine puts together on the spot (`src/engine/dialogue.ts`).
@@ -8,89 +10,9 @@ import type { DialogueLines, Fragment, When } from '../engine/dialogue';
  * the people it says. `{...}` is filled in from the speaker's life (`{work}`, `{dish}`,
  * `{kinName}`…), from the moment (`{here}`, `{late}`) and from the lexicon (`{choom}`).
  */
-const only = (text: string, when: When): Fragment => ({ text, when });
-/** A line that should win over the plain ones whenever it fits. */
-const loud = (text: string, when: When, weight = 6): Fragment => ({ text, when, weight });
-/** A line for when nothing more particular fits: it gives way to the ones that say more. */
-const vague = (text: string, when: When): Fragment => ({ text, when, weight: 0.3 });
 
-// Who they are.
-const ganger: When = { voice: ['gang'] };
-const corpo: When = { voice: ['corpo'] };
-const nomad: When = { voice: ['nomad'] };
-const elder: When = { voice: ['elder'] };
-const young: When = { voice: ['young'] };
-// What they're doing.
-const busy: When = { mood: ['busy'] };
-const eating: When = { mood: ['eating'] };
-const drinking: When = { mood: ['drinking'] };
-const court: When = { mood: ['court'] };
-const home: When = { mood: ['home'] };
-// How they feel about the player.
-const wary: When = { stance: ['wary'] };
-const neutral: When = { stance: ['neutral'] };
-const warm: When = { stance: ['warm', 'friend'] };
-const friend: When = { stance: ['friend'] };
-const cold: When = { stance: ['cold'] };
-// How well they know the player.
-const first: When = { history: ['first'] };
-const recent: When = { history: ['recent'] };
-const regular: When = { history: ['regular'] };
-const long: When = { history: ['long'] };
-// Their nature.
-const chatty: When = { traits: { chatty: 'high' } };
-const quiet: When = { traits: { chatty: 'low' } };
-const hot: When = { traits: { temper: 'high' } };
-const kind: When = { traits: { warmth: 'high' } };
-const hard: When = { traits: { warmth: 'low' } };
-const greedy: When = { traits: { greed: 'high' } };
-const brave: When = { traits: { courage: 'high' } };
-const timid: When = { traits: { courage: 'low' } };
-const loyal: When = { traits: { loyalty: 'high' } };
-// The moment: a mask on the player, or a face.
-const masked: When = { needs: ['mask'] };
-const bare: When = { lacks: ['mask'] };
-// What the player pulls in a robbery: a gun, a blade, a club, or nothing but their hands.
-const gunDrawn: When = { needs: ['gun'] };
-const bladeDrawn: When = { needs: ['blade'] };
-const bluntDrawn: When = { needs: ['blunt'] };
-const armed: When = { needs: ['weapon'] };
-const unarmed: When = { lacks: ['weapon'] };
-// The heart: whom they're drawn to, spoken for, seeing the player, sweet on them, the player's look their type.
-const hasType: When = { needs: ['typeWho'] };
-const noType: When = { needs: ['typeNone'] };
-const spokenFor: When = { needs: ['taken'] };
-const yours: When = { needs: ['withYou'] };
-const notDrawn: When = { lacks: ['drawn'] };
 // What happened between people lately, and what the speaker was to it (life.ts): theirs, a relative's, their gang's doing, or heard of.
 const news = (kind: string, role: string, ...more: When[]): When => both({ needs: [`news${kind}`, `news${role}`] }, ...more);
-// The moment: the player drunk, the speaker grieving, one question too many, a question they're touchy about or glad of, a street name to give.
-const sloshed: When = { needs: ['youDrunk'] };
-const grieving: When = { needs: ['grief'] };
-const grilled: When = { needs: ['grilled'] };
-const touchy: When = { needs: ['touchy'] };
-const keen: When = { needs: ['keen'] };
-const handled: When = { needs: ['handle'] };
-// Which district is theirs.
-const watson: When = { needs: ['inWatson'] };
-const westbrook: When = { needs: ['inWestbrook'] };
-const cityCenter: When = { needs: ['inCityCenter'] };
-const heywood: When = { needs: ['inHeywood'] };
-const santoDomingo: When = { needs: ['inSantoDomingo'] };
-const pacifica: When = { needs: ['inPacifica'] };
-const badlands: When = { needs: ['inBadlands'] };
-// The player's way with words.
-const blunt: When = { eloquence: ['blunt'] };
-const easy: When = { eloquence: ['easy'] };
-const smooth: When = { eloquence: ['smooth'] };
-
-/** Every condition of every part; what must be filled and what must be empty add up. */
-const both = (...parts: When[]): When =>
-  parts.reduce<When>((all, part) => {
-    const needs = [...(all.needs ?? []), ...(part.needs ?? [])];
-    const lacks = [...(all.lacks ?? []), ...(part.lacks ?? [])];
-    return { ...all, ...part, ...(needs.length ? { needs } : {}), ...(lacks.length ? { lacks } : {}) };
-  }, {});
 
 export const LINES: DialogueLines = {
   lexicon: {
@@ -2662,6 +2584,8 @@ export const LINES: DialogueLines = {
 
   notes: {
     pressed: 'Pushed after a no',
+    again: 'Heard that from you already',
+    holo: 'Gave you {his} holo',
     grilled: 'Tired of all the questions',
     favorite: '{item} is {his} favorite',
     twice: 'A second gift today counts for less',
@@ -2679,6 +2603,8 @@ export const LINES: DialogueLines = {
     dunned: 'Asked for the money again, too soon',
   },
 
+  chat: CHAT,
+  phone: HOLO,
   you: {
     talk: [
       loud('"Heyyy. You got a minute? A minute\'s fine."', sloshed, 3),

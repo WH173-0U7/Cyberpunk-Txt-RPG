@@ -1,3 +1,4 @@
+import type { ChatMove, ChatRules } from './chat';
 import type { Approach, Reaction } from './dialogue';
 import { remember, type Memory, type MemoryRules } from './memory';
 import { INVERSE, tiesOf, type Person, type Population, type TieKind } from './people';
@@ -47,7 +48,7 @@ export const STANCE_LABEL: Record<Stance, string> = {
 };
 
 /** Something the player can want from someone: a fact about them, a topic, their people, (`chop`) their hands on a stolen credchip, or (`hire`) a job at the place they run. */
-export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'type' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views' | 'chop' | 'hire' | 'deal' | 'pitch' | 'recruit';
+export type Asked = 'name' | 'job' | 'age' | 'home' | 'likes' | 'hates' | 'type' | 'kin' | 'district' | 'life' | 'here' | 'rumor' | 'news' | 'dream' | 'views' | 'chop' | 'hire' | 'deal' | 'pitch' | 'recruit' | 'holo';
 
 /**
  * How ready people are to tell the player things: a base by how they feel, a step per level
@@ -243,7 +244,10 @@ export interface SocietyRules {
    * chat: each reaction that fits the speaker (dialogue.ts `fits`) adds its `by`, worth
    * `rapport` a point, and the strongest says why.
    */
-  reactions: { rapport: number; openness: number; asked: Partial<Record<Asked, Reaction[]>>; approach: Record<Approach, Reaction[]> };
+  /** How they take each reply in a conversation (chat.ts): agreeing, the player's story, comfort, keeping them going; another joke or flirt goes by `approach`. */
+  reactions: { rapport: number; openness: number; asked: Partial<Record<Asked, Reaction[]>>; approach: Record<Approach, Reaction[]>; reply?: Partial<Record<ChatMove, Reaction[]>> };
+  /** Conversations (chat.ts): without it, talking is one exchange. */
+  chat?: ChatRules;
 }
 
 export function freshSociety(): SocietyState {
